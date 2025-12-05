@@ -1,0 +1,31 @@
+====================================
+QUICK START GUIDE
+====================================
+
+TO BUILD:
+    .\build.bat
+
+TO RUN:
+    .\run.bat
+
+TO CLEAN:
+    .\clean.bat
+
+FIRST TIME SETUP:
+1. Make sure Java JDK is installed
+2. Run: .\build.bat
+3. Run: .\run.bat
+4. The UI will appear!
+
+USING THE APPLICATION:
+1. Enter connection details (default: localhost:5084)
+2. Click "Connect"
+3. Enter EPCs in the text area (one per line)
+4. Configure default tag values (TID, UID, Antenna, RSSI)
+5. Select a driver from the dropdown
+6. Click "Send Tags"
+7. Monitor progress in the log area
+
+That's it! Enjoy!
+====================================
+
