@@ -108,28 +108,45 @@ export function ProfileManager({ currentState, onLoadProfile }: ProfileManagerPr
   }
 
   const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
     const fileReader = new FileReader()
-    if (event.target.files && event.target.files[0]) {
-      fileReader.readAsText(event.target.files[0], "UTF-8")
-      fileReader.onload = (e) => {
-        try {
-          if (e.target?.result) {
-            const importedProfiles = JSON.parse(e.target.result as string) as Profile[]
-            // Basic validation
-            if (Array.isArray(importedProfiles) && importedProfiles.every(p => p.id && p.name)) {
-              // Merge with existing profiles
-              const merged = [...profiles, ...importedProfiles]
-              // Deduplicate by ID
-              const unique = Array.from(new Map(merged.map(item => [item.id, item])).values())
-              saveProfiles(unique)
-              toast.success(`Imported ${importedProfiles.length} profiles`)
-            } else {
-              toast.error('Invalid profile file format')
-            }
+    fileReader.readAsText(file, "UTF-8")
+    
+    // Reset the input so the same file can be selected again if needed
+    event.target.value = ''
+
+    fileReader.onload = (e) => {
+      try {
+        if (e.target?.result) {
+          const content = JSON.parse(e.target.result as string)
+          
+          let newProfiles: Profile[] = []
+          
+          // Handle both array of profiles and single profile object
+          if (Array.isArray(content)) {
+            newProfiles = content
+          } else if (typeof content === 'object' && content !== null && content.id && content.name) {
+            newProfiles = [content as Profile]
           }
-        } catch (error) {
-          toast.error('Failed to parse profile file')
+
+          // Basic validation
+          if (newProfiles.length > 0 && newProfiles.every(p => p.id && p.name)) {
+            // Merge with existing profiles
+            const merged = [...profiles, ...newProfiles]
+            // Deduplicate by ID
+            const unique = Array.from(new Map(merged.map(item => [item.id, item])).values())
+            saveProfiles(unique)
+            toast.success(`Imported ${newProfiles.length} profiles`)
+          } else {
+            console.error('Invalid profile format:', content)
+            toast.error('Invalid profile file format')
+          }
         }
+      } catch (error) {
+        console.error('Import failed:', error)
+        toast.error('Failed to parse profile file')
       }
     }
   }
@@ -160,7 +177,7 @@ export function ProfileManager({ currentState, onLoadProfile }: ProfileManagerPr
                   type="file"
                   accept=".json"
                   onChange={handleImport}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
                 <Button variant="outline" size="sm" className="gap-2">
                   <Upload className="w-4 h-4" /> Import
