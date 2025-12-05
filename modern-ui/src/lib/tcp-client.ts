@@ -151,7 +151,7 @@ export class HandheldServerClient {
   }
 
   async sendEpcs(
-    epcs: string[],
+    tags: {epc: string, tid?: string}[],
     delay: number,
     onProgress: (message: string) => void,
     onComplete: (message: string) => void
@@ -166,7 +166,7 @@ export class HandheldServerClient {
     this.completeCallback = onComplete
     
     // Send EPCs to main process which will handle real TCP communication
-    window.electronAPI.handheldSendEpcs(epcs, delay)
+    window.electronAPI.handheldSendEpcs(tags, delay)
   }
 
   cancelSend(): void {

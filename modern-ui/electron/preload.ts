@@ -29,8 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Handheld Server
   handheldStart: () => ipcRenderer.send('handheld-start'),
   handheldStop: () => ipcRenderer.send('handheld-stop'),
-  handheldSendEpcs: (epcs: string[], delayMs: number) => 
-    ipcRenderer.send('handheld-send-epcs', epcs, delayMs),
+  handheldSendEpcs: (tags: any[], delayMs: number) => 
+    ipcRenderer.send('handheld-send-epcs', tags, delayMs),
   handheldCancelSend: () => ipcRenderer.send('handheld-cancel-send'),
   handheldIsRunning: () => ipcRenderer.invoke('handheld-is-running'),
   

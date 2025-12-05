@@ -91,40 +91,46 @@ export function HandheldTab({
   }
 
   const handleGenerateAndSend = async () => {
-    const allEpcs: string[] = []
+    const allTags: {epc: string, tid?: string}[] = []
 
-    // Parse UPC,Count
+    // Parse UPC,Count,TID
     if (upcList.trim()) {
       const lines = upcList.trim().split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [upc, countStr] = trimmed.split(',')
+        const [upc, countStr, customTid] = trimmed.split(',')
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && upc) {
           const epcs = EPCGenerator.generateFromUpc(upc.trim(), count)
-          allEpcs.push(...epcs)
+          allTags.push(...epcs.map(epc => ({
+            epc,
+            tid: customTid?.trim() || epc // Default TID to EPC if not provided
+          })))
         }
       }
     }
 
-    // Parse EPC,Count
+    // Parse EPC,Count,TID
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [epc, countStr] = trimmed.split(',')
+        const [epc, countStr, customTid] = trimmed.split(',')
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && epc) {
           for (let i = 0; i < count; i++) {
-            allEpcs.push(epc.trim())
+            allTags.push({
+              epc: epc.trim(),
+              tid: customTid?.trim() || epc.trim()
+            })
           }
         }
       }
     }
 
-    if (allEpcs.length === 0) {
+    if (allTags.length === 0) {
       addLog('Error: No EPCs generated')
       return
     }
@@ -137,11 +143,11 @@ export function HandheldTab({
       return
     }
 
-    addLog(`Sending ${allEpcs.length} EPC(s) to handheld...`)
+    addLog(`Sending ${allTags.length} EPC(s) to handheld...`)
     setSending(true)
 
     await handheldServer.sendEpcs(
-      allEpcs,
+      allTags,
       parseInt(delay),
       (progress) => addLog(progress),
       (complete) => {
@@ -241,13 +247,13 @@ export function HandheldTab({
               <CardTitle className="text-sm">UPC → EPC Generation</CardTitle>
               <TagImporter onImport={handleImportUpc} onExport={handleExportUpc} type="upc" />
             </div>
-            <CardDescription className="text-xs">Format: UPC,Count (one per line)</CardDescription>
+            <CardDescription className="text-xs">Format: UPC,Count,TID</CardDescription>
           </CardHeader>
           <CardContent className="pb-3">
             <Textarea
               value={upcList}
               onChange={(e) => setUpcList(e.target.value)}
-              placeholder="00000000000001,5&#10;00000000000002,3"
+              placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
               className="font-mono text-xs min-h-[80px]"
             />
           </CardContent>
@@ -259,13 +265,13 @@ export function HandheldTab({
               <CardTitle className="text-sm">Direct EPC Input</CardTitle>
               <TagImporter onImport={handleImportEpc} onExport={handleExportEpc} type="epc" />
             </div>
-            <CardDescription className="text-xs">Format: EPC,Count (one per line)</CardDescription>
+            <CardDescription className="text-xs">Format: EPC,Count,TID</CardDescription>
           </CardHeader>
           <CardContent className="pb-3">
             <Textarea
               value={epcList}
               onChange={(e) => setEpcList(e.target.value)}
-              placeholder="303401234567890000000001,2"
+              placeholder="3034..., 2&#10;3035..., 1, CustomTID"
               className="font-mono text-xs min-h-[80px]"
             />
           </CardContent>

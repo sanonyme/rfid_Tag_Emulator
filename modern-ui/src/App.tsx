@@ -5,10 +5,11 @@ import { FixedTab } from './components/FixedTab'
 import { HandheldTab } from './components/HandheldTab'
 import { OCRTab } from './components/OCRTab'
 import { DecoderTab } from './components/DecoderTab'
+import { AutomationTab } from './components/AutomationTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2 } from 'lucide-react'
+import { Radio, Smartphone, ScanLine, Code2, Workflow } from 'lucide-react'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -115,7 +116,7 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 container px-6 py-6 overflow-hidden relative z-10">
         <Tabs defaultValue="fixed" className="h-full flex flex-col">
-          <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-4 mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
+          <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-5 mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
             <TabsTrigger value="fixed" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Radio className="w-4 h-4" />
               <span className="font-medium">Fixed Reader</span>
@@ -131,6 +132,10 @@ function App() {
             <TabsTrigger value="decoder" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Code2 className="w-4 h-4" />
               <span className="font-medium">Decoder</span>
+            </TabsTrigger>
+            <TabsTrigger value="automation" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Workflow className="w-4 h-4" />
+              <span className="font-medium">Auto</span>
             </TabsTrigger>
           </TabsList>
 
@@ -189,6 +194,15 @@ function App() {
 
             <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
               <DecoderTab />
+            </TabsContent>
+
+            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <AutomationTab 
+                emulator={emulator}
+                handheldServer={handheldServer}
+                ocrClient={ocrClient}
+                host={host}
+              />
             </TabsContent>
           </div>
         </Tabs>

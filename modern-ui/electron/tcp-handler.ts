@@ -131,7 +131,7 @@ export class HandheldServerHandler {
   private serverSocket: Server | null = null
   private connectedClients: Socket[] = []
   private cancelRequested: boolean = false
-  private epcQueue: string[] = []
+  private epcQueue: {epc: string, tid?: string}[] = []
 
   constructor(private window: BrowserWindow) {}
 
@@ -182,7 +182,7 @@ export class HandheldServerHandler {
     return this.serverRunning
   }
 
-  async sendEpcs(epcs: string[], delayMs: number): Promise<void> {
+  async sendEpcs(tags: {epc: string, tid?: string}[], delayMs: number): Promise<void> {
     // Java: if (!running || connectedClients.isEmpty()) { onComplete.accept("No handheld connected..."); return; }
     console.log(`Handheld: sendEpcs called - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`)
     if (!this.serverRunning || this.connectedClients.length === 0) {
@@ -192,23 +192,23 @@ export class HandheldServerHandler {
       return
     }
 
-    const total = epcs.length
+    const total = tags.length
     let enqueued = 0
     let sentTotal = 0
     
     this.cancelRequested = false
-    this.epcQueue = []
+    this.epcQueue = [] // We'll store objects here, need to update epcQueue type definition
 
     // Java: for (String epc : epcs) { if (cancelRequested) { ... } epcQueue.offer(epc); enqueued++; ... }
-    for (const epc of epcs) {
+    for (const tag of tags) {
       if (this.cancelRequested) {
         this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
         return
       }
 
-      this.epcQueue.push(epc)
+      this.epcQueue.push(tag)
       enqueued++
-      this.sendToRenderer('handheld-progress', `Queued (${enqueued}/${total}): ${epc}`)
+      this.sendToRenderer('handheld-progress', `Queued (${enqueued}/${total}): ${tag.epc}`)
 
       // Java: if (epcQueue.size() >= 200) { ... broadcast batch ... }
       if (this.epcQueue.length >= 200) {
@@ -240,15 +240,16 @@ export class HandheldServerHandler {
   }
 
   // Java: private int broadcastBatch(List<String> epcs)
-  private broadcastBatch(epcs: string[]): number {
-    if (epcs.length === 0) return 0
+  private broadcastBatch(tags: {epc: string, tid?: string}[]): number {
+    if (tags.length === 0) return 0
 
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }
     let payload = ''
-    for (const epc of epcs) {
+    for (const tag of tags) {
       // Java: String json = "{\"epc\":\"" + epc + "\",\"date\":\"" + nowString() + "\",\"rssi\":70.0}";
       const json = JSON.stringify({
-        epc: epc,
+        epc: tag.epc,
+        tid: tag.tid || tag.epc, // User requested: defaults to EPC if not provided
         date: this.nowString(),
         rssi: 70.0
       })
@@ -273,7 +274,7 @@ export class HandheldServerHandler {
       }
     }
 
-    return epcs.length
+    return tags.length
   }
 
   // Java: private static String nowString()

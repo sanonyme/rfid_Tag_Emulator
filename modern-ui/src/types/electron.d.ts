@@ -21,7 +21,7 @@ export interface ElectronAPI {
   // Handheld Server
   handheldStart: () => void
   handheldStop: () => void
-  handheldSendEpcs: (epcs: string[], delayMs: number) => void
+  handheldSendEpcs: (tags: any[], delayMs: number) => void
   handheldIsRunning: () => Promise<boolean>
   handheldCancelSend: () => void
   

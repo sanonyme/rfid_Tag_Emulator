@@ -142,19 +142,19 @@ export function FixedTab({
 
     const tags: TagData[] = []
 
-    // Parse EPC,Count
+    // Parse EPC,Count,TID
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [epc, countStr] = trimmed.split(',')
+        const [epc, countStr, customTid] = trimmed.split(',')
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && epc) {
           for (let i = 0; i < count; i++) {
             tags.push({
               epc: epc.trim(),
-              tid: epc.trim(),
+              tid: customTid?.trim() || epc.trim(),
               uid,
               antenna: parseInt(antenna),
               rssi,
@@ -164,21 +164,21 @@ export function FixedTab({
       }
     }
 
-    // Parse UPC,Count and generate EPCs
+    // Parse UPC,Count,TID and generate EPCs
     if (upcList.trim()) {
       const lines = upcList.trim().split('\n')
       let serial = parseInt(startSerial)
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [upc, countStr] = trimmed.split(',')
+        const [upc, countStr, customTid] = trimmed.split(',')
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && upc) {
           const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
           for (const epc of epcs) {
             tags.push({
               epc,
-              tid: epc,
+              tid: customTid?.trim() || epc,
               uid,
               antenna: parseInt(antenna),
               rssi,
@@ -379,13 +379,13 @@ export function FixedTab({
           <Card className="border-border/50 bg-card transition-all duration-300">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">UPC → EPC Generation</CardTitle>
-              <CardDescription>Format: UPC,Count (one per line)</CardDescription>
+              <CardDescription>Format: UPC,Count,TID (optional TID)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <Textarea
                 value={upcList}
                 onChange={(e) => setUpcList(e.target.value)}
-                placeholder="00000000000001,5&#10;00000000000002,3"
+                placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
                 className="font-mono text-sm min-h-[120px]"
               />
               <div className="space-y-2">
@@ -404,13 +404,13 @@ export function FixedTab({
           <Card className="border-border/50 bg-card transition-all duration-300">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Direct EPC Input</CardTitle>
-              <CardDescription>Format: EPC,Count (one per line)</CardDescription>
+              <CardDescription>Format: EPC,Count,TID (optional TID)</CardDescription>
             </CardHeader>
             <CardContent>
               <Textarea
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
-                placeholder="303401234567890000000001,2"
+                placeholder="3034..., 2&#10;3035..., 1, CustomTID"
                 className="font-mono text-sm min-h-[120px]"
               />
             </CardContent>

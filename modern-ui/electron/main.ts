@@ -191,9 +191,9 @@ app.whenReady().then(() => {
     handheldHandler?.stop()
   })
 
-  ipcMain.on('handheld-send-epcs', async (_event, epcs: string[], delayMs: number) => {
-    console.log(`Sending ${epcs.length} EPCs to handheld`)
-    await handheldHandler?.sendEpcs(epcs, delayMs)
+  ipcMain.on('handheld-send-epcs', async (_event, tags: any[], delayMs: number) => {
+    console.log(`Sending ${tags.length} EPCs to handheld`)
+    await handheldHandler?.sendEpcs(tags, delayMs)
   })
 
   ipcMain.handle('handheld-is-running', () => {
