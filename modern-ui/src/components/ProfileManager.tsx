@@ -35,6 +35,7 @@ export interface Profile {
   ocrMessage: string
   // Shared
   delay: string
+  automationSteps?: any[]
 }
 
 interface ProfileManagerProps {

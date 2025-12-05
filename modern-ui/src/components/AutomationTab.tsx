@@ -37,7 +37,7 @@ interface AutomationTabProps {
 
 type ActionType = 'DELAY' | 'OCR' | 'FIXED_TAG' | 'HANDHELD_TAG'
 
-interface AutomationStep {
+export interface AutomationStep {
   id: string
   type: ActionType
   name: string
@@ -63,10 +63,24 @@ interface AutomationStep {
   }
 }
 
-export function AutomationTab({ emulator, handheldServer, ocrClient, host }: AutomationTabProps) {
-  const [steps, setSteps] = useState<AutomationStep[]>([])
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
+interface AutomationTabProps {
+  emulator: TCPEmulatorClient
+  handheldServer: HandheldServerClient
+  ocrClient: OCRClient
+  host: string
+  steps: AutomationStep[]
+  setSteps: (steps: AutomationStep[]) => void
+}
+
+export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps, setSteps }: AutomationTabProps) {
+  // No local state for steps, using props
+  // const [steps, setSteps] = useState<AutomationStep[]>([]) 
+  
+  // Use a local currentStepIndex for display but don't reset it on unmount if we want to show last state?
+  // Actually the prompt asked to persist the *section*, meaning the configuration.
+  // Execution state (isRunning, currentStepIndex) usually resets, but let's keep it local for now.
   const [isRunning, setIsRunning] = useState(false)
+  const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
   const [currentStepIndex, setCurrentStepIndex] = useState<number | null>(null)
   const [loopCount, setLoopCount] = useState<string>('1') // '0' or 'Inf' for infinite
   const [log, setLog] = useState<string[]>([])
@@ -374,13 +388,23 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host }: Aut
                   key={step.id}
                   onClick={() => !isRunning && setSelectedStepId(step.id)}
                   className={`
-                    p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3
+                    p-3 rounded-lg border cursor-pointer transition-all flex items-center gap-3 relative overflow-hidden
                     ${selectedStepId === step.id ? 'border-primary bg-primary/10' : 'border-border bg-card hover:bg-accent/50'}
-                    ${currentStepIndex === index ? 'ring-2 ring-green-500 shadow-[0_0_10px_rgba(34,197,94,0.3)]' : ''}
+                    ${currentStepIndex === index ? 'ring-2 ring-green-500 shadow-[0_0_15px_rgba(34,197,94,0.4)] border-green-500/50' : ''}
                   `}
                 >
-                  <div className="flex flex-col items-center justify-center w-6 h-6 rounded-full bg-muted text-xs font-mono text-muted-foreground">
-                    {index + 1}
+                  {/* Progress Bar Background for Current Step */}
+                  {currentStepIndex === index && (
+                    <div className="absolute inset-0 bg-green-500/10 animate-pulse pointer-events-none" />
+                  )}
+
+                  <div className={`
+                    flex flex-col items-center justify-center w-6 h-6 rounded-full text-xs font-mono transition-colors
+                    ${currentStepIndex === index 
+                      ? 'bg-green-500 text-white font-bold scale-110' 
+                      : 'bg-muted text-muted-foreground'}
+                  `}>
+                    {currentStepIndex === index ? <Play className="w-3 h-3 fill-current" /> : index + 1}
                   </div>
                   
                   <div className="flex-1 min-w-0">

@@ -39,6 +39,9 @@ function App() {
   // OCR Tab persistent state
   const [ocrMessage, setOcrMessage] = useState('')
 
+  // Automation Tab persistent state
+  const [automationSteps, setAutomationSteps] = useState<any[]>([])
+
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
 
   const handleLoadProfile = (profile: Profile) => {
@@ -56,6 +59,7 @@ function App() {
     setHhEpcList(profile.hhEpcList)
     setOcrMessage(profile.ocrMessage)
     setDelay(profile.delay)
+    if (profile.automationSteps) setAutomationSteps(profile.automationSteps)
   }
 
   const currentProfileState = {
@@ -72,7 +76,8 @@ function App() {
     hhUpcList,
     hhEpcList,
     ocrMessage,
-    delay
+    delay,
+    automationSteps
   }
 
   React.useEffect(() => {
@@ -202,6 +207,8 @@ function App() {
                 handheldServer={handheldServer}
                 ocrClient={ocrClient}
                 host={host}
+                steps={automationSteps}
+                setSteps={setAutomationSteps}
               />
             </TabsContent>
           </div>
