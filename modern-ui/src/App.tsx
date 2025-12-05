@@ -7,7 +7,8 @@ import { OCRTab } from './components/OCRTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine } from 'lucide-react'
+import { EncoderDecoderTab } from './components/EncoderDecoderTab'
+import { Radio, Smartphone, ScanLine, Code2 } from 'lucide-react'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -114,18 +115,22 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 container px-6 py-6 overflow-hidden relative z-10">
         <Tabs defaultValue="fixed" className="h-full flex flex-col">
-          <TabsList className="grid w-full max-w-md mx-auto grid-cols-3 mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
+          <TabsList className="grid w-full max-w-lg mx-auto grid-cols-4 mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
             <TabsTrigger value="fixed" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Radio className="w-4 h-4" />
-              <span className="font-medium">Fixed Reader</span>
+              <span className="font-medium hidden sm:inline">Fixed</span>
             </TabsTrigger>
             <TabsTrigger value="handheld" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <Smartphone className="w-4 h-4" />
-              <span className="font-medium">Handheld</span>
+              <span className="font-medium hidden sm:inline">Handheld</span>
             </TabsTrigger>
             <TabsTrigger value="ocr" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
               <ScanLine className="w-4 h-4" />
-              <span className="font-medium">OCR</span>
+              <span className="font-medium hidden sm:inline">OCR</span>
+            </TabsTrigger>
+            <TabsTrigger value="tools" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Code2 className="w-4 h-4" />
+              <span className="font-medium hidden sm:inline">Tools</span>
             </TabsTrigger>
           </TabsList>
 
@@ -180,6 +185,10 @@ function App() {
                 message={ocrMessage}
                 setMessage={setOcrMessage}
               />
+            </TabsContent>
+
+            <TabsContent value="tools" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <EncoderDecoderTab />
             </TabsContent>
           </div>
         </Tabs>
