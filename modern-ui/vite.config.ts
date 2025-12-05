@@ -30,7 +30,7 @@ export default defineConfig({
           },
         },
       },
-      // Don't open a browser window automatically
+      // Ensure renderer process handling is correct
       renderer: {},
     }),
   ],
@@ -41,10 +41,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Don't automatically open browser
-    open: false,
+    strictPort: true, // Fail if port is busy instead of switching
   },
-  base: './',
-  publicDir: 'public',
+  base: './', 
 })
-

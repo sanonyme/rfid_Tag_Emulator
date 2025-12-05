@@ -158,10 +158,10 @@ export function HandheldTab({
   }
 
   return (
-    <div className="flex flex-col gap-3 h-full animate-fade-in">
+    <div className="flex flex-col gap-3 h-full">
       <div className="grid grid-cols-[1fr_1fr] gap-3">
         {/* Server Info */}
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up">
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-base flex items-center gap-2">
               <Server className="w-4 h-4 text-blue-500 animate-pulse-slow" />
@@ -191,7 +191,7 @@ export function HandheldTab({
               Subscribe
             </Button>
             {subscribed && (
-              <Badge className="w-full justify-center text-xs py-0.5 bg-green-500/20 border-green-500/30 text-green-700 dark:text-green-400 animate-scale-in">
+              <Badge className="w-full justify-center text-xs py-0.5 bg-green-500/20 border-green-500/30 text-green-700 dark:text-green-400">
                 <span className="relative flex h-2 w-2 mr-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
@@ -203,7 +203,7 @@ export function HandheldTab({
         </Card>
 
         {/* Quick Actions */}
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-2 pt-4">
             <CardTitle className="text-base">Send Controls</CardTitle>
             <CardDescription className="text-xs">
@@ -235,7 +235,7 @@ export function HandheldTab({
 
       {/* Tag Input */}
       <div className="grid grid-cols-2 gap-3">
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-2 pt-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm">UPC → EPC Generation</CardTitle>
@@ -253,7 +253,7 @@ export function HandheldTab({
           </CardContent>
         </Card>
 
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.3s' }}>
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-2 pt-3">
             <div className="flex items-center justify-between">
               <CardTitle className="text-sm">Direct EPC Input</CardTitle>
@@ -273,7 +273,7 @@ export function HandheldTab({
       </div>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.4s' }}>
+      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
         <CardHeader className="pb-2 pt-3 border-b border-border/50">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm flex items-center gap-2">

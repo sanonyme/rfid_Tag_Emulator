@@ -114,9 +114,9 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto animate-fade-in">
+    <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto">
       {/* OCR Input Card */}
-      <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up">
+      <Card className="border-border/50 bg-card transition-all duration-300">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ScanLine className="w-5 h-5 text-pink-500 animate-pulse-slow" />
@@ -163,7 +163,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
+      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
         <CardHeader className="py-2 border-b border-border/50">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm flex items-center gap-2">

@@ -244,11 +244,11 @@ export function FixedTab({
   }
 
   return (
-    <div className="grid grid-cols-[320px_1fr] gap-6 h-full animate-fade-in">
+    <div className="grid grid-cols-[320px_1fr] gap-6 h-full">
       {/* Left Sidebar - Configuration */}
       <div className="space-y-4 overflow-y-auto pr-2">
         {/* Connection Settings */}
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up">
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Radio className="w-5 h-5 text-primary animate-pulse-slow" />
@@ -296,7 +296,7 @@ export function FixedTab({
         </Card>
 
         {/* Tag Defaults */}
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Tag Defaults</CardTitle>
           </CardHeader>
@@ -326,7 +326,7 @@ export function FixedTab({
         </Card>
 
         {/* Driver Settings */}
-        <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
+        <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Zap className="w-5 h-5 text-yellow-500 animate-pulse-slow" />
@@ -373,10 +373,10 @@ export function FixedTab({
       </div>
 
       {/* Right Side - Tag Management & Log */}
-      <div className="flex flex-col gap-4 min-h-0 animate-fade-in">
+      <div className="flex flex-col gap-4 min-h-0">
         {/* Tag Input */}
         <div className="grid grid-cols-2 gap-4">
-          <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.1s' }}>
+          <Card className="border-border/50 bg-card transition-all duration-300">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">UPC → EPC Generation</CardTitle>
               <CardDescription>Format: UPC,Count (one per line)</CardDescription>
@@ -401,7 +401,7 @@ export function FixedTab({
             </CardContent>
           </Card>
 
-          <Card className="border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.2s' }}>
+          <Card className="border-border/50 bg-card transition-all duration-300">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Direct EPC Input</CardTitle>
               <CardDescription>Format: EPC,Count (one per line)</CardDescription>
@@ -418,7 +418,7 @@ export function FixedTab({
         </div>
 
         {/* Send Controls */}
-        <div className="flex gap-3 justify-center animate-scale-in" style={{ animationDelay: '0.3s' }}>
+        <div className="flex gap-3 justify-center">
           <Button
             onClick={() => handleSendTags(false)}
             disabled={!connected || sending || looping}
@@ -459,7 +459,7 @@ export function FixedTab({
         </div>
 
         {/* Log Area */}
-        <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300 animate-slide-in-up" style={{ animationDelay: '0.4s' }}>
+        <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
           <CardHeader className="py-2 border-b border-border/50">
             <div className="flex justify-between items-center">
               <CardTitle className="text-sm flex items-center gap-2">

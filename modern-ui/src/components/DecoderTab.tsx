@@ -1,0 +1,237 @@
+import { useState } from 'react'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
+import { Textarea } from './ui/textarea'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { EPCDecoder, EPCEncoder } from '../lib/decoder'
+import { ArrowDown, ArrowUp, Copy, Check } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select"
+
+export function DecoderTab() {
+  // Decode State
+  const [epcInput, setEpcInput] = useState('')
+  const [decodedResult, setDecodedResult] = useState<{
+    gtin?: string
+    serial?: string
+    error?: string
+    companyPrefix?: string
+    itemReference?: string
+    filter?: number
+    partition?: number
+  } | null>(null)
+
+  // Encode State
+  const [gtinInput, setGtinInput] = useState('')
+  const [serialInput, setSerialInput] = useState('')
+  const [companyPrefixLen, setCompanyPrefixLen] = useState('6') // Default to 6
+  const [encodedResult, setEncodedResult] = useState<{
+    epc?: string
+    error?: string
+  } | null>(null)
+
+  const [copied, setCopied] = useState(false)
+
+  const handleDecode = () => {
+    if (!epcInput.trim()) {
+      setDecodedResult(null)
+      return
+    }
+
+    try {
+      // Remove spaces or colons if user pasted formatted hex
+      const cleanEpc = epcInput.replace(/[^0-9A-Fa-f]/g, '')
+      const result = EPCDecoder.decodeSgtin96(cleanEpc)
+      setDecodedResult(result)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success('EPC Decoded successfully')
+      }
+    } catch (e) {
+      setDecodedResult({ error: 'Invalid EPC format' })
+      toast.error('Invalid EPC format')
+    }
+  }
+
+  const handleEncode = () => {
+    if (!gtinInput.trim() || !serialInput.trim()) {
+      setEncodedResult({ error: 'Please enter both GTIN and Serial' })
+      return
+    }
+
+    try {
+      const length = parseInt(companyPrefixLen)
+      const result = EPCEncoder.encodeSgtin96(gtinInput, serialInput, length)
+      setEncodedResult(result)
+      if (result.error) {
+        toast.error(result.error)
+      } else {
+        toast.success('EPC Encoded successfully')
+      }
+    } catch (e) {
+      setEncodedResult({ error: 'Encoding failed' })
+      toast.error('Encoding failed')
+    }
+  }
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text)
+    setCopied(true)
+    toast.success('Copied to clipboard')
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="h-full flex flex-col gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+        {/* Decoder Section */}
+        <Card className="flex flex-col h-full bg-card/50 border-white/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowDown className="w-5 h-5 text-blue-400" />
+              EPC Decoder
+            </CardTitle>
+            <CardDescription>
+              Convert Hex EPC to GTIN + Serial
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col gap-4">
+            <div className="space-y-2">
+              <Label>EPC (Hex)</Label>
+              <Textarea 
+                placeholder="e.g. 3034257BF400B40000000123" 
+                value={epcInput}
+                onChange={(e) => setEpcInput(e.target.value)}
+                className="font-mono"
+                rows={3}
+              />
+              <Button onClick={handleDecode} className="w-full">Decode</Button>
+            </div>
+
+            {decodedResult && (
+              <div className={`mt-4 p-4 rounded-lg border ${decodedResult.error ? 'bg-destructive/10 border-destructive/50' : 'bg-secondary/50 border-secondary'}`}>
+                {decodedResult.error ? (
+                  <p className="text-destructive font-medium">{decodedResult.error}</p>
+                ) : (
+                  <div className="space-y-3 text-sm">
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">GTIN-14:</span>
+                      <span className="col-span-2 font-mono font-medium">{decodedResult.gtin}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Serial:</span>
+                      <span className="col-span-2 font-mono font-medium">{decodedResult.serial}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Filter:</span>
+                      <span className="col-span-2 font-mono">{decodedResult.filter}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Partition:</span>
+                      <span className="col-span-2 font-mono">{decodedResult.partition}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Company:</span>
+                      <span className="col-span-2 font-mono">{decodedResult.companyPrefix}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Item Ref:</span>
+                      <span className="col-span-2 font-mono">{decodedResult.itemReference}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Encoder Section */}
+        <Card className="flex flex-col h-full bg-card/50 border-white/10">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ArrowUp className="w-5 h-5 text-green-400" />
+              EPC Encoder
+            </CardTitle>
+            <CardDescription>
+              Convert GTIN + Serial to Hex EPC
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col gap-4">
+            <div className="space-y-2">
+              <Label>GTIN / UPC</Label>
+              <Input 
+                placeholder="e.g. 1234567890123" 
+                value={gtinInput}
+                onChange={(e) => setGtinInput(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+            
+            <div className="space-y-2">
+              <Label>Serial Number</Label>
+              <Input 
+                placeholder="e.g. 12345" 
+                value={serialInput}
+                onChange={(e) => setSerialInput(e.target.value)}
+                className="font-mono"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Company Prefix Length</Label>
+              <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select length" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="6">6 Digits</SelectItem>
+                  <SelectItem value="7">7 Digits</SelectItem>
+                  <SelectItem value="8">8 Digits</SelectItem>
+                  <SelectItem value="9">9 Digits</SelectItem>
+                  <SelectItem value="10">10 Digits</SelectItem>
+                  <SelectItem value="11">11 Digits</SelectItem>
+                  <SelectItem value="12">12 Digits</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <Button onClick={handleEncode} variant="secondary" className="w-full mt-2">Encode</Button>
+
+            {encodedResult && (
+              <div className={`mt-4 p-4 rounded-lg border ${encodedResult.error ? 'bg-destructive/10 border-destructive/50' : 'bg-primary/10 border-primary/20'}`}>
+                {encodedResult.error ? (
+                  <p className="text-destructive font-medium">{encodedResult.error}</p>
+                ) : (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Generated EPC (Hex)</Label>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 block p-2 rounded bg-background/50 border font-mono text-sm break-all">
+                        {encodedResult.epc}
+                      </code>
+                      <Button 
+                        size="icon" 
+                        variant="ghost" 
+                        onClick={() => encodedResult.epc && copyToClipboard(encodedResult.epc)}
+                        title="Copy to clipboard"
+                      >
+                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
