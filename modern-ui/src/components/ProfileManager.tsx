@@ -117,9 +117,9 @@ export function ProfileManager({ currentState, onLoadProfile }: ProfileManagerPr
     // Reset the input so the same file can be selected again if needed
     event.target.value = ''
 
-    fileReader.onload = (e) => {
-      try {
-        if (e.target?.result) {
+      fileReader.onload = (e) => {
+        try {
+          if (e.target?.result) {
           const content = JSON.parse(e.target.result as string)
           
           let newProfiles: Profile[] = []
@@ -131,22 +131,22 @@ export function ProfileManager({ currentState, onLoadProfile }: ProfileManagerPr
             newProfiles = [content as Profile]
           }
 
-          // Basic validation
+            // Basic validation
           if (newProfiles.length > 0 && newProfiles.every(p => p.id && p.name)) {
-            // Merge with existing profiles
+              // Merge with existing profiles
             const merged = [...profiles, ...newProfiles]
-            // Deduplicate by ID
-            const unique = Array.from(new Map(merged.map(item => [item.id, item])).values())
-            saveProfiles(unique)
+              // Deduplicate by ID
+              const unique = Array.from(new Map(merged.map(item => [item.id, item])).values())
+              saveProfiles(unique)
             toast.success(`Imported ${newProfiles.length} profiles`)
-          } else {
+            } else {
             console.error('Invalid profile format:', content)
-            toast.error('Invalid profile file format')
+              toast.error('Invalid profile file format')
+            }
           }
-        }
-      } catch (error) {
+        } catch (error) {
         console.error('Import failed:', error)
-        toast.error('Failed to parse profile file')
+          toast.error('Failed to parse profile file')
       }
     }
   }

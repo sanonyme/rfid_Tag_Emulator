@@ -548,7 +548,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Custom TID (Optional - Default for Step)</Label>
+                      <Label>Custom TID</Label>
                       <Input 
                         value={selectedStep.params.tid}
                         onChange={(e) => handleUpdateParams(selectedStep.id, { tid: e.target.value })}
