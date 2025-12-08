@@ -127,6 +127,10 @@ export function DecoderTab() {
                       <span className="col-span-2 font-mono font-medium">{decodedResult.gtin}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">Check Digit:</span>
+                      <span className="col-span-2 font-mono text-green-400">{decodedResult.gtin?.slice(-1)}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
                       <span className="text-muted-foreground">Serial:</span>
                       <span className="col-span-2 font-mono font-medium">{decodedResult.serial}</span>
                     </div>
@@ -173,6 +177,29 @@ export function DecoderTab() {
                 onChange={(e) => setGtinInput(e.target.value)}
                 className="font-mono"
               />
+              {(() => {
+                const digits = gtinInput.replace(/[^0-9]/g, '')
+                if (digits.length === 13) {
+                  const check = EPCDecoder.calculateCheckDigit(digits)
+                  return (
+                    <p className="text-xs text-muted-foreground">
+                      Calculated Check Digit: <span className="text-green-400 font-bold">{check}</span>
+                    </p>
+                  )
+                }
+                if (digits.length === 14) {
+                  const payload = digits.slice(0, 13)
+                  const providedCheck = digits.slice(-1)
+                  const calcCheck = EPCDecoder.calculateCheckDigit(payload)
+                  const isValid = providedCheck === calcCheck
+                  return (
+                    <p className={`text-xs ${isValid ? 'text-green-400' : 'text-red-400'}`}>
+                      Check Digit: {isValid ? 'Valid' : `Invalid (Expected ${calcCheck})`}
+                    </p>
+                  )
+                }
+                return null
+              })()}
             </div>
             
             <div className="space-y-2">
