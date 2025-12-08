@@ -13,15 +13,18 @@ The **Modern UI** is the recommended version for most users. It is a cross-platf
 *   **Fixed Reader Emulation**: Connect to Edge servers via TCP (default port `12352`) to simulate fixed RFID readers.
 *   **Handheld Device Emulation**: Acts as a handheld server (default port `10472`) allowing clients to subscribe to tag events.
 *   **OCR Emulation**: Send OCR text messages to Edge systems (default port `10482`), compatible with Inditex/Tempe message formats.
+*   **Automation Builder**: Create and save complex sequences of actions (Delays, OCR messages, Tag reads) to automate testing scenarios.
+*   **EPC Tools**: Built-in SGTIN-96 Decoder and Encoder with support for custom filters, partitions, and automatic check-digit validation.
 *   **Smart EPC Generation**: Automatically generate valid EPCs from UPC codes or input them manually.
 *   **Profile Management**: Save and switch between different configuration profiles (IPs, ports, simulation settings).
 *   **User Experience**: Dark mode support, intuitive dashboard, and persistent settings.
 
-### 📥 Installation (Windows)
+### 📥 Installation (Windows & Linux)
 
-1.  Go to the [**Releases Page**](https://github.com/sanonyme/rfid_Tag_Emulator/releases) and download the latest installer (`edge RFID Emulator Setup X.X.X.exe`).
-2.  Run the installer.
-3.  Launch **Edge RFID Emulator** from your Desktop or Start Menu.
+1.  Go to the [**Releases Page**](https://github.com/sanonyme/rfid_Tag_Emulator/releases).
+2.  **Windows**: Download `edge RFID Emulator Setup X.X.X.exe` and run it.
+3.  **Linux**: Download `rfid-emulator-modern-X.X.X.tar.gz`, extract it, and run the executable.
+4.  Launch **Edge RFID Emulator**.
 
 ### 🛠️ Development Setup
 
