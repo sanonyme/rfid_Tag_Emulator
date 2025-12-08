@@ -32,6 +32,7 @@ export function DecoderTab() {
   const [gtinInput, setGtinInput] = useState('')
   const [serialInput, setSerialInput] = useState('')
   const [companyPrefixLen, setCompanyPrefixLen] = useState('6') // Default to 6
+  const [filterValue, setFilterValue] = useState('0') // Default to 0 (All Others)
   const [encodedResult, setEncodedResult] = useState<{
     epc?: string
     error?: string
@@ -69,7 +70,8 @@ export function DecoderTab() {
 
     try {
       const length = parseInt(companyPrefixLen)
-      const result = EPCEncoder.encodeSgtin96(gtinInput, serialInput, length)
+      const filter = parseInt(filterValue)
+      const result = EPCEncoder.encodeSgtin96(gtinInput, serialInput, length, filter)
       setEncodedResult(result)
       if (result.error) {
         toast.error(result.error)
@@ -212,22 +214,43 @@ export function DecoderTab() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label>Company Prefix Length</Label>
-              <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select length" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="6">6 Digits</SelectItem>
-                  <SelectItem value="7">7 Digits</SelectItem>
-                  <SelectItem value="8">8 Digits</SelectItem>
-                  <SelectItem value="9">9 Digits</SelectItem>
-                  <SelectItem value="10">10 Digits</SelectItem>
-                  <SelectItem value="11">11 Digits</SelectItem>
-                  <SelectItem value="12">12 Digits</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Company Prefix Length</Label>
+                <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Length" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="6">6 Digits</SelectItem>
+                    <SelectItem value="7">7 Digits</SelectItem>
+                    <SelectItem value="8">8 Digits</SelectItem>
+                    <SelectItem value="9">9 Digits</SelectItem>
+                    <SelectItem value="10">10 Digits</SelectItem>
+                    <SelectItem value="11">11 Digits</SelectItem>
+                    <SelectItem value="12">12 Digits</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Filter Value</Label>
+                <Select value={filterValue} onValueChange={setFilterValue}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">0 - All Others (Retail)</SelectItem>
+                    <SelectItem value="1">1 - POS Trade Item</SelectItem>
+                    <SelectItem value="2">2 - Full Case Transport</SelectItem>
+                    <SelectItem value="3">3 - Reserved</SelectItem>
+                    <SelectItem value="4">4 - Inner Pack</SelectItem>
+                    <SelectItem value="5">5 - Reserved</SelectItem>
+                    <SelectItem value="6">6 - Unit Load</SelectItem>
+                    <SelectItem value="7">7 - Component</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <Button onClick={handleEncode} variant="secondary" className="w-full mt-2">Encode</Button>

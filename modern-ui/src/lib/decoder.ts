@@ -128,7 +128,7 @@ export class EPCDecoder {
 }
 
 export class EPCEncoder {
-  static encodeSgtin96(gtinInput: string, serialInput: string, companyPrefixLength: number = 0): { epc?: string, error?: string } {
+  static encodeSgtin96(gtinInput: string, serialInput: string, companyPrefixLength: number = 0, filterValue: number = 0): { epc?: string, error?: string } {
     try {
       // 1. Clean Inputs
       let gtin = gtinInput.replace(/[^0-9]/g, '')
@@ -142,7 +142,7 @@ export class EPCEncoder {
 
       // 2. Constants
       const header = 0x30
-      const filter = 0 // Standard retail
+      const filter = filterValue // Use provided filter
       
       // Determine Partition
       // If user provided a specific length (e.g., from UI dropdown), use it.
