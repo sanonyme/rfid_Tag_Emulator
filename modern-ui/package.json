@@ -1,7 +1,7 @@
 {
   "name": "rfid-emulator-modern",
   "version": "2.0.0",
-  "description": "Modern RFID Tag Emulator UI",
+  "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Edge RFID Team",
     "email": "support@example.com"
@@ -55,18 +55,26 @@
   },
   "build": {
     "appId": "com.edge.rfid-emulator",
-    "productName": "edge RFID Emulator",
+    "productName": "Zeus RFID Emulator",
     "directories": {
       "output": "dist-app"
     },
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "resources/**/*"
+      "resources/**/*",
+      "!**/*.map",
+      "!**/*.d.ts",
+      "!**/node_modules/**/test/**/*",
+      "!**/node_modules/**/doc/**/*",
+      "!**/node_modules/**/example/**/*",
+      "!**/node_modules/**/demo/**/*"
     ],
+    "compression": "maximum",
+    "asar": true,
     "extraResources": [
       {
-        "from": "public/logo.png",
+        "from": "public/zeus-removebg-preview.png",
         "to": "logo.png"
       }
     ],
@@ -87,7 +95,7 @@
       "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": "always",
       "createStartMenuShortcut": true,
-      "shortcutName": "edge RFID Emulator",
+      "shortcutName": "Zeus RFID Emulator",
       "runAfterFinish": true,
       "artifactName": "${productName} Setup ${version}.exe"
     },

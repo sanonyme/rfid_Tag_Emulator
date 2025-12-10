@@ -1,6 +1,7 @@
 import { Minimize2, Maximize2, X, Wifi, WifiOff } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
-import logoImage from '/logo.png'
+import { SettingsDialog } from './SettingsDialog'
+import logoImage from '/zeus-removebg-preview.png'
 
 interface TitleBarProps {
   connected?: boolean
@@ -42,17 +43,18 @@ export function TitleBar({ connected = false, host = '', port = '', profileManag
       {/* Left - Logo & Title */}
       <div className="flex items-center gap-3 flex-1 animate-fade-in">
         <div className="relative group">
+          <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/40 transition-all duration-500"></div>
           <img 
             src={logoImage} 
             alt="edge logo" 
-            className="w-9 h-9 object-contain relative transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3"
+            className="w-16 h-16 object-contain relative transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
           />
         </div>
         <div>
-          <h1 className="text-base font-bold text-primary">
-            Emulator
+          <h1 className="text-xl font-bold bg-gradient-to-r from-primary via-primary/80 to-primary bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(var(--primary),0.5)] animate-pulse-slow">
+            Zeus
           </h1>
-          <p className="text-[10px] text-muted-foreground">anexya</p>
+          <p className="text-[10px] text-muted-foreground tracking-widest uppercase font-medium">anexya</p>
         </div>
       </div>
 
@@ -83,6 +85,9 @@ export function TitleBar({ connected = false, host = '', port = '', profileManag
       <div className="flex items-center gap-1 animate-fade-in">
         <div className="no-drag">
           {profileManager}
+        </div>
+        <div className="no-drag">
+          <SettingsDialog />
         </div>
         <ThemeToggle />
         

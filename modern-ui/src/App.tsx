@@ -10,6 +10,7 @@ import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
 import { Radio, Smartphone, ScanLine, Code2, Workflow } from 'lucide-react'
+import { applyTheme, getSavedTheme } from './lib/themes'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -85,6 +86,12 @@ function App() {
     if (window.electronAPI?.platform === 'linux') {
       setShowCustomTitlebar(false)
     }
+
+    // Initialize theme colors
+    const savedTheme = getSavedTheme()
+    const isDark = document.documentElement.classList.contains('dark') || 
+                   window.matchMedia('(prefers-color-scheme: dark)').matches
+    applyTheme(savedTheme, isDark)
   }, [])
 
   return (

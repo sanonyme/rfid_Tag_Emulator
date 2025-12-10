@@ -59,7 +59,8 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   }, [])
 
   const handleSend = async () => {
-    await sendOcrMessage(message, true)
+    // Pass false to not clear the input after sending
+    await sendOcrMessage(message, false) // to sustain the OCR input 
   }
 
   const sendOcrMessage = async (msgToSend: string, clearInput: boolean = false) => {

@@ -112,6 +112,14 @@ function createWindow() {
   return mainWindow
 }
 
+// Disable hardware acceleration to save resources/processes
+// app.disableHardwareAcceleration()
+
+// Add flags to reduce process count and memory usage
+app.commandLine.appendSwitch('disable-site-isolation-trials')
+app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors')
+app.commandLine.appendSwitch('renderer-process-limit', '1')
+
 app.whenReady().then(() => {
   console.log('App ready, creating window...')
   const window = createWindow()
