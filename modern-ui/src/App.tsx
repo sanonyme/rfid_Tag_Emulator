@@ -10,7 +10,8 @@ import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
 import { Radio, Smartphone, ScanLine, Code2, Workflow } from 'lucide-react'
-import { applyTheme, getSavedTheme } from './lib/themes'
+import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
+import { SnowOverlay } from './components/SnowOverlay'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -33,7 +34,7 @@ function App() {
   const [fixedEpcList, setFixedEpcList] = useState('')
 
   // Handheld Tab persistent state
-  const [deviceId, setDeviceId] = useState('')
+  // const [deviceId, setDeviceId] = useState('') // Device ID removed as it's not needed for the server
   const [hhUpcList, setHhUpcList] = useState('00000000000001,5\n00000000000002,3')
   const [hhEpcList, setHhEpcList] = useState('')
 
@@ -44,6 +45,7 @@ function App() {
   const [automationSteps, setAutomationSteps] = useState<any[]>([])
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
+  const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
 
   const handleLoadProfile = (profile: Profile) => {
     setHost(profile.host)
@@ -55,7 +57,6 @@ function App() {
     setStartSerial(profile.startSerial)
     setFixedUpcList(profile.fixedUpcList)
     setFixedEpcList(profile.fixedEpcList)
-    setDeviceId(profile.deviceId)
     setHhUpcList(profile.hhUpcList)
     setHhEpcList(profile.hhEpcList)
     setOcrMessage(profile.ocrMessage)
@@ -73,7 +74,7 @@ function App() {
     startSerial,
     fixedUpcList,
     fixedEpcList,
-    deviceId,
+    // deviceId, // Removed
     hhUpcList,
     hhEpcList,
     ocrMessage,
@@ -89,13 +90,24 @@ function App() {
 
     // Initialize theme colors
     const savedTheme = getSavedTheme()
+    setCurrentTheme(savedTheme)
     const isDark = document.documentElement.classList.contains('dark') || 
                    window.matchMedia('(prefers-color-scheme: dark)').matches
     applyTheme(savedTheme, isDark)
+
+    // Listen for theme changes
+    const handleThemeChange = (e: Event) => {
+      const customEvent = e as CustomEvent
+      setCurrentTheme(customEvent.detail.theme)
+    }
+
+    window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange)
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
   }, [])
 
   return (
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
+      {currentTheme === 'christmas' && <SnowOverlay />}
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Large floating orbs */}
@@ -183,8 +195,6 @@ function App() {
             <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
               <HandheldTab 
                 handheldServer={handheldServer} 
-                deviceId={deviceId}
-                setDeviceId={setDeviceId}
                 upcList={hhUpcList}
                 setUpcList={setHhUpcList}
                 epcList={hhEpcList}

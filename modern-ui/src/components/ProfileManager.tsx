@@ -28,7 +28,7 @@ export interface Profile {
   fixedUpcList: string
   fixedEpcList: string
   // Handheld Tab State
-  deviceId: string
+  // deviceId: string // Removed
   hhUpcList: string
   hhEpcList: string
   // OCR Tab State

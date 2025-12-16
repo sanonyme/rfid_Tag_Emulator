@@ -31,6 +31,54 @@ export interface Theme {
 
 export const themes: Theme[] = [
   {
+    name: 'christmas',
+    label: 'Christmas Special',
+    colors: {
+      light: {
+        primary: '358 70% 49%', // #D42426 Red
+        primaryForeground: '0 0% 98%',
+        background: '0 0% 98%', // Snow white
+        foreground: '146 69% 25%', // #146B3A Dark Green
+        card: '0 0% 100%',
+        cardForeground: '146 69% 25%',
+        popover: '0 0% 100%',
+        popoverForeground: '146 69% 25%',
+        secondary: '146 69% 25%', // Green
+        secondaryForeground: '0 0% 98%',
+        muted: '146 30% 90%',
+        mutedForeground: '146 40% 40%',
+        accent: '40 92% 57%', // #F8B229 Gold
+        accentForeground: '0 0% 98%',
+        destructive: '0 84.2% 60.2%',
+        destructiveForeground: '0 0% 98%',
+        border: '146 30% 85%',
+        input: '146 30% 85%',
+        ring: '358 70% 49%',
+      },
+      dark: {
+        primary: '358 70% 60%', // Red
+        primaryForeground: '0 0% 98%',
+        background: '146 69% 10%', // Dark Green bg
+        foreground: '0 0% 98%',
+        card: '146 69% 15%',
+        cardForeground: '0 0% 98%',
+        popover: '146 69% 15%',
+        popoverForeground: '0 0% 98%',
+        secondary: '358 70% 49%', // Red
+        secondaryForeground: '0 0% 98%',
+        muted: '146 40% 20%',
+        mutedForeground: '146 30% 70%',
+        accent: '40 92% 57%', // Gold
+        accentForeground: '0 0% 98%',
+        destructive: '0 62.8% 30.6%',
+        destructiveForeground: '0 0% 98%',
+        border: '146 40% 25%',
+        input: '146 40% 25%',
+        ring: '358 70% 60%',
+      },
+    },
+  },
+  {
     name: 'terracotta',
     label: 'Terracotta (Original)',
     colors: {
@@ -320,6 +368,8 @@ export const themes: Theme[] = [
   },
 ]
 
+export const THEME_CHANGE_EVENT = 'theme-change'
+
 export function applyTheme(themeName: string, isDark: boolean) {
   const theme = themes.find((t) => t.name === themeName) || themes[0]
   const colors = isDark ? theme.colors.dark : theme.colors.light
@@ -331,6 +381,9 @@ export function applyTheme(themeName: string, isDark: boolean) {
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`
     root.style.setProperty(cssVar, value)
   })
+
+  // Dispatch custom event for components that need to react to theme changes
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: themeName, isDark } }))
 }
 
 export function getSavedTheme(): string {

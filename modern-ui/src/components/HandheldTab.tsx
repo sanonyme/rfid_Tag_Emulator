@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
@@ -14,8 +12,6 @@ import { TagImporter } from './TagImporter'
 
 interface HandheldTabProps {
   handheldServer: HandheldServerClient
-  deviceId: string
-  setDeviceId: (deviceId: string) => void
   upcList: string
   setUpcList: (upcList: string) => void
   epcList: string
@@ -26,8 +22,6 @@ interface HandheldTabProps {
 
 export function HandheldTab({ 
   handheldServer, 
-  deviceId,
-  setDeviceId,
   upcList,
   setUpcList,
   epcList,
@@ -37,7 +31,7 @@ export function HandheldTab({
 }: HandheldTabProps) {
   const [log, setLog] = useState<string[]>([])
   const [sending, setSending] = useState(false)
-  const [subscribed, setSubscribed] = useState(false)
+  const [serverRunning, setServerRunning] = useState(false)
   const logEndRef = useRef<HTMLDivElement>(null)
 
   const handleImportUpc = (content: string) => {
@@ -65,7 +59,7 @@ export function HandheldTab({
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
 
-  const handleSubscribe = async () => {
+  const handleStartServer = async () => {
     // Java EmulatorUI.java subscribeDevice() - lines 610-620
     // String deviceId = hhDeviceIdField.getText().trim();
     // if (!handheldServer.isRunning()) {
@@ -82,12 +76,8 @@ export function HandheldTab({
       handheldServer.start(addLog, addLog)
     }
     
-    if (deviceId.trim()) {
-      addLog(`Subscribed to device: ${deviceId}`)
-    } else {
-      addLog('Subscribed')
-    }
-    setSubscribed(true)
+    addLog('Server started')
+    setServerRunning(true)
   }
 
   const handleGenerateAndSend = async () => {
@@ -139,7 +129,7 @@ export function HandheldTab({
     const running = await handheldServer.isRunning()
     console.log('HandheldTab: Before sendEpcs, isRunning =', running)
     if (!running) {
-      addLog('Error: Handheld server is not running. Click Subscribe first.')
+      addLog('Error: Handheld server is not running. Click Start Server first.')
       return
     }
 
@@ -178,25 +168,15 @@ export function HandheldTab({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 pb-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="deviceId" className="text-xs">Device ID (optional)</Label>
-              <Input
-                id="deviceId"
-                value={deviceId}
-                onChange={(e) => setDeviceId(e.target.value)}
-                placeholder="Enter device ID"
-                className="h-8"
-              />
-            </div>
             <Button
-              onClick={handleSubscribe}
+              onClick={handleStartServer}
               className="w-full h-8"
               size="sm"
             >
               <Smartphone className="w-3 h-3 mr-1.5" />
-              Subscribe
+              Start Server
             </Button>
-            {subscribed && (
+            {serverRunning && (
               <Badge className="w-full justify-center text-xs py-0.5 bg-green-500/20 border-green-500/30 text-green-700 dark:text-green-400">
                 <span className="relative flex h-2 w-2 mr-1.5">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>

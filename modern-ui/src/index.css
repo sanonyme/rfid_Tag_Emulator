@@ -303,3 +303,37 @@
 .animate-float-reverse {
   animation: float-reverse 25s ease-in-out infinite;
 }
+
+/* Snow Effect */
+@keyframes snow {
+  0% {
+    transform: translateY(-10vh) translateX(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh) translateX(20px);
+    opacity: 0.3;
+  }
+}
+
+.snowflake {
+  position: fixed;
+  top: -10vh;
+  color: hsl(var(--foreground));
+  font-size: 1.5em;
+  font-family: Arial, sans-serif;
+  z-index: 9999;
+  pointer-events: none;
+  animation: snow 10s linear infinite;
+  opacity: 0.6;
+}
+
+.snowflake:nth-child(2n) {
+  animation-duration: 7s;
+  font-size: 1em;
+}
+
+.snowflake:nth-child(3n) {
+  animation-duration: 12s;
+  font-size: 2em;
+}
