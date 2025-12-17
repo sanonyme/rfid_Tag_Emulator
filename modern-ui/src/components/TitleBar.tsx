@@ -2,6 +2,7 @@ import { Minimize2, Maximize2, X, Wifi, WifiOff } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
 import { SettingsDialog } from './SettingsDialog'
 import logoImage from '/zeus-removebg-preview.png'
+import packageJson from '../../package.json' // Import version from package.json
 
 interface TitleBarProps {
   connected?: boolean
@@ -54,7 +55,11 @@ export function TitleBar({ connected = false, host = '', port = '', profileManag
           <h1 className="text-xl font-bold bg-gradient-to-r from-primary via-primary/80 to-primary bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(var(--primary),0.5)] animate-pulse-slow">
             Zeus
           </h1>
-          <p className="text-[10px] text-muted-foreground tracking-widest uppercase font-medium">anexya</p>
+          <p className="text-[10px] text-muted-foreground tracking-widest uppercase font-medium flex items-center gap-2">
+            anexya
+            <span className="opacity-50">|</span>
+            v{packageJson.version}
+          </p>
         </div>
       </div>
 

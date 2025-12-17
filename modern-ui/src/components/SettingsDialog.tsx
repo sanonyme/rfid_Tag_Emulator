@@ -111,12 +111,13 @@ export function SettingsDialog() {
           <div className="grid grid-cols-4 items-center gap-4">
             <Label className="text-right">Updates</Label>
             <div className="col-span-3 flex flex-col gap-2">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button 
                   variant="outline" 
                   size="sm" 
                   onClick={checkForUpdates}
                   disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                  className="flex-1 min-w-[140px]"
                 >
                   {updateStatus === 'checking' ? (
                     <>
@@ -132,9 +133,9 @@ export function SettingsDialog() {
                 </Button>
                 
                 {updateStatus === 'downloaded' && (
-                  <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white">
+                  <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white flex-1 min-w-[140px]">
                     <Download className="mr-2 h-4 w-4" />
-                    Restart to Update
+                    Restart
                   </Button>
                 )}
               </div>
