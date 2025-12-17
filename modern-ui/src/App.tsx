@@ -140,26 +140,26 @@ function App() {
       {/* Main Content */}
       <main className="flex-1 container px-6 py-6 overflow-hidden relative z-10">
         <Tabs defaultValue="fixed" className="h-full flex flex-col">
-          <TabsList className="grid w-full max-w-2xl mx-auto grid-cols-5 mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
-            <TabsTrigger value="fixed" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Radio className="w-4 h-4" />
-              <span className="font-medium">Fixed Reader</span>
+          <TabsList className="flex w-full max-w-2xl mx-auto mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
+            <TabsTrigger value="fixed" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Radio className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">Fixed Reader</span>
             </TabsTrigger>
-            <TabsTrigger value="handheld" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Smartphone className="w-4 h-4" />
-              <span className="font-medium">Handheld</span>
+            <TabsTrigger value="handheld" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Smartphone className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">Handheld</span>
             </TabsTrigger>
-            <TabsTrigger value="ocr" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <ScanLine className="w-4 h-4" />
-              <span className="font-medium">OCR</span>
+            <TabsTrigger value="ocr" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <ScanLine className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">OCR</span>
             </TabsTrigger>
-            <TabsTrigger value="decoder" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Code2 className="w-4 h-4" />
-              <span className="font-medium">Decoder</span>
+            <TabsTrigger value="decoder" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Code2 className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">Decoder</span>
             </TabsTrigger>
-            <TabsTrigger value="automation" className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Workflow className="w-4 h-4" />
-              <span className="font-medium">Auto</span>
+            <TabsTrigger value="automation" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <Workflow className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">Auto</span>
             </TabsTrigger>
           </TabsList>
 

@@ -1,10 +1,10 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "2.0.0",
+  "version": "3.7.5",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Edge RFID Team",
-    "email": "support@example.com"
+    "email": "samichemaly30@gmail.com"
   },
   "homepage": "https://github.com/sanonyme/rfid_Tag_Emulator",
   "main": "dist-electron/main.js",
@@ -15,7 +15,8 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env OPEN_DEVTOOLS=true electron .\"",
     "electron:clean": "concurrently \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder"
+    "electron:build": "vite build && electron-builder",
+    "release": "vite build && electron-builder --publish always"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.15",
@@ -111,6 +112,13 @@
         "dmg"
       ],
       "icon": "resources/app-icon-1024.png"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "sanonyme",
+        "repo": "rfid_Tag_Emulator"
+      }
+    ]
   }
 }

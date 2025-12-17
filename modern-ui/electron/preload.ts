@@ -52,5 +52,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('ocr-success', (_event, message) => callback(message)),
   onOcrError: (callback: (message: string) => void) => 
     ipcRenderer.on('ocr-error', (_event, message) => callback(message)),
+
+  // Auto Updater
+  checkForUpdate: () => ipcRenderer.send('check-for-update'),
+  quitAndInstall: () => ipcRenderer.send('quit-and-install'),
+  
+  onCheckingForUpdate: (callback: () => void) => 
+    ipcRenderer.on('checking-for-update', () => callback()),
+  onUpdateAvailable: (callback: (info: any) => void) => 
+    ipcRenderer.on('update-available', (_event, info) => callback(info)),
+  onUpdateNotAvailable: (callback: (info: any) => void) => 
+    ipcRenderer.on('update-not-available', (_event, info) => callback(info)),
+  onUpdateError: (callback: (message: string) => void) => 
+    ipcRenderer.on('update-error', (_event, message) => callback(message)),
+  onDownloadProgress: (callback: (progress: any) => void) => 
+    ipcRenderer.on('download-progress', (_event, progress) => callback(progress)),
+  onUpdateDownloaded: (callback: (info: any) => void) => 
+    ipcRenderer.on('update-downloaded', (_event, info) => callback(info)),
 })
 

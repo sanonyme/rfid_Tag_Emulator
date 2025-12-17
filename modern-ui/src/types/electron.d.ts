@@ -36,6 +36,16 @@ export interface ElectronAPI {
   ocrSend: (host: string, message: string) => void
   onOcrSuccess: (callback: (message: string) => void) => void
   onOcrError: (callback: (message: string) => void) => void
+
+  // Auto Updater
+  checkForUpdate: () => void
+  quitAndInstall: () => void
+  onCheckingForUpdate: (callback: () => void) => void
+  onUpdateAvailable: (callback: (info: any) => void) => void
+  onUpdateNotAvailable: (callback: (info: any) => void) => void
+  onUpdateError: (callback: (message: string) => void) => void
+  onDownloadProgress: (callback: (progress: any) => void) => void
+  onUpdateDownloaded: (callback: (info: any) => void) => void
 }
 
 declare global {

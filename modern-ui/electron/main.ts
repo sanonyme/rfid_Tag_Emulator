@@ -1,10 +1,21 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { autoUpdater } from 'electron-updater'
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage } from './tcp-handler.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+// Auto-updater logging
+autoUpdater.logger = console
+// @ts-ignore
+autoUpdater.logger.transports = { 
+  file: { 
+    level: 'info',
+    // Mock the file transport if needed or let electron-updater handle it
+  } 
+}
 
 // TCP handlers
 let tcpHandler: TCPEmulatorHandler | null = null
@@ -223,6 +234,58 @@ app.whenReady().then(() => {
     } else {
       console.error('OCR: No mainWindow available')
     }
+  })
+
+  // Auto Updater IPC handlers
+  ipcMain.on('check-for-update', () => {
+    console.log('Checking for updates...')
+    if (isDev) {
+      // In dev mode, we can't really check for updates effectively without a lot of setup,
+      // but we can simulate or just log.
+      console.log('Skipping update check in dev mode')
+      mainWindow?.webContents.send('update-not-available')
+    } else {
+      autoUpdater.checkForUpdatesAndNotify()
+    }
+  })
+
+  ipcMain.on('quit-and-install', () => {
+    console.log('Quitting and installing update...')
+    autoUpdater.quitAndInstall()
+  })
+
+  // Auto Updater Events
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for update...')
+    mainWindow?.webContents.send('checking-for-update')
+  })
+
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info)
+    mainWindow?.webContents.send('update-available', info)
+  })
+
+  autoUpdater.on('update-not-available', (info) => {
+    console.log('Update not available:', info)
+    mainWindow?.webContents.send('update-not-available', info)
+  })
+
+  autoUpdater.on('error', (err) => {
+    console.error('Update error:', err)
+    mainWindow?.webContents.send('update-error', err.message)
+  })
+
+  autoUpdater.on('download-progress', (progressObj) => {
+    let log_message = "Download speed: " + progressObj.bytesPerSecond
+    log_message = log_message + ' - Downloaded ' + progressObj.percent + '%'
+    log_message = log_message + ' (' + progressObj.transferred + "/" + progressObj.total + ')'
+    console.log(log_message)
+    mainWindow?.webContents.send('download-progress', progressObj)
+  })
+
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info)
+    mainWindow?.webContents.send('update-downloaded', info)
   })
 })
 

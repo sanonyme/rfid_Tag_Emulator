@@ -366,6 +366,54 @@ export const themes: Theme[] = [
       },
     },
   },
+  {
+    name: 'cyberpunk',
+    label: 'Neon City (Cyberpunk)',
+    colors: {
+      light: {
+        primary: '280 100% 60%', // #AA00FF Purple
+        primaryForeground: '0 0% 100%',
+        background: '280 5% 96%', // Light purple tint
+        foreground: '280 50% 10%', // Dark purple
+        card: '0 0% 100%',
+        cardForeground: '280 50% 10%',
+        popover: '0 0% 100%',
+        popoverForeground: '280 50% 10%',
+        secondary: '180 100% 40%', // Cyan
+        secondaryForeground: '0 0% 100%',
+        muted: '280 20% 90%',
+        mutedForeground: '280 40% 40%',
+        accent: '320 100% 50%', // Pink
+        accentForeground: '0 0% 100%',
+        destructive: '0 100% 50%',
+        destructiveForeground: '0 0% 100%',
+        border: '280 30% 80%',
+        input: '280 30% 80%',
+        ring: '280 100% 60%',
+      },
+      dark: {
+        primary: '300 100% 50%', // Neon Pink #FF00FF
+        primaryForeground: '0 0% 0%',
+        background: '260 50% 8%', // Deep Purple BG
+        foreground: '180 100% 70%', // Cyan Text
+        card: '260 50% 12%',
+        cardForeground: '180 100% 70%',
+        popover: '260 50% 12%',
+        popoverForeground: '180 100% 70%',
+        secondary: '180 100% 50%', // Neon Cyan #00FFFF
+        secondaryForeground: '0 0% 0%',
+        muted: '260 40% 20%',
+        mutedForeground: '300 100% 80%',
+        accent: '60 100% 50%', // Neon Yellow
+        accentForeground: '0 0% 0%',
+        destructive: '0 100% 60%', // Bright Red
+        destructiveForeground: '0 0% 100%',
+        border: '300 100% 40%',
+        input: '300 100% 40%',
+        ring: '180 100% 50%',
+      },
+    },
+  },
 ]
 
 export const THEME_CHANGE_EVENT = 'theme-change'

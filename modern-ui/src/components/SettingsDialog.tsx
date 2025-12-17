@@ -1,4 +1,4 @@
-import { Settings, Palette } from 'lucide-react'
+import { Settings, Palette, RefreshCw, Download, CheckCircle, AlertCircle } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -18,14 +18,34 @@ import {
 import { Label } from './ui/label'
 import { themes, applyTheme, saveTheme, getSavedTheme } from '../lib/themes'
 import { useState, useEffect } from 'react'
+import { Progress } from './ui/scroll-area' // Assuming Progress component exists or I'll use simple div
 
 export function SettingsDialog() {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
+  const [downloadProgress, setDownloadProgress] = useState(0)
+  const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
     // Initial application of theme
     const isDark = document.documentElement.classList.contains('dark')
     applyTheme(currentTheme, isDark)
+
+    // Update listeners
+    if (window.electronAPI) {
+      window.electronAPI.onCheckingForUpdate(() => setUpdateStatus('checking'))
+      window.electronAPI.onUpdateAvailable(() => setUpdateStatus('available'))
+      window.electronAPI.onUpdateNotAvailable(() => setUpdateStatus('not-available'))
+      window.electronAPI.onUpdateError((msg) => {
+        setUpdateStatus('error')
+        setErrorMessage(msg)
+      })
+      window.electronAPI.onDownloadProgress((progress) => {
+        setUpdateStatus('downloading')
+        setDownloadProgress(Math.round(progress.percent))
+      })
+      window.electronAPI.onUpdateDownloaded(() => setUpdateStatus('downloaded'))
+    }
   }, [])
 
   const handleThemeChange = (value: string) => {
@@ -33,6 +53,20 @@ export function SettingsDialog() {
     saveTheme(value)
     const isDark = document.documentElement.classList.contains('dark')
     applyTheme(value, isDark)
+  }
+
+  const checkForUpdates = () => {
+    if (window.electronAPI) {
+      setUpdateStatus('checking')
+      setErrorMessage('')
+      window.electronAPI.checkForUpdate()
+    }
+  }
+
+  const quitAndInstall = () => {
+    if (window.electronAPI) {
+      window.electronAPI.quitAndInstall()
+    }
   }
 
   return (
@@ -73,11 +107,77 @@ export function SettingsDialog() {
               </Select>
             </div>
           </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label className="text-right">Updates</Label>
+            <div className="col-span-3 flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={checkForUpdates}
+                  disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                >
+                  {updateStatus === 'checking' ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      Checking...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Check for Updates
+                    </>
+                  )}
+                </Button>
+                
+                {updateStatus === 'downloaded' && (
+                  <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white">
+                    <Download className="mr-2 h-4 w-4" />
+                    Restart to Update
+                  </Button>
+                )}
+              </div>
+
+              {updateStatus === 'not-available' && (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3" /> App is up to date
+                </span>
+              )}
+              
+              {updateStatus === 'available' && (
+                <span className="text-xs text-blue-500 flex items-center gap-1">
+                  <Download className="h-3 w-3" /> Update available, downloading...
+                </span>
+              )}
+
+              {updateStatus === 'downloading' && (
+                <div className="w-full space-y-1">
+                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-300" 
+                      style={{ width: `${downloadProgress}%` }} 
+                    />
+                  </div>
+                  <span className="text-xs text-muted-foreground block text-right">
+                    {downloadProgress}%
+                  </span>
+                </div>
+              )}
+
+              {updateStatus === 'error' && (
+                <span className="text-xs text-destructive flex items-center gap-1">
+                  <AlertCircle className="h-3 w-3" /> {errorMessage || 'Update failed'}
+                </span>
+              )}
+            </div>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
   )
 }
+
 
 
 
