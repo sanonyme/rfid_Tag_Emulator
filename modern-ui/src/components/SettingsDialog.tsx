@@ -72,8 +72,11 @@ export function SettingsDialog() {
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="rounded-full">
+        <Button variant="ghost" size="icon" className="rounded-full relative">
           <Settings className="h-5 w-5" />
+          {(updateStatus === 'available' || updateStatus === 'downloaded') && (
+            <span className="absolute top-0 right-0 h-2.5 w-2.5 rounded-full bg-red-600 border-2 border-background animate-pulse" />
+          )}
           <span className="sr-only">Settings</span>
         </Button>
       </DialogTrigger>
