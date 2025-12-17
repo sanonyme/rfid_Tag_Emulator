@@ -271,54 +271,6 @@ export const themes: Theme[] = [
     },
   },
   {
-    name: 'warm-beige',
-    label: 'Warm Beige & Mocha',
-    colors: {
-      light: {
-        primary: '30 35% 50%', // #DCC5B2 (Darker beige/mocha for primary) -> approximated as brownish
-        primaryForeground: '30 20% 15%',
-        background: '36 33% 97%', // #FAF7F3
-        foreground: '10 40% 20%', // Dark warm brown
-        card: '0 0% 100%',
-        cardForeground: '10 40% 20%',
-        popover: '0 0% 100%',
-        popoverForeground: '10 40% 20%',
-        secondary: '35 43% 88%', // #F0E4D3
-        secondaryForeground: '10 40% 20%',
-        muted: '30 35% 78%', // #DCC5B2
-        mutedForeground: '10 30% 40%',
-        accent: '9 43% 73%', // #D9A299
-        accentForeground: '0 0% 100%',
-        destructive: '0 84.2% 60.2%',
-        destructiveForeground: '0 0% 98%',
-        border: '30 30% 85%',
-        input: '30 30% 85%',
-        ring: '9 43% 73%',
-      },
-      dark: {
-        primary: '9 43% 73%', // #D9A299
-        primaryForeground: '10 40% 20%',
-        background: '10 20% 10%', // Dark warm brown
-        foreground: '36 33% 97%', // #FAF7F3
-        card: '10 20% 15%',
-        cardForeground: '36 33% 97%',
-        popover: '10 20% 15%',
-        popoverForeground: '36 33% 97%',
-        secondary: '30 35% 50%', // #DCC5B2
-        secondaryForeground: '10 40% 20%',
-        muted: '10 20% 25%',
-        mutedForeground: '30 30% 70%',
-        accent: '35 43% 88%', // #F0E4D3
-        accentForeground: '10 40% 20%',
-        destructive: '0 62.8% 30.6%',
-        destructiveForeground: '0 0% 98%',
-        border: '10 20% 30%',
-        input: '10 20% 30%',
-        ring: '9 43% 73%',
-      },
-    },
-  },
-  {
     name: 'john',
     label: 'John 67',
     colors: {
