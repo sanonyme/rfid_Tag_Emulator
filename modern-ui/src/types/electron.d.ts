@@ -39,6 +39,7 @@ export interface ElectronAPI {
 
   // Auto Updater
   checkForUpdate: () => void
+  startDownload: () => void
   quitAndInstall: () => void
   onCheckingForUpdate: (callback: () => void) => void
   onUpdateAvailable: (callback: (info: any) => void) => void

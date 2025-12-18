@@ -237,13 +237,15 @@ app.whenReady().then(() => {
   })
 
   // Auto Updater IPC handlers
-  ipcMain.on('check-for-update', () => {
-    console.log('Checking for updates...')
+    // Auto-download is enabled by default. We want to disable it to let the user choose.
+    autoUpdater.autoDownload = false
+
     if (isDev) {
       console.log('Skipping update check in dev mode')
       mainWindow?.webContents.send('update-not-available')
     } else {
-      autoUpdater.checkForUpdatesAndNotify()
+      // This will check for updates but NOT download them automatically
+      autoUpdater.checkForUpdates()
     }
   })
 
@@ -251,17 +253,22 @@ app.whenReady().then(() => {
   setInterval(() => {
     if (!isDev) {
       console.log('Running hourly update check...')
-      autoUpdater.checkForUpdatesAndNotify()
+      autoUpdater.checkForUpdates()
     }
   }, 60 * 60 * 1000)
 
-  // Initial check on app start (after a short delay to ensure window is ready)
+  // Initial check on app start
   setTimeout(() => {
     if (!isDev) {
       console.log('Running initial update check...')
-      autoUpdater.checkForUpdatesAndNotify()
+      autoUpdater.checkForUpdates()
     }
   }, 3000)
+
+  ipcMain.on('start-download', () => {
+    console.log('User requested download...')
+    autoUpdater.downloadUpdate()
+  })
 
   ipcMain.on('quit-and-install', () => {
     console.log('Quitting and installing update...')

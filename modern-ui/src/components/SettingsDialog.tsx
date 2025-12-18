@@ -63,6 +63,13 @@ export function SettingsDialog() {
     }
   }
 
+  const startDownload = () => {
+    if (window.electronAPI) {
+      setUpdateStatus('downloading')
+      window.electronAPI.startDownload()
+    }
+  }
+
   const quitAndInstall = () => {
     if (window.electronAPI) {
       window.electronAPI.quitAndInstall()
@@ -135,6 +142,13 @@ export function SettingsDialog() {
                   )}
                 </Button>
                 
+                {updateStatus === 'available' && (
+                  <Button size="sm" onClick={startDownload} className="flex-1 min-w-[140px]">
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </Button>
+                )}
+
                 {updateStatus === 'downloaded' && (
                   <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white flex-1 min-w-[140px]">
                     <Download className="mr-2 h-4 w-4" />
@@ -151,7 +165,7 @@ export function SettingsDialog() {
               
               {updateStatus === 'available' && (
                 <span className="text-xs text-blue-500 flex items-center gap-1">
-                  <Download className="h-3 w-3" /> Update available, downloading...
+                  <Download className="h-3 w-3" /> Update available
                 </span>
               )}
 
