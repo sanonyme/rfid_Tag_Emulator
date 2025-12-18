@@ -240,14 +240,28 @@ app.whenReady().then(() => {
   ipcMain.on('check-for-update', () => {
     console.log('Checking for updates...')
     if (isDev) {
-      // In dev mode, we can't really check for updates effectively without a lot of setup,
-      // but we can simulate or just log.
       console.log('Skipping update check in dev mode')
       mainWindow?.webContents.send('update-not-available')
     } else {
       autoUpdater.checkForUpdatesAndNotify()
     }
   })
+
+  // Check for updates every hour
+  setInterval(() => {
+    if (!isDev) {
+      console.log('Running hourly update check...')
+      autoUpdater.checkForUpdatesAndNotify()
+    }
+  }, 60 * 60 * 1000)
+
+  // Initial check on app start (after a short delay to ensure window is ready)
+  setTimeout(() => {
+    if (!isDev) {
+      console.log('Running initial update check...')
+      autoUpdater.checkForUpdatesAndNotify()
+    }
+  }, 3000)
 
   ipcMain.on('quit-and-install', () => {
     console.log('Quitting and installing update...')
