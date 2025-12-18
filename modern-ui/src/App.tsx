@@ -6,10 +6,11 @@ import { HandheldTab } from './components/HandheldTab'
 import { OCRTab } from './components/OCRTab'
 import { DecoderTab } from './components/DecoderTab'
 import { AutomationTab } from './components/AutomationTab'
+import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2, Workflow } from 'lucide-react'
+import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
 
@@ -161,6 +162,10 @@ function App() {
               <Workflow className="w-4 h-4 shrink-0" />
               <span className="font-medium whitespace-nowrap">Auto</span>
             </TabsTrigger>
+            <TabsTrigger value="generator" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <QrCode className="w-4 h-4 shrink-0" />
+              <span className="font-medium whitespace-nowrap">Gen</span>
+            </TabsTrigger>
           </TabsList>
 
           <div className="flex-1 min-h-0 overflow-auto">
@@ -227,6 +232,10 @@ function App() {
                 steps={automationSteps}
                 setSteps={setAutomationSteps}
               />
+            </TabsContent>
+
+            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <BarcodeGenerator />
             </TabsContent>
           </div>
         </Tabs>

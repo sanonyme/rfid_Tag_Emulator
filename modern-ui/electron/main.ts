@@ -237,6 +237,8 @@ app.whenReady().then(() => {
   })
 
   // Auto Updater IPC handlers
+  ipcMain.on('check-for-update', () => {
+    console.log('Checking for updates...')
     // Auto-download is enabled by default. We want to disable it to let the user choose.
     autoUpdater.autoDownload = false
 
