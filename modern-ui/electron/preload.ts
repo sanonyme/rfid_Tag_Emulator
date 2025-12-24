@@ -70,5 +70,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('download-progress', (_event, progress) => callback(progress)),
   onUpdateDownloaded: (callback: (info: any) => void) => 
     ipcRenderer.on('update-downloaded', (_event, info) => callback(info)),
+
+  // ALE API
+  aleRequest: (url: string, options: any) => ipcRenderer.invoke('ale-request', url, options),
 })
 

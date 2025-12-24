@@ -12,6 +12,7 @@ dist
 dist-electron
 release
 *.local
+.env
 
 # Editor directories and files
 .vscode/*
@@ -23,4 +24,3 @@ release
 *.njsproj
 *.sln
 *.sw?
-

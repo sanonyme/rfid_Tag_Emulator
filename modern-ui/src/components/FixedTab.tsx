@@ -5,9 +5,19 @@ import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
-import { Radio, Zap, StopCircle, Activity } from 'lucide-react'
+import { Zap, StopCircle, Activity, RefreshCw } from 'lucide-react'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
+import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "./ui/dialog"
+import { Check, ChevronsUpDown } from "lucide-react"
 
 interface FixedTabProps {
   emulator: TCPEmulatorClient
@@ -74,6 +84,11 @@ export function FixedTab({
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
 
+  // API State
+  const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false)
+  const [apiClient] = useState(() => new AleApiClient())
+
   const addLog = (message: string) => {
     setLog(prev => [...prev, `[${formatTime()}] ${message}`])
   }
@@ -93,41 +108,57 @@ export function FixedTab({
     syncConnectionState()
   }, [])
 
-  const handleConnect = async () => {
-    // Check if already connected
-    const isConnected = await emulator.isConnected()
-    if (isConnected) {
-      addLog('Already connected')
-      setConnected(true) // Ensure state is synced
-      return
+  const fetchLogicalDevices = async () => {
+    if (!host) {
+        addLog('Error: Host is required to fetch logical devices')
+        return
     }
-
-    if (!host || !port) {
-      addLog('Error: Host and port are required')
-      return
+    
+    setIsLoadingDevices(true)
+    addLog(`Fetching logical devices from ${host}:8080...`)
+    
+    try {
+        const devices = await apiClient.getLogicalDevices(host, '8080')
+        setLogicalDevices(devices)
+        addLog(`Successfully fetched ${devices.length} logical devices`)
+        
+        // Auto-select first device if none selected
+        if (devices.length > 0 && !uid) {
+            setUid(devices[0].uid)
+        }
+    } catch (error: any) {
+        addLog(`Error fetching devices: ${error.message}`)
+    } finally {
+        setIsLoadingDevices(false)
     }
-
-    addLog(`Connecting to ${host}:${port}...`)
-    await emulator.connect(
-      host,
-      parseInt(port),
-      (message) => {
-        addLog(message)
-        setConnected(true)
-      },
-      (error) => {
-        addLog(error)
-        setConnected(false)
-      }
-    )
   }
 
-  const handleDisconnect = async () => {
-    await emulator.disconnect((message) => {
-      addLog(message)
-      setConnected(false)
-    })
+  const selectedUids = uid ? uid.split(',').filter(Boolean) : []
+
+  const toggleDevice = (deviceUid: string) => {
+    const current = new Set(selectedUids)
+    if (current.has(deviceUid)) {
+        current.delete(deviceUid)
+    } else {
+        current.add(deviceUid)
+    }
+    setUid(Array.from(current).join(','))
   }
+
+  const selectAll = () => {
+    setUid(logicalDevices.map(d => d.uid).join(','))
+  }
+
+  const deselectAll = () => {
+    setUid('')
+  }
+
+  // Auto-fetch devices when connected
+  useEffect(() => {
+    if (connected && host) {
+      fetchLogicalDevices()
+    }
+  }, [connected])
 
   const handleSendTags = async (isLooping = false) => {
     const isConnected = await emulator.isConnected()
@@ -151,14 +182,19 @@ export function FixedTab({
         const [epc, countStr, customTid] = trimmed.split(',')
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && epc) {
-          for (let i = 0; i < count; i++) {
-            tags.push({
-              epc: epc.trim(),
-              tid: customTid?.trim() || epc.trim(),
-              uid,
-              antenna: parseInt(antenna),
-              rssi,
-            })
+          // If no devices selected, use empty string (though usually we want at least one)
+          const targetUids = selectedUids.length > 0 ? selectedUids : ['']
+          
+          for (const targetUid of targetUids) {
+              for (let i = 0; i < count; i++) {
+                tags.push({
+                  epc: epc.trim(),
+                  tid: customTid?.trim() || epc.trim(),
+                  uid: targetUid, // Use specific device UID
+                  antenna: parseInt(antenna),
+                  rssi,
+                })
+              }
           }
         }
       }
@@ -175,14 +211,19 @@ export function FixedTab({
         const count = parseInt(countStr?.trim() || '0')
         if (count > 0 && upc) {
           const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
-          for (const epc of epcs) {
-            tags.push({
-              epc,
-              tid: customTid?.trim() || epc,
-              uid,
-              antenna: parseInt(antenna),
-              rssi,
-            })
+          
+          const targetUids = selectedUids.length > 0 ? selectedUids : ['']
+
+          for (const targetUid of targetUids) {
+              for (const epc of epcs) {
+                tags.push({
+                  epc,
+                  tid: customTid?.trim() || epc,
+                  uid: targetUid, // Use specific device UID
+                  antenna: parseInt(antenna),
+                  rssi,
+                })
+              }
           }
           serial += count
         }
@@ -196,6 +237,12 @@ export function FixedTab({
         loopingRef.current = false
       }
       return
+    }
+    
+    if (selectedUids.length === 0) {
+        addLog('Warning: No logical devices selected. Sending without UID.')
+    } else {
+        addLog(`Sending to ${selectedUids.length} device(s)`)
     }
 
     addLog(`Sending ${tags.length} tag(s) with driver: ${driver}`)
@@ -247,54 +294,7 @@ export function FixedTab({
     <div className="grid grid-cols-[320px_1fr] gap-6 h-full">
       {/* Left Sidebar - Configuration */}
       <div className="space-y-4 overflow-y-auto pr-2">
-        {/* Connection Settings */}
-        <Card className="border-border/50 bg-card transition-all duration-300">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Radio className="w-5 h-5 text-primary animate-pulse-slow" />
-              Connection
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="host">Host</Label>
-              <Input
-                id="host"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-                disabled={connected}
-                placeholder="192.168.1.100"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="port">Port</Label>
-              <Input
-                id="port"
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                disabled={connected}
-              />
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={handleConnect}
-                disabled={connected}
-                className="flex-1"
-              >
-                Connect
-              </Button>
-              <Button
-                onClick={handleDisconnect}
-                disabled={!connected}
-                variant="outline"
-                className="flex-1"
-              >
-                Disconnect
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
+        
         {/* Tag Defaults */}
         <Card className="border-border/50 bg-card transition-all duration-300">
           <CardHeader className="pb-4">
@@ -334,14 +334,78 @@ export function FixedTab({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Logical Device Selection */}
             <div className="space-y-2">
-              <Label htmlFor="uid">UID</Label>
-              <Input
-                id="uid"
-                value={uid}
-                onChange={(e) => setUid(e.target.value)}
-              />
+                <div className="flex items-center justify-between">
+                    <Label htmlFor="logical-device">Logical Device</Label>
+                </div>
+                <div className="flex gap-2">
+                    <Dialog>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" className="flex-1 justify-between">
+                                <span className="truncate">
+                                    {selectedUids.length === 0 
+                                        ? "Select Device(s)" 
+                                        : selectedUids.length === 1
+                                            ? logicalDevices.find(d => d.uid === selectedUids[0])?.name || selectedUids[0]
+                                            : `${selectedUids.length} Devices Selected`}
+                                </span>
+                                <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent className="max-h-[80vh] flex flex-col">
+                            <DialogHeader>
+                                <DialogTitle>Select Logical Devices</DialogTitle>
+                                <DialogDescription>
+                                    Select the devices to send tags to.
+                                </DialogDescription>
+                            </DialogHeader>
+                            <div className="flex gap-2 mb-2">
+                                <Button size="sm" variant="secondary" onClick={selectAll} className="flex-1">Select All</Button>
+                                <Button size="sm" variant="ghost" onClick={deselectAll} className="flex-1">Deselect All</Button>
+                            </div>
+                            <ScrollArea className="flex-1 pr-4">
+                                <div className="space-y-2">
+                                    {logicalDevices.length === 0 ? (
+                                        <div className="text-center py-4 text-muted-foreground">
+                                            No devices found. Click refresh to fetch.
+                                        </div>
+                                    ) : (
+                                        logicalDevices.map((device) => (
+                                            <div
+                                                key={device.uid}
+                                                className="flex items-center space-x-2 p-2 rounded hover:bg-accent cursor-pointer"
+                                                onClick={() => toggleDevice(device.uid)}
+                                            >
+                                                <div className={`
+                                                    w-4 h-4 border rounded flex items-center justify-center
+                                                    ${selectedUids.includes(device.uid) ? 'bg-primary border-primary text-primary-foreground' : 'border-input'}
+                                                `}>
+                                                    {selectedUids.includes(device.uid) && <Check className="h-3 w-3" />}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <p className="text-sm font-medium">{device.name}</p>
+                                                    <p className="text-xs text-muted-foreground font-mono">{device.uid}</p>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </ScrollArea>
+                        </DialogContent>
+                    </Dialog>
+                    <Button 
+                        size="icon" 
+                        variant="outline" 
+                        onClick={fetchLogicalDevices}
+                        disabled={isLoadingDevices || !host}
+                        title="Fetch Logical Devices"
+                    >
+                        <RefreshCw className={`h-4 w-4 ${isLoadingDevices ? 'animate-spin' : ''}`} />
+                    </Button>
+                </div>
             </div>
+
             <div className="space-y-2">
               <Label htmlFor="driver">Driver</Label>
               <select
@@ -394,6 +458,7 @@ export function FixedTab({
                   id="startSerial"
                   type="number"
                   min="1"
+                  max="999999999"
                   value={startSerial}
                   onChange={(e) => setStartSerial(e.target.value)}
                 />
@@ -452,6 +517,7 @@ export function FixedTab({
             disabled={!sending && !looping}
             variant="outline"
             size="lg"
+            className="min-w-[140px]"
           >
             <StopCircle className="w-4 h-4 mr-2" />
             Stop
@@ -475,6 +541,7 @@ export function FixedTab({
                 onClick={() => setLog([])}
                 variant="ghost"
                 size="sm"
+                title="Clear Log"
               >
                 Clear
               </Button>
@@ -500,4 +567,3 @@ export function FixedTab({
     </div>
   )
 }
-

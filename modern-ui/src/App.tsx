@@ -13,6 +13,7 @@ import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-cl
 import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
+import { ConnectionStatus } from './components/ConnectionStatus'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -138,37 +139,48 @@ function App() {
         />
       )}
 
-      {/* Main Content */}
-      <main className="flex-1 container px-6 py-6 overflow-hidden relative z-10">
-        <Tabs defaultValue="fixed" className="h-full flex flex-col">
-          <TabsList className="flex w-full max-w-2xl mx-auto mb-4 bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
-            <TabsTrigger value="fixed" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Radio className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">Fixed Reader</span>
-            </TabsTrigger>
-            <TabsTrigger value="handheld" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Smartphone className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">Handheld</span>
-            </TabsTrigger>
-            <TabsTrigger value="ocr" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <ScanLine className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">OCR</span>
-            </TabsTrigger>
-            <TabsTrigger value="decoder" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Code2 className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">Decoder</span>
-            </TabsTrigger>
-            <TabsTrigger value="automation" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <Workflow className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">Auto</span>
-            </TabsTrigger>
-            <TabsTrigger value="generator" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-              <QrCode className="w-4 h-4 shrink-0" />
-              <span className="font-medium whitespace-nowrap">Gen</span>
-            </TabsTrigger>
-          </TabsList>
+      <div className="flex flex-1 overflow-hidden relative z-10">
+        
+        {/* Main Content */}
+        <main className="flex-1 container px-6 py-6 overflow-hidden">
+          <Tabs defaultValue="fixed" className="h-full flex flex-col">
+            <div className="flex items-center justify-center gap-4 mb-4">
+              <ConnectionStatus
+                emulator={emulator}
+                host={host}
+                setHost={setHost}
+                connected={connected}
+                setConnected={setConnected}
+              />
+              <TabsList className="flex w-full max-w-2xl bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
+                <TabsTrigger value="fixed" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Radio className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Fixed Reader</span>
+                </TabsTrigger>
+                <TabsTrigger value="handheld" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Smartphone className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Handheld</span>
+                </TabsTrigger>
+                <TabsTrigger value="ocr" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <ScanLine className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">OCR</span>
+                </TabsTrigger>
+                <TabsTrigger value="decoder" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Code2 className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Decoder</span>
+                </TabsTrigger>
+                <TabsTrigger value="automation" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Workflow className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Auto</span>
+                </TabsTrigger>
+                <TabsTrigger value="generator" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <QrCode className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Gen</span>
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
-          <div className="flex-1 min-h-0 overflow-auto">
+            <div className="flex-1 min-h-0 overflow-auto">
             <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
               <FixedTab 
                 emulator={emulator} 
@@ -240,6 +252,7 @@ function App() {
           </div>
         </Tabs>
       </main>
+      </div>
 
     </div>
   )

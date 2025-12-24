@@ -4,6 +4,10 @@ import { fileURLToPath } from 'url'
 import { autoUpdater } from 'electron-updater'
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage } from './tcp-handler.js'
 
+// Load environment variables
+import dotenv from 'dotenv'
+dotenv.config()
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -296,6 +300,60 @@ app.whenReady().then(() => {
   autoUpdater.on('error', (err) => {
     console.error('Update error:', err)
     mainWindow?.webContents.send('update-error', err.message)
+  })
+
+  // ALE API Proxy to bypass CORS
+  ipcMain.handle('ale-request', async (_event, url: string, options: any) => {
+    console.log(`ALE Request: ${options?.method || 'GET'} ${url}`)
+    
+    // Inject credentials if this is an auth request with placeholder values
+    if (url.includes('/ALE/api/auth') && options.body) {
+        try {
+            const body = JSON.parse(options.body)
+            if (body.username === 'use_env_vars') {
+                console.log('Injecting credentials into auth request')
+                // Strictly use environment variables, no hardcoded fallbacks
+                const username = process.env.VITE_ALE_USERNAME
+                const password = process.env.VITE_ALE_PASSWORD
+                
+                if (!username || !password) {
+                    throw new Error("Missing ALE credentials in environment variables")
+                }
+                
+                body.username = username
+                body.password = password
+                options.body = JSON.stringify(body)
+            }
+        } catch (e) {
+            console.error('Failed to parse auth body for injection', e)
+        }
+    }
+
+    try {
+      const response = await fetch(url, options)
+      const text = await response.text()
+      // Convert headers to simple object for IPC
+      const headers: Record<string, string> = {}
+      response.headers.forEach((val, key) => {
+        headers[key] = val
+      })
+      
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        data: text,
+        headers
+      }
+    } catch (error: any) {
+      console.error('ALE Request Error:', error)
+      return {
+        ok: false,
+        status: 0,
+        statusText: error.message,
+        data: null
+      }
+    }
   })
 
   autoUpdater.on('download-progress', (progressObj) => {

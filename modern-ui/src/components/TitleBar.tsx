@@ -73,7 +73,7 @@ export function TitleBar({ connected = false, host = '', port = '', profileManag
             </div>
             <Wifi className="w-3.5 h-3.5 text-green-600 dark:text-green-500" />
             <span className="text-xs font-semibold text-green-700 dark:text-green-400">
-              {host && port ? `${host}:${port}` : 'Connected'}
+              {host ? host : 'Connected'}
             </span>
           </div>
         ) : (

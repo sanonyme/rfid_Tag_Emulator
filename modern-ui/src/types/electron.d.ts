@@ -47,6 +47,15 @@ export interface ElectronAPI {
   onUpdateError: (callback: (message: string) => void) => void
   onDownloadProgress: (callback: (progress: any) => void) => void
   onUpdateDownloaded: (callback: (info: any) => void) => void
+
+  // ALE API
+  aleRequest: (url: string, options: any) => Promise<{ 
+    ok: boolean, 
+    status: number, 
+    statusText: string, 
+    data: string | null,
+    headers?: Record<string, string>
+  }>
 }
 
 declare global {

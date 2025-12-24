@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import { useState, useRef } from 'react'
 import Barcode from 'react-barcode'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -147,7 +147,7 @@ export function BarcodeGenerator() {
                   min={1} 
                   max={3} 
                   step={0.5} 
-                  onValueChange={([v]) => setWidth(v)} 
+                  onValueChange={([v]: number[]) => setWidth(v)} 
                 />
               </div>
 
@@ -161,7 +161,7 @@ export function BarcodeGenerator() {
                   min={30} 
                   max={200} 
                   step={5} 
-                  onValueChange={([v]) => setHeight(v)} 
+                  onValueChange={([v]: number[]) => setHeight(v)} 
                 />
               </div>
             </div>
@@ -178,6 +178,7 @@ export function BarcodeGenerator() {
           <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20">
             {text ? (
               <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl hover:scale-[1.02]">
+                {/* @ts-ignore - react-barcode types are tricky with recent React versions */}
                 <Barcode 
                   value={text}
                   format={format}
