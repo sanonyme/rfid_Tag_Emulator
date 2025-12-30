@@ -156,6 +156,23 @@ class MockElectronAPI implements ElectronAPI {
   onOcrSuccess(callback: (message: string) => void) { this._ocrCallbacks.success.push(callback); }
   onOcrError(callback: (message: string) => void) { this._ocrCallbacks.error.push(callback); }
 
+  // Auto Updater
+  checkForUpdate() { console.log('Mock: checkForUpdate'); }
+  startDownload() { console.log('Mock: startDownload'); }
+  quitAndInstall() { console.log('Mock: quitAndInstall'); }
+  onCheckingForUpdate(_callback: () => void) { console.log('Mock: onCheckingForUpdate registered'); }
+  onUpdateAvailable(_callback: (info: any) => void) { console.log('Mock: onUpdateAvailable registered'); }
+  onUpdateNotAvailable(_callback: (info: any) => void) { console.log('Mock: onUpdateNotAvailable registered'); }
+  onUpdateError(_callback: (message: string) => void) { console.log('Mock: onUpdateError registered'); }
+  onDownloadProgress(_callback: (progress: any) => void) { console.log('Mock: onDownloadProgress registered'); }
+  onUpdateDownloaded(_callback: (info: any) => void) { console.log('Mock: onUpdateDownloaded registered'); }
+
+  // ALE API
+  async aleRequest(url: string, options: any) {
+    console.log('Mock: aleRequest', url, options);
+    return { ok: true, status: 200, statusText: 'OK', data: '{}' };
+  }
+
   // Helper
   private _trigger(callbacks: ((message: string) => void)[], message: string) {
     callbacks.forEach(cb => cb(message));

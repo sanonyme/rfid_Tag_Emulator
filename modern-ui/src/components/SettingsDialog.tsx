@@ -18,7 +18,7 @@ import {
 import { Label } from './ui/label'
 import { themes, applyTheme, saveTheme, getSavedTheme } from '../lib/themes'
 import { useState, useEffect } from 'react'
-import { Progress } from './ui/scroll-area' // Assuming Progress component exists or I'll use simple div
+// import { Progress } from './ui/scroll-area' // Assuming Progress component exists or I'll use simple div
 
 export function SettingsDialog() {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())

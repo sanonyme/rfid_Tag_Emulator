@@ -11,7 +11,7 @@ interface TitleBarProps {
   profileManager?: React.ReactNode
 }
 
-export function TitleBar({ connected = false, host = '', port = '', profileManager }: TitleBarProps) {
+export function TitleBar({ connected = false, host = '', profileManager }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {

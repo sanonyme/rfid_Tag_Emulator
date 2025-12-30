@@ -56,9 +56,9 @@ const VENDOR_DRIVERS = [
 export function FixedTab({ 
   emulator, 
   host, 
-  setHost, 
-  port, 
-  setPort,
+  // setHost, 
+  // port, 
+  // setPort,
   connected, 
   setConnected, 
   driver,

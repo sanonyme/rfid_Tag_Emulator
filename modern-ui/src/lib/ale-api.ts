@@ -52,8 +52,8 @@ export class AleApiClient {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                username: "use_env_vars", 
-                password: "use_env_vars",
+                username: import.meta.env.VITE_ALE_USERNAME,
+                password: import.meta.env.VITE_ALE_PASSWORD,
             }),
         })
         
