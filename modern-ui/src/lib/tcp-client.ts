@@ -220,6 +220,44 @@ export class OCRClient {
   }
 }
 
+// Custom Client
+export class CustomClient {
+  private successCallback: ((message: string) => void) | null = null
+  private errorCallback: ((message: string) => void) | null = null
+
+  constructor() {
+    // Set up event listeners ONCE
+    if (window.electronAPI) {
+      window.electronAPI.onCustomSuccess((message: string) => {
+        if (this.successCallback) this.successCallback(message)
+      })
+      window.electronAPI.onCustomError((message: string) => {
+        if (this.errorCallback) this.errorCallback(message)
+      })
+    }
+  }
+
+  async sendMessage(
+    host: string,
+    port: number,
+    message: string,
+    onSuccess: (message: string) => void,
+    onError: (error: string) => void
+  ): Promise<void> {
+    if (!window.electronAPI) {
+      onError('Electron API not available')
+      return
+    }
+
+    // Set callbacks for this send
+    this.successCallback = onSuccess
+    this.errorCallback = onError
+    
+    // Send message to main process
+    window.electronAPI.customSend(host, port, message)
+  }
+}
+
 // Legacy function for backwards compatibility
 export async function sendOCRMessage(
   host: string,

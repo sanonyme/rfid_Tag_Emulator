@@ -33,6 +33,9 @@ export interface Profile {
   hhEpcList: string
   // OCR Tab State
   ocrMessage: string
+  // Custom Tab State
+  customPort?: string
+  customMessage?: string
   // Shared
   delay: string
   automationSteps?: any[]

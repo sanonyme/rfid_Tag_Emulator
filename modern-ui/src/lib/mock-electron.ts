@@ -42,6 +42,14 @@ class MockElectronAPI implements ElectronAPI {
     error: []
   };
 
+  private _customCallbacks: {
+    success: ((message: string) => void)[],
+    error: ((message: string) => void)[]
+  } = {
+    success: [],
+    error: []
+  };
+
   // Window controls
   minimize() { console.log('Mock: minimize'); }
   maximize() { console.log('Mock: maximize'); }
@@ -155,6 +163,17 @@ class MockElectronAPI implements ElectronAPI {
 
   onOcrSuccess(callback: (message: string) => void) { this._ocrCallbacks.success.push(callback); }
   onOcrError(callback: (message: string) => void) { this._ocrCallbacks.error.push(callback); }
+
+  // Custom Message
+  customSend(host: string, port: number, message: string) {
+    console.log(`Mock: Sending Custom message to ${host}:${port}: ${message}`);
+    setTimeout(() => {
+      this._trigger(this._customCallbacks.success, `Custom data sent successfully to ${host}:${port}: ${message}`);
+    }, 800);
+  }
+
+  onCustomSuccess(callback: (message: string) => void) { this._customCallbacks.success.push(callback); }
+  onCustomError(callback: (message: string) => void) { this._customCallbacks.error.push(callback); }
 
   // Auto Updater
   checkForUpdate() { console.log('Mock: checkForUpdate'); }

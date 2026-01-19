@@ -37,6 +37,11 @@ export interface ElectronAPI {
   onOcrSuccess: (callback: (message: string) => void) => void
   onOcrError: (callback: (message: string) => void) => void
 
+  // Custom Message
+  customSend: (host: string, port: number, message: string) => void
+  onCustomSuccess: (callback: (message: string) => void) => void
+  onCustomError: (callback: (message: string) => void) => void
+
   // Auto Updater
   checkForUpdate: () => void
   startDownload: () => void

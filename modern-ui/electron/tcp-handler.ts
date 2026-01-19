@@ -374,3 +374,74 @@ export async function sendOCRMessage(host: string, message: string, window: Brow
   })
 }
 
+// Custom Message Handler - Similar to OCR but allows custom port
+export async function sendCustomMessage(host: string, port: number, message: string, window: BrowserWindow): Promise<void> {
+  console.log(`Custom: Sending to ${host}:${port}`)
+  
+  return new Promise<void>((resolve) => {
+    const socket = new Socket()
+    
+    socket.on('error', (error: Error) => {
+      console.log('Custom: Error -', error.message)
+      window.webContents.send('custom-error', `Error: ${error.message}`)
+      socket.destroy()
+      resolve()
+    })
+    
+    socket.connect(port, host, () => {
+      console.log(`Custom: Connected to ${host}:${port}, sending message`)
+      
+      socket.write(message + '\n', 'utf8', (err) => {
+        if (err) {
+          console.log('Custom: Write error:', err.message)
+          window.webContents.send('custom-error', `Error: ${err.message}`)
+        } else {
+          console.log('Custom: Message sent successfully')
+          window.webContents.send('custom-success', `Sent to ${port}: ${message}`)
+        }
+        socket.end()
+        resolve()
+      })
+    })
+  })
+}
+
+// Custom Message Handler
+export async function sendCustomMessage(host: string, port: number, message: string, window: BrowserWindow): Promise<void> {
+  console.log("Custom: Sending to System.Management.Automation.Internal.Host.InternalHost:")
+  
+  return new Promise<void>((resolve) => {
+    const socket = new Socket()
+    socket.setTimeout(5000)
+    socket.on('timeout', () => {
+      console.log('Custom: Connection timed out')
+      window.webContents.send('custom-error', 'Error: Connection timed out')
+      socket.destroy()
+      resolve()
+    })
+    
+    socket.on('error', (error: Error) => {
+      console.log('Custom: Error -', error.message)
+      window.webContents.send('custom-error', 'Error: ')
+      socket.destroy()
+      resolve()
+    })
+    
+    socket.connect(port, host, () => {
+      console.log("Custom: Connected to System.Management.Automation.Internal.Host.InternalHost:, sending message")
+      socket.setTimeout(0)
+      
+      socket.write(message + '\n', 'utf8', (err) => {
+        if (err) {
+          console.log('Custom: Write error:', err.message)
+          window.webContents.send('custom-error', 'Error: ')
+        } else {
+          console.log('Custom: Message sent successfully')
+          window.webContents.send('custom-success', 'Sent to : ')
+        }
+        socket.end()
+        resolve()
+      })
+    })
+  })
+}

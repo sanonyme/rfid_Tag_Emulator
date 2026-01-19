@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { autoUpdater } from 'electron-updater'
-import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage } from './tcp-handler.js'
+import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -240,6 +240,18 @@ app.whenReady().then(() => {
     }
   })
 
+  // Custom Message IPC handlers
+  ipcMain.on('custom-send', (_event, host: string, port: number, message: string) => {
+    console.log(`Custom: Received request to send to ${host}:${port}: ${message}`)
+    if (mainWindow) {
+      sendCustomMessage(host, port, message, mainWindow)
+        .then(() => console.log('Custom: Send completed'))
+        .catch((err) => console.error('Custom: Send error:', err))
+    } else {
+      console.error('Custom: No mainWindow available')
+    }
+  })
+
   // Auto Updater IPC handlers
   ipcMain.on('check-for-update', () => {
     console.log('Checking for updates...')
@@ -393,4 +405,4 @@ app.on('before-quit', () => {
   tcpHandler?.shutdown()
   handheldHandler?.shutdown()
 })
-
+// trigger rebuild

@@ -53,6 +53,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOcrError: (callback: (message: string) => void) => 
     ipcRenderer.on('ocr-error', (_event, message) => callback(message)),
 
+  // Custom Message
+  customSend: (host: string, port: number, message: string) => ipcRenderer.send('custom-send', host, port, message),
+  onCustomSuccess: (callback: (message: string) => void) => 
+    ipcRenderer.on('custom-success', (_event, message) => callback(message)),
+  onCustomError: (callback: (message: string) => void) => 
+    ipcRenderer.on('custom-error', (_event, message) => callback(message)),
+
   // Auto Updater
   checkForUpdate: () => ipcRenderer.send('check-for-update'),
   startDownload: () => ipcRenderer.send('start-download'),

@@ -6,11 +6,12 @@ import { HandheldTab } from './components/HandheldTab'
 import { OCRTab } from './components/OCRTab'
 import { DecoderTab } from './components/DecoderTab'
 import { AutomationTab } from './components/AutomationTab'
+import { CustomTab } from './components/CustomTab'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode } from 'lucide-react'
+import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
@@ -43,6 +44,10 @@ function App() {
   // OCR Tab persistent state
   const [ocrMessage, setOcrMessage] = useState('')
 
+  // Custom Tab persistent state
+  const [customPort, setCustomPort] = useState('12345')
+  const [customMessage, setCustomMessage] = useState('')
+
   // Automation Tab persistent state
   const [automationSteps, setAutomationSteps] = useState<any[]>([])
 
@@ -62,6 +67,8 @@ function App() {
     setHhUpcList(profile.hhUpcList)
     setHhEpcList(profile.hhEpcList)
     setOcrMessage(profile.ocrMessage)
+    if (profile.customPort) setCustomPort(profile.customPort)
+    if (profile.customMessage) setCustomMessage(profile.customMessage)
     setDelay(profile.delay)
     if (profile.automationSteps) setAutomationSteps(profile.automationSteps)
   }
@@ -80,6 +87,8 @@ function App() {
     hhUpcList,
     hhEpcList,
     ocrMessage,
+    customPort,
+    customMessage,
     delay,
     automationSteps
   }
@@ -165,6 +174,10 @@ function App() {
                   <ScanLine className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">OCR</span>
                 </TabsTrigger>
+                <TabsTrigger value="custom" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Terminal className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">Custom</span>
+                </TabsTrigger>
                 <TabsTrigger value="decoder" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Code2 className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Decoder</span>
@@ -228,6 +241,16 @@ function App() {
                 ocrClient={ocrClient}
                 message={ocrMessage}
                 setMessage={setOcrMessage}
+              />
+            </TabsContent>
+
+            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <CustomTab 
+                host={host} 
+                message={customMessage}
+                setMessage={setCustomMessage}
+                port={customPort}
+                setPort={setCustomPort}
               />
             </TabsContent>
 
