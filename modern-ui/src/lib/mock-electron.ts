@@ -50,6 +50,20 @@ class MockElectronAPI implements ElectronAPI {
     error: []
   };
 
+  private _adamCallbacks: {
+    connected: ((message: string) => void)[],
+    disconnected: ((message: string) => void)[],
+    dataDI: ((data: { start: number, values: boolean[] }) => void)[],
+    writeSuccess: ((message: string) => void)[],
+    error: ((message: string) => void)[]
+  } = {
+    connected: [],
+    disconnected: [],
+    dataDI: [],
+    writeSuccess: [],
+    error: []
+  };
+
   // Window controls
   minimize() { console.log('Mock: minimize'); }
   maximize() { console.log('Mock: maximize'); }
@@ -175,6 +189,46 @@ class MockElectronAPI implements ElectronAPI {
   onCustomSuccess(callback: (message: string) => void) { this._customCallbacks.success.push(callback); }
   onCustomError(callback: (message: string) => void) { this._customCallbacks.error.push(callback); }
 
+  // ADAM Module
+  adamConnect(host: string, port: number) {
+    console.log(`Mock: Connecting to ADAM at ${host}:${port}`);
+    setTimeout(() => {
+        this._trigger(this._adamCallbacks.connected, `Connected to ${host}:${port}`);
+    }, 1000);
+  }
+
+  adamDisconnect() {
+    console.log('Mock: Disconnecting ADAM');
+    setTimeout(() => {
+        this._trigger(this._adamCallbacks.disconnected, 'Disconnected');
+    }, 500);
+  }
+
+  adamSetDO(coil: number, value: boolean) {
+    console.log(`Mock: Set DO ${coil} to ${value}`);
+    setTimeout(() => {
+        this._trigger(this._adamCallbacks.writeSuccess, `Written DO ${coil} to ${value}`);
+    }, 200);
+  }
+
+  adamReadDIs(start: number, count: number) {
+    const values = Array(count).fill(false).map(() => Math.random() > 0.5);
+    this._adamCallbacks.dataDI.forEach(cb => cb({ start, values }));
+  }
+
+  adamSetDIInvert(mask: number, _registerAddress?: number) {
+    console.log(`Mock: Set DI invert mask=0x${mask.toString(16)}`);
+    setTimeout(() => {
+      this._trigger(this._adamCallbacks.writeSuccess, `DI invert mask set to 0x${mask.toString(16)}`);
+    }, 100);
+  }
+
+  onAdamConnected(callback: (message: string) => void) { this._adamCallbacks.connected.push(callback); }
+  onAdamDisconnected(callback: (message: string) => void) { this._adamCallbacks.disconnected.push(callback); }
+  onAdamError(callback: (message: string) => void) { this._adamCallbacks.error.push(callback); }
+  onAdamDataDI(callback: (data: { start: number, values: boolean[] }) => void) { this._adamCallbacks.dataDI.push(callback); }
+  onAdamWriteSuccess(callback: (message: string) => void) { this._adamCallbacks.writeSuccess.push(callback); }
+
   // Auto Updater
   checkForUpdate() { console.log('Mock: checkForUpdate'); }
   startDownload() { console.log('Mock: startDownload'); }
@@ -204,4 +258,3 @@ export function initMockElectron() {
     window.electronAPI = new MockElectronAPI();
   }
 }
-

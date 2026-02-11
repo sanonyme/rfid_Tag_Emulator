@@ -36,6 +36,8 @@ export interface Profile {
   // Custom Tab State
   customPort?: string
   customMessage?: string
+  // ADAM Tab State
+  adamHost?: string
   // Shared
   delay: string
   automationSteps?: any[]

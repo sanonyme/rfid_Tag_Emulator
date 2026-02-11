@@ -101,21 +101,20 @@ export function HandheldTab({
       }
     }
 
-    // Parse EPC,Count,TID
+    // Parse EPC or EPC,TID (one EPC per line, TID optional)
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [epc, countStr, customTid] = trimmed.split(',')
-        const count = parseInt(countStr?.trim() || '0')
-        if (count > 0 && epc) {
-          for (let i = 0; i < count; i++) {
-            allTags.push({
-              epc: epc.trim(),
-              tid: customTid?.trim() || epc.trim()
-            })
-          }
+        const parts = trimmed.split(',')
+        const epc = parts[0]?.trim()
+        const customTid = parts[1]?.trim()
+        if (epc) {
+          allTags.push({
+            epc,
+            tid: customTid || epc
+          })
         }
       }
     }
@@ -245,13 +244,13 @@ export function HandheldTab({
               <CardTitle className="text-sm">Direct EPC Input</CardTitle>
               <TagImporter onImport={handleImportEpc} onExport={handleExportEpc} type="epc" />
             </div>
-            <CardDescription className="text-xs">Format: EPC,Count,TID</CardDescription>
+            <CardDescription className="text-xs">Format: EPC or EPC,TID (one per line, TID optional)</CardDescription>
           </CardHeader>
           <CardContent className="pb-3">
             <Textarea
               value={epcList}
               onChange={(e) => setEpcList(e.target.value)}
-              placeholder="3034..., 2&#10;3035..., 1, CustomTID"
+              placeholder="3034...&#10;3035...,CustomTID"
               className="font-mono text-xs min-h-[80px]"
             />
           </CardContent>

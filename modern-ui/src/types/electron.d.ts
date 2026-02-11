@@ -42,6 +42,18 @@ export interface ElectronAPI {
   onCustomSuccess: (callback: (message: string) => void) => void
   onCustomError: (callback: (message: string) => void) => void
 
+  // ADAM Module
+  adamConnect: (host: string, port: number) => void
+  adamDisconnect: () => void
+  adamSetDO: (coil: number, value: boolean) => void
+  adamReadDIs: (start: number, count: number) => void
+  adamSetDIInvert: (mask: number, registerAddress?: number) => void
+  onAdamConnected: (callback: (message: string) => void) => void
+  onAdamDisconnected: (callback: (message: string) => void) => void
+  onAdamError: (callback: (message: string) => void) => void
+  onAdamDataDI: (callback: (data: { start: number, values: boolean[] }) => void) => void
+  onAdamWriteSuccess: (callback: (message: string) => void) => void
+
   // Auto Updater
   checkForUpdate: () => void
   startDownload: () => void

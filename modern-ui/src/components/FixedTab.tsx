@@ -173,28 +173,25 @@ export function FixedTab({
 
     const tags: TagData[] = []
 
-    // Parse EPC,Count,TID
+    // Parse EPC or EPC,TID (one EPC per line, TID optional)
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
-        const [epc, countStr, customTid] = trimmed.split(',')
-        const count = parseInt(countStr?.trim() || '0')
-        if (count > 0 && epc) {
-          // If no devices selected, use empty string (though usually we want at least one)
+        const parts = trimmed.split(',')
+        const epc = parts[0]?.trim()
+        const customTid = parts[1]?.trim()
+        if (epc) {
           const targetUids = selectedUids.length > 0 ? selectedUids : ['']
-          
           for (const targetUid of targetUids) {
-              for (let i = 0; i < count; i++) {
-                tags.push({
-                  epc: epc.trim(),
-                  tid: customTid?.trim() || epc.trim(),
-                  uid: targetUid, // Use specific device UID
-                  antenna: parseInt(antenna),
-                  rssi,
-                })
-              }
+            tags.push({
+              epc,
+              tid: customTid || epc,
+              uid: targetUid,
+              antenna: parseInt(antenna),
+              rssi,
+            })
           }
         }
       }
@@ -353,18 +350,18 @@ export function FixedTab({
                                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                             </Button>
                         </DialogTrigger>
-                        <DialogContent className="max-h-[80vh] flex flex-col">
+                        <DialogContent className="max-h-[85vh] flex flex-col">
                             <DialogHeader>
                                 <DialogTitle>Select Logical Devices</DialogTitle>
                                 <DialogDescription>
                                     Select the devices to send tags to.
                                 </DialogDescription>
                             </DialogHeader>
-                            <div className="flex gap-2 mb-2">
+                            <div className="flex gap-2 mb-2 shrink-0">
                                 <Button size="sm" variant="secondary" onClick={selectAll} className="flex-1">Select All</Button>
                                 <Button size="sm" variant="ghost" onClick={deselectAll} className="flex-1">Deselect All</Button>
                             </div>
-                            <ScrollArea className="flex-1 pr-4">
+                            <ScrollArea className="h-[60vh] min-h-[240px] pr-4">
                                 <div className="space-y-2">
                                     {logicalDevices.length === 0 ? (
                                         <div className="text-center py-4 text-muted-foreground">
@@ -469,13 +466,13 @@ export function FixedTab({
           <Card className="border-border/50 bg-card transition-all duration-300">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Direct EPC Input</CardTitle>
-              <CardDescription>Format: EPC,Count,TID (optional TID)</CardDescription>
+              <CardDescription>Format: EPC or EPC,TID (one per line, TID optional)</CardDescription>
             </CardHeader>
             <CardContent>
               <Textarea
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
-                placeholder="3034..., 2&#10;3035..., 1, CustomTID"
+                placeholder="3034...&#10;3035...,CustomTID"
                 className="font-mono text-sm min-h-[120px]"
               />
             </CardContent>

@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Slider } from './ui/slider'
 import { Download, Copy, RefreshCw, Plus, Trash2, ArrowUp, ArrowDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { QrCodeGenerator } from './QrCodeGenerator'
 
 interface BarcodeConfig {
   id: string
@@ -151,158 +153,175 @@ export function BarcodeGenerator() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 h-full">
-      <div className="space-y-6 overflow-y-auto pr-2 max-h-[calc(100vh-12rem)]">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle>Configuration</CardTitle>
-            <CardDescription>Customize your barcode settings</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Global Settings */}
-            <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
-              <Label className="text-muted-foreground">Global Settings</Label>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Width (Scale): {width}px</Label>
-                  <Slider 
-                    value={[width]} 
-                    min={1} 
-                    max={3} 
-                    step={0.5} 
-                    onValueChange={([v]: number[]) => setWidth(v)} 
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Show Text</Label>
-                  <Select value={displayValue ? "yes" : "no"} onValueChange={(v) => setDisplayValue(v === "yes")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="yes">Yes</SelectItem>
-                      <SelectItem value="no">No</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </div>
+    <div className="h-full">
+      <Tabs defaultValue="barcode" className="h-full flex flex-col">
+        <div className="flex justify-center mb-4">
+          <TabsList>
+            <TabsTrigger value="barcode">Barcodes</TabsTrigger>
+            <TabsTrigger value="qrcode">QR Codes</TabsTrigger>
+          </TabsList>
+        </div>
 
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label>Barcodes</Label>
-                <Button size="sm" onClick={addBarcode} className="h-8">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Barcode
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {barcodes.map((barcode, index) => (
-                  <div key={barcode.id} className="p-4 border rounded-lg bg-card space-y-4 relative group">
-                    <div className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6" 
-                        disabled={index === 0}
-                        onClick={() => moveBarcode(index, 'up')}
-                      >
-                        <ArrowUp className="h-3 w-3" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6"
-                        disabled={index === barcodes.length - 1}
-                        onClick={() => moveBarcode(index, 'down')}
-                      >
-                        <ArrowDown className="h-3 w-3" />
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-6 w-6 text-destructive hover:text-destructive"
-                        onClick={() => removeBarcode(barcode.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label>Content</Label>
-                      <div className="flex gap-2">
-                        <Input 
-                          value={barcode.text} 
-                          onChange={(e) => updateBarcode(barcode.id, { text: e.target.value })} 
-                          placeholder="Enter text..."
+        <TabsContent value="barcode" className="flex-1 mt-0">
+          <div className="grid gap-6 md:grid-cols-2 h-full">
+            <div className="space-y-6 overflow-y-auto pr-2 max-h-[calc(100vh-14rem)]">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle>Configuration</CardTitle>
+                  <CardDescription>Customize your barcode settings</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Global Settings */}
+                  <div className="space-y-4 p-4 bg-muted/30 rounded-lg">
+                    <Label className="text-muted-foreground">Global Settings</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Width (Scale): {width}px</Label>
+                        <Slider 
+                          value={[width]} 
+                          min={1} 
+                          max={3} 
+                          step={0.5} 
+                          onValueChange={([v]: number[]) => setWidth(v)} 
                         />
-                        <Button 
-                          variant="outline" 
-                          size="icon" 
-                          onClick={() => generateRandom(barcode.id)} 
-                          title="Generate Random"
-                        >
-                          <RefreshCw className="h-4 w-4" />
-                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Show Text</Label>
+                        <Select value={displayValue ? "yes" : "no"} onValueChange={(v) => setDisplayValue(v === "yes")}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="yes">Yes</SelectItem>
+                            <SelectItem value="no">No</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="space-y-2">
-                      <Label>Height: {barcode.height}px</Label>
-                      <Slider 
-                        value={[barcode.height]} 
-                        min={30} 
-                        max={200} 
-                        step={5} 
-                        onValueChange={([v]: number[]) => updateBarcode(barcode.id, { height: v })} 
-                      />
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <Label>Barcodes</Label>
+                      <Button size="sm" onClick={addBarcode} className="h-8">
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Barcode
+                      </Button>
+                    </div>
+
+                    <div className="space-y-4">
+                      {barcodes.map((barcode, index) => (
+                        <div key={barcode.id} className="p-4 border rounded-lg bg-card space-y-4 relative group">
+                          <div className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6" 
+                              disabled={index === 0}
+                              onClick={() => moveBarcode(index, 'up')}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6"
+                              disabled={index === barcodes.length - 1}
+                              onClick={() => moveBarcode(index, 'down')}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-6 w-6 text-destructive hover:text-destructive"
+                              onClick={() => removeBarcode(barcode.id)}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Content</Label>
+                            <div className="flex gap-2">
+                              <Input 
+                                value={barcode.text} 
+                                onChange={(e) => updateBarcode(barcode.id, { text: e.target.value })} 
+                                placeholder="Enter text..."
+                              />
+                              <Button 
+                                variant="outline" 
+                                size="icon" 
+                                onClick={() => generateRandom(barcode.id)} 
+                                title="Generate Random"
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Height: {barcode.height}px</Label>
+                            <Slider 
+                              value={[barcode.height]} 
+                              min={30} 
+                              max={200} 
+                              step={5} 
+                              onValueChange={([v]: number[]) => updateBarcode(barcode.id, { height: v })} 
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </div>
+                </CardContent>
+              </Card>
             </div>
-          </CardContent>
-        </Card>
-      </div>
 
-      <div className="space-y-6">
-        <Card className="h-full flex flex-col">
-          <CardHeader>
-            <CardTitle>Preview</CardTitle>
-            <CardDescription>Live preview of your generated barcodes</CardDescription>
-          </CardHeader>
-          <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20 overflow-y-auto">
-            <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-8 items-center">
-              {barcodes.map((barcode) => (
-                <div key={barcode.id} className="flex flex-col items-center">
-                   {/* @ts-ignore */}
-                  <Barcode 
-                    value={barcode.text}
-                    format={barcode.format}
-                    width={width}
-                    height={barcode.height}
-                    displayValue={displayValue}
-                    background="#ffffff"
-                    lineColor="#000000"
-                    margin={0}
-                  />
+            <div className="space-y-6">
+              <Card className="h-full flex flex-col">
+                <CardHeader>
+                  <CardTitle>Preview</CardTitle>
+                  <CardDescription>Live preview of your generated barcodes</CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20 overflow-y-auto">
+                  <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-8 items-center">
+                    {barcodes.map((barcode) => (
+                      <div key={barcode.id} className="flex flex-col items-center">
+                         {/* @ts-ignore */}
+                        <Barcode 
+                          value={barcode.text}
+                          format={barcode.format}
+                          width={width}
+                          height={barcode.height}
+                          displayValue={displayValue}
+                          background="#ffffff"
+                          lineColor="#000000"
+                          margin={0}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+                <div className="p-6 pt-0 flex justify-center gap-4">
+                  <Button className="w-full sm:w-auto" onClick={downloadBarcode}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download PNG
+                  </Button>
+                  <Button variant="outline" className="w-full sm:w-auto" onClick={copyToClipboard}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy Image
+                  </Button>
                 </div>
-              ))}
+              </Card>
             </div>
-          </CardContent>
-          <div className="p-6 pt-0 flex justify-center gap-4">
-            <Button className="w-full sm:w-auto" onClick={downloadBarcode}>
-              <Download className="mr-2 h-4 w-4" />
-              Download PNG
-            </Button>
-            <Button variant="outline" className="w-full sm:w-auto" onClick={copyToClipboard}>
-              <Copy className="mr-2 h-4 w-4" />
-              Copy Image
-            </Button>
           </div>
-        </Card>
-      </div>
+        </TabsContent>
+
+        <TabsContent value="qrcode" className="flex-1 mt-0">
+          <QrCodeGenerator />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

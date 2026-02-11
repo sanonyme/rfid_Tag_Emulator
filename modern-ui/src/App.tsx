@@ -7,11 +7,12 @@ import { OCRTab } from './components/OCRTab'
 import { DecoderTab } from './components/DecoderTab'
 import { AutomationTab } from './components/AutomationTab'
 import { CustomTab } from './components/CustomTab'
+import { AdamTab } from './components/AdamTab'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal } from 'lucide-react'
+import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal, Server } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
@@ -48,6 +49,9 @@ function App() {
   const [customPort, setCustomPort] = useState('12345')
   const [customMessage, setCustomMessage] = useState('')
 
+  // ADAM Tab persistent state
+  const [adamHost, setAdamHost] = useState('')
+
   // Automation Tab persistent state
   const [automationSteps, setAutomationSteps] = useState<any[]>([])
 
@@ -69,6 +73,7 @@ function App() {
     setOcrMessage(profile.ocrMessage)
     if (profile.customPort) setCustomPort(profile.customPort)
     if (profile.customMessage) setCustomMessage(profile.customMessage)
+    if (profile.adamHost) setAdamHost(profile.adamHost)
     setDelay(profile.delay)
     if (profile.automationSteps) setAutomationSteps(profile.automationSteps)
   }
@@ -89,6 +94,7 @@ function App() {
     ocrMessage,
     customPort,
     customMessage,
+    adamHost,
     delay,
     automationSteps
   }
@@ -153,7 +159,7 @@ function App() {
         {/* Main Content */}
         <main className="flex-1 container px-6 py-6 overflow-hidden">
           <Tabs defaultValue="fixed" className="h-full flex flex-col">
-            <div className="flex items-center justify-center gap-4 mb-4">
+            <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
               <ConnectionStatus
                 emulator={emulator}
                 host={host}
@@ -161,32 +167,36 @@ function App() {
                 connected={connected}
                 setConnected={setConnected}
               />
-              <TabsList className="flex w-full max-w-2xl bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
-                <TabsTrigger value="fixed" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+              <TabsList className="flex w-auto h-auto flex-wrap justify-center bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
+                <TabsTrigger value="fixed" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Radio className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Fixed Reader</span>
+                  <span className="font-medium whitespace-nowrap">Fixed</span>
                 </TabsTrigger>
-                <TabsTrigger value="handheld" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="handheld" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Smartphone className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Handheld</span>
                 </TabsTrigger>
-                <TabsTrigger value="ocr" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="ocr" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <ScanLine className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">OCR</span>
                 </TabsTrigger>
-                <TabsTrigger value="custom" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="custom" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Terminal className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Custom</span>
                 </TabsTrigger>
-                <TabsTrigger value="decoder" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="adam" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Server className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">ADAM</span>
+                </TabsTrigger>
+                <TabsTrigger value="decoder" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Code2 className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Decoder</span>
                 </TabsTrigger>
-                <TabsTrigger value="automation" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="automation" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Workflow className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Auto</span>
                 </TabsTrigger>
-                <TabsTrigger value="generator" className="flex-1 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <TabsTrigger value="generator" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <QrCode className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Gen</span>
                 </TabsTrigger>
@@ -251,6 +261,13 @@ function App() {
                 setMessage={setCustomMessage}
                 port={customPort}
                 setPort={setCustomPort}
+              />
+            </TabsContent>
+
+            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <AdamTab 
+                host={adamHost} 
+                setHost={setAdamHost}
               />
             </TabsContent>
 

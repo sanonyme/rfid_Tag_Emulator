@@ -60,6 +60,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCustomError: (callback: (message: string) => void) => 
     ipcRenderer.on('custom-error', (_event, message) => callback(message)),
 
+  // ADAM Module
+  adamConnect: (host: string, port: number) => ipcRenderer.send('adam-connect', host, port),
+  adamDisconnect: () => ipcRenderer.send('adam-disconnect'),
+  adamSetDO: (coil: number, value: boolean) => ipcRenderer.send('adam-set-do', coil, value),
+  adamReadDIs: (start: number, count: number) => ipcRenderer.send('adam-read-di', start, count),
+  adamSetDIInvert: (mask: number, registerAddress?: number) => ipcRenderer.send('adam-set-di-invert', mask, registerAddress ?? 100),
+  
+  onAdamConnected: (callback: (message: string) => void) => 
+    ipcRenderer.on('adam-connected', (_event, message) => callback(message)),
+  onAdamDisconnected: (callback: (message: string) => void) => 
+    ipcRenderer.on('adam-disconnected', (_event, message) => callback(message)),
+  onAdamError: (callback: (message: string) => void) => 
+    ipcRenderer.on('adam-error', (_event, message) => callback(message)),
+  onAdamDataDI: (callback: (data: { start: number, values: boolean[] }) => void) => 
+    ipcRenderer.on('adam-data-di', (_event, data) => callback(data)),
+  onAdamWriteSuccess: (callback: (message: string) => void) => 
+    ipcRenderer.on('adam-write-success', (_event, message) => callback(message)),
+
   // Auto Updater
   checkForUpdate: () => ipcRenderer.send('check-for-update'),
   startDownload: () => ipcRenderer.send('start-download'),

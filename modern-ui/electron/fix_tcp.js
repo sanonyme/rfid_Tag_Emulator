@@ -1,4 +1,6 @@
-// TCP Handler for Electron Main Process
+
+const fs = require('fs');
+const content = `// TCP Handler for Electron Main Process
 // Handles real TCP connections to Java backend
 
 import { Socket, Server, createServer } from 'net'
@@ -29,12 +31,12 @@ export class TCPEmulatorHandler {
 
     this.socket.on('connect', () => {
       this.isConnected = true
-      this.sendToRenderer('tcp-connected', `Connected to ${host}:${port}`)
+      this.sendToRenderer('tcp-connected', \`Connected to \${host}:\${port}\`)
     })
 
     this.socket.on('error', (error) => {
       this.isConnected = false
-      this.sendToRenderer('tcp-error', `Connection error: ${error.message}`)
+      this.sendToRenderer('tcp-error', \`Connection error: \${error.message}\`)
     })
 
     this.socket.on('close', () => {
@@ -86,23 +88,23 @@ export class TCPEmulatorHandler {
         })
 
         count++
-        this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc}`)
+        this.sendToRenderer('tcp-progress', \`Sent (\${count}/\${total}): \${tag.epc}\`)
 
         if (delayMs > 0 && count < total) {
           await new Promise(resolve => setTimeout(resolve, delayMs))
         }
       } catch (error: any) {
         this.isConnected = false
-        this.sendToRenderer('tcp-error', `Send error: ${error.message}`)
+        this.sendToRenderer('tcp-error', \`Send error: \${error.message}\`)
         return
       }
     }
 
-    this.sendToRenderer('tcp-complete', `Successfully sent ${count} tag(s)`)
+    this.sendToRenderer('tcp-complete', \`Successfully sent \${count} tag(s)\`)
   }
 
   private formatMessage(tag: TagData, driver: string): string {
-    return `driver=${driver} epc=${tag.epc} @tid=${tag.tid} uid=${tag.uid} antenna=${tag.antenna} @rssi=${tag.rssi}\n`
+    return \`driver=\${driver} epc=\${tag.epc} @tid=\${tag.tid} uid=\${tag.uid} antenna=\${tag.antenna} @rssi=\${tag.rssi}\\n\`
   }
 
   cancelSend(): void {
@@ -138,25 +140,25 @@ export class HandheldServerHandler {
   start(): void {
     // Java: if (running) { onLog.accept("Handheld server already running..."); return; }
     if (this.serverRunning) {
-      this.sendToRenderer('handheld-started', `Handheld server already running on port 10472`)
+      this.sendToRenderer('handheld-started', \`Handheld server already running on port 10472\`)
       return
     }
     
     // Java: serverSocket = new ServerSocket(listenPort);
     this.serverSocket = createServer((client: Socket) => {
       // Java: final Socket client = serverSocket.accept(); connectedClients.add(client);
-      const clientAddr = `${client.remoteAddress}:${client.remotePort}`
-      console.log(`Handheld: Client connected from ${clientAddr}`)
+      const clientAddr = \`\${client.remoteAddress}:\${client.remotePort}\`
+      console.log(\`Handheld: Client connected from \${clientAddr}\`)
       this.connectedClients.push(client)
-      this.sendToRenderer('handheld-progress', `Handheld device connected from ${clientAddr} (Total: ${this.connectedClients.length})`)
+      this.sendToRenderer('handheld-progress', \`Handheld device connected from \${clientAddr} (Total: \${this.connectedClients.length})\`)
 
       client.on('close', () => {
-        console.log(`Handheld: Client disconnected (${clientAddr})`)
+        console.log(\`Handheld: Client disconnected (\${clientAddr})\`)
         const index = this.connectedClients.indexOf(client)
         if (index > -1) {
           this.connectedClients.splice(index, 1)
         }
-        this.sendToRenderer('handheld-progress', `Handheld device disconnected (Total: ${this.connectedClients.length})`)
+        this.sendToRenderer('handheld-progress', \`Handheld device disconnected (Total: \${this.connectedClients.length})\`)
       })
 
       client.on('error', (err) => {
@@ -166,7 +168,7 @@ export class HandheldServerHandler {
 
     this.serverSocket.on('error', (error: Error) => {
       console.log('Handheld: Server error:', error.message)
-      this.sendToRenderer('handheld-error', `Server error: ${error.message}`)
+      this.sendToRenderer('handheld-error', \`Server error: \${error.message}\`)
     })
 
     // Java: running = true; onLog.accept("Handheld server listening on port " + listenPort);
@@ -184,10 +186,10 @@ export class HandheldServerHandler {
 
   async sendEpcs(tags: {epc: string, tid?: string}[], delayMs: number): Promise<void> {
     // Java: if (!running || connectedClients.isEmpty()) { onComplete.accept("No handheld connected..."); return; }
-    console.log(`Handheld: sendEpcs called - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`)
+    console.log(\`Handheld: sendEpcs called - running: \${this.serverRunning}, clients: \${this.connectedClients.length}\`)
     if (!this.serverRunning || this.connectedClients.length === 0) {
-      const msg = `No handheld connected on port 10472 (Server running: ${this.serverRunning}, Connected clients: ${this.connectedClients.length})`
-      console.log(`Handheld: ${msg}`)
+      const msg = \`No handheld connected on port 10472 (Server running: \${this.serverRunning}, Connected clients: \${this.connectedClients.length})\`
+      console.log(\`Handheld: \${msg}\`)
       this.sendToRenderer('handheld-complete', msg)
       return
     }
@@ -208,14 +210,14 @@ export class HandheldServerHandler {
 
       this.epcQueue.push(tag)
       enqueued++
-      this.sendToRenderer('handheld-progress', `Queued (${enqueued}/${total}): ${tag.epc}`)
+      this.sendToRenderer('handheld-progress', \`Queued (\${enqueued}/\${total}): \${tag.epc}\`)
 
       // Java: if (epcQueue.size() >= 200) { ... broadcast batch ... }
       if (this.epcQueue.length >= 200) {
         const batch = this.epcQueue.splice(0, 200)
         const sent = this.broadcastBatch(batch)
         sentTotal += sent
-        this.sendToRenderer('handheld-progress', `Broadcast batch of ${batch.length} EPC(s)`)
+        this.sendToRenderer('handheld-progress', \`Broadcast batch of \${batch.length} EPC(s)\`)
         
         if (delayMs > 0) {
           await new Promise(resolve => setTimeout(resolve, delayMs))
@@ -232,11 +234,11 @@ export class HandheldServerHandler {
       const remainder = this.epcQueue.splice(0)
       const sent = this.broadcastBatch(remainder)
       sentTotal += sent
-      this.sendToRenderer('handheld-progress', `Broadcast final batch of ${remainder.length} EPC(s)`)
+      this.sendToRenderer('handheld-progress', \`Broadcast final batch of \${remainder.length} EPC(s)\`)
     }
 
     // Java: onComplete.accept("Broadcasted " + sentTotal + " EPC(s) to handheld clients");
-    this.sendToRenderer('handheld-complete', `Broadcasted ${sentTotal} EPC(s) to handheld clients`)
+    this.sendToRenderer('handheld-complete', \`Broadcasted \${sentTotal} EPC(s) to handheld clients\`)
   }
 
   // Java: private int broadcastBatch(List<String> epcs)
@@ -246,14 +248,14 @@ export class HandheldServerHandler {
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }
     let payload = ''
     for (const tag of tags) {
-      // Java: String json = "{\"epc\":\"" + epc + "\",\"date\":\"" + nowString() + "\",\"rssi\":70.0}";
+      // Java: String json = "{\\"epc\\":\\"" + epc + "\\",\\"date\\":\\"" + nowString() + "\\",\\"rssi\\":70.0}";
       const json = JSON.stringify({
         epc: tag.epc,
         tid: tag.tid || tag.epc, // User requested: defaults to EPC if not provided
         date: this.nowString(),
         rssi: 70.0
       })
-      payload += json + '\r\n'
+      payload += json + '\\r\\n'
     }
 
     // Java: synchronized (connectedClients) { for (Socket client : connectedClients) { ... os.write(payload); os.flush(); } }
@@ -288,7 +290,7 @@ export class HandheldServerHandler {
     const mm = String(now.getMinutes()).padStart(2, '0')
     const ss = String(now.getSeconds()).padStart(2, '0')
     const SSS = String(now.getMilliseconds()).padStart(3, '0')
-    return `${yyyy}-${MM}-${dd} ${HH}:${mm}:${ss}.${SSS}`
+    return \`\${yyyy}-\${MM}-\${dd} \${HH}:\${mm}:\${ss}.\${SSS}\`
   }
 
   // Java: public void cancelSend()
@@ -335,7 +337,7 @@ export class HandheldServerHandler {
 // OCR Handler - EXACTLY like Java EmulatorUI.java lines 653-687
 // Java does NOT set a timeout, just creates socket, writes, flushes, closes
 export async function sendOCRMessage(host: string, message: string, window: BrowserWindow): Promise<void> {
-  console.log(`OCR: Sending to ${host}:10482`)
+  console.log(\`OCR: Sending to \${host}:10482\`)
   
   return new Promise<void>((resolve) => {
     // Use the imported Socket class
@@ -346,7 +348,7 @@ export async function sendOCRMessage(host: string, message: string, window: Brow
     
     socket.on('error', (error: Error) => {
       console.log('OCR: Error -', error.message)
-      window.webContents.send('ocr-error', `Error: ${error.message}`)
+      window.webContents.send('ocr-error', \`Error: \${error.message}\`)
       socket.destroy()
       resolve()
     })
@@ -356,16 +358,16 @@ export async function sendOCRMessage(host: string, message: string, window: Brow
       console.log('OCR: Connected, sending message')
       
       // Java: PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)
-      // Java: writer.print(message + "\n")
+      // Java: writer.print(message + "\\n")
       // Java: writer.flush()
       // Java: socket.close()
-      socket.write(message + '\n', 'utf8', (err) => {
+      socket.write(message + '\\n', 'utf8', (err) => {
         if (err) {
           console.log('OCR: Write error:', err.message)
-          window.webContents.send('ocr-error', `Error: ${err.message}`)
+          window.webContents.send('ocr-error', \`Error: \${err.message}\`)
         } else {
           console.log('OCR: Message sent successfully')
-          window.webContents.send('ocr-success', `Sent: ${message}`)
+          window.webContents.send('ocr-success', \`Sent: \${message}\`)
         }
         socket.end()
         resolve()
@@ -376,7 +378,7 @@ export async function sendOCRMessage(host: string, message: string, window: Brow
 
 // Custom Message Handler - Similar to OCR but allows custom port
 export async function sendCustomMessage(host: string, port: number, message: string, window: BrowserWindow): Promise<void> {
-  console.log(`Custom: Sending to ${host}:${port}`)
+  console.log(\`Custom: Sending to \${host}:\${port}\`)
   
   return new Promise<void>((resolve) => {
     const socket = new Socket()
@@ -385,29 +387,29 @@ export async function sendCustomMessage(host: string, port: number, message: str
     socket.setTimeout(5000)
     socket.on('timeout', () => {
       console.log('Custom: Connection timed out')
-      window.webContents.send('custom-error', `Error: Connection timed out`)
+      window.webContents.send('custom-error', \`Error: Connection timed out\`)
       socket.destroy()
       resolve()
     })
     
     socket.on('error', (error: Error) => {
       console.log('Custom: Error -', error.message)
-      window.webContents.send('custom-error', `Error: ${error.message}`)
+      window.webContents.send('custom-error', \`Error: \${error.message}\`)
       socket.destroy()
       resolve()
     })
     
     socket.connect(port, host, () => {
-      console.log(`Custom: Connected to ${host}:${port}, sending message`)
+      console.log(\`Custom: Connected to \${host}:\${port}, sending message\`)
       socket.setTimeout(0) // Disable timeout once connected
       
-      socket.write(message + '\n', 'utf8', (err) => {
+      socket.write(message + '\\n', 'utf8', (err) => {
         if (err) {
           console.log('Custom: Write error:', err.message)
-          window.webContents.send('custom-error', `Error: ${err.message}`)
+          window.webContents.send('custom-error', \`Error: \${err.message}\`)
         } else {
           console.log('Custom: Message sent successfully')
-          window.webContents.send('custom-success', `Sent to ${port}: ${message}`)
+          window.webContents.send('custom-success', \`Sent to \${port}: \${message}\`)
         }
         socket.end()
         resolve()
@@ -415,3 +417,6 @@ export async function sendCustomMessage(host: string, port: number, message: str
     })
   })
 }
+`;
+
+fs.writeFileSync('modern-ui/electron/tcp-handler.ts', content);

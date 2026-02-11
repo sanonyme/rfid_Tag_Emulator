@@ -200,22 +200,21 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
             }
         }
 
-        // Parse EPC List (EPC,Count)
+        // Parse EPC List (EPC or EPC,TID - one per line, TID optional)
         if (step.params.epcList) {
             const lines = step.params.epcList.split('\n')
             for (const line of lines) {
-                const [epc, countStr, customTid] = line.split(',')
-                const count = parseInt(countStr?.trim() || '1')
-                if (epc && count > 0) {
-                    for (let i = 0; i < count; i++) {
-                        fixedTags.push({
-                            epc: epc.trim(),
-                            tid: customTid?.trim() || step.params.tid || epc.trim(),
-                            uid: step.params.uid || '0000',
-                            antenna: step.params.antenna || 1,
-                            rssi: step.params.rssi || '-45.0'
-                        })
-                    }
+                const parts = line.split(',')
+                const epc = parts[0]?.trim()
+                const customTid = parts[1]?.trim()
+                if (epc) {
+                    fixedTags.push({
+                        epc,
+                        tid: customTid || step.params.tid || epc,
+                        uid: step.params.uid || '0000',
+                        antenna: step.params.antenna || 1,
+                        rssi: step.params.rssi || '-45.0'
+                    })
                 }
             }
         }
@@ -274,19 +273,18 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
             }
         }
 
-        // Add Direct EPCs
+        // Add Direct EPCs (EPC or EPC,TID - one per line, TID optional)
         if (step.params.epcList) {
             const lines = step.params.epcList.split('\n')
             for (const line of lines) {
-                const [epc, countStr, customTid] = line.split(',')
-                const count = parseInt(countStr?.trim() || '1')
-                if (epc && count > 0) {
-                    for (let i = 0; i < count; i++) {
-                        allHhTags.push({
-                            epc: epc.trim(),
-                            tid: customTid?.trim() || step.params.tid || epc.trim()
-                        })
-                    }
+                const parts = line.split(',')
+                const epc = parts[0]?.trim()
+                const customTid = parts[1]?.trim()
+                if (epc) {
+                    allHhTags.push({
+                        epc,
+                        tid: customTid || step.params.tid || epc
+                    })
                 }
             }
         }
@@ -536,13 +534,13 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Direct EPC List (Format: EPC,Count,TID)</Label>
+                    <Label>Direct EPC List (Format: EPC or EPC,TID)</Label>
                     <Textarea 
                       value={selectedStep.params.epcList}
                       onChange={(e) => handleUpdateParams(selectedStep.id, { epcList: e.target.value })}
                       rows={4}
                       className="font-mono text-sm"
-                      placeholder="3034..., 1, CustomTID&#10;3035..., 5"
+                      placeholder="3034...&#10;3035...,CustomTID"
                     />
                   </div>
 
@@ -600,13 +598,13 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Direct EPC List (One per line)</Label>
+                    <Label>Direct EPC List (Format: EPC or EPC,TID)</Label>
                     <Textarea 
                       value={selectedStep.params.epcList}
                       onChange={(e) => handleUpdateParams(selectedStep.id, { epcList: e.target.value })}
                       rows={4}
                       className="font-mono text-sm"
-                      placeholder="3034..."
+                      placeholder="3034...&#10;3035...,CustomTID"
                     />
                   </div>
                 </div>

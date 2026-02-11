@@ -3,6 +3,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import { autoUpdater } from 'electron-updater'
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
+import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMask } from './adam-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -49,7 +50,7 @@ function createWindow() {
     height: 800,
     minWidth: 800,
     minHeight: 600,
-    frame: !isLinux, // Keep frame on Linux for better compatibility
+    frame: isLinux, // Keep frame on Linux for better compatibility
     icon: path.join(__dirname, '../resources/app-icon-1024.png'), // App icon
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -252,6 +253,42 @@ app.whenReady().then(() => {
     }
   })
 
+  // ADAM IPC handlers
+  ipcMain.on('adam-connect', (_event, host: string, port: number) => {
+    console.log(`ADAM: Connect request to ${host}:${port}`)
+    if (mainWindow) {
+      connectAdam(host, port, mainWindow)
+    }
+  })
+
+  ipcMain.on('adam-disconnect', () => {
+    console.log('ADAM: Disconnect request')
+    if (mainWindow) {
+      disconnectAdam(mainWindow)
+    }
+  })
+
+  ipcMain.on('adam-set-do', (_event, coil: number, value: boolean) => {
+    console.log(`ADAM: Set DO ${coil} to ${value}`)
+    if (mainWindow) {
+      setAdamDO(coil, value, mainWindow)
+    }
+  })
+
+  ipcMain.on('adam-read-di', (_event, start: number, count: number) => {
+    console.log(`ADAM: Read DI start=${start} count=${count}`)
+    if (mainWindow) {
+      readAdamDIs(start, count, mainWindow)
+    }
+  })
+
+  ipcMain.on('adam-set-di-invert', (_event, mask: number, registerAddress: number) => {
+    console.log(`ADAM: Set DI invert mask=${mask} register=${registerAddress}`)
+    if (mainWindow) {
+      setAdamDIInvertMask(mask, registerAddress, mainWindow)
+    }
+  })
+
   // Auto Updater IPC handlers
   ipcMain.on('check-for-update', () => {
     console.log('Checking for updates...')
@@ -394,6 +431,7 @@ app.on('window-all-closed', () => {
   // Clean up TCP handlers
   tcpHandler?.shutdown()
   handheldHandler?.shutdown()
+  if (mainWindow) disconnectAdam(mainWindow)
   
   if (process.platform !== 'darwin') {
     app.quit()
@@ -404,5 +442,6 @@ app.on('before-quit', () => {
   // Clean up TCP handlers before quitting
   tcpHandler?.shutdown()
   handheldHandler?.shutdown()
+  if (mainWindow) disconnectAdam(mainWindow)
 })
-// trigger rebuild
+// trigger rebuild 2
