@@ -72,7 +72,7 @@ The **Legacy Java UI** is the original implementation provided for backward comp
 ## 📂 Project Structure
 
 *   `modern-ui/`: Source code for the Electron/React application.
-*   `legacy-java/`: Source code for the Java Swing application.
+*   `legacy-java/`: Source code for the Java Swing application // deprecated
 *   `LICENSE`: MIT License.
 
 ## 📄 License
