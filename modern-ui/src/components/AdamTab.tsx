@@ -29,8 +29,15 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
     setLog(prev => [...prev, `[${formatTime()}] ${msg}`])
   }
 
+  const isInitialMount = useRef(true)
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (isInitialMount.current) {
+      isInitialMount.current = false
+      return
+    }
+    if (log.length > 0) {
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [log])
 
   useEffect(() => {

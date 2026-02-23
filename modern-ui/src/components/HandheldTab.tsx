@@ -249,28 +249,30 @@ export function HandheldTab({
         </div>
       </div>
 
-      {/* Handheld slots - responsive grid */}
-      <div
-        className="grid gap-4 overflow-auto min-h-0"
-        style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
-      >
-        {slots.map((slot) => (
-          <HandheldSlotCard
-            key={slot.id}
-            slot={slot}
-            delay={delay}
-            isRunning={runningPorts.has(slot.port)}
-            isSending={sendingPorts.has(slot.port)}
-            onUpdate={(updates) => updateSlot(slot.id, updates)}
-            onRemove={() => removeSlot(slot.id)}
-            onStart={() => handleStartServer(slot.port)}
-            onStop={() => handleStopServer(slot.port)}
-            onSend={() => handleSendToSlot(slot)}
-            onCancelSend={() => handleStopSend(slot.port)}
-            canRemove={slots.length > 1}
-          />
-        ))}
-      </div>
+      {/* Handheld slots - scrollable grid when many */}
+      <ScrollArea className="flex-1 min-h-0 rounded-lg border border-border/30">
+        <div
+          className="grid gap-4 p-1"
+          style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
+        >
+          {slots.map((slot) => (
+            <HandheldSlotCard
+              key={slot.id}
+              slot={slot}
+              delay={delay}
+              isRunning={runningPorts.has(slot.port)}
+              isSending={sendingPorts.has(slot.port)}
+              onUpdate={(updates) => updateSlot(slot.id, updates)}
+              onRemove={() => removeSlot(slot.id)}
+              onStart={() => handleStartServer(slot.port)}
+              onStop={() => handleStopServer(slot.port)}
+              onSend={() => handleSendToSlot(slot)}
+              onCancelSend={() => handleStopSend(slot.port)}
+              canRemove={slots.length > 1}
+            />
+          ))}
+        </div>
+      </ScrollArea>
 
       {/* Log Area */}
       <Card className="shrink-0 min-h-[140px] max-h-[180px] border-border/50 bg-card transition-all duration-300">

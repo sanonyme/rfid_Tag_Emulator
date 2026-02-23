@@ -47,7 +47,7 @@ function createWindow() {
   
   mainWindow = new BrowserWindow({
     width: 1200,
-    height: 800,
+    height: 855,
     minWidth: 800,
     minHeight: 600,
     frame: isLinux, // Keep frame on Linux for better compatibility
@@ -450,9 +450,7 @@ app.on('activate', () => {
 app.on('window-all-closed', () => {
   // Clean up TCP handlers
   tcpHandler?.shutdown()
-  for (const handler of handheldHandlers.values()) {
-    handler.shutdown()
-  }
+  Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
   if (mainWindow) disconnectAdam(mainWindow)
   
@@ -464,9 +462,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Clean up TCP handlers before quitting
   tcpHandler?.shutdown()
-  for (const handler of handheldHandlers.values()) {
-    handler.shutdown()
-  }
+  Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
   if (mainWindow) disconnectAdam(mainWindow)
 })
