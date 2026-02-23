@@ -21,11 +21,11 @@ class MockElectronAPI implements ElectronAPI {
   };
 
   private _handheldCallbacks: {
-    start: ((message: string) => void)[],
-    stop: ((message: string) => void)[],
-    error: ((message: string) => void)[],
-    progress: ((message: string) => void)[],
-    complete: ((message: string) => void)[]
+    start: ((port: number, message: string) => void)[],
+    stop: ((port: number, message: string) => void)[],
+    error: ((port: number, message: string) => void)[],
+    progress: ((port: number, message: string) => void)[],
+    complete: ((port: number, message: string) => void)[]
   } = {
     start: [],
     stop: [],
@@ -118,54 +118,54 @@ class MockElectronAPI implements ElectronAPI {
   onTcpProgress(callback: (message: string) => void) { this._tcpCallbacks.progress.push(callback); }
   onTcpComplete(callback: (message: string) => void) { this._tcpCallbacks.complete.push(callback); }
 
-  // Handheld Server
-  handheldStart() {
-    console.log('Mock: Starting Handheld Server...');
+  // Handheld Server (multi-port)
+  handheldStart(port: number = 10472) {
+    console.log(`Mock: Starting Handheld Server on port ${port}...`);
     setTimeout(() => {
       this._handheldRunning = true;
-      this._trigger(this._handheldCallbacks.start, 'Handheld server started on port 3000');
+      this._triggerHandheld(this._handheldCallbacks.start, port, `Handheld server started on port ${port}`);
     }, 1000);
   }
 
-  handheldStop() {
-    console.log('Mock: Stopping Handheld Server...');
+  handheldStop(port: number = 10472) {
+    console.log(`Mock: Stopping Handheld Server on port ${port}...`);
     setTimeout(() => {
       this._handheldRunning = false;
-      this._trigger(this._handheldCallbacks.stop, 'Handheld server stopped');
+      this._triggerHandheld(this._handheldCallbacks.stop, port, 'Handheld server stopped');
     }, 500);
   }
 
-  handheldSendEpcs(tags: any[], delayMs: number) {
-    console.log(`Mock: Sending ${tags.length} EPCs to handheld clients with delay ${delayMs}`);
+  handheldSendEpcs(port: number, tags: any[], delayMs: number) {
+    console.log(`Mock: Sending ${tags.length} EPCs to handheld on port ${port} with delay ${delayMs}`);
     let count = 0;
     const interval = setInterval(() => {
       const currentTag = tags[count];
       count++;
-      this._trigger(this._handheldCallbacks.progress, `Sent EPC ${count}/${tags.length} to 1 client(s): ${currentTag.epc}`);
+      this._triggerHandheld(this._handheldCallbacks.progress, port, `Sent EPC ${count}/${tags.length} to 1 client(s): ${currentTag.epc}`);
       console.log(`Mock: Sent EPC ${count}/${tags.length}:`, currentTag);
       
       if (count >= tags.length) {
         clearInterval(interval);
-        this._trigger(this._handheldCallbacks.complete, 'All EPCs sent successfully');
+        this._triggerHandheld(this._handheldCallbacks.complete, port, 'All EPCs sent successfully');
       }
     }, Math.max(delayMs, 100));
   }
 
-  async handheldIsRunning() {
+  async handheldIsRunning(_port: number = 10472) {
     return this._handheldRunning;
   }
 
-  handheldCancelSend() {
+  handheldCancelSend(port: number = 10472) {
     console.log('Mock: Cancel handheld send');
-    this._trigger(this._handheldCallbacks.error, 'Send cancelled');
+    this._triggerHandheld(this._handheldCallbacks.error, port, 'Send cancelled');
   }
 
-  // Handheld Events
-  onHandheldStarted(callback: (message: string) => void) { this._handheldCallbacks.start.push(callback); }
-  onHandheldStopped(callback: (message: string) => void) { this._handheldCallbacks.stop.push(callback); }
-  onHandheldError(callback: (message: string) => void) { this._handheldCallbacks.error.push(callback); }
-  onHandheldProgress(callback: (message: string) => void) { this._handheldCallbacks.progress.push(callback); }
-  onHandheldComplete(callback: (message: string) => void) { this._handheldCallbacks.complete.push(callback); }
+  // Handheld Events - callback receives (port, message)
+  onHandheldStarted(callback: (port: number, message: string) => void) { this._handheldCallbacks.start.push(callback); }
+  onHandheldStopped(callback: (port: number, message: string) => void) { this._handheldCallbacks.stop.push(callback); }
+  onHandheldError(callback: (port: number, message: string) => void) { this._handheldCallbacks.error.push(callback); }
+  onHandheldProgress(callback: (port: number, message: string) => void) { this._handheldCallbacks.progress.push(callback); }
+  onHandheldComplete(callback: (port: number, message: string) => void) { this._handheldCallbacks.complete.push(callback); }
 
   // OCR
   ocrSend(host: string, message: string) {
@@ -249,6 +249,10 @@ class MockElectronAPI implements ElectronAPI {
   // Helper
   private _trigger(callbacks: ((message: string) => void)[], message: string) {
     callbacks.forEach(cb => cb(message));
+  }
+
+  private _triggerHandheld(callbacks: ((port: number, message: string) => void)[], port: number, message: string) {
+    callbacks.forEach(cb => cb(port, message));
   }
 }
 

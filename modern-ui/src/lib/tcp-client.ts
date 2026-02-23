@@ -111,25 +111,29 @@ export class HandheldServerClient {
   private progressCallback: ((message: string) => void) | null = null
   private completeCallback: ((message: string) => void) | null = null
 
-  constructor() {
-    // Set up event listeners ONCE from main process
+  constructor(private port: number = 10472) {
+    // Set up event listeners - filter by port so this client only receives events for its port
     if (window.electronAPI) {
-      window.electronAPI.onHandheldStarted((message: string) => {
-        if (this.startCallback) this.startCallback(message)
+      window.electronAPI.onHandheldStarted((eventPort: number, message: string) => {
+        if (eventPort === this.port && this.startCallback) this.startCallback(message)
       })
-      window.electronAPI.onHandheldStopped((message: string) => {
-        if (this.stopCallback) this.stopCallback(message)
+      window.electronAPI.onHandheldStopped((eventPort: number, message: string) => {
+        if (eventPort === this.port && this.stopCallback) this.stopCallback(message)
       })
-      window.electronAPI.onHandheldError((message: string) => {
-        if (this.errorCallback) this.errorCallback(message)
+      window.electronAPI.onHandheldError((eventPort: number, message: string) => {
+        if (eventPort === this.port && this.errorCallback) this.errorCallback(message)
       })
-      window.electronAPI.onHandheldProgress((message: string) => {
-        if (this.progressCallback) this.progressCallback(message)
+      window.electronAPI.onHandheldProgress((eventPort: number, message: string) => {
+        if (eventPort === this.port && this.progressCallback) this.progressCallback(message)
       })
-      window.electronAPI.onHandheldComplete((message: string) => {
-        if (this.completeCallback) this.completeCallback(message)
+      window.electronAPI.onHandheldComplete((eventPort: number, message: string) => {
+        if (eventPort === this.port && this.completeCallback) this.completeCallback(message)
       })
     }
+  }
+
+  getPort(): number {
+    return this.port
   }
 
   start(onLog: (message: string) => void, onError: (error: string) => void): void {
@@ -140,14 +144,14 @@ export class HandheldServerClient {
 
     this.startCallback = onLog
     this.errorCallback = onError
-    window.electronAPI.handheldStart()
+    window.electronAPI.handheldStart(this.port)
   }
 
   async isRunning(): Promise<boolean> {
     if (!window.electronAPI) {
       return false
     }
-    return await window.electronAPI.handheldIsRunning()
+    return await window.electronAPI.handheldIsRunning(this.port)
   }
 
   async sendEpcs(
@@ -164,21 +168,20 @@ export class HandheldServerClient {
     // Set callbacks for send progress
     this.progressCallback = onProgress
     this.completeCallback = onComplete
-    
-    // Send EPCs to main process which will handle real TCP communication
-    window.electronAPI.handheldSendEpcs(tags, delay)
+
+    window.electronAPI.handheldSendEpcs(this.port, tags, delay)
   }
 
   cancelSend(): void {
     if (window.electronAPI) {
-      window.electronAPI.handheldCancelSend()
+      window.electronAPI.handheldCancelSend(this.port)
     }
   }
 
   shutdown(): void {
     if (window.electronAPI) {
       this.stopCallback = null
-      window.electronAPI.handheldStop()
+      window.electronAPI.handheldStop(this.port)
     }
   }
 }

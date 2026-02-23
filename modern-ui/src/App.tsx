@@ -2,7 +2,7 @@ import { useState } from 'react'
 import * as React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { FixedTab } from './components/FixedTab'
-import { HandheldTab } from './components/HandheldTab'
+import { HandheldTab, type HandheldSlot } from './components/HandheldTab'
 import { OCRTab } from './components/OCRTab'
 import { DecoderTab } from './components/DecoderTab'
 import { AutomationTab } from './components/AutomationTab'
@@ -19,7 +19,7 @@ import { ConnectionStatus } from './components/ConnectionStatus'
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
-  const [handheldServer] = useState(() => new HandheldServerClient())
+  const [handheldServer] = useState(() => new HandheldServerClient(10472))
   const [ocrClient] = useState(() => new OCRClient())
   
   // Shared state across tabs (like Java EmulatorUI fields - lines 11-24)
@@ -37,10 +37,10 @@ function App() {
   const [fixedUpcList, setFixedUpcList] = useState('00000000000001,5')
   const [fixedEpcList, setFixedEpcList] = useState('')
 
-  // Handheld Tab persistent state
-  // const [deviceId, setDeviceId] = useState('') // Device ID removed as it's not needed for the server
-  const [hhUpcList, setHhUpcList] = useState('00000000000001,5\n00000000000002,3')
-  const [hhEpcList, setHhEpcList] = useState('')
+  // Handheld Tab persistent state (multi-port slots)
+  const [handheldSlots, setHandheldSlots] = useState<HandheldSlot[]>([
+    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '' }
+  ])
 
   // OCR Tab persistent state
   const [ocrMessage, setOcrMessage] = useState('')
@@ -68,8 +68,11 @@ function App() {
     setStartSerial(profile.startSerial)
     setFixedUpcList(profile.fixedUpcList)
     setFixedEpcList(profile.fixedEpcList)
-    setHhUpcList(profile.hhUpcList)
-    setHhEpcList(profile.hhEpcList)
+    if (profile.handheldSlots?.length) {
+      setHandheldSlots(profile.handheldSlots)
+    } else if (profile.hhUpcList !== undefined || profile.hhEpcList !== undefined) {
+      setHandheldSlots([{ id: crypto.randomUUID(), port: 10472, upcList: profile.hhUpcList || '', epcList: profile.hhEpcList || '' }])
+    }
     setOcrMessage(profile.ocrMessage)
     if (profile.customPort) setCustomPort(profile.customPort)
     if (profile.customMessage) setCustomMessage(profile.customMessage)
@@ -88,9 +91,7 @@ function App() {
     startSerial,
     fixedUpcList,
     fixedEpcList,
-    // deviceId, // Removed
-    hhUpcList,
-    hhEpcList,
+    handheldSlots,
     ocrMessage,
     customPort,
     customMessage,
@@ -234,11 +235,8 @@ function App() {
 
             <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
               <HandheldTab 
-                handheldServer={handheldServer} 
-                upcList={hhUpcList}
-                setUpcList={setHhUpcList}
-                epcList={hhEpcList}
-                setEpcList={setHhEpcList}
+                slots={handheldSlots}
+                setSlots={setHandheldSlots}
                 delay={delay}
                 setDelay={setDelay}
               />

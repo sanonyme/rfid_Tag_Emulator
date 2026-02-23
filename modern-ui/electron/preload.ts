@@ -26,25 +26,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onTcpComplete: (callback: (message: string) => void) => 
     ipcRenderer.on('tcp-complete', (_event, message) => callback(message)),
   
-  // Handheld Server
-  handheldStart: () => ipcRenderer.send('handheld-start'),
-  handheldStop: () => ipcRenderer.send('handheld-stop'),
-  handheldSendEpcs: (tags: any[], delayMs: number) => 
-    ipcRenderer.send('handheld-send-epcs', tags, delayMs),
-  handheldCancelSend: () => ipcRenderer.send('handheld-cancel-send'),
-  handheldIsRunning: () => ipcRenderer.invoke('handheld-is-running'),
+  // Handheld Server (multi-port: pass port to all methods, events include port)
+  handheldStart: (port: number) => ipcRenderer.send('handheld-start', port),
+  handheldStop: (port: number) => ipcRenderer.send('handheld-stop', port),
+  handheldSendEpcs: (port: number, tags: any[], delayMs: number) => 
+    ipcRenderer.send('handheld-send-epcs', port, tags, delayMs),
+  handheldCancelSend: (port: number) => ipcRenderer.send('handheld-cancel-send', port),
+  handheldIsRunning: (port: number) => ipcRenderer.invoke('handheld-is-running', port),
   
-  // Handheld Event listeners
-  onHandheldStarted: (callback: (message: string) => void) => 
-    ipcRenderer.on('handheld-started', (_event, message) => callback(message)),
-  onHandheldStopped: (callback: (message: string) => void) => 
-    ipcRenderer.on('handheld-stopped', (_event, message) => callback(message)),
-  onHandheldError: (callback: (message: string) => void) => 
-    ipcRenderer.on('handheld-error', (_event, message) => callback(message)),
-  onHandheldProgress: (callback: (message: string) => void) => 
-    ipcRenderer.on('handheld-progress', (_event, message) => callback(message)),
-  onHandheldComplete: (callback: (message: string) => void) => 
-    ipcRenderer.on('handheld-complete', (_event, message) => callback(message)),
+  // Handheld Event listeners - callback receives (port, message)
+  onHandheldStarted: (callback: (port: number, message: string) => void) => 
+    ipcRenderer.on('handheld-started', (_event, port: number, message: string) => callback(port, message)),
+  onHandheldStopped: (callback: (port: number, message: string) => void) => 
+    ipcRenderer.on('handheld-stopped', (_event, port: number, message: string) => callback(port, message)),
+  onHandheldError: (callback: (port: number, message: string) => void) => 
+    ipcRenderer.on('handheld-error', (_event, port: number, message: string) => callback(port, message)),
+  onHandheldProgress: (callback: (port: number, message: string) => void) => 
+    ipcRenderer.on('handheld-progress', (_event, port: number, message: string) => callback(port, message)),
+  onHandheldComplete: (callback: (port: number, message: string) => void) => 
+    ipcRenderer.on('handheld-complete', (_event, port: number, message: string) => callback(port, message)),
   
   // OCR
   ocrSend: (host: string, message: string) => ipcRenderer.send('ocr-send', host, message),

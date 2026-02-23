@@ -24,7 +24,7 @@ autoUpdater.logger.transports = {
 
 // TCP handlers
 let tcpHandler: TCPEmulatorHandler | null = null
-let handheldHandler: HandheldServerHandler | null = null
+const handheldHandlers = new Map<number, HandheldServerHandler>()
 
 // Check if we're in dev mode - Vite sets VITE_DEV_SERVER_URL when running dev server
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
@@ -143,7 +143,6 @@ app.whenReady().then(() => {
   if (window) {
     // Initialize TCP handlers
     tcpHandler = new TCPEmulatorHandler(window)
-    handheldHandler = new HandheldServerHandler(window)
   }
   
   // Window control IPC handlers
@@ -204,29 +203,50 @@ app.whenReady().then(() => {
     return tcpHandler?.getConnectionStatus() || false
   })
 
-  // Handheld Server IPC handlers
-  ipcMain.on('handheld-start', () => {
-    console.log('Handheld server start request')
-    handheldHandler?.start()
+  // Handheld Server IPC handlers (multi-port support)
+  ipcMain.on('handheld-start', (_event, port: number) => {
+    const p = typeof port === 'number' ? port : 10472
+    console.log(`Handheld server start request on port ${p}`)
+    if (!mainWindow) return
+    let handler = handheldHandlers.get(p)
+    if (!handler) {
+      handler = new HandheldServerHandler(mainWindow, p)
+      handheldHandlers.set(p, handler)
+    }
+    handler.start()
   })
 
-  ipcMain.on('handheld-stop', () => {
-    console.log('Handheld server stop request')
-    handheldHandler?.stop()
+  ipcMain.on('handheld-stop', (_event, port: number) => {
+    const p = typeof port === 'number' ? port : 10472
+    console.log(`Handheld server stop request on port ${p}`)
+    const handler = handheldHandlers.get(p)
+    if (handler) {
+      handler.stop()
+      handheldHandlers.delete(p)
+    }
   })
 
-  ipcMain.on('handheld-send-epcs', async (_event, tags: any[], delayMs: number) => {
-    console.log(`Sending ${tags.length} EPCs to handheld`)
-    await handheldHandler?.sendEpcs(tags, delayMs)
+  ipcMain.on('handheld-send-epcs', async (_event, port: number, tags: any[], delayMs: number) => {
+    const p = typeof port === 'number' ? port : 10472
+    console.log(`Sending ${tags.length} EPCs to handheld on port ${p}`)
+    const handler = handheldHandlers.get(p)
+    if (handler) {
+      await handler.sendEpcs(tags, delayMs)
+    } else {
+      mainWindow?.webContents.send('handheld-complete', p, 'No server running on port ' + p)
+    }
   })
 
-  ipcMain.handle('handheld-is-running', () => {
-    return handheldHandler?.isRunning() || false
+  ipcMain.handle('handheld-is-running', (_event, port: number) => {
+    const p = typeof port === 'number' ? port : 10472
+    const handler = handheldHandlers.get(p)
+    return handler?.isRunning() ?? false
   })
 
-  ipcMain.on('handheld-cancel-send', () => {
-    console.log('Handheld cancel send request')
-    handheldHandler?.cancelSend()
+  ipcMain.on('handheld-cancel-send', (_event, port: number) => {
+    const p = typeof port === 'number' ? port : 10472
+    console.log(`Handheld cancel send request on port ${p}`)
+    handheldHandlers.get(p)?.cancelSend()
   })
 
   // OCR IPC handlers
@@ -430,7 +450,10 @@ app.on('activate', () => {
 app.on('window-all-closed', () => {
   // Clean up TCP handlers
   tcpHandler?.shutdown()
-  handheldHandler?.shutdown()
+  for (const handler of handheldHandlers.values()) {
+    handler.shutdown()
+  }
+  handheldHandlers.clear()
   if (mainWindow) disconnectAdam(mainWindow)
   
   if (process.platform !== 'darwin') {
@@ -441,7 +464,10 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Clean up TCP handlers before quitting
   tcpHandler?.shutdown()
-  handheldHandler?.shutdown()
+  for (const handler of handheldHandlers.values()) {
+    handler.shutdown()
+  }
+  handheldHandlers.clear()
   if (mainWindow) disconnectAdam(mainWindow)
 })
 // trigger rebuild 2

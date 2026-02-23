@@ -125,7 +125,7 @@ export class TCPEmulatorHandler {
 }
 
 // Handheld Server Handler - EXACTLY like Java HandheldServer.java
-// This CREATES A SERVER that LISTENS on port 10472 for handheld devices to connect
+// CREATES A SERVER that LISTENS on a configurable port for handheld devices to connect
 export class HandheldServerHandler {
   private serverRunning: boolean = false
   private serverSocket: Server | null = null
@@ -133,12 +133,11 @@ export class HandheldServerHandler {
   private cancelRequested: boolean = false
   private epcQueue: {epc: string, tid?: string}[] = []
 
-  constructor(private window: BrowserWindow) {}
+  constructor(private window: BrowserWindow, private port: number) {}
 
   start(): void {
-    // Java: if (running) { onLog.accept("Handheld server already running..."); return; }
     if (this.serverRunning) {
-      this.sendToRenderer('handheld-started', `Handheld server already running on port 10472`)
+      this.sendToRenderer('handheld-started', `Handheld server already running on port ${this.port}`)
       return
     }
     
@@ -171,10 +170,10 @@ export class HandheldServerHandler {
 
     // Java: running = true; onLog.accept("Handheld server listening on port " + listenPort);
     // Listen on all interfaces (0.0.0.0) so handheld devices can connect
-    this.serverSocket.listen(10472, '0.0.0.0', () => {
+    this.serverSocket.listen(this.port, '0.0.0.0', () => {
       this.serverRunning = true
-      console.log('Handheld: Server successfully started on 0.0.0.0:10472')
-      this.sendToRenderer('handheld-started', 'Handheld server listening on port 10472')
+      console.log(`Handheld: Server successfully started on 0.0.0.0:${this.port}`)
+      this.sendToRenderer('handheld-started', `Handheld server listening on port ${this.port}`)
     })
   }
 
@@ -186,7 +185,7 @@ export class HandheldServerHandler {
     // Java: if (!running || connectedClients.isEmpty()) { onComplete.accept("No handheld connected..."); return; }
     console.log(`Handheld: sendEpcs called - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`)
     if (!this.serverRunning || this.connectedClients.length === 0) {
-      const msg = `No handheld connected on port 10472 (Server running: ${this.serverRunning}, Connected clients: ${this.connectedClients.length})`
+      const msg = `No handheld connected on port ${this.port} (Server running: ${this.serverRunning}, Connected clients: ${this.connectedClients.length})`
       console.log(`Handheld: ${msg}`)
       this.sendToRenderer('handheld-complete', msg)
       return
@@ -322,8 +321,12 @@ export class HandheldServerHandler {
 
   private sendToRenderer(channel: string, message: string): void {
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, message)
+      this.window.webContents.send(channel, this.port, message)
     }
+  }
+
+  getPort(): number {
+    return this.port
   }
 
   // Java: public void shutdown()

@@ -13,6 +13,7 @@ import { Label } from './ui/label'
 import { ScrollArea } from './ui/scroll-area'
 import { Save, Trash2, Upload, Download, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
+import type { HandheldSlot } from './HandheldTab'
 
 export interface Profile {
   id: string
@@ -27,10 +28,10 @@ export interface Profile {
   startSerial: string
   fixedUpcList: string
   fixedEpcList: string
-  // Handheld Tab State
-  // deviceId: string // Removed
-  hhUpcList: string
-  hhEpcList: string
+  // Handheld Tab State (multi-port slots)
+  handheldSlots?: HandheldSlot[]
+  hhUpcList?: string
+  hhEpcList?: string
   // OCR Tab State
   ocrMessage: string
   // Custom Tab State

@@ -18,19 +18,19 @@ export interface ElectronAPI {
   onTcpProgress: (callback: (message: string) => void) => void
   onTcpComplete: (callback: (message: string) => void) => void
   
-  // Handheld Server
-  handheldStart: () => void
-  handheldStop: () => void
-  handheldSendEpcs: (tags: any[], delayMs: number) => void
-  handheldIsRunning: () => Promise<boolean>
-  handheldCancelSend: () => void
+  // Handheld Server (multi-port)
+  handheldStart: (port: number) => void
+  handheldStop: (port: number) => void
+  handheldSendEpcs: (port: number, tags: any[], delayMs: number) => void
+  handheldIsRunning: (port: number) => Promise<boolean>
+  handheldCancelSend: (port: number) => void
   
-  // Handheld Events
-  onHandheldStarted: (callback: (message: string) => void) => void
-  onHandheldStopped: (callback: (message: string) => void) => void
-  onHandheldError: (callback: (message: string) => void) => void
-  onHandheldProgress: (callback: (message: string) => void) => void
-  onHandheldComplete: (callback: (message: string) => void) => void
+  // Handheld Events - callback receives (port, message)
+  onHandheldStarted: (callback: (port: number, message: string) => void) => void
+  onHandheldStopped: (callback: (port: number, message: string) => void) => void
+  onHandheldError: (callback: (port: number, message: string) => void) => void
+  onHandheldProgress: (callback: (port: number, message: string) => void) => void
+  onHandheldComplete: (callback: (port: number, message: string) => void) => void
   
   // OCR
   ocrSend: (host: string, message: string) => void
