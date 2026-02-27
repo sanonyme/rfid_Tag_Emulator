@@ -73,6 +73,17 @@ export interface ElectronAPI {
     data: string | null,
     headers?: Record<string, string>
   }>
+
+  // Inditex API (header/key persisted in userData)
+  getApiConfig: () => Promise<{ headerName: string; key: string }>
+  saveApiConfig: (headerName: string, key: string) => Promise<void>
+  itxApiRequest: (url: string, body: string) => Promise<{
+    ok: boolean
+    status: number
+    statusText: string
+    data: string | null
+    headers?: Record<string, string>
+  }>
 }
 
 declare global {

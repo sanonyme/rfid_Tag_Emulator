@@ -8,11 +8,12 @@ import { DecoderTab } from './components/DecoderTab'
 import { AutomationTab } from './components/AutomationTab'
 import { CustomTab } from './components/CustomTab'
 import { AdamTab } from './components/AdamTab'
+import { ApiTab } from './components/Api'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal, Server } from 'lucide-react'
+import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal, Server, Globe } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
@@ -189,6 +190,10 @@ function App() {
                   <Server className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">ADAM</span>
                 </TabsTrigger>
+                <TabsTrigger value="api" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                  <Globe className="w-4 h-4 shrink-0" />
+                  <span className="font-medium whitespace-nowrap">API</span>
+                </TabsTrigger>
                 <TabsTrigger value="decoder" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                   <Code2 className="w-4 h-4 shrink-0" />
                   <span className="font-medium whitespace-nowrap">Decoder</span>
@@ -267,6 +272,10 @@ function App() {
                 host={adamHost} 
                 setHost={setAdamHost}
               />
+            </TabsContent>
+
+            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+              <ApiTab />
             </TabsContent>
 
             <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">

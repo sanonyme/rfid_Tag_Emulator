@@ -246,6 +246,18 @@ class MockElectronAPI implements ElectronAPI {
     return { ok: true, status: 200, statusText: 'OK', data: '{}' };
   }
 
+  // Inditex API (requires Electron - mock returns error)
+  async getApiConfig() {
+    return { headerName: 'itx-apiKey', key: '' };
+  }
+  async saveApiConfig(_headerName: string, _key: string) {
+    console.log('Mock: saveApiConfig - requires Electron');
+  }
+  async itxApiRequest(_url: string, _body: string) {
+    console.log('Mock: itxApiRequest - requires Electron');
+    return { ok: false, status: 0, statusText: 'Electron required', data: 'Run in Electron to use the API tab.', headers: {} };
+  }
+
   // Helper
   private _trigger(callbacks: ((message: string) => void)[], message: string) {
     callbacks.forEach(cb => cb(message));

@@ -98,5 +98,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ALE API
   aleRequest: (url: string, options: any) => ipcRenderer.invoke('ale-request', url, options),
+
+  // Inditex API (header/key from persisted config)
+  getApiConfig: () => ipcRenderer.invoke('get-api-config'),
+  saveApiConfig: (headerName: string, key: string) => ipcRenderer.invoke('save-api-config', headerName, key),
+  itxApiRequest: (url: string, body: string) => ipcRenderer.invoke('itx-api-request', url, body),
 })
 

@@ -7,7 +7,17 @@ import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMas
 
 // Load environment variables
 import dotenv from 'dotenv'
-dotenv.config()
+import fs from 'fs'
+
+// Dev: load .env from project root. Packaged: load .env from same folder as exe (user places it there)
+if (app.isPackaged) {
+  const envPath = path.join(path.dirname(app.getPath('exe')), '.env')
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath })
+  }
+} else {
+  dotenv.config()
+}
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -369,6 +379,88 @@ app.whenReady().then(() => {
   autoUpdater.on('error', (err) => {
     console.error('Update error:', err)
     mainWindow?.webContents.send('update-error', err.message)
+  })
+
+  // API config path (persisted in userData)
+  const getApiConfigPath = () => path.join(app.getPath('userData'), 'api-config.json')
+
+  // Inditex API - POST with header/key from persisted config
+  ipcMain.handle('get-api-config', () => {
+    try {
+      const configPath = getApiConfigPath()
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf-8')
+        const config = JSON.parse(raw)
+        return { headerName: config.headerName || 'itx-apiKey', key: config.key || '' }
+      }
+    } catch (e) {
+      console.error('Failed to read API config:', e)
+    }
+    return { headerName: 'itx-apiKey', key: '' }
+  })
+
+  ipcMain.handle('save-api-config', (_event, headerName: string, key: string) => {
+    try {
+      const configPath = getApiConfigPath()
+      fs.writeFileSync(configPath, JSON.stringify({ headerName: headerName || 'itx-apiKey', key }), 'utf-8')
+    } catch (e) {
+      console.error('Failed to save API config:', e)
+    }
+  })
+
+  ipcMain.handle('itx-api-request', async (_event, url: string, body: string) => {
+    let headerName = 'itx-apiKey'
+    let apiKey = ''
+    try {
+      const configPath = getApiConfigPath()
+      if (fs.existsSync(configPath)) {
+        const raw = fs.readFileSync(configPath, 'utf-8')
+        const config = JSON.parse(raw)
+        headerName = config.headerName || 'itx-apiKey'
+        apiKey = config.key || ''
+      }
+    } catch (e) {
+      console.error('Failed to read API config:', e)
+    }
+    if (!apiKey) {
+      return {
+        ok: false,
+        status: 0,
+        statusText: 'Missing API key',
+        data: 'Enter your API key in the header section above and click Save.',
+        headers: {}
+      }
+    }
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        [headerName]: apiKey,
+      }
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: body || '{}',
+      })
+      const text = await response.text()
+      const resHeaders: Record<string, string> = {}
+      response.headers.forEach((val, key) => { resHeaders[key] = val })
+      return {
+        ok: response.ok,
+        status: response.status,
+        statusText: response.statusText,
+        data: text,
+        headers: resHeaders
+      }
+    } catch (error: any) {
+      console.error('ITX API Error:', error)
+      return {
+        ok: false,
+        status: 0,
+        statusText: error.message || 'Request failed',
+        data: null,
+        headers: {}
+      }
+    }
   })
 
   // ALE API Proxy to bypass CORS
