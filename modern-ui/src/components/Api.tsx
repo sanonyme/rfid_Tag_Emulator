@@ -7,7 +7,15 @@ import { Textarea } from './ui/textarea'
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from './ui/dialog'
+import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp } from 'lucide-react'
 
 const DEFAULT_URL = 'https://api.product.inditex.com/icdmrfidre/api/v1/rfid/box-readings'
 //const DEFAULT_BODY = '{\n  "ou i i a i": "67 67 67 67"\n}'
@@ -21,6 +29,12 @@ export function ApiTab() {
   const [saved, setSaved] = useState(false)
   const [sending, setSending] = useState(false)
   const [copied, setCopied] = useState(false)
+
+  // Base64 Decoder state (like base64decode.org)
+  const [base64Input, setBase64Input] = useState('')
+  const [base64Output, setBase64Output] = useState('')
+  const [base64Error, setBase64Error] = useState<string | null>(null)
+  const [base64Mode, setBase64Mode] = useState<'decode' | 'encode'>('decode')
 
   useEffect(() => {
     window.electronAPI?.getApiConfig?.().then((config) => {
@@ -124,8 +138,52 @@ export function ApiTab() {
     }
   }
 
+  const handleBase64Convert = () => {
+    setBase64Error(null)
+    setBase64Output('')
+    const input = base64Input.trim()
+    if (!input) return
+
+    try {
+      if (base64Mode === 'decode') {
+        // Decode Base64 to UTF-8 text (like base64decode.org)
+        const decoded = atob(input.replace(/\s/g, ''))
+        const bytes = new Uint8Array(decoded.length)
+        for (let i = 0; i < decoded.length; i++) {
+          bytes[i] = decoded.charCodeAt(i)
+        }
+        setBase64Output(new TextDecoder('utf-8').decode(bytes))
+      } else {
+        // Encode UTF-8 text to Base64
+        const encoded = btoa(
+          String.fromCharCode(...new TextEncoder().encode(input))
+        )
+        setBase64Output(encoded)
+      }
+    } catch (e) {
+      setBase64Error(
+        base64Mode === 'decode'
+          ? 'Invalid Base64 string. Ensure it contains only valid Base64 characters (A-Za-z0-9+/=).'
+          : 'Encoding failed.'
+      )
+    }
+  }
+
+  const handleBase64Copy = async () => {
+    if (!base64Output) return
+    try {
+      await navigator.clipboard.writeText(base64Output)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      document.execCommand('copy')
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-4 h-full max-w-5xl mx-auto">
+    <div className="flex flex-col gap-4 h-full max-w-5xl mx-auto relative">
       {/* Request Card - Bruno style */}
       <Card className="border-border/50 bg-card transition-all duration-300">
         <CardHeader>
@@ -296,6 +354,104 @@ export function ApiTab() {
           </ScrollArea>
         </CardContent>
       </Card>
+
+      {/* Small floating Base64 trigger - click to open decoder */}
+      <Dialog>
+        <DialogTrigger asChild>
+          <button
+            type="button"
+            className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors shadow-sm"
+            title="Base64 Decode / Encode"
+          >
+            <Braces className="w-3.5 h-3.5" />
+            Base64
+          </button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Braces className="w-5 h-5 text-primary" />
+              Base64 Decoder / Encoder
+            </DialogTitle>
+            <DialogDescription>
+              Decode Base64 to text or encode text to Base64.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div className="flex gap-2">
+              <Button
+                variant={base64Mode === 'decode' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setBase64Mode('decode')
+                  setBase64Output('')
+                  setBase64Error(null)
+                }}
+              >
+                <ArrowDown className="w-3.5 h-3.5 mr-1.5" />
+                Decode
+              </Button>
+              <Button
+                variant={base64Mode === 'encode' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  setBase64Mode('encode')
+                  setBase64Output('')
+                  setBase64Error(null)
+                }}
+              >
+                <ArrowUp className="w-3.5 h-3.5 mr-1.5" />
+                Encode
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="base64-input">
+                {base64Mode === 'decode' ? 'Base64 string' : 'Text to encode'}
+              </Label>
+              <Textarea
+                id="base64-input"
+                value={base64Input}
+                onChange={(e) => {
+                  setBase64Input(e.target.value)
+                  setBase64Error(null)
+                }}
+                placeholder={
+                  base64Mode === 'decode'
+                    ? 'Paste Base64 (e.g. SGVsbG8gV29ybGQ=)'
+                    : 'Enter text to encode'
+                }
+                className="font-mono text-sm min-h-[140px] resize-y"
+              />
+            </div>
+
+            <Button onClick={handleBase64Convert} variant="secondary" className="w-full">
+              {base64Mode === 'decode' ? 'Decode Base64' : 'Encode to Base64'}
+            </Button>
+
+            {base64Output && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-muted-foreground text-xs">
+                    {base64Mode === 'decode' ? 'Decoded text' : 'Base64 output'}
+                  </Label>
+                  <Button variant="ghost" size="sm" onClick={handleBase64Copy} className="h-7 px-2 text-xs">
+                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span className="ml-1">{copied ? 'Copied!' : 'Copy'}</span>
+                  </Button>
+                </div>
+                <pre className="p-3 rounded-lg bg-muted/50 border font-mono text-sm whitespace-pre-wrap break-all max-h-48 overflow-auto">
+                  {base64Output}
+                </pre>
+              </div>
+            )}
+
+            {base64Error && (
+              <p className="text-xs text-destructive">{base64Error}</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
