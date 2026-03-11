@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, type ComponentProps } from 'react'
 import Barcode from 'react-barcode'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -11,10 +11,12 @@ import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { QrCodeGenerator } from './QrCodeGenerator'
 
+type BarcodeFormat = NonNullable<ComponentProps<typeof Barcode>['format']>
+
 interface BarcodeConfig {
   id: string
   text: string
-  format: string
+  format: BarcodeFormat
   height: number
 }
 
@@ -287,8 +289,7 @@ export function BarcodeGenerator() {
                 <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20 overflow-y-auto">
                   <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-8 items-center">
                     {barcodes.map((barcode) => (
-                      <div key={barcode.id} className="flex flex-col items-center">
-                         {/* @ts-ignore */}
+                        <div key={barcode.id} className="flex flex-col items-center">
                         <Barcode 
                           value={barcode.text}
                           format={barcode.format}

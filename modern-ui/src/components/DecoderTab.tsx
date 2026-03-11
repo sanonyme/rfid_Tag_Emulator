@@ -34,8 +34,7 @@ const BIT_SEGMENTS = [
   { label: 'Serial', bits: 38, color: 'bg-cyan-500', text: 'text-cyan-200' },
 ]
 
-function EpcBitVisualizer({ epcHex, decoded }: {
-  epcHex: string
+function EpcBitVisualizer({ decoded }: {
   decoded: { filter?: number; partition?: number; companyPrefix?: string; itemReference?: string; serial?: string }
 }) {
   const partition = decoded.partition ?? 0
@@ -242,10 +241,7 @@ export function DecoderTab() {
             )}
 
             {decodedResult && !decodedResult.error && (
-              <EpcBitVisualizer
-                epcHex={epcInput.replace(/[^0-9A-Fa-f]/g, '')}
-                decoded={decodedResult}
-              />
+              <EpcBitVisualizer decoded={decodedResult} />
             )}
           </CardContent>
         </Card>

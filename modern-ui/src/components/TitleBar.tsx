@@ -13,7 +13,7 @@ interface TitleBarProps {
   onSettingsOpenChange?: (open: boolean) => void
 }
 
-export function TitleBar({ connected = false, host = '', profileManager, settingsOpen, onSettingsOpenChange }: TitleBarProps) {
+export function TitleBar({ profileManager, settingsOpen, onSettingsOpenChange }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {

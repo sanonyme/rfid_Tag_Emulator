@@ -38,6 +38,7 @@
     "react": "^18.3.1",
     "react-barcode": "^1.4.0",
     "react-dom": "^18.3.1",
+    "electron-updater": "^6.3.9",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
@@ -54,7 +55,6 @@
     "dotenv-cli": "^11.0.0",
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
-    "electron-updater": "^6.3.9",
     "jsmodbus": "^4.0.4",
     "postcss": "^8.4.33",
     "tailwindcss": "^3.4.1",
@@ -93,10 +93,6 @@
       "target": [
         "nsis"
       ],
-      "signingHashAlgorithms": [
-        "sha256"
-      ],
-      "sign": null,
       "icon": "resources/icon-256.png"
     },
     "nsis": {
