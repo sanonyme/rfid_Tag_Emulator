@@ -15,6 +15,90 @@ import {
   SelectValue,
 } from "./ui/select"
 
+const PARTITION_TABLE = [
+  { companyBits: 40, itemBits: 4 },
+  { companyBits: 37, itemBits: 7 },
+  { companyBits: 34, itemBits: 10 },
+  { companyBits: 30, itemBits: 14 },
+  { companyBits: 27, itemBits: 17 },
+  { companyBits: 24, itemBits: 20 },
+  { companyBits: 20, itemBits: 24 },
+]
+
+const BIT_SEGMENTS = [
+  { label: 'Header', bits: 8, color: 'bg-blue-500', text: 'text-blue-200' },
+  { label: 'Filter', bits: 3, color: 'bg-emerald-500', text: 'text-emerald-200' },
+  { label: 'Partition', bits: 3, color: 'bg-amber-500', text: 'text-amber-200' },
+  { label: 'Company', bits: 0, color: 'bg-violet-500', text: 'text-violet-200' },
+  { label: 'Item Ref', bits: 0, color: 'bg-rose-500', text: 'text-rose-200' },
+  { label: 'Serial', bits: 38, color: 'bg-cyan-500', text: 'text-cyan-200' },
+]
+
+function EpcBitVisualizer({ epcHex, decoded }: {
+  epcHex: string
+  decoded: { filter?: number; partition?: number; companyPrefix?: string; itemReference?: string; serial?: string }
+}) {
+  const partition = decoded.partition ?? 0
+  const rule = PARTITION_TABLE[partition] || PARTITION_TABLE[0]
+
+  const segments = BIT_SEGMENTS.map((seg, i) => {
+    let bits = seg.bits
+    let value = ''
+    if (i === 3) { bits = rule.companyBits; value = decoded.companyPrefix || '' }
+    else if (i === 4) { bits = rule.itemBits; value = decoded.itemReference || '' }
+    else if (i === 0) value = '0x30'
+    else if (i === 1) value = String(decoded.filter ?? '')
+    else if (i === 2) value = String(decoded.partition ?? '')
+    else if (i === 5) value = decoded.serial || ''
+    return { ...seg, bits, value }
+  })
+
+  const totalBits = 96
+
+  return (
+    <div className="mt-4 space-y-2">
+      <p className="text-xs font-medium text-muted-foreground">SGTIN-96 Bit Structure</p>
+      <div className="flex rounded-lg overflow-hidden h-10 border border-border/50">
+        {segments.map((seg, i) => (
+          <div
+            key={i}
+            className={`${seg.color} relative flex items-center justify-center overflow-hidden transition-all group`}
+            style={{ width: `${(seg.bits / totalBits) * 100}%` }}
+            title={`${seg.label}: ${seg.bits} bits — ${seg.value}`}
+          >
+            {seg.bits >= 8 && (
+              <span className="text-[10px] font-bold text-white truncate px-1 drop-shadow-sm">
+                {seg.label}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+      <div className="flex rounded-lg overflow-hidden h-7 border border-border/50 bg-muted/30">
+        {segments.map((seg, i) => (
+          <div
+            key={i}
+            className="flex items-center justify-center overflow-hidden border-r border-border/20 last:border-0"
+            style={{ width: `${(seg.bits / totalBits) * 100}%` }}
+          >
+            <span className="text-[9px] font-mono truncate px-0.5 text-muted-foreground">
+              {seg.value}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+        {segments.map((seg, i) => (
+          <div key={i} className="flex items-center gap-1.5">
+            <div className={`w-2.5 h-2.5 rounded-sm ${seg.color}`} />
+            <span className="text-[10px] text-muted-foreground">{seg.label} ({seg.bits}b)</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function DecoderTab() {
   // Decode State
   const [epcInput, setEpcInput] = useState('')
@@ -92,13 +176,13 @@ export function DecoderTab() {
   }
 
   return (
-    <div className="h-full flex flex-col gap-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full">
+    <div className="min-h-full flex flex-col gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
         {/* Decoder Section */}
-        <Card className="flex flex-col h-full bg-card/50 border-white/10">
+        <Card className="flex flex-col h-full border-border/50 bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ArrowDown className="w-5 h-5 text-blue-400" />
+              <ArrowDown className="w-5 h-5 text-primary" />
               EPC Decoder
             </CardTitle>
             <CardDescription>
@@ -130,7 +214,7 @@ export function DecoderTab() {
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <span className="text-muted-foreground">Check Digit:</span>
-                      <span className="col-span-2 font-mono text-green-400">{decodedResult.gtin?.slice(-1)}</span>
+                      <span className="col-span-2 font-mono text-primary font-bold">{decodedResult.gtin?.slice(-1)}</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <span className="text-muted-foreground">Serial:</span>
@@ -156,14 +240,21 @@ export function DecoderTab() {
                 )}
               </div>
             )}
+
+            {decodedResult && !decodedResult.error && (
+              <EpcBitVisualizer
+                epcHex={epcInput.replace(/[^0-9A-Fa-f]/g, '')}
+                decoded={decodedResult}
+              />
+            )}
           </CardContent>
         </Card>
 
         {/* Encoder Section */}
-        <Card className="flex flex-col h-full bg-card/50 border-white/10">
+        <Card className="flex flex-col h-full border-border/50 bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <ArrowUp className="w-5 h-5 text-green-400" />
+              <ArrowUp className="w-5 h-5 text-primary" />
               EPC Encoder
             </CardTitle>
             <CardDescription>
@@ -185,7 +276,7 @@ export function DecoderTab() {
                   const check = EPCDecoder.calculateCheckDigit(digits)
                   return (
                     <p className="text-xs text-muted-foreground">
-                      Calculated Check Digit: <span className="text-green-400 font-bold">{check}</span>
+                      Calculated Check Digit: <span className="text-primary font-bold">{check}</span>
                     </p>
                   )
                 }
@@ -195,7 +286,7 @@ export function DecoderTab() {
                   const calcCheck = EPCDecoder.calculateCheckDigit(payload)
                   const isValid = providedCheck === calcCheck
                   return (
-                    <p className={`text-xs ${isValid ? 'text-green-400' : 'text-red-400'}`}>
+                    <p className={`text-xs ${isValid ? 'text-primary' : 'text-destructive'}`}>
                       Check Digit: {isValid ? 'Valid' : `Invalid (Expected ${calcCheck})`}
                     </p>
                   )

@@ -163,9 +163,9 @@ export function BarcodeGenerator() {
         </div>
 
         <TabsContent value="barcode" className="flex-1 mt-0">
-          <div className="grid gap-6 md:grid-cols-2 h-full">
-            <div className="space-y-6 overflow-y-auto pr-2 max-h-[calc(100vh-14rem)]">
-              <Card>
+          <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
+            <div className="space-y-6 overflow-y-auto pr-2">
+              <Card className="border-border/50">
                 <CardHeader className="pb-3">
                   <CardTitle>Configuration</CardTitle>
                   <CardDescription>Customize your barcode settings</CardDescription>
@@ -211,8 +211,8 @@ export function BarcodeGenerator() {
 
                     <div className="space-y-4">
                       {barcodes.map((barcode, index) => (
-                        <div key={barcode.id} className="p-4 border rounded-lg bg-card space-y-4 relative group">
-                          <div className="absolute right-2 top-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div key={barcode.id} className="p-4 border rounded-lg bg-card space-y-4 relative">
+                          <div className="absolute right-2 top-2 flex gap-1">
                             <Button 
                               variant="ghost" 
                               size="icon" 
@@ -279,7 +279,7 @@ export function BarcodeGenerator() {
             </div>
 
             <div className="space-y-6">
-              <Card className="h-full flex flex-col">
+              <Card className="h-full flex flex-col border-border/50">
                 <CardHeader>
                   <CardTitle>Preview</CardTitle>
                   <CardDescription>Live preview of your generated barcodes</CardDescription>

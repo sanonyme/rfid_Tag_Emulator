@@ -160,9 +160,9 @@ export function QrCodeGenerator() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 h-full">
-      <div className="space-y-6 overflow-y-auto pr-2 max-h-[calc(100vh-14rem)]">
-        <Card>
+    <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
+      <div className="space-y-6 overflow-y-auto pr-2">
+        <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle>QR Content Editor</CardTitle>
             <CardDescription>Edit the fields to generate the QR code</CardDescription>
@@ -184,25 +184,21 @@ export function QrCodeGenerator() {
                   </Button>
                 </div>
                 
-                <div className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   {Object.entries(FIELD_MAPPINGS)
-                    .sort((a, b) => a[0].localeCompare(b[0])) // Sort by key
+                    .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([key, label]) => (
-                    <div key={key} className="flex gap-3 items-start">
-                      <Label htmlFor={`field-${key}`} className="w-8 pt-2 text-right text-xs uppercase font-mono text-muted-foreground shrink-0">
-                        {key}
+                    <div key={key} className="space-y-1">
+                      <Label htmlFor={`field-${key}`} className="text-xs flex items-center gap-1.5">
+                        <span className="font-mono text-muted-foreground">{key}</span>
+                        <span className="font-medium truncate">{label}</span>
                       </Label>
-                      <div className="flex-1 space-y-1.5">
-                        <Label htmlFor={`field-${key}`} className="text-sm font-semibold">
-                          {label}
-                        </Label>
-                        <Input
-                          id={`field-${key}`}
-                          value={formData[key] || ''}
-                          onChange={(e) => updateFormData(key, e.target.value)}
-                          className="h-8"
-                        />
-                      </div>
+                      <Input
+                        id={`field-${key}`}
+                        value={formData[key] || ''}
+                        onChange={(e) => updateFormData(key, e.target.value)}
+                        className="h-8 text-sm"
+                      />
                     </div>
                   ))}
                 </div>
@@ -214,7 +210,7 @@ export function QrCodeGenerator() {
                   <Textarea 
                     value={jsonInput} 
                     onChange={handleJsonChange}
-                    className="font-mono text-sm min-h-[500px]"
+                    className="font-mono text-sm min-h-[300px]"
                   />
                   <p className="text-xs text-muted-foreground">
                     Directly edit the JSON object here.
@@ -227,7 +223,7 @@ export function QrCodeGenerator() {
       </div>
 
       <div className="space-y-6">
-        <Card className="h-full flex flex-col">
+        <Card className="h-full flex flex-col border-border/50">
           <CardHeader>
             <CardTitle>Preview</CardTitle>
             <CardDescription>Live preview of your QR code</CardDescription>

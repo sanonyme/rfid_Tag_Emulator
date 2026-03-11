@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { Textarea } from './ui/textarea'
+import { DropTextarea } from './DropTextarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
 
@@ -163,12 +164,14 @@ export function HandheldTab({
     addLog(`Sending ${tags.length} EPC(s) to handheld on port ${slot.port}...`, slot.port)
     setSendingPorts(prev => new Set([...prev, slot.port]))
 
+    const tagCount = tags.length
     await client.sendEpcs(
       tags,
       parseInt(delay) || 100,
       (progress) => addLog(progress, slot.port),
       (complete) => {
         addLog(complete, slot.port)
+        toast.success(`${tagCount} EPC(s) sent successfully`)
         setSendingPorts(prev => {
           const next = new Set(prev)
           next.delete(slot.port)
@@ -250,7 +253,7 @@ export function HandheldTab({
       </div>
 
       {/* Handheld slots - scrollable grid when many */}
-      <ScrollArea className="flex-1 min-h-0 rounded-lg border border-border/30">
+      <ScrollArea className="flex-1 min-h-[200px] rounded-lg border border-border/30">
         <div
           className="grid gap-4 p-1"
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
@@ -275,15 +278,15 @@ export function HandheldTab({
       </ScrollArea>
 
       {/* Log Area */}
-      <Card className="shrink-0 min-h-[140px] max-h-[180px] border-border/50 bg-card transition-all duration-300">
+      <Card className="shrink-0 min-h-[140px] max-h-[200px] border-border/50 bg-card">
         <CardHeader className="py-2 px-4 border-b border-border/50">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               Activity Log
               {sendingPorts.size > 0 && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                 </span>
               )}
             </CardTitle>
@@ -293,7 +296,7 @@ export function HandheldTab({
           </div>
         </CardHeader>
         <CardContent className="p-2 bg-muted/20">
-          <ScrollArea className="h-[100px]">
+          <ScrollArea className="h-[120px]">
             <div className="font-mono text-xs space-y-0.5 px-2 py-1">
               {log.map((line, i) => (
                 <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">
@@ -383,7 +386,7 @@ function HandheldSlotCard({
   }
 
   return (
-    <Card className="border-border/50 bg-card/80 backdrop-blur-sm transition-all duration-300 overflow-hidden flex flex-col min-h-0">
+    <Card className="border-border/50 bg-card overflow-hidden flex flex-col min-h-0">
       <CardHeader className="pb-3 pt-4 px-4 shrink-0">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -449,9 +452,10 @@ function HandheldSlotCard({
                 </Button>
               </div>
             </div>
-            <Textarea
+            <DropTextarea
               value={slot.upcList}
               onChange={(e) => onUpdate({ upcList: e.target.value })}
+              onFileImport={(content) => onUpdate({ upcList: slot.upcList ? slot.upcList + '\n' + content : content })}
               placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
               className="font-mono text-xs min-h-[110px] resize-y"
             />
@@ -469,9 +473,10 @@ function HandheldSlotCard({
                 </Button>
               </div>
             </div>
-            <Textarea
+            <DropTextarea
               value={slot.epcList}
               onChange={(e) => onUpdate({ epcList: e.target.value })}
+              onFileImport={(content) => onUpdate({ epcList: slot.epcList ? slot.epcList + '\n' + content : content })}
               placeholder={'3034...\n3035...,CustomTID'}
               className="font-mono text-xs min-h-[110px] resize-y"
             />

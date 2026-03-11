@@ -5,6 +5,8 @@ import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, ScanLine } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
 
@@ -85,6 +87,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
     currentCallbacks.current = {
       success: (msg: string) => {
         addLog(msg)
+        toast.success('Message sent successfully')
         if (clearInput) {
           setMessage('')
         }
@@ -117,10 +120,10 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   return (
     <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto">
       {/* OCR Input Card */}
-      <Card className="border-border/50 bg-card transition-all duration-300">
+      <Card className="border-border/50 bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <ScanLine className="w-5 h-5 text-pink-500 animate-pulse-slow" />
+            <ScanLine className="w-5 h-5 text-primary" />
             OCR Message Sender
           </CardTitle>
           <CardDescription>
@@ -150,29 +153,36 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
               <Send className={`w-4 h-4 mr-2 ${sending ? 'animate-spin' : ''}`} />
               {sending ? 'Sending...' : 'Send Message'}
             </Button>
-            <Button
-              onClick={handleInditexCode}
-              disabled={sending}
-              variant="outline"
-              size="lg"
-              className="w-full"
-            >
-              Inditex Code
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleInditexCode}
+                  disabled={sending}
+                  variant="outline"
+                  size="lg"
+                  className="w-full"
+                >
+                  Inditex Code
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Sends a sample Inditex OCR JSON payload
+              </TooltipContent>
+            </Tooltip>
           </div>
         </CardContent>
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
-        <CardHeader className="py-2 border-b border-border/50">
+      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col">
+        <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm flex items-center gap-2">
               <span>OCR Log</span>
               {sending && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-pink-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                 </span>
               )}
             </CardTitle>
@@ -185,12 +195,12 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="h-[calc(100%-5rem)] bg-muted/20">
+        <CardContent className="flex-1 min-h-0 bg-muted/20">
           <ScrollArea className="h-full">
             <div className="font-mono text-sm space-y-1 p-2">
               {log.length === 0 && (
-                <div className="text-muted-foreground italic text-center py-8 animate-pulse-slow">
-                  No messages sent yet...
+                <div className="text-muted-foreground text-center py-8">
+                  No messages sent yet.
                 </div>
               )}
               {log.map((line, i) => (

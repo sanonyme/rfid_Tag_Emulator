@@ -17,10 +17,37 @@ import {
 } from './ui/dialog'
 import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp } from 'lucide-react'
 
+function JsonHighlight({ json }: { json: string }) {
+  if (!json) return null
+  const parts = json.split(/("(?:[^"\\]|\\.)*")\s*(:)?|(\b(?:true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g)
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (part === undefined || part === '') return null
+        if (part === ':') return <span key={i}>:</span>
+        if (/^".*"$/.test(part)) {
+          const prev = parts.slice(0, i + 1)
+          const isKey = prev[i + 1] === ':'
+          return <span key={i} className={isKey ? 'text-primary' : 'text-emerald-600 dark:text-emerald-400'}>{part}</span>
+        }
+        if (part === 'true' || part === 'false') return <span key={i} className="text-amber-600 dark:text-amber-400">{part}</span>
+        if (part === 'null') return <span key={i} className="text-red-500">{part}</span>
+        if (/^-?\d/.test(part)) return <span key={i} className="text-blue-600 dark:text-blue-400">{part}</span>
+        return <span key={i} className="text-muted-foreground">{part}</span>
+      })}
+    </>
+  )
+}
+
 const DEFAULT_URL = 'https://api.product.inditex.com/icdmrfidre/api/v1/rfid/box-readings'
 //const DEFAULT_BODY = '{\n  "ou i i a i": "67 67 67 67"\n}'
 
-export function ApiTab() {
+interface ApiTabProps {
+  base64Open?: boolean
+  onBase64OpenChange?: (open: boolean) => void
+}
+
+export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   const [url, setUrl] = useState(DEFAULT_URL)
   const [body, setBody] = useState('')
   const [method] = useState<'POST'>('POST')
@@ -183,9 +210,9 @@ export function ApiTab() {
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full max-w-5xl mx-auto relative">
+    <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto relative">
       {/* Request Card - Bruno style */}
-      <Card className="border-border/50 bg-card transition-all duration-300">
+      <Card className="border-border/50 bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-primary" />
@@ -276,7 +303,7 @@ export function ApiTab() {
               id="api-body"
               value={body}
               onChange={(e) => setBody(e.target.value)}
-              placeholder='{"ou i i a i": "67 67 67 67"}'
+              placeholder='{"test": "test value"}'
               disabled={sending}
               className="font-mono text-sm min-h-[180px] resize-y"
             />
@@ -299,8 +326,8 @@ export function ApiTab() {
       </Card>
 
       {/* Response Card */}
-      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
-        <CardHeader className="py-2 border-b border-border/50">
+      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col">
+        <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center flex-wrap gap-2">
             <CardTitle className="text-sm flex items-center gap-2">
               Response
@@ -340,15 +367,15 @@ export function ApiTab() {
             )}
           </div>
         </CardHeader>
-        <CardContent className="h-[calc(100%-4rem)] p-0">
+        <CardContent className="flex-1 min-h-0 p-0">
           <ScrollArea className="h-full">
-            <pre className="p-4 font-mono text-sm text-muted-foreground whitespace-pre-wrap break-all">
+            <pre className="p-4 font-mono text-sm whitespace-pre-wrap break-all">
               {!response ? (
-                <span className="italic">Send a request to see the response...</span>
+                <span className="text-muted-foreground italic">Send a request to see the response...</span>
               ) : response.error ? (
                 <span className="text-destructive">{response.error}</span>
               ) : (
-                formatResponseBody(response.data)
+                <JsonHighlight json={formatResponseBody(response.data)} />
               )}
             </pre>
           </ScrollArea>
@@ -356,7 +383,7 @@ export function ApiTab() {
       </Card>
 
       {/* Small floating Base64 trigger - click to open decoder */}
-      <Dialog>
+      <Dialog open={base64Open} onOpenChange={onBase64OpenChange}>
         <DialogTrigger asChild>
           <button
             type="button"

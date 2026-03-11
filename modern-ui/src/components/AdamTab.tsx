@@ -145,13 +145,13 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full max-w-5xl mx-auto">
+    <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Connection Card */}
         <Card className="border-border/50 bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Activity className="w-5 h-5 text-blue-500" />
+              <Activity className="w-5 h-5 text-primary" />
               ADAM Connection
             </CardTitle>
             <CardDescription>Connect to ADAM-6000 series module</CardDescription>
@@ -202,7 +202,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
             <div className="flex items-center justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <Activity className="w-5 h-5 text-green-500" />
+                  <Activity className="w-5 h-5 text-primary" />
                   Digital Inputs (DI)
                 </CardTitle>
                 <CardDescription>
@@ -261,7 +261,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       <Card className="border-border/50 bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Power className="w-5 h-5 text-orange-500" />
+            <Power className="w-5 h-5 text-primary" />
             Digital Outputs (DO) Control
           </CardTitle>
           <CardDescription>Click to toggle outputs</CardDescription>
@@ -272,7 +272,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
               <Button
                 key={i}
                 variant={val ? "default" : "outline"}
-                className={`h-20 flex flex-col gap-2 transition-all duration-200 ${val ? 'bg-orange-600 hover:bg-orange-700 border-orange-600' : 'hover:border-orange-500/50'}`}
+                className={`h-20 flex flex-col gap-2 transition-colors ${val ? 'bg-primary hover:bg-primary/90 border-primary' : 'hover:border-primary/50'}`}
                 onClick={() => toggleDO(i)}
                 disabled={!isConnected}
               >
@@ -298,8 +298,13 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
         <CardContent className="flex-1 bg-muted/20 p-0 relative min-h-0">
           <ScrollArea className="absolute inset-0 p-4">
             <div className="font-mono text-sm space-y-1">
+              {log.length === 0 && (
+                <div className="text-muted-foreground text-center py-4">
+                  No activity yet.
+                </div>
+              )}
               {log.map((line, i) => (
-                <div key={i} className="text-muted-foreground">{line}</div>
+                <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">{line}</div>
               ))}
               <div ref={logEndRef} />
             </div>

@@ -4,6 +4,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
 import {
   Select,
@@ -53,7 +54,7 @@ export interface AutomationStep {
     startSerial?: number
     tid?: string
     uid?: string
-    antenna?: number
+    antenna?: string
     rssi?: string
     driver?: string
     // Handheld Tag
@@ -111,7 +112,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
         startSerial: 1,
         tid: '',
         uid: '0000',
-        antenna: 1,
+        antenna: '1',
         rssi: '-45.0',
         driver: 'llrp',
         epcList: '',
@@ -171,6 +172,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
       case 'FIXED_TAG':
         addLog(`Emulating Fixed Tag...`)
         let fixedTags: TagData[] = []
+        const stepAntennas = (step.params.antenna || '1').toString().split(',').filter(Boolean).map(Number)
+        if (stepAntennas.length === 0) stepAntennas.push(1)
 
         // Parse UPC List
         if (step.params.upcList) {
@@ -185,17 +188,19 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                         count, 
                         currentSerial
                     )
-                    // Increment serial for next batch to maintain uniqueness if desired, 
-                    // or just let it reset? FixedTab increments it.
                     currentSerial += count
                     
-                    fixedTags.push(...epcs.map(epc => ({
-                        epc,
-                        tid: customTid?.trim() || step.params.tid || epc,
-                        uid: step.params.uid || '0000',
-                        antenna: step.params.antenna || 1,
-                        rssi: step.params.rssi || '-45.0'
-                    })))
+                    for (const epc of epcs) {
+                      for (const ant of stepAntennas) {
+                        fixedTags.push({
+                            epc,
+                            tid: customTid?.trim() || step.params.tid || epc,
+                            uid: step.params.uid || '0000',
+                            antenna: ant,
+                            rssi: step.params.rssi || '-45.0'
+                        })
+                      }
+                    }
                 }
             }
         }
@@ -208,18 +213,20 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                 const epc = parts[0]?.trim()
                 const customTid = parts[1]?.trim()
                 if (epc) {
-                    fixedTags.push({
-                        epc,
-                        tid: customTid || step.params.tid || epc,
-                        uid: step.params.uid || '0000',
-                        antenna: step.params.antenna || 1,
-                        rssi: step.params.rssi || '-45.0'
-                    })
+                    for (const ant of stepAntennas) {
+                      fixedTags.push({
+                          epc,
+                          tid: customTid || step.params.tid || epc,
+                          uid: step.params.uid || '0000',
+                          antenna: ant,
+                          rssi: step.params.rssi || '-45.0'
+                      })
+                    }
                 }
             }
         }
 
-        // Fallback for legacy single fields (if any exist from previous version)
+        // Fallback for legacy single fields
         if (fixedTags.length === 0 && (step.params.upc || step.params.epc)) {
              if (step.params.upc) {
                 const epcs = EPCGenerator.generateFromUpc(
@@ -227,21 +234,27 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                     step.params.count || 1, 
                     step.params.startSerial || 1
                 )
-                fixedTags = epcs.map(epc => ({
-                    epc,
-                    tid: step.params.tid || epc,
-                    uid: step.params.uid || '0000',
-                    antenna: step.params.antenna || 1,
-                    rssi: step.params.rssi || '-45.0'
-                }))
+                for (const epc of epcs) {
+                  for (const ant of stepAntennas) {
+                    fixedTags.push({
+                        epc,
+                        tid: step.params.tid || epc,
+                        uid: step.params.uid || '0000',
+                        antenna: ant,
+                        rssi: step.params.rssi || '-45.0'
+                    })
+                  }
+                }
              } else if (step.params.epc) {
-                fixedTags = [{
-                    epc: step.params.epc,
-                    tid: step.params.tid || step.params.epc,
-                    uid: step.params.uid || '0000',
-                    antenna: step.params.antenna || 1,
-                    rssi: step.params.rssi || '-45.0'
-                }]
+                for (const ant of stepAntennas) {
+                  fixedTags.push({
+                      epc: step.params.epc,
+                      tid: step.params.tid || step.params.epc,
+                      uid: step.params.uid || '0000',
+                      antenna: ant,
+                      rssi: step.params.rssi || '-45.0'
+                  })
+                }
              }
         }
         
@@ -368,7 +381,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
   return (
     <div className="h-full flex gap-4">
       {/* Left Sidebar - Steps List */}
-      <Card className="w-1/3 flex flex-col bg-card/50 border-white/10">
+      <Card className="w-1/3 flex flex-col border-border/50 bg-card">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg flex items-center gap-2">
             <Workflow className="w-5 h-5" />
@@ -422,7 +435,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                   </div>
 
                   {!isRunning && (
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-1 shrink-0">
                       <Button variant="ghost" size="icon" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); handleMoveStep(index, 'up') }}>
                         <ArrowUp className="w-3 h-3" />
                       </Button>
@@ -463,7 +476,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
       </Card>
 
       {/* Middle - Configuration */}
-      <Card className="w-1/3 flex flex-col bg-card/50 border-white/10">
+      <Card className="w-1/3 flex flex-col border-border/50 bg-card">
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">Configuration</CardTitle>
           <CardDescription>Edit selected step parameters</CardDescription>
@@ -565,22 +578,62 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label>Antenna</Label>
-                      <Input 
-                        type="number"
-                        value={selectedStep.params.antenna}
-                        onChange={(e) => handleUpdateParams(selectedStep.id, { antenna: parseInt(e.target.value) })}
-                      />
+                  <div className="space-y-2">
+                    <Label>Antennas</Label>
+                    <div className="flex gap-2">
+                      {[1, 2, 3, 4].map((ant) => {
+                        const currentAntennas = (selectedStep.params.antenna || '1').toString().split(',').filter(Boolean)
+                        const isSelected = currentAntennas.includes(String(ant))
+                        return (
+                          <button
+                            key={ant}
+                            type="button"
+                            onClick={() => {
+                              const current = new Set(currentAntennas)
+                              if (current.has(String(ant))) {
+                                current.delete(String(ant))
+                              } else {
+                                current.add(String(ant))
+                              }
+                              const sorted = Array.from(current).sort((a, b) => Number(a) - Number(b))
+                              handleUpdateParams(selectedStep.id, { antenna: sorted.join(',') || '1' })
+                            }}
+                            className={`
+                              relative flex-1 h-12 rounded-lg border-2 transition-all duration-200
+                              flex flex-col items-center justify-center gap-0.5
+                              ${isSelected
+                                ? 'border-green-500 bg-green-500/15 text-green-600 dark:text-green-400 ring-1 ring-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.16)]'
+                                : 'border-border bg-muted/40 text-muted-foreground hover:border-green-300 hover:bg-green-500/5 dark:hover:border-green-700 dark:hover:bg-green-500/10'}
+                            `}
+                          >
+                            <Radio className={`w-3.5 h-3.5 ${isSelected ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground/60'}`} />
+                            <span className="text-xs font-semibold">{ant}</span>
+                            {isSelected && (
+                              <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                            )}
+                          </button>
+                        )
+                      })}
                     </div>
-                    <div className="space-y-2">
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
                       <Label>RSSI</Label>
-                      <Input 
-                        value={selectedStep.params.rssi}
-                        onChange={(e) => handleUpdateParams(selectedStep.id, { rssi: e.target.value })}
-                      />
+                      <span className="text-xs text-muted-foreground">{selectedStep.params.rssi || '-45.0'} dBm</span>
                     </div>
+                    <Slider
+                      value={[parseFloat(selectedStep.params.rssi || '-45') || -45]}
+                      onValueChange={([val]) => handleUpdateParams(selectedStep.id, { rssi: val.toFixed(1) })}
+                      min={-80}
+                      max={0}
+                      step={0.5}
+                      className="py-1"
+                    />
+                    <Input 
+                      value={selectedStep.params.rssi}
+                      onChange={(e) => handleUpdateParams(selectedStep.id, { rssi: e.target.value })}
+                      className="h-8 text-xs font-mono"
+                    />
                   </div>
                 </div>
               )}
@@ -619,7 +672,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
       </Card>
 
       {/* Right - Control & Log */}
-      <Card className="w-1/3 flex flex-col bg-card/50 border-white/10">
+      <Card className="w-1/3 flex flex-col border-border/50 bg-card">
         <CardHeader className="pb-4">
           <CardTitle className="text-lg">Execution</CardTitle>
           <CardDescription>Control automation playback</CardDescription>
@@ -642,8 +695,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
             </div>
             
             <div className="flex gap-2">
-              {!isRunning ? (
-                <Button onClick={handleRun} className="flex-1 bg-green-600 hover:bg-green-700">
+                {!isRunning ? (
+                <Button onClick={handleRun} className="flex-1">
                   <Play className="w-4 h-4 mr-2" /> Start
                 </Button>
               ) : (
@@ -654,11 +707,15 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, steps
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 border rounded-md bg-black/20 p-2 font-mono text-xs overflow-auto">
+          <div className="flex-1 min-h-[200px] border border-border/50 rounded-md bg-muted/20 p-2 font-mono text-xs overflow-auto">
              <ScrollArea className="h-full">
-                {log.length === 0 && <div className="text-muted-foreground p-2">Ready...</div>}
+                {log.length === 0 && (
+                  <div className="text-muted-foreground text-center py-4">
+                    Ready to run...
+                  </div>
+                )}
                 {log.map((l, i) => (
-                  <div key={i} className="py-0.5 px-1 hover:bg-white/5 rounded">{l}</div>
+                  <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">{l}</div>
                 ))}
                 <div ref={logEndRef} />
              </ScrollArea>

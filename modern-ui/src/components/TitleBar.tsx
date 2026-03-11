@@ -1,4 +1,4 @@
-import { Minimize2, Maximize2, X, Wifi, WifiOff } from 'lucide-react'
+import { Minimize2, Maximize2, X } from 'lucide-react'
 import { ThemeToggle } from './ThemeToggle'
 import { SettingsDialog } from './SettingsDialog'
 import logoImage from '/zeus-removebg-preview.png'
@@ -9,9 +9,11 @@ interface TitleBarProps {
   host?: string
   port?: string
   profileManager?: React.ReactNode
+  settingsOpen?: boolean
+  onSettingsOpenChange?: (open: boolean) => void
 }
 
-export function TitleBar({ connected = false, host = '', profileManager }: TitleBarProps) {
+export function TitleBar({ connected = false, host = '', profileManager, settingsOpen, onSettingsOpenChange }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {
@@ -63,28 +65,8 @@ export function TitleBar({ connected = false, host = '', profileManager }: Title
         </div>
       </div>
 
-      {/* Center - Connection Status */}
-      <div className="flex items-center gap-2 absolute left-1/2 -translate-x-1/2 animate-scale-in">
-        {connected ? (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30">
-            <div className="relative flex items-center justify-center">
-              <div className="w-2 h-2 rounded-full bg-green-500"></div>
-              <div className="absolute w-2 h-2 rounded-full bg-green-500 animate-ping"></div>
-            </div>
-            <Wifi className="w-3.5 h-3.5 text-green-600 dark:text-green-500" />
-            <span className="text-xs font-semibold text-green-700 dark:text-green-400">
-              {host ? host : 'Connected'}
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/30 border border-border/50">
-            <WifiOff className="w-3.5 h-3.5 text-muted-foreground animate-pulse-slow" />
-            <span className="text-xs font-medium text-muted-foreground">
-              Disconnected
-            </span>
-          </div>
-        )}
-      </div>
+      {/* Center spacer */}
+      <div className="flex-1" />
 
       {/* Right - Theme Toggle & Window Controls */}
       <div className="flex items-center gap-1 animate-fade-in">
@@ -92,7 +74,7 @@ export function TitleBar({ connected = false, host = '', profileManager }: Title
           {profileManager}
         </div>
         <div className="no-drag">
-          <SettingsDialog />
+          <SettingsDialog open={settingsOpen} onOpenChange={onSettingsOpenChange} />
         </div>
         <ThemeToggle />
         

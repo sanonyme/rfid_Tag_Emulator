@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import * as React from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
 import { FixedTab } from './components/FixedTab'
@@ -17,6 +17,11 @@ import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal, Server,
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
+import { CommandPalette } from './components/CommandPalette'
+import { TooltipProvider } from './components/ui/tooltip'
+import { Toaster } from 'sonner'
+
+const TAB_VALUES = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator'] as const
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -26,12 +31,12 @@ function App() {
   // Shared state across tabs (like Java EmulatorUI fields - lines 11-24)
   const [host, setHost] = useState('')
   const [connected, setConnected] = useState(false)
-  const [delay, setDelay] = useState('100') // Shared delay like delaySpinner in Java
+  const [delay, setDelay] = useState('20') // Shared delay like delaySpinner in Java
 
   // Fixed Tab persistent state
   const [port, setPort] = useState('12352')
   const [driver, setDriver] = useState('llrp')
-  const [uid, setUid] = useState('0000')
+  const [uid, setUid] = useState('')
   const [antenna, setAntenna] = useState('1')
   const [rssi, setRssi] = useState('-45.0')
   const [startSerial, setStartSerial] = useState('1')
@@ -56,8 +61,37 @@ function App() {
   // Automation Tab persistent state
   const [automationSteps, setAutomationSteps] = useState<any[]>([])
 
+  const [activeTab, setActiveTab] = useState<string>('fixed')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [profilesOpen, setProfilesOpen] = useState(false)
+  const [base64Open, setBase64Open] = useState(false)
+
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
+
+  const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+
+  const toggleTheme = useCallback(() => {
+    const newMode = document.documentElement.classList.contains('dark') ? 'light' : 'dark'
+    localStorage.setItem('theme', newMode)
+    document.documentElement.classList.toggle('dark', newMode === 'dark')
+    applyTheme(getSavedTheme(), newMode === 'dark')
+  }, [])
+
+  const handlePaletteConnect = useCallback(() => {
+    if (!host) return
+    emulator.connect(host, 12352, () => setConnected(true), () => setConnected(false)).catch(console.error)
+  }, [host, emulator])
+
+  const handlePaletteDisconnect = useCallback(() => {
+    emulator.disconnect(() => setConnected(false))
+  }, [emulator])
+
+  const handleOpenBase64 = useCallback(() => {
+    setActiveTab('api')
+    setBase64Open(true)
+  }, [])
 
   const handleLoadProfile = (profile: Profile) => {
     setHost(profile.host)
@@ -124,21 +158,36 @@ function App() {
     return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
   }, [])
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+        return
+      }
+      if (e.ctrlKey || e.metaKey) {
+        const num = parseInt(e.key)
+        if (num >= 1 && num <= 9) {
+          e.preventDefault()
+          setActiveTab(TAB_VALUES[num - 1])
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
       {currentTheme === 'christmas' && <SnowOverlay />}
       {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {/* Large floating orbs */}
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse-slow animate-float"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/5 rounded-full blur-3xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1s' }}></div>
-        
-        {/* Additional floating particles */}
-        <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-blue-400/5 rounded-full blur-2xl animate-pulse-slow animate-float" style={{ animationDelay: '0.5s' }}></div>
-        <div className="absolute bottom-1/3 left-1/3 w-48 h-48 bg-pink-400/5 rounded-full blur-2xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1.5s' }}></div>
-        
-        {/* Grid pattern overlay */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(59,130,246,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(59,130,246,0.03)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000,transparent)]"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-accent/5 rounded-full blur-2xl animate-pulse-slow animate-float" style={{ animationDelay: '0.5s' }}></div>
+        <div className="absolute bottom-1/3 left-1/3 w-48 h-48 bg-primary/3 rounded-full blur-2xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1.5s' }}></div>
+        <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.03)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.03)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000,transparent)]"></div>
       </div>
 
       {/* Custom Titlebar (Windows/Mac only) */}
@@ -147,10 +196,14 @@ function App() {
           connected={connected} 
           host={host} 
           port={port} 
+          settingsOpen={settingsOpen}
+          onSettingsOpenChange={setSettingsOpen}
           profileManager={
             <ProfileManager 
               currentState={currentProfileState} 
               onLoadProfile={handleLoadProfile}
+              externalOpen={profilesOpen}
+              onExternalOpenChange={setProfilesOpen}
             />
           }
         />
@@ -160,7 +213,7 @@ function App() {
         
         {/* Main Content */}
         <main className="flex-1 container px-6 py-6 overflow-hidden">
-          <Tabs defaultValue="fixed" className="h-full flex flex-col">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
               <ConnectionStatus
                 emulator={emulator}
@@ -209,8 +262,8 @@ function App() {
               </TabsList>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-auto">
-            <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <div className="flex-1 min-h-0 overflow-hidden">
+            <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <FixedTab 
                 emulator={emulator} 
                 host={host}
@@ -238,7 +291,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
@@ -247,7 +300,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="ocr" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="ocr" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <OCRTab 
                 host={host} 
                 connected={connected} 
@@ -257,7 +310,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <CustomTab 
                 host={host} 
                 message={customMessage}
@@ -267,22 +320,22 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <AdamTab 
                 host={adamHost} 
                 setHost={setAdamHost}
               />
             </TabsContent>
 
-            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
-              <ApiTab />
+            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+              <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
             </TabsContent>
 
-            <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <DecoderTab />
             </TabsContent>
 
-            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
@@ -293,7 +346,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in">
+            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
               <BarcodeGenerator />
             </TabsContent>
           </div>
@@ -302,6 +355,22 @@ function App() {
       </div>
 
     </div>
+    <CommandPalette
+      open={paletteOpen}
+      onOpenChange={setPaletteOpen}
+      onSwitchTab={setActiveTab}
+      connected={connected}
+      onConnect={handlePaletteConnect}
+      onDisconnect={handlePaletteDisconnect}
+      onToggleTheme={toggleTheme}
+      isDark={isDark}
+      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenProfiles={() => setProfilesOpen(true)}
+      onOpenBase64={handleOpenBase64}
+      host={host}
+    />
+    <Toaster richColors position="bottom-right" />
+    </TooltipProvider>
   )
 }
 

@@ -2,10 +2,12 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Textarea } from './ui/textarea'
+import { DropTextarea } from './DropTextarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
-import { Zap, StopCircle, Activity, RefreshCw } from 'lucide-react'
+import { Zap, StopCircle, Activity, RefreshCw, Radio } from 'lucide-react'
+import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
@@ -18,6 +20,13 @@ import {
   DialogTrigger,
 } from "./ui/dialog"
 import { Check, ChevronsUpDown } from "lucide-react"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select"
 
 interface FixedTabProps {
   emulator: TCPEmulatorClient
@@ -133,7 +142,18 @@ export function FixedTab({
     }
   }
 
+  // Auto-fetch devices when connected
+  useEffect(() => {
+    if (connected && host) {
+      fetchLogicalDevices()
+    }
+  }, [connected])
+
   const selectedUids = uid ? uid.split(',').filter(Boolean) : []
+  const selectedAntennaCount = antenna.split(',').filter(Boolean).length || 1
+  const totalInputRows =
+    upcList.split('\n').filter((line) => line.trim()).length +
+    epcList.split('\n').filter((line) => line.trim()).length
 
   const toggleDevice = (deviceUid: string) => {
     const current = new Set(selectedUids)
@@ -153,13 +173,6 @@ export function FixedTab({
     setUid('')
   }
 
-  // Auto-fetch devices when connected
-  useEffect(() => {
-    if (connected && host) {
-      fetchLogicalDevices()
-    }
-  }, [connected])
-
   const handleSendTags = async (isLooping = false) => {
     const isConnected = await emulator.isConnected()
     if (!isConnected) {
@@ -172,6 +185,8 @@ export function FixedTab({
     }
 
     const tags: TagData[] = []
+    const selectedAntennas = antenna.split(',').filter(Boolean).map(Number)
+    if (selectedAntennas.length === 0) selectedAntennas.push(1)
 
     // Parse EPC or EPC,TID (one EPC per line, TID optional)
     if (epcList.trim()) {
@@ -185,13 +200,15 @@ export function FixedTab({
         if (epc) {
           const targetUids = selectedUids.length > 0 ? selectedUids : ['']
           for (const targetUid of targetUids) {
-            tags.push({
-              epc,
-              tid: customTid || epc,
-              uid: targetUid,
-              antenna: parseInt(antenna),
-              rssi,
-            })
+            for (const ant of selectedAntennas) {
+              tags.push({
+                epc,
+                tid: customTid || epc,
+                uid: targetUid,
+                antenna: ant,
+                rssi,
+              })
+            }
           }
         }
       }
@@ -213,13 +230,15 @@ export function FixedTab({
 
           for (const targetUid of targetUids) {
               for (const epc of epcs) {
-                tags.push({
-                  epc,
-                  tid: customTid?.trim() || epc,
-                  uid: targetUid, // Use specific device UID
-                  antenna: parseInt(antenna),
-                  rssi,
-                })
+                for (const ant of selectedAntennas) {
+                  tags.push({
+                    epc,
+                    tid: customTid?.trim() || epc,
+                    uid: targetUid,
+                    antenna: ant,
+                    rssi,
+                  })
+                }
               }
           }
           serial += count
@@ -242,7 +261,8 @@ export function FixedTab({
         addLog(`Sending to ${selectedUids.length} device(s)`)
     }
 
-    addLog(`Sending ${tags.length} tag(s) with driver: ${driver}`)
+    const tagCount = tags.length
+    addLog(`Sending ${tagCount} tag(s) with driver: ${driver} on antenna(s): ${selectedAntennas.join(', ')}`)
     if (!isLooping) {
       setSending(true)
     }
@@ -255,10 +275,10 @@ export function FixedTab({
       (complete) => {
         addLog(complete)
         if (isLooping && loopingRef.current) {
-          // Continue looping
           handleSendTags(true)
         } else {
           setSending(false)
+          if (!isLooping) toast.success(`${tagCount} tag(s) sent successfully`)
           if (isLooping) {
             setLooping(false)
             loopingRef.current = false
@@ -288,45 +308,86 @@ export function FixedTab({
   }
 
   return (
-    <div className="grid grid-cols-[320px_1fr] gap-6 h-full">
+    <div className="grid grid-cols-[320px_1fr] xl:grid-cols-[340px_1fr] gap-6 h-full overflow-hidden">
       {/* Left Sidebar - Configuration */}
       <div className="space-y-4 overflow-y-auto pr-2">
         
         {/* Tag Defaults */}
-        <Card className="border-border/50 bg-card transition-all duration-300">
+        <Card className="border-border/50 bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Tag Defaults</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="antenna">Antenna</Label>
-                <Input
-                  id="antenna"
-                  type="number"
-                  min="1"
-                  max="4"
-                  value={antenna}
-                  onChange={(e) => setAntenna(e.target.value)}
-                />
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Antennas</Label>
+                <span className="text-[11px] text-muted-foreground">
+                  {selectedAntennaCount} selected
+                </span>
               </div>
-              <div className="space-y-2">
+              <div className="flex gap-2">
+                {[1, 2, 3, 4].map((ant) => {
+                  const selected = antenna.split(',').filter(Boolean).includes(String(ant))
+                  return (
+                    <button
+                      key={ant}
+                      type="button"
+                      onClick={() => {
+                        const current = new Set(antenna.split(',').filter(Boolean))
+                        if (current.has(String(ant))) {
+                          current.delete(String(ant))
+                        } else {
+                          current.add(String(ant))
+                        }
+                        const sorted = Array.from(current).sort((a, b) => Number(a) - Number(b))
+                        setAntenna(sorted.join(',') || '1')
+                      }}
+                      className={`
+                        relative flex-1 h-14 rounded-lg border-2 transition-all duration-200
+                        flex flex-col items-center justify-center gap-0.5
+                        ${selected
+                          ? 'border-green-500 bg-green-500/15 text-green-600 dark:text-green-400 ring-1 ring-green-500/30 shadow-[0_0_10px_rgba(34,197,94,0.16)]'
+                          : 'border-border bg-muted/40 text-muted-foreground hover:border-green-300 hover:bg-green-500/5 dark:hover:border-green-700 dark:hover:bg-green-500/10'}
+                      `}
+                    >
+                      <Radio className={`w-4 h-4 ${selected ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground/60'}`} />
+                      <span className="text-xs font-semibold">{ant}</span>
+                      {selected && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label htmlFor="rssi">RSSI</Label>
-                <Input
-                  id="rssi"
-                  value={rssi}
-                  onChange={(e) => setRssi(e.target.value)}
-                />
+                <span className="text-xs text-muted-foreground">{rssi} dBm</span>
               </div>
+              <Slider
+                value={[parseFloat(rssi) || -45]}
+                onValueChange={([val]) => setRssi(val.toFixed(1))}
+                min={-80}
+                max={0}
+                step={0.5}
+                className="py-1"
+              />
+              <Input
+                id="rssi"
+                value={rssi}
+                onChange={(e) => setRssi(e.target.value)}
+                className="h-8 text-xs font-mono"
+              />
             </div>
           </CardContent>
         </Card>
 
         {/* Driver Settings */}
-        <Card className="border-border/50 bg-card transition-all duration-300">
+        <Card className="border-border/50 bg-card">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
-              <Zap className="w-5 h-5 text-yellow-500 animate-pulse-slow" />
+              <Zap className="w-5 h-5 text-primary" />
               Driver Settings
             </CardTitle>
           </CardHeader>
@@ -405,18 +466,18 @@ export function FixedTab({
 
             <div className="space-y-2">
               <Label htmlFor="driver">Driver</Label>
-              <select
-                id="driver"
-                value={driver}
-                onChange={(e) => setDriver(e.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                {VENDOR_DRIVERS.map((d) => (
-                  <option key={d.code} value={d.code}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
+              <Select value={driver} onValueChange={setDriver}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select driver" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VENDOR_DRIVERS.map((d) => (
+                    <SelectItem key={d.code} value={d.code}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="delay">Delay (ms)</Label>
@@ -437,15 +498,16 @@ export function FixedTab({
       <div className="flex flex-col gap-4 min-h-0">
         {/* Tag Input */}
         <div className="grid grid-cols-2 gap-4">
-          <Card className="border-border/50 bg-card transition-all duration-300">
+          <Card className="border-border/50 bg-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">UPC → EPC Generation</CardTitle>
               <CardDescription>Format: UPC,Count,TID (optional TID)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Textarea
+              <DropTextarea
                 value={upcList}
                 onChange={(e) => setUpcList(e.target.value)}
+                onFileImport={(content) => setUpcList(upcList ? upcList + '\n' + content : content)}
                 placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
                 className="font-mono text-sm min-h-[120px]"
               />
@@ -463,15 +525,16 @@ export function FixedTab({
             </CardContent>
           </Card>
 
-          <Card className="border-border/50 bg-card transition-all duration-300">
+          <Card className="border-border/50 bg-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">Direct EPC Input</CardTitle>
               <CardDescription>Format: EPC or EPC,TID (one per line, TID optional)</CardDescription>
             </CardHeader>
             <CardContent>
-              <Textarea
+              <DropTextarea
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
+                onFileImport={(content) => setEpcList(epcList ? epcList + '\n' + content : content)}
                 placeholder="3034...&#10;3035...,CustomTID"
                 className="font-mono text-sm min-h-[120px]"
               />
@@ -480,7 +543,16 @@ export function FixedTab({
         </div>
 
         {/* Send Controls */}
-        <div className="flex gap-3 justify-center">
+        <Card className="border-border/50 bg-card">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold">Send Controls</p>
+                <p className="text-xs text-muted-foreground">
+                  {totalInputRows} populated input row{totalInputRows === 1 ? '' : 's'} ready for processing
+                </p>
+              </div>
+              <div className="flex gap-3 justify-center">
           <Button
             onClick={() => handleSendTags(false)}
             disabled={!connected || sending || looping}
@@ -491,16 +563,16 @@ export function FixedTab({
             Send Tags
           </Button>
           <Button
-            onClick={handleToggleLoop}
-            disabled={!connected || sending}
-            variant={looping ? "destructive" : "default"}
+            onClick={sending || looping ? handleStop : handleToggleLoop}
+            disabled={!connected || (!sending && !looping && totalInputRows === 0)}
+            variant={sending || looping ? "destructive" : "default"}
             size="lg"
-            className="min-w-[120px]"
+            className="min-w-[140px]"
           >
-            {looping ? (
+            {sending || looping ? (
               <>
                 <StopCircle className="w-4 h-4 mr-2 animate-spin" />
-                Stop Loop
+                Stop
               </>
             ) : (
               <>
@@ -509,28 +581,21 @@ export function FixedTab({
               </>
             )}
           </Button>
-          <Button
-            onClick={handleStop}
-            disabled={!sending && !looping}
-            variant="outline"
-            size="lg"
-            className="min-w-[140px]"
-          >
-            <StopCircle className="w-4 h-4 mr-2" />
-            Stop
-          </Button>
-        </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Log Area */}
-        <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
-          <CardHeader className="py-2 border-b border-border/50">
+        <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col overflow-hidden">
+          <CardHeader className="py-2 border-b border-border/50 shrink-0">
             <div className="flex justify-between items-center">
               <CardTitle className="text-sm flex items-center gap-2">
                 <span>Emulator Log</span>
                 {(sending || looping) && (
                   <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                   </span>
                 )}
               </CardTitle>
@@ -544,13 +609,25 @@ export function FixedTab({
               </Button>
             </div>
           </CardHeader>
-          <CardContent className="h-[calc(100%-5rem)] bg-muted/20">
+          <CardContent className="flex-1 min-h-0 bg-muted/20">
             <ScrollArea className="h-full">
               <div className="font-mono text-sm space-y-1 p-2">
-                {log.map((line, i) => (
+                {log.length === 0 ? (
+                  <div className="h-full min-h-[180px] flex items-center justify-center text-center px-6">
+                    <div className="space-y-2">
+                      <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                        <Activity className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-medium">No activity yet</p>
+                      <p className="text-xs text-muted-foreground">
+                        Send a tag batch to see live emulator events and progress here.
+                      </p>
+                    </div>
+                  </div>
+                ) : log.map((line, i) => (
                   <div 
                     key={i} 
-                    className="text-muted-foreground hover:text-foreground transition-colors duration-150 py-0.5 px-2 rounded hover:bg-accent/30 animate-fade-in"
+                    className="text-muted-foreground hover:text-foreground transition-colors duration-150 py-1 px-2 rounded hover:bg-accent/30 animate-fade-in"
                   >
                     {line}
                   </div>

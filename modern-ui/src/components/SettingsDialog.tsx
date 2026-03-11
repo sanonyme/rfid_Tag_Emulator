@@ -1,4 +1,4 @@
-import { Settings, Palette, RefreshCw, Download, CheckCircle, AlertCircle } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -8,30 +8,70 @@ import {
   DialogTitle,
   DialogTrigger,
 } from './ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from './ui/select'
 import { Label } from './ui/label'
-import { themes, applyTheme, saveTheme, getSavedTheme } from '../lib/themes'
+import { themes, applyTheme, saveTheme, getSavedTheme, type Theme } from '../lib/themes'
 import { useState, useEffect } from 'react'
-// import { Progress } from './ui/scroll-area' // Assuming Progress component exists or I'll use simple div
+import { ScrollArea } from './ui/scroll-area'
 
-export function SettingsDialog() {
+function hslToStyle(hsl: string) {
+  return `hsl(${hsl})`
+}
+
+function ThemeCard({ theme, isActive, onClick }: { theme: Theme; isActive: boolean; onClick: () => void }) {
+  const isDark = document.documentElement.classList.contains('dark')
+  const colors = isDark ? theme.colors.dark : theme.colors.light
+
+  return (
+    <button
+      onClick={onClick}
+      className={`
+        relative w-full text-left rounded-xl border-2 p-3 transition-all
+        ${isActive
+          ? 'border-primary ring-2 ring-primary/20 shadow-md'
+          : 'border-border/50 hover:border-primary/40 hover:shadow-sm'
+        }
+      `}
+    >
+      {isActive && (
+        <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
+          <Check className="w-3 h-3 text-primary-foreground" />
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        <div className="flex gap-0.5 shrink-0">
+          <div className="w-5 h-10 rounded-l-md" style={{ background: hslToStyle(colors.primary) }} />
+          <div className="w-5 h-10" style={{ background: hslToStyle(colors.secondary) }} />
+          <div className="w-5 h-10" style={{ background: hslToStyle(colors.accent) }} />
+          <div className="w-5 h-10 rounded-r-md" style={{ background: hslToStyle(colors.background) }} />
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{theme.label}</p>
+          <div className="flex gap-1 mt-1">
+            {[colors.primary, colors.secondary, colors.accent, colors.destructive].map((c, i) => (
+              <div key={i} className="w-3 h-3 rounded-full border border-border/30" style={{ background: hslToStyle(c) }} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+interface SettingsDialogProps {
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}
+
+export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
 
   useEffect(() => {
-    // Initial application of theme
     const isDark = document.documentElement.classList.contains('dark')
     applyTheme(currentTheme, isDark)
 
-    // Update listeners
     if (window.electronAPI) {
       window.electronAPI.onCheckingForUpdate(() => setUpdateStatus('checking'))
       window.electronAPI.onUpdateAvailable(() => setUpdateStatus('available'))
@@ -77,7 +117,7 @@ export function SettingsDialog() {
   }
 
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full relative">
           <Settings className="h-5 w-5" />
@@ -87,44 +127,39 @@ export function SettingsDialog() {
           <span className="sr-only">Settings</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription>
             Customize the application appearance and behavior.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label htmlFor="theme" className="text-right">
-              Theme
-            </Label>
-            <div className="col-span-3">
-              <Select value={currentTheme} onValueChange={handleThemeChange}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a theme" />
-                </SelectTrigger>
-                <SelectContent>
-                  {themes.map((theme) => (
-                    <SelectItem key={theme.name} value={theme.name}>
-                      <div className="flex items-center gap-2">
-                        <Palette className="w-4 h-4" />
-                        {theme.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        <div className="space-y-5 py-2">
+          {/* Theme Selection */}
+          <div className="space-y-3">
+            <Label>Theme</Label>
+            <ScrollArea className="h-[240px] pr-3">
+              <div className="grid grid-cols-2 gap-2">
+                {themes.map((theme) => (
+                  <ThemeCard
+                    key={theme.name}
+                    theme={theme}
+                    isActive={currentTheme === theme.name}
+                    onClick={() => handleThemeChange(theme.name)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
           </div>
 
-          <div className="grid grid-cols-4 items-center gap-4">
-            <Label className="text-right">Updates</Label>
-            <div className="col-span-3 flex flex-col gap-2">
+          {/* Updates */}
+          <div className="space-y-2">
+            <Label>Updates</Label>
+            <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={checkForUpdates}
                   disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
                   className="flex-1 min-w-[140px]"
@@ -141,7 +176,7 @@ export function SettingsDialog() {
                     </>
                   )}
                 </Button>
-                
+
                 {updateStatus === 'available' && (
                   <Button size="sm" onClick={startDownload} className="flex-1 min-w-[140px]">
                     <Download className="mr-2 h-4 w-4" />
@@ -162,7 +197,7 @@ export function SettingsDialog() {
                   <CheckCircle className="h-3 w-3" /> App is up to date
                 </span>
               )}
-              
+
               {updateStatus === 'available' && (
                 <span className="text-xs text-blue-500 flex items-center gap-1">
                   <Download className="h-3 w-3" /> Update available
@@ -172,9 +207,9 @@ export function SettingsDialog() {
               {updateStatus === 'downloading' && (
                 <div className="w-full space-y-1">
                   <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-primary transition-all duration-300" 
-                      style={{ width: `${downloadProgress}%` }} 
+                    <div
+                      className="h-full bg-primary transition-all duration-300"
+                      style={{ width: `${downloadProgress}%` }}
                     />
                   </div>
                   <span className="text-xs text-muted-foreground block text-right">
@@ -195,12 +230,3 @@ export function SettingsDialog() {
     </Dialog>
   )
 }
-
-
-
-
-
-
-
-
-

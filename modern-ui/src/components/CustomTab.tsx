@@ -5,6 +5,7 @@ import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Terminal } from 'lucide-react'
+import { toast } from 'sonner'
 import { formatTime } from '@/lib/utils'
 
 interface CustomTabProps {
@@ -98,6 +99,7 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
     currentCallbacks.current = {
       success: (msg: string) => {
         addLog(msg)
+        toast.success('Message sent successfully')
         setSending(false)
       },
       error: (msg: string) => {
@@ -136,10 +138,10 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
   return (
     <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto">
       {/* Custom Input Card */}
-      <Card className="border-border/50 bg-card transition-all duration-300">
+      <Card className="border-border/50 bg-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Terminal className="w-5 h-5 text-green-500 animate-pulse-slow" />
+            <Terminal className="w-5 h-5 text-primary" />
             Custom Message Sender
           </CardTitle>
           <CardDescription>
@@ -183,15 +185,15 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-0 border-border/50 bg-card transition-all duration-300">
-        <CardHeader className="py-2 border-b border-border/50">
+      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col">
+        <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm flex items-center gap-2">
               <span>Log</span>
               {sending && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
                 </span>
               )}
             </CardTitle>
@@ -204,12 +206,12 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
             </Button>
           </div>
         </CardHeader>
-        <CardContent className="h-[calc(100%-5rem)] bg-muted/20">
+        <CardContent className="flex-1 min-h-0 bg-muted/20">
           <ScrollArea className="h-full">
             <div className="font-mono text-sm space-y-1 p-2">
               {log.length === 0 && (
-                <div className="text-muted-foreground italic text-center py-8 animate-pulse-slow">
-                  No messages sent yet...
+                <div className="text-muted-foreground text-center py-8">
+                  No messages sent yet.
                 </div>
               )}
               {log.map((line, i) => (

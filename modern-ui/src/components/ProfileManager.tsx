@@ -47,10 +47,14 @@ export interface Profile {
 interface ProfileManagerProps {
   currentState: Omit<Profile, 'id' | 'name'>
   onLoadProfile: (profile: Profile) => void
+  externalOpen?: boolean
+  onExternalOpenChange?: (open: boolean) => void
 }
 
-export function ProfileManager({ currentState, onLoadProfile }: ProfileManagerProps) {
-  const [isOpen, setIsOpen] = React.useState(false)
+export function ProfileManager({ currentState, onLoadProfile, externalOpen, onExternalOpenChange }: ProfileManagerProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const isOpen = externalOpen !== undefined ? externalOpen : internalOpen
+  const setIsOpen = onExternalOpenChange || setInternalOpen
   const [profiles, setProfiles] = React.useState<Profile[]>([])
   const [newProfileName, setNewProfileName] = React.useState('')
   const [showSaveDialog, setShowSaveDialog] = React.useState(false)
