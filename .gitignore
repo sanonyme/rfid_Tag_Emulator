@@ -26,3 +26,5 @@ npm-debug.log*
 *.njsproj
 *.sln
 
+modern-ui/.env
+.env

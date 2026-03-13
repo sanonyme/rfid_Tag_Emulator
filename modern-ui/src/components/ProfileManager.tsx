@@ -21,6 +21,7 @@ export interface Profile {
   // Fixed Tab State
   host: string
   port: string
+  alePort?: string
   driver: string
   uid: string
   antenna: string

@@ -35,6 +35,7 @@ function App() {
 
   // Fixed Tab persistent state
   const [port, setPort] = useState('12352')
+  const [alePort, setAlePort] = useState('8080')
   const [driver, setDriver] = useState('llrp')
   const [uid, setUid] = useState('')
   const [antenna, setAntenna] = useState('1')
@@ -96,6 +97,7 @@ function App() {
   const handleLoadProfile = (profile: Profile) => {
     setHost(profile.host)
     setPort(profile.port)
+    setAlePort(profile.alePort ?? '8080')
     setDriver(profile.driver)
     setUid(profile.uid)
     setAntenna(profile.antenna)
@@ -119,6 +121,7 @@ function App() {
   const currentProfileState = {
     host,
     port,
+    alePort,
     driver,
     uid,
     antenna,
@@ -270,6 +273,8 @@ function App() {
                 setHost={setHost}
                 port={port}
                 setPort={setPort}
+                alePort={alePort}
+                setAlePort={setAlePort}
                 connected={connected}
                 setConnected={setConnected}
                 driver={driver}

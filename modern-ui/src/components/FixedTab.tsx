@@ -34,6 +34,8 @@ interface FixedTabProps {
   setHost: (host: string) => void
   port: string
   setPort: (port: string) => void
+  alePort: string
+  setAlePort: (port: string) => void
   connected: boolean
   setConnected: (connected: boolean) => void
   driver: string
@@ -68,6 +70,8 @@ export function FixedTab({
   // setHost, 
   // port, 
   // setPort,
+  alePort,
+  setAlePort,
   connected, 
   setConnected, 
   driver,
@@ -124,10 +128,10 @@ export function FixedTab({
     }
     
     setIsLoadingDevices(true)
-    addLog(`Fetching logical devices from ${host}:8080...`)
+    addLog(`Fetching logical devices from ${host}:${alePort}...`)
     
     try {
-        const devices = await apiClient.getLogicalDevices(host, '8080')
+        const devices = await apiClient.getLogicalDevices(host, alePort)
         setLogicalDevices(devices)
         addLog(`Successfully fetched ${devices.length} logical devices`)
         
@@ -394,8 +398,20 @@ export function FixedTab({
           <CardContent className="space-y-4">
             {/* Logical Device Selection */}
             <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                     <Label htmlFor="logical-device">Logical Device</Label>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <Label htmlFor="ale-port" className="text-xs text-muted-foreground whitespace-nowrap">ALE port:</Label>
+                        <Input
+                            id="ale-port"
+                            type="text"
+                            value={alePort}
+                            onChange={(e) => setAlePort(e.target.value)}
+                            placeholder="8080"
+                            className="h-7 w-16 text-xs font-mono"
+                            title="Port for ALE API. Some Edge servers use 80, 8080, or 8081."
+                        />
+                    </div>
                 </div>
                 <div className="flex gap-2">
                     <Dialog>

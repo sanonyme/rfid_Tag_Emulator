@@ -491,8 +491,13 @@ app.whenReady().then(() => {
         }
     }
 
+    const ALE_TIMEOUT_MS = 15000
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), ALE_TIMEOUT_MS)
+
     try {
-      const response = await fetch(url, options)
+      const response = await fetch(url, { ...options, signal: controller.signal })
+      clearTimeout(timeoutId)
       const text = await response.text()
       // Convert headers to simple object for IPC
       const headers: Record<string, string> = {}
@@ -508,12 +513,22 @@ app.whenReady().then(() => {
         headers
       }
     } catch (error: any) {
+      clearTimeout(timeoutId)
       console.error('ALE Request Error:', error)
+      let msg = error.message || 'Request failed'
+      if (error.name === 'AbortError') {
+        msg = `Connection timed out after ${ALE_TIMEOUT_MS / 1000}s. Check that the server is reachable at the given IP and port (try http://IP:port in a browser).`
+      } else if (msg.includes('ECONNREFUSED')) {
+        msg = 'Connection refused. Server may be down, or the port is wrong (try 80, 8080, or 8081).'
+      } else if (msg.includes('ETIMEDOUT') || msg.includes('ENOTFOUND')) {
+        msg = 'Host unreachable. Check network, firewall, and that the IP is correct.'
+      }
       return {
         ok: false,
         status: 0,
-        statusText: error.message,
-        data: null
+        statusText: msg,
+        data: null,
+        headers: {}
       }
     }
   })
