@@ -14,6 +14,7 @@ import { ScrollArea } from './ui/scroll-area'
 import { Save, Trash2, Upload, Download, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import type { HandheldSlot } from './HandheldTab'
+import type { AutomationSequence } from '@/lib/automation-types'
 
 export interface Profile {
   id: string
@@ -42,7 +43,9 @@ export interface Profile {
   adamHost?: string
   // Shared
   delay: string
+  /** @deprecated Use automationSequences. Migrated on load. */
   automationSteps?: any[]
+  automationSequences?: AutomationSequence[]
 }
 
 interface ProfileManagerProps {
@@ -50,15 +53,21 @@ interface ProfileManagerProps {
   onLoadProfile: (profile: Profile) => void
   externalOpen?: boolean
   onExternalOpenChange?: (open: boolean) => void
+  externalSaveOpen?: boolean
+  onExternalSaveOpenChange?: (open: boolean) => void
+  /** When true, only render dialogs (no buttons). Use with external triggers. */
+  dialogsOnly?: boolean
 }
 
-export function ProfileManager({ currentState, onLoadProfile, externalOpen, onExternalOpenChange }: ProfileManagerProps) {
+export function ProfileManager({ currentState, onLoadProfile, externalOpen, onExternalOpenChange, externalSaveOpen, onExternalSaveOpenChange, dialogsOnly }: ProfileManagerProps) {
   const [internalOpen, setInternalOpen] = React.useState(false)
   const isOpen = externalOpen !== undefined ? externalOpen : internalOpen
   const setIsOpen = onExternalOpenChange || setInternalOpen
+  const [internalSaveOpen, setInternalSaveOpen] = React.useState(false)
+  const showSaveDialog = externalSaveOpen !== undefined ? externalSaveOpen : internalSaveOpen
+  const setShowSaveDialog = onExternalSaveOpenChange || setInternalSaveOpen
   const [profiles, setProfiles] = React.useState<Profile[]>([])
   const [newProfileName, setNewProfileName] = React.useState('')
-  const [showSaveDialog, setShowSaveDialog] = React.useState(false)
 
   // Load profiles from localStorage on mount
   React.useEffect(() => {
@@ -164,16 +173,18 @@ export function ProfileManager({ currentState, onLoadProfile, externalOpen, onEx
 
   return (
     <>
-      <div className="flex gap-2">
-        <Button variant="outline" size="sm" onClick={() => setIsOpen(true)} className="gap-2">
-          <FolderOpen className="w-4 h-4" />
-          Profiles
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setShowSaveDialog(true)} className="gap-2">
-          <Save className="w-4 h-4" />
-          Save Current
-        </Button>
-      </div>
+      {!dialogsOnly && (
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setIsOpen(true)} className="gap-2">
+            <FolderOpen className="w-4 h-4" />
+            Profiles
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShowSaveDialog(true)} className="gap-2">
+            <Save className="w-4 h-4" />
+            Save Current
+          </Button>
+        </div>
+      )}
 
       {/* Profile List Dialog */}
       <Dialog open={isOpen} onOpenChange={setIsOpen}>

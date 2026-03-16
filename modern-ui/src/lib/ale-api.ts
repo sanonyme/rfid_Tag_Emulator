@@ -41,7 +41,7 @@ export class AleApiClient {
     }
   }
 
-  async authenticate(host: string, port: string = '8080'): Promise<string> {
+  async authenticate(host: string, port: string = '80'): Promise<string> {
     if (window.electronAPI?.aleRequest) {
       // Use standard request proxy but with special credential injection in main process
       const url = `http://${host}:${port}/ALE/api/auth`
@@ -109,7 +109,7 @@ export class AleApiClient {
     }
   }
 
-  async getLogicalDevices(host: string, port: string = '8080'): Promise<LogicalDevice[]> {
+  async getLogicalDevices(host: string, port: string = '80'): Promise<LogicalDevice[]> {
     // First authenticate
     const token = await this.authenticate(host, port)
 

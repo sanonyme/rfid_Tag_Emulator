@@ -98,7 +98,7 @@ export function ConnectionStatus({
     <div className="relative inline-flex items-center">
         <div
             className={cn(
-                "w-10 h-10 rounded-lg flex items-center justify-center cursor-pointer transition-all duration-300",
+                "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300",
                 connected 
                     ? "bg-green-500/10 text-green-500 hover:bg-green-500/20" 
                     : "bg-red-500/10 text-red-500 hover:bg-red-500/20",

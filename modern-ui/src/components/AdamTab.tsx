@@ -148,7 +148,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
     <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Connection Card */}
-        <Card className="border-border/50 bg-card">
+        <Card className="tab-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Activity className="w-5 h-5 text-primary" />
@@ -197,7 +197,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
         </Card>
 
         {/* DI Status Card */}
-        <Card className="border-border/50 bg-card">
+        <Card className="tab-card">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -258,7 +258,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       </div>
 
       {/* DO Control Card */}
-      <Card className="border-border/50 bg-card">
+      <Card className="tab-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Power className="w-5 h-5 text-primary" />

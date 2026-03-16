@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import * as React from 'react'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './components/ui/tabs'
+import { Tabs, TabsContent } from './components/ui/tabs'
 import { FixedTab } from './components/FixedTab'
 import { HandheldTab, type HandheldSlot } from './components/HandheldTab'
 import { OCRTab } from './components/OCRTab'
@@ -12,12 +12,17 @@ import { ApiTab } from './components/Api'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
+import type { AutomationSequence } from './lib/automation-types'
+import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { Radio, Smartphone, ScanLine, Code2, Workflow, QrCode, Terminal, Server, Globe } from 'lucide-react'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
+import { loadSettings } from './lib/settings'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
+import { TabNavBar } from './components/TabNavBar'
 import { CommandPalette } from './components/CommandPalette'
+import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog'
+import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
 
@@ -35,7 +40,7 @@ function App() {
 
   // Fixed Tab persistent state
   const [port, setPort] = useState('12352')
-  const [alePort, setAlePort] = useState('8080')
+  const [alePort, setAlePort] = useState('80')
   const [driver, setDriver] = useState('llrp')
   const [uid, setUid] = useState('')
   const [antenna, setAntenna] = useState('1')
@@ -59,13 +64,17 @@ function App() {
   // ADAM Tab persistent state
   const [adamHost, setAdamHost] = useState('')
 
-  // Automation Tab persistent state
-  const [automationSteps, setAutomationSteps] = useState<any[]>([])
+  // Automation Tab persistent state (sequences run in order: 1, 2, 3...)
+  const [automationSequences, setAutomationSequences] = useState<AutomationSequence[]>(() => [
+    { id: crypto.randomUUID(), name: 'Sequence 1', order: 0, steps: [] }
+  ])
 
-  const [activeTab, setActiveTab] = useState<string>('fixed')
+  const [activeTab, setActiveTab] = useState<string>(() => loadSettings().defaultTab)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [profilesOpen, setProfilesOpen] = useState(false)
+  const [saveProfileOpen, setSaveProfileOpen] = useState(false)
   const [base64Open, setBase64Open] = useState(false)
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
@@ -115,7 +124,11 @@ function App() {
     if (profile.customMessage) setCustomMessage(profile.customMessage)
     if (profile.adamHost) setAdamHost(profile.adamHost)
     setDelay(profile.delay)
-    if (profile.automationSteps) setAutomationSteps(profile.automationSteps)
+    if (profile.automationSequences?.length) {
+      setAutomationSequences(profile.automationSequences)
+    } else if (profile.automationSteps?.length) {
+      setAutomationSequences(migrateStepsToSequences(profile.automationSteps))
+    }
   }
 
   const currentProfileState = {
@@ -135,7 +148,7 @@ function App() {
     customMessage,
     adamHost,
     delay,
-    automationSteps
+    automationSequences
   }
 
   React.useEffect(() => {
@@ -144,11 +157,16 @@ function App() {
       setShowCustomTitlebar(false)
     }
 
-    // Initialize theme colors
+    // Initialize theme colors and dark class (so Tailwind dark: variants work on load)
     const savedTheme = getSavedTheme()
     setCurrentTheme(savedTheme)
-    const isDark = document.documentElement.classList.contains('dark') || 
-                   window.matchMedia('(prefers-color-scheme: dark)').matches
+    const savedMode = localStorage.getItem('theme')
+    const isDark = savedMode === 'dark'
+      ? true
+      : savedMode === 'light'
+        ? false
+        : window.matchMedia('(prefers-color-scheme: dark)').matches
+    document.documentElement.classList.toggle('dark', isDark)
     applyTheme(savedTheme, isDark)
 
     // Listen for theme changes
@@ -163,6 +181,14 @@ function App() {
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const target = e.target as HTMLElement
+        if (!target.closest('input') && !target.closest('textarea')) {
+          e.preventDefault()
+          setShortcutsOpen((v) => !v)
+          return
+        }
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
@@ -201,16 +227,29 @@ function App() {
           port={port} 
           settingsOpen={settingsOpen}
           onSettingsOpenChange={setSettingsOpen}
-          profileManager={
-            <ProfileManager 
-              currentState={currentProfileState} 
-              onLoadProfile={handleLoadProfile}
-              externalOpen={profilesOpen}
-              onExternalOpenChange={setProfilesOpen}
+          actionsMenu={
+            <BottomMenu
+              activeTab={activeTab}
+              onSwitchTab={setActiveTab}
+              onOpenProfiles={() => setProfilesOpen(true)}
+              onOpenSaveCurrent={() => setSaveProfileOpen(true)}
+              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenShortcuts={() => setShortcutsOpen(true)}
+              inline
             />
           }
         />
       )}
+      {/* Profile dialogs (triggered by BottomMenu) */}
+      <ProfileManager 
+        currentState={currentProfileState} 
+        onLoadProfile={handleLoadProfile}
+        externalOpen={profilesOpen}
+        onExternalOpenChange={setProfilesOpen}
+        externalSaveOpen={saveProfileOpen}
+        onExternalSaveOpenChange={setSaveProfileOpen}
+        dialogsOnly
+      />
 
       <div className="flex flex-1 overflow-hidden relative z-10">
         
@@ -225,44 +264,7 @@ function App() {
                 connected={connected}
                 setConnected={setConnected}
               />
-              <TabsList className="flex w-auto h-auto flex-wrap justify-center bg-background/60 backdrop-blur-sm border border-border/50 p-1 animate-scale-in">
-                <TabsTrigger value="fixed" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Radio className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Fixed</span>
-                </TabsTrigger>
-                <TabsTrigger value="handheld" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Smartphone className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Handheld</span>
-                </TabsTrigger>
-                <TabsTrigger value="ocr" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <ScanLine className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">OCR</span>
-                </TabsTrigger>
-                <TabsTrigger value="custom" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Terminal className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Custom</span>
-                </TabsTrigger>
-                <TabsTrigger value="adam" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Server className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">ADAM</span>
-                </TabsTrigger>
-                <TabsTrigger value="api" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Globe className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">API</span>
-                </TabsTrigger>
-                <TabsTrigger value="decoder" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Code2 className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Decoder</span>
-                </TabsTrigger>
-                <TabsTrigger value="automation" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <Workflow className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Auto</span>
-                </TabsTrigger>
-                <TabsTrigger value="generator" className="px-4 flex items-center justify-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                  <QrCode className="w-4 h-4 shrink-0" />
-                  <span className="font-medium whitespace-nowrap">Gen</span>
-                </TabsTrigger>
-              </TabsList>
+              <TabNavBar value={activeTab} className="animate-scale-in" />
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">
@@ -340,14 +342,16 @@ function App() {
               <DecoderTab />
             </TabsContent>
 
-            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-hidden">
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
                 ocrClient={ocrClient}
                 host={host}
-                steps={automationSteps}
-                setSteps={setAutomationSteps}
+                alePort={alePort}
+                delay={delay}
+                sequences={automationSequences}
+                setSequences={setAutomationSequences}
               />
             </TabsContent>
 
@@ -358,8 +362,8 @@ function App() {
         </Tabs>
       </main>
       </div>
-
     </div>
+    <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     <CommandPalette
       open={paletteOpen}
       onOpenChange={setPaletteOpen}

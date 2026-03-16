@@ -81,6 +81,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Font size from settings */
+  [data-font-size="compact"] {
+    font-size: 13px;
+  }
+  [data-font-size="large"] {
+    font-size: 15px;
+  }
 }
 
 /* Custom scrollbar */

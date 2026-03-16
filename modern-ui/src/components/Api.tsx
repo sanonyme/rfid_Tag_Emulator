@@ -212,7 +212,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   return (
     <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto relative">
       {/* Request Card - Bruno style */}
-      <Card className="border-border/50 bg-card">
+      <Card className="tab-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-primary" />

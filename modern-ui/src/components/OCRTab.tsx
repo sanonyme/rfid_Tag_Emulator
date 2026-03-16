@@ -4,7 +4,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, ScanLine } from 'lucide-react'
+import { Send, ScanLine, Copy, Download } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
@@ -186,13 +186,19 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
                 </span>
               )}
             </CardTitle>
-            <Button
-              onClick={() => setLog([])}
-              variant="ghost"
-              size="sm"
-            >
-              Clear
-            </Button>
+            <div className="flex items-center gap-0.5">
+              {log.length > 0 && (
+                <>
+                  <Button onClick={() => { navigator.clipboard.writeText(log.join('\n')); toast.success('Log copied') }} variant="ghost" size="sm" className="h-7 px-2" title="Copy log">
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button onClick={() => { const blob = new Blob([log.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ocr-log-${formatTime().replace(/[:/]/g, '-')}.txt`; a.click(); URL.revokeObjectURL(a.href); toast.success('Log exported') }} variant="ghost" size="sm" className="h-7 px-2" title="Export">
+                    <Download className="w-3.5 h-3.5" />
+                  </Button>
+                </>
+              )}
+              <Button onClick={() => setLog([])} variant="ghost" size="sm" className="h-7 px-2">Clear</Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 bg-muted/20">

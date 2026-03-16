@@ -6,7 +6,7 @@ import { DropTextarea } from './DropTextarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
-import { Zap, StopCircle, Activity, RefreshCw, Radio } from 'lucide-react'
+import { Zap, StopCircle, Activity, RefreshCw, Radio, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
+import { useSettings } from '@/lib/settings-context'
 
 interface FixedTabProps {
   emulator: TCPEmulatorClient
@@ -102,13 +103,42 @@ export function FixedTab({
   const [isLoadingDevices, setIsLoadingDevices] = useState(false)
   const [apiClient] = useState(() => new AleApiClient())
 
+  const { settings } = useSettings()
+  const maxLogLinesRef = useRef(settings.maxLogLines)
+  maxLogLinesRef.current = settings.maxLogLines
+
   const addLog = (message: string) => {
-    setLog(prev => [...prev, `[${formatTime()}] ${message}`])
+    setLog(prev => {
+      const next = [...prev, `[${formatTime()}] ${message}`]
+      const max = maxLogLinesRef.current
+      if (max > 0 && next.length > max) {
+        return next.slice(-max)
+      }
+      return next
+    })
   }
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
+
+  const handleCopyLog = () => {
+    if (log.length === 0) return
+    navigator.clipboard.writeText(log.join('\n'))
+    toast.success('Log copied to clipboard')
+  }
+
+  const handleExportLog = () => {
+    if (log.length === 0) return
+    const blob = new Blob([log.join('\n')], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `emulator-log-${formatTime().replace(/[:/]/g, '-')}.txt`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Log exported')
+  }
 
   // Sync connection state when component mounts (e.g., after switching tabs)
   useEffect(() => {
@@ -407,7 +437,7 @@ export function FixedTab({
                             type="text"
                             value={alePort}
                             onChange={(e) => setAlePort(e.target.value)}
-                            placeholder="8080"
+                            placeholder="80"
                             className="h-7 w-16 text-xs font-mono"
                             title="Port for ALE API. Some Edge servers use 80, 8080, or 8081."
                         />
@@ -605,7 +635,7 @@ export function FixedTab({
         {/* Log Area */}
         <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col overflow-hidden">
           <CardHeader className="py-2 border-b border-border/50 shrink-0">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-2">
               <CardTitle className="text-sm flex items-center gap-2">
                 <span>Emulator Log</span>
                 {(sending || looping) && (
@@ -615,42 +645,69 @@ export function FixedTab({
                   </span>
                 )}
               </CardTitle>
-              <Button
-                onClick={() => setLog([])}
-                variant="ghost"
-                size="sm"
-                title="Clear Log"
-              >
-                Clear
-              </Button>
+              <div className="flex items-center gap-0.5">
+                {log.length > 0 && (
+                  <>
+                    <Button
+                      onClick={handleCopyLog}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      title="Copy log"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      onClick={handleExportLog}
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      title="Export to file"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </Button>
+                  </>
+                )}
+                <Button
+                  onClick={() => setLog([])}
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2"
+                  title="Clear Log"
+                >
+                  Clear
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="flex-1 min-h-0 bg-muted/20">
-            <ScrollArea className="h-full">
-              <div className="font-mono text-sm space-y-1 p-2">
-                {log.length === 0 ? (
-                  <div className="h-full min-h-[180px] flex items-center justify-center text-center px-6">
-                    <div className="space-y-2">
-                      <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
-                        <Activity className="w-5 h-5" />
-                      </div>
-                      <p className="text-sm font-medium">No activity yet</p>
-                      <p className="text-xs text-muted-foreground">
-                        Send a tag batch to see live emulator events and progress here.
-                      </p>
-                    </div>
+            {log.length === 0 ? (
+              <div className="h-full min-h-[180px] flex items-center justify-center text-center px-6">
+                <div className="space-y-2">
+                  <div className="mx-auto w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                    <Activity className="w-5 h-5" />
                   </div>
-                ) : log.map((line, i) => (
-                  <div 
-                    key={i} 
-                    className="text-muted-foreground hover:text-foreground transition-colors duration-150 py-1 px-2 rounded hover:bg-accent/30 animate-fade-in"
-                  >
-                    {line}
-                  </div>
-                ))}
-                <div ref={logEndRef} />
+                  <p className="text-sm font-medium">No activity yet</p>
+                  <p className="text-xs text-muted-foreground">
+                    Send a tag batch to see live emulator events and progress here.
+                  </p>
+                </div>
               </div>
-            </ScrollArea>
+            ) : (
+              <ScrollArea className="h-full">
+                <div className="font-mono text-sm space-y-1 p-2">
+                  {log.map((line, i) => (
+                    <div 
+                      key={i} 
+                      className="text-muted-foreground hover:text-foreground transition-colors duration-150 py-1 px-2 rounded hover:bg-accent/30 animate-fade-in"
+                    >
+                      {line}
+                    </div>
+                  ))}
+                  <div ref={logEndRef} />
+                </div>
+              </ScrollArea>
+            )}
           </CardContent>
         </Card>
       </div>

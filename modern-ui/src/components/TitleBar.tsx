@@ -1,5 +1,4 @@
 import { Minimize2, Maximize2, X } from 'lucide-react'
-import { ThemeToggle } from './ThemeToggle'
 import { SettingsDialog } from './SettingsDialog'
 import logoImage from '/zeus-removebg-preview.png'
 import packageJson from '../../package.json' // Import version from package.json
@@ -8,12 +7,12 @@ interface TitleBarProps {
   connected?: boolean
   host?: string
   port?: string
-  profileManager?: React.ReactNode
   settingsOpen?: boolean
   onSettingsOpenChange?: (open: boolean) => void
+  actionsMenu?: React.ReactNode
 }
 
-export function TitleBar({ profileManager, settingsOpen, onSettingsOpenChange }: TitleBarProps) {
+export function TitleBar({ settingsOpen, onSettingsOpenChange, actionsMenu }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {
@@ -42,7 +41,7 @@ export function TitleBar({ profileManager, settingsOpen, onSettingsOpenChange }:
   }
 
   return (
-    <div className="h-14 bg-background/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between px-4 select-none titlebar draggable animate-slide-in-down">
+    <div className="h-14 bg-background/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between px-4 select-none titlebar draggable animate-slide-in-down relative z-30">
       {/* Left - Logo & Title */}
       <div className="flex items-center gap-3 flex-1 animate-fade-in">
         <div className="relative group">
@@ -68,15 +67,14 @@ export function TitleBar({ profileManager, settingsOpen, onSettingsOpenChange }:
       {/* Center spacer */}
       <div className="flex-1" />
 
-      {/* Right - Theme Toggle & Window Controls */}
-      <div className="flex items-center gap-1 animate-fade-in">
+      {/* Right - Actions menu & Window Controls */}
+      <div className="flex items-center gap-2 animate-fade-in">
         <div className="no-drag">
-          {profileManager}
+          {actionsMenu}
         </div>
         <div className="no-drag">
-          <SettingsDialog open={settingsOpen} onOpenChange={onSettingsOpenChange} />
+          <SettingsDialog open={settingsOpen} onOpenChange={onSettingsOpenChange} noTrigger />
         </div>
-        <ThemeToggle />
         
         <div className="flex ml-2 no-drag gap-0.5">
           <button

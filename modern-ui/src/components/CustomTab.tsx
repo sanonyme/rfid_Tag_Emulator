@@ -4,7 +4,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, Terminal } from 'lucide-react'
+import { Send, Terminal, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { formatTime } from '@/lib/utils'
 
@@ -197,13 +197,19 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
                 </span>
               )}
             </CardTitle>
-            <Button
-              onClick={() => setLog([])}
-              variant="ghost"
-              size="sm"
-            >
-              Clear
-            </Button>
+            <div className="flex items-center gap-0.5">
+              {log.length > 0 && (
+                <>
+                  <Button onClick={() => { navigator.clipboard.writeText(log.join('\n')); toast.success('Log copied') }} variant="ghost" size="sm" className="h-7 px-2" title="Copy log">
+                    <Copy className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button onClick={() => { const blob = new Blob([log.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `custom-log-${formatTime().replace(/[:/]/g, '-')}.txt`; a.click(); URL.revokeObjectURL(a.href); toast.success('Log exported') }} variant="ghost" size="sm" className="h-7 px-2" title="Export">
+                    <Download className="w-3.5 h-3.5" />
+                  </Button>
+                </>
+              )}
+              <Button onClick={() => setLog([])} variant="ghost" size="sm" className="h-7 px-2">Clear</Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 bg-muted/20">
