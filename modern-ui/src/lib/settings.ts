@@ -10,6 +10,8 @@ export interface AppSettings {
   defaultTab: DefaultTab
   maxLogLines: number
   connectionTimeoutMs: number
+  soundEnabled: boolean
+  card3dEnabled: boolean
 }
 
 const DEFAULTS: AppSettings = {
@@ -17,6 +19,8 @@ const DEFAULTS: AppSettings = {
   defaultTab: 'fixed',
   maxLogLines: 1000,
   connectionTimeoutMs: 10000,
+  soundEnabled: false,
+  card3dEnabled: false,
 }
 
 export function loadSettings(): AppSettings {

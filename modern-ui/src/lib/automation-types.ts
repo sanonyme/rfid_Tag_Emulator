@@ -1,4 +1,4 @@
-export type ActionType = 'DELAY' | 'OCR' | 'FIXED_TAG' | 'HANDHELD_TAG'
+export type ActionType = 'DELAY' | 'OCR' | 'FIXED_TAG' | 'HANDHELD_TAG' | 'CUSTOM_MESSAGE'
 
 export interface AutomationStep {
   id: string
@@ -8,6 +8,7 @@ export interface AutomationStep {
   params: {
     duration?: number
     message?: string
+    port?: string
     epc?: string
     upc?: string
     count?: number

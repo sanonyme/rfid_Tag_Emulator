@@ -35,6 +35,7 @@ import {
   ScanLine, 
   Radio, 
   Smartphone,
+  Terminal,
   Plus,
   ChevronDown,
   ArrowRight,
@@ -45,12 +46,14 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  Upload,
+  Download,
 } from 'lucide-react'
-import { TCPEmulatorClient, HandheldServerClient, OCRClient, type TagData, EPCGenerator } from '@/lib/tcp-client'
+import { TCPEmulatorClient, HandheldServerClient, OCRClient, CustomClient, type TagData, EPCGenerator } from '@/lib/tcp-client'
 import { toast } from 'sonner'
 import { formatTime } from '@/lib/utils'
 import type { AutomationStep, AutomationSequence, ActionType } from '@/lib/automation-types'
-import { normalizeSequences } from '@/lib/automation-types'
+import { normalizeSequences, migrateStepsToSequences } from '@/lib/automation-types'
 import { NodeConfigDialog } from './NodeConfigDialog'
 
 interface AutomationTabProps {
@@ -59,6 +62,7 @@ interface AutomationTabProps {
   ocrClient: OCRClient
   host: string
   alePort: string
+  customPort: string
   delay: string
   sequences: AutomationSequence[]
   setSequences: React.Dispatch<React.SetStateAction<AutomationSequence[]>>
@@ -72,6 +76,7 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   OCR: { border: 'border-pink-400/40', bg: 'bg-pink-400/10', icon: 'text-pink-400', label: 'OCR' },
   FIXED_TAG: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400', label: 'ACTION' },
   HANDHELD_TAG: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400', label: 'ACTION' },
+  CUSTOM_MESSAGE: { border: 'border-violet-400/40', bg: 'bg-violet-400/10', icon: 'text-violet-400', label: 'CUSTOM' },
 }
 
 function WorkflowNode({
@@ -80,7 +85,7 @@ function WorkflowNode({
   style,
   isDragging,
   isActive,
-  isSelected,
+  isSelected: _isSelected,
   isRunning,
   onDragStart,
   onDrag,
@@ -109,6 +114,7 @@ function WorkflowNode({
       case 'OCR': return `Send ${(step.params.message || '').length} chars`
       case 'FIXED_TAG': return step.params.upcList || step.params.epcList ? 'Tag list' : (step.params.upc || step.params.epc || 'Configure')
       case 'HANDHELD_TAG': return step.params.epcList || step.params.upcList ? 'Tag list' : 'Configure'
+      case 'CUSTOM_MESSAGE': return step.params.message ? `Send ${(step.params.message || '').length} chars` : 'Configure'
       default: return ''
     }
   }
@@ -133,7 +139,7 @@ function WorkflowNode({
       whileDrag={{ scale: 1.05, zIndex: 50, cursor: 'grabbing' }}
     >
       <Card
-        className={`group/node relative w-full overflow-hidden rounded-xl border ${style.border} ${style.bg} bg-background/70 p-3 backdrop-blur transition-all hover:shadow-lg cursor-pointer ${isDragging ? 'shadow-xl ring-2 ring-primary/50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''} ${isActive ? 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]' : ''}`}
+        className={`group/node relative w-full overflow-hidden rounded-xl border ${style.border} ${style.bg} bg-background/70 p-3 backdrop-blur transition-all hover:shadow-lg cursor-pointer select-none focus:outline-none ${isDragging ? 'shadow-xl ring-2 ring-primary/50' : ''} ${isActive ? 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]' : ''}`}
         onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('button')) { e.preventDefault(); onConfigure(step.id) } }}
       >
         <div className="relative space-y-2">
@@ -149,6 +155,7 @@ function WorkflowNode({
               {step.type === 'OCR' && <ScanLine className={`h-4 w-4 ${style.icon}`} />}
               {step.type === 'FIXED_TAG' && <Radio className={`h-4 w-4 ${style.icon}`} />}
               {step.type === 'HANDHELD_TAG' && <Smartphone className={`h-4 w-4 ${style.icon}`} />}
+              {step.type === 'CUSTOM_MESSAGE' && <Terminal className={`h-4 w-4 ${style.icon}`} />}
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{style.label}</span>
@@ -158,7 +165,7 @@ function WorkflowNode({
               <div className="flex items-center gap-0.5 shrink-0">
                 <button
                   type="button"
-                  className="p-1.5 rounded hover:bg-primary/20 text-primary shrink-0"
+                  className="p-1.5 rounded hover:bg-primary/20 text-primary shrink-0 focus:outline-none select-none"
                   onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onConfigure(step.id) }}
                   title="Configure"
                 >
@@ -166,7 +173,7 @@ function WorkflowNode({
                 </button>
                 <button
                   type="button"
-                  className="p-1 rounded hover:bg-destructive/20 text-destructive shrink-0"
+                  className="p-1 rounded hover:bg-destructive/20 text-destructive shrink-0 focus:outline-none select-none"
                   onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(step.id) }}
                   title="Remove"
                 >
@@ -221,7 +228,8 @@ function WorkflowConnectionLine({
   )
 }
 
-export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePort, delay, sequences, setSequences }: AutomationTabProps) {
+export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePort, customPort, delay, sequences, setSequences }: AutomationTabProps) {
+  const customClient = useMemo(() => new CustomClient(), [])
   const sortedSeqs = useMemo(() => [...sequences].sort((a, b) => a.order - b.order), [sequences])
   const [selectedSequenceId, setSelectedSequenceId] = useState<string | null>(sortedSeqs[0]?.id ?? null)
   const selectedSequence = sortedSeqs.find(s => s.id === selectedSequenceId)
@@ -237,9 +245,13 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
   const [, setCurrentSequenceIndex] = useState<number | null>(null)
   const [currentRunningStepId, setCurrentRunningStepId] = useState<string | null>(null)
   const [loopCount, setLoopCount] = useState<string>('1')
+  const [customLoopCount, setCustomLoopCount] = useState<string>('3')
+  const [runMode, setRunMode] = useState<'loops' | 'duration'>('loops')
+  const [runDurationSeconds, setRunDurationSeconds] = useState<string>('300')
   const [log, setLog] = useState<string[]>([])
   const logEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (sortedSeqs.length > 0 && !selectedSequenceId) setSelectedSequenceId(sortedSeqs[0].id)
@@ -328,14 +340,22 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
       ? { x: last.position!.x + 250, y: last.position!.y }
       : { x: 50, y: 100 }
 
+    const defaultNames: Record<ActionType, string> = {
+      DELAY: 'Wait',
+      OCR: 'Send OCR',
+      FIXED_TAG: 'Fixed Reader Scan',
+      HANDHELD_TAG: 'Handheld Scan',
+      CUSTOM_MESSAGE: 'Custom Message',
+    }
     const newStep: AutomationStep = {
       id: crypto.randomUUID(),
       type,
-      name: type === 'DELAY' ? 'Wait' : type === 'OCR' ? 'Send OCR' : type === 'FIXED_TAG' ? 'Fixed Reader Scan' : 'Handheld Scan',
+      name: defaultNames[type],
       position: newPosition,
       params: {
         duration: 1000,
-        message: '{"test":1}',
+        message: type === 'CUSTOM_MESSAGE' ? '' : '{"test":1}',
+        port: type === 'CUSTOM_MESSAGE' ? customPort : undefined,
         epc: '', upc: '', count: 1, startSerial: 1, tid: '', uid: '0000',
         antenna: '1', rssi: '-45.0', driver: 'llrp', epcList: '', upcList: '', deviceId: ''
       }
@@ -504,6 +524,25 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
           ocrClient.sendMessage(host, step.params.message || '', 
             (msg) => { addLog(`OCR Success: ${msg}`); resolve() },
             (err) => { addLog(`OCR Error: ${err}`); reject(new Error(err)) }
+          )
+        })
+        break
+
+      case 'CUSTOM_MESSAGE':
+        addLog(`Sending custom message...`)
+        if (!host) throw new Error('Host not configured')
+        const portStr = step.params.port || customPort
+        const portNum = parseInt(portStr)
+        if (isNaN(portNum) || portNum <= 0 || portNum > 65535) {
+          throw new Error(`Invalid port: ${portStr}`)
+        }
+        if (!step.params.message?.trim()) {
+          throw new Error('Message is empty')
+        }
+        await new Promise<void>((resolve, reject) => {
+          customClient.sendMessage(host, portNum, step.params.message || '',
+            (msg) => { addLog(`Custom Success: ${msg}`); resolve() },
+            (err) => { addLog(`Custom Error: ${err}`); reject(new Error(err)) }
           )
         })
         break
@@ -683,12 +722,22 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
     abortControllerRef.current = new AbortController()
     const signal = abortControllerRef.current.signal
 
-    const loops = loopCount === 'Inf' ? Infinity : parseInt(loopCount) || 1
+    const useDuration = runMode === 'duration'
+    const durationSec = Math.max(1, parseInt(runDurationSeconds) || 300)
+    const endTime = useDuration ? Date.now() + durationSec * 1000 : 0
+
+    const loops = useDuration ? Infinity : (loopCount === 'Inf' ? Infinity : parseInt(loopCount) || 1)
+    let loopNum = 0
     
     try {
       for (let i = 0; i < loops; i++) {
         if (signal.aborted) break
-        if (loops > 1) addLog(`--- Loop ${i + 1}/${loops === Infinity ? '∞' : loops} ---`)
+        if (useDuration && Date.now() >= endTime) {
+          addLog(`Duration (${durationSec}s) reached. Stopping.`)
+          break
+        }
+        loopNum++
+        if (loops > 1 || useDuration) addLog(`--- Loop ${loopNum}${useDuration ? ` (${Math.max(0, Math.ceil((endTime - Date.now()) / 1000))}s left)` : `/${loops === Infinity ? '∞' : loops}`} ---`)
         
         let globalStepIdx = 0
         for (let seqIdx = 0; seqIdx < sortedSeqs.length; seqIdx++) {
@@ -736,6 +785,71 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
     }
   }
 
+  const WORKFLOW_FILE_VERSION = 1
+  const handleExportWorkflow = () => {
+    const payload = {
+      version: WORKFLOW_FILE_VERSION,
+      exportedAt: new Date().toISOString(),
+      sequences: sortedSeqs.map(s => ({
+        ...s,
+        steps: s.steps.map(st => ({
+          ...st,
+          position: st.position ?? { x: 0, y: 0 },
+        })),
+      })),
+    }
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `rfid-automation-${new Date().toISOString().slice(0, 10)}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+    toast.success('Workflow exported')
+  }
+
+  const handleImportWorkflow = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const raw = JSON.parse(reader.result as string)
+        let seqs: AutomationSequence[] = []
+        if (raw.sequences && Array.isArray(raw.sequences)) {
+          seqs = raw.sequences
+        } else if (Array.isArray(raw)) {
+          seqs = raw
+        } else if (raw.steps && Array.isArray(raw.steps)) {
+          seqs = migrateStepsToSequences(raw.steps)
+        } else {
+          toast.error('Invalid workflow file format')
+          return
+        }
+        const validTypes: ActionType[] = ['DELAY', 'OCR', 'FIXED_TAG', 'HANDHELD_TAG', 'CUSTOM_MESSAGE']
+        const normalized = normalizeSequences(seqs.map((s: any) => ({
+          id: crypto.randomUUID(),
+          name: String(s.name || 'Imported').slice(0, 100),
+          order: typeof s.order === 'number' ? s.order : 0,
+          steps: (s.steps || []).map((st: any) => ({
+            id: crypto.randomUUID(),
+            type: validTypes.includes(st.type) ? st.type : 'DELAY',
+            name: String(st.name || 'Step').slice(0, 100),
+            position: Array.isArray(st.position) ? { x: st.position[0] ?? 0, y: st.position[1] ?? 0 } : (st.position && typeof st.position.x === 'number' ? st.position : { x: 0, y: 0 }),
+            params: typeof st.params === 'object' && st.params !== null ? st.params : {},
+          })),
+        })))
+        setSequences(prev => [...prev, ...normalized])
+        toast.success(`Imported ${normalized.length} sequence(s)`)
+      } catch (err) {
+        console.error('Import failed:', err)
+        toast.error('Failed to parse workflow file')
+      }
+    }
+    reader.readAsText(file, 'UTF-8')
+  }
+
   const [addMenuOpen, setAddMenuOpen] = useState(false)
 
   return (
@@ -758,17 +872,20 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
             <>
               <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
               <div className="absolute right-0 top-full mt-1 z-50 py-1 rounded-lg border border-border bg-popover shadow-lg min-w-[160px]">
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
                   <Clock className="w-4 h-4 text-amber-500" /> Delay
                 </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2" onClick={() => { handleAddStep('OCR'); setAddMenuOpen(false) }}>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('OCR'); setAddMenuOpen(false) }}>
                   <ScanLine className="w-4 h-4 text-pink-500" /> OCR
                 </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2" onClick={() => { handleAddStep('FIXED_TAG'); setAddMenuOpen(false) }}>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('FIXED_TAG'); setAddMenuOpen(false) }}>
                   <Radio className="w-4 h-4 text-blue-500" /> Fixed Reader
                 </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2" onClick={() => { handleAddStep('HANDHELD_TAG'); setAddMenuOpen(false) }}>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('HANDHELD_TAG'); setAddMenuOpen(false) }}>
                   <Smartphone className="w-4 h-4 text-emerald-500" /> Handheld
+                </button>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CUSTOM_MESSAGE'); setAddMenuOpen(false) }}>
+                  <Terminal className="w-4 h-4 text-violet-500" /> Custom Message
                 </button>
               </div>
             </>
@@ -780,18 +897,43 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Sequence list (left) */}
         <div className="w-72 shrink-0 flex flex-col border-r border-border/50 bg-card/50 min-w-0">
-          <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between gap-1">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <ListOrdered className="h-3.5 w-3.5" /> Sequences
             </span>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleAddSequence}>
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Add sequence</TooltipContent>
-            </Tooltip>
+            <div className="flex items-center gap-0.5">
+              <input
+                ref={importInputRef}
+                type="file"
+                accept=".json"
+                onChange={handleImportWorkflow}
+                className="hidden"
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => importInputRef.current?.click()}>
+                    <Upload className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Import workflow</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleExportWorkflow} disabled={sortedSeqs.length === 0}>
+                    <Download className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Export workflow</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleAddSequence}>
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Add sequence</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
           <div className="flex-1 min-h-0 overflow-auto py-2">
             <div className="space-y-0.5 px-2">
@@ -844,7 +986,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="p-0.5 rounded hover:bg-muted"
+                                className="p-0.5 rounded hover:bg-muted focus:outline-none select-none"
                                 onClick={(e) => { e.stopPropagation(); handleCloneSequence(seq.id) }}
                               >
                                 <Copy className="h-3 w-3" />
@@ -858,7 +1000,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                                 <TooltipTrigger asChild>
                                   <button
                                     type="button"
-                                    className="p-0.5 rounded hover:bg-muted disabled:opacity-40"
+                                    className="p-0.5 rounded hover:bg-muted disabled:opacity-40 focus:outline-none select-none"
                                     onClick={(e) => { e.stopPropagation(); handleReorderSequence(seq.id, 'up') }}
                                     disabled={idx === 0}
                                   >
@@ -871,7 +1013,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                                 <TooltipTrigger asChild>
                                   <button
                                     type="button"
-                                    className="p-0.5 rounded hover:bg-muted disabled:opacity-40"
+                                    className="p-0.5 rounded hover:bg-muted disabled:opacity-40 focus:outline-none select-none"
                                     onClick={(e) => { e.stopPropagation(); handleReorderSequence(seq.id, 'down') }}
                                     disabled={idx === sortedSeqs.length - 1}
                                   >
@@ -886,7 +1028,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                className="p-0.5 rounded hover:bg-destructive/20 text-destructive"
+                                className="p-0.5 rounded hover:bg-destructive/20 text-destructive focus:outline-none select-none"
                                 onClick={(e) => { e.stopPropagation(); handleDeleteSequenceClick(seq.id) }}
                               >
                                 <Trash2 className="h-3 w-3" />
@@ -1020,20 +1162,69 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
             </CardHeader>
             <CardContent className="flex flex-col gap-4 px-5 pb-5 flex-1 min-h-0 overflow-hidden">
               <div className="flex flex-col gap-4 p-4 rounded-xl border border-border/50 bg-muted/10 shrink-0">
-            <div className="flex items-center gap-2">
-              <Label className="w-24">Loop Count:</Label>
-              <Select value={loopCount} onValueChange={setLoopCount}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Run Once</SelectItem>
-                  <SelectItem value="5">Loop 5 times</SelectItem>
-                  <SelectItem value="10">Loop 10 times</SelectItem>
-                  <SelectItem value="Inf">Loop Indefinitely</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="w-24 shrink-0">Run:</Label>
+                <Select value={runMode} onValueChange={(v) => setRunMode(v as 'loops' | 'duration')}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="loops">By loop count</SelectItem>
+                    <SelectItem value="duration">For duration</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+              {runMode === 'loops' ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <Label className="w-24 shrink-0" />
+                    <Select value={loopCount} onValueChange={setLoopCount}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">Run Once</SelectItem>
+                        <SelectItem value="5">Loop 5 times</SelectItem>
+                        <SelectItem value="10">Loop 10 times</SelectItem>
+                        <SelectItem value="custom">Custom count…</SelectItem>
+                        <SelectItem value="Inf">Loop Indefinitely</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {loopCount === 'custom' && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Times:</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={999999}
+                        value={customLoopCount}
+                        onChange={(e) => setCustomLoopCount(e.target.value)}
+                        className="h-9 font-mono flex-1"
+                        placeholder="e.g. 25"
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Label className="w-24 shrink-0">Duration:</Label>
+                  <div className="flex items-center gap-1.5 flex-1">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={86400}
+                      value={runDurationSeconds}
+                      onChange={(e) => setRunDurationSeconds(e.target.value)}
+                      className="h-9 font-mono"
+                      placeholder="300"
+                    />
+                    <span className="text-xs text-muted-foreground shrink-0">seconds</span>
+                  </div>
+                </div>
+              )}
+            </div>
               <div className="flex gap-2">
                 {!isRunning ? (
                 <Button onClick={handleRun} className="flex-1">
@@ -1055,7 +1246,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                       </div>
                     )}
                     {log.map((l, i) => (
-                      <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">{l}</div>
+                      <div key={i} className={`text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30 ${i === log.length - 1 ? 'animate-log-new' : ''}`}>{l}</div>
                     ))}
                     <div ref={logEndRef} />
                   </div>
@@ -1102,6 +1293,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
         onSaveParams={handleUpdateParams}
         host={host}
         alePort={alePort}
+        customPort={customPort}
       />
     </div>
   )

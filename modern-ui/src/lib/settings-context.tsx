@@ -29,3 +29,9 @@ export function useSettings() {
   if (!ctx) throw new Error('useSettings must be used within SettingsProvider')
   return ctx
 }
+
+/** Returns settings or defaults when outside provider (for UI components) */
+export function useSettingsOptional() {
+  const ctx = React.useContext(SettingsContext)
+  return ctx ?? { settings: loadSettings(), setSettings: () => {} }
+}

@@ -5,6 +5,7 @@ import { Label } from './ui/label'
 import { Wifi, WifiOff, X, Clock } from 'lucide-react'
 import { TCPEmulatorClient } from '@/lib/tcp-client'
 import { cn } from '@/lib/utils'
+import { playConnect, playDisconnect } from '@/lib/sounds'
 
 const RECENT_HOSTS_KEY = 'recent-hosts'
 const MAX_RECENT = 8
@@ -62,19 +63,20 @@ export function ConnectionStatus({
       await emulator.connect(
         targetHost,
         FIXED_PORT,
-        () => setConnected(true),
-        () => setConnected(false)
+        () => { setConnected(true); playConnect() },
+        () => { setConnected(false); playDisconnect() }
       )
     } catch (err) {
       console.error(err)
       setConnected(false)
+      playDisconnect()
     }
   }
 
   const handleConnect = () => connectTo(localHost)
 
   const handleDisconnect = async () => {
-    await emulator.disconnect(() => setConnected(false))
+    await emulator.disconnect(() => { setConnected(false); playDisconnect() })
   }
 
   const removeRecentHost = (h: string) => {

@@ -1,20 +1,26 @@
 import * as React from "react"
 
 import { cn } from "@/lib/utils"
+import { useSettingsOptional } from "@/lib/settings-context"
 
 const Card = React.forwardRef<
   HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "rounded-lg border bg-card text-card-foreground",
-      className
-    )}
-    {...props}
-  />
-))
+  React.HTMLAttributes<HTMLDivElement> & { hover3d?: boolean }
+>(({ className, hover3d, ...props }, ref) => {
+  const { settings } = useSettingsOptional()
+  const use3d = hover3d !== undefined ? hover3d : settings.card3dEnabled
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "rounded-lg border bg-card text-card-foreground",
+        use3d && "card-3d",
+        className
+      )}
+      {...props}
+    />
+  )
+})
 Card.displayName = "Card"
 
 const CardHeader = React.forwardRef<

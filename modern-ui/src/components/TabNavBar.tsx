@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, LayoutGroup } from 'framer-motion'
 import { TabsList, TabsTrigger } from './ui/tabs'
 import {
   Radio,
@@ -45,9 +45,10 @@ export function TabNavBar({ value, className }: TabNavBarProps) {
   }, [])
 
   return (
-    <div className={cn('flex justify-center overflow-x-auto', className)}>
-      <TabsList className="inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full">
-        {TAB_ITEMS.map((item) => {
+    <LayoutGroup id="tab-nav-bar">
+      <div className={cn('flex justify-center overflow-x-auto', className)}>
+        <TabsList className="inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full">
+          {TAB_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = value === item.value
 
@@ -74,6 +75,7 @@ export function TabNavBar({ value, className }: TabNavBarProps) {
               {isActive && (
                 <motion.div
                   layoutId="tab-nav-indicator"
+                  layout="position"
                   className="absolute inset-0 rounded-full -z-10"
                   initial={false}
                   transition={{
@@ -90,7 +92,8 @@ export function TabNavBar({ value, className }: TabNavBarProps) {
             </TabsTrigger>
           )
         })}
-      </TabsList>
-    </div>
+        </TabsList>
+      </div>
+    </LayoutGroup>
   )
 }

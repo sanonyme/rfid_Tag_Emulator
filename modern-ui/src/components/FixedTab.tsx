@@ -697,9 +697,9 @@ export function FixedTab({
               <ScrollArea className="h-full">
                 <div className="font-mono text-sm space-y-1 p-2">
                   {log.map((line, i) => (
-                    <div 
-                      key={i} 
-                      className="text-muted-foreground hover:text-foreground transition-colors duration-150 py-1 px-2 rounded hover:bg-accent/30 animate-fade-in"
+                    <div
+                      key={i}
+                      className={`text-muted-foreground hover:text-foreground transition-colors duration-150 py-1 px-2 rounded hover:bg-accent/30 ${i === log.length - 1 ? 'animate-log-new' : ''}`}
                     >
                       {line}
                     </div>

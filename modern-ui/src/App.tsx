@@ -181,6 +181,13 @@ function App() {
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+        const target = e.target as HTMLElement
+        if (!target.closest('input') && !target.closest('textarea') && !target.closest('[contenteditable="true"]')) {
+          e.preventDefault()
+          return
+        }
+      }
       if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const target = e.target as HTMLElement
         if (!target.closest('input') && !target.closest('textarea')) {
@@ -268,7 +275,7 @@ function App() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">
-            <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <FixedTab 
                 emulator={emulator} 
                 host={host}
@@ -298,7 +305,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
@@ -307,7 +314,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="ocr" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="ocr" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <OCRTab 
                 host={host} 
                 connected={connected} 
@@ -317,7 +324,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <CustomTab 
                 host={host} 
                 message={customMessage}
@@ -327,35 +334,36 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <AdamTab 
                 host={adamHost} 
                 setHost={setAdamHost}
               />
             </TabsContent>
 
-            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
             </TabsContent>
 
-            <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <DecoderTab />
             </TabsContent>
 
-            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-hidden">
+            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
                 ocrClient={ocrClient}
                 host={host}
                 alePort={alePort}
+                customPort={customPort}
                 delay={delay}
                 sequences={automationSequences}
                 setSequences={setAutomationSequences}
               />
             </TabsContent>
 
-            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 animate-fade-in overflow-y-auto">
+            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <BarcodeGenerator />
             </TabsContent>
           </div>

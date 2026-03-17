@@ -14,7 +14,7 @@ import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
-import { Clock, ScanLine, Radio, Smartphone, ChevronsUpDown, Check, RefreshCw } from 'lucide-react'
+import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -24,6 +24,7 @@ import {
 } from './ui/select'
 import type { AutomationStep, ActionType } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
+import { Skeleton } from './ui/skeleton'
 
 const VENDOR_DRIVERS = [
   { code: 'llrp', name: 'All' },
@@ -41,6 +42,7 @@ interface NodeConfigDialogProps {
   onSaveParams: (id: string, updates: Partial<AutomationStep['params']>) => void
   host: string
   alePort: string
+  customPort: string
 }
 
 const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: string }> = {
@@ -48,9 +50,10 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   OCR: { border: 'border-pink-400/40', bg: 'bg-pink-400/10', icon: 'text-pink-400' },
   FIXED_TAG: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
   HANDHELD_TAG: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400' },
+  CUSTOM_MESSAGE: { border: 'border-violet-400/40', bg: 'bg-violet-400/10', icon: 'text-violet-400' },
 }
 
-export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParams, host, alePort }: NodeConfigDialogProps) {
+export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParams, host, alePort, customPort }: NodeConfigDialogProps) {
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
   const [isLoadingDevices, setIsLoadingDevices] = useState(false)
   const [apiClient] = useState(() => new AleApiClient())
@@ -105,6 +108,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               {step.type === 'OCR' && <ScanLine className="h-3 w-3" />}
               {step.type === 'FIXED_TAG' && <Radio className="h-3 w-3" />}
               {step.type === 'HANDHELD_TAG' && <Smartphone className="h-3 w-3" />}
+              {step.type === 'CUSTOM_MESSAGE' && <Terminal className="h-3 w-3" />}
               {step.type}
             </span>
             {step.name}
@@ -143,6 +147,38 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 onChange={(e) => onSaveParams(step.id, { message: e.target.value })}
                 rows={10}
                 className="font-mono text-sm min-h-[180px]"
+              />
+              <Button
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                onClick={() => onSaveParams(step.id, { message: '{"test":1}' })}
+              >
+                Insert Example JSON
+              </Button>
+            </div>
+          )}
+
+          {step.type === 'CUSTOM_MESSAGE' && (
+            <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+              <Label>Port</Label>
+              <Input
+                type="number"
+                min={1}
+                max={65535}
+                value={step.params.port ?? customPort}
+                onChange={(e) => onSaveParams(step.id, { port: e.target.value })}
+                placeholder="12345"
+                className="font-mono h-10"
+              />
+              <p className="text-xs text-muted-foreground">TCP port to send the message to</p>
+              <Label>Message</Label>
+              <Textarea
+                value={step.params.message}
+                onChange={(e) => onSaveParams(step.id, { message: e.target.value })}
+                rows={10}
+                className="font-mono text-sm min-h-[180px]"
+                placeholder="Enter message to send (JSON, plain text, etc.)"
               />
               <Button
                 variant="secondary"
@@ -217,7 +253,19 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       </div>
                       <ScrollArea className="h-[60vh] min-h-[240px] pr-4">
                         <div className="space-y-2">
-                          {logicalDevices.length === 0 ? (
+                          {isLoadingDevices ? (
+                            <>
+                              {[1, 2, 3, 4, 5].map((i) => (
+                                <div key={i} className="flex items-center gap-3 p-2">
+                                  <Skeleton className="h-4 w-4 rounded shrink-0" />
+                                  <div className="flex-1 space-y-1">
+                                    <Skeleton className="h-4 w-24" />
+                                    <Skeleton className="h-3 w-32" />
+                                  </div>
+                                </div>
+                              ))}
+                            </>
+                          ) : logicalDevices.length === 0 ? (
                             <div className="text-center py-4 text-muted-foreground">
                               No devices found. Click refresh to fetch.
                             </div>
@@ -294,7 +342,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                             const sorted = Array.from(set).sort((a, b) => Number(a) - Number(b))
                             onSaveParams(step.id, { antenna: sorted.join(',') || '1' })
                           }}
-                          className={`flex-1 h-12 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 transition-all ${
+                          className={`flex-1 h-12 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 transition-all focus:outline-none select-none ${
                             isSelected ? 'border-green-500 bg-green-500/15' : 'border-border bg-muted/40'
                           }`}
                         >

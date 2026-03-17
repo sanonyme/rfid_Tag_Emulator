@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Volume2, Sparkles, Box } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
+import { Switch } from './ui/switch'
 
 function hslToStyle(hsl: string) {
   return `hsl(${hsl})`
@@ -193,6 +194,36 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Design & Effects */}
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-primary" />
+              Design & Effects
+            </h4>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Sound effects</Label>
+                  <p className="text-xs text-muted-foreground">Play sounds for connection, success, and errors</p>
+                </div>
+                <Switch
+                  checked={settings.soundEnabled}
+                  onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>3D card hover effect</Label>
+                  <p className="text-xs text-muted-foreground">Subtle 3D tilt on cards when hovering</p>
+                </div>
+                <Switch
+                  checked={settings.card3dEnabled}
+                  onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
+                />
               </div>
             </div>
           </div>

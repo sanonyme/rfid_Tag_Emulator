@@ -295,8 +295,8 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
             <Button onClick={() => setLog([])} variant="ghost" size="sm">Clear</Button>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 bg-muted/20 p-0 relative min-h-0">
-          <ScrollArea className="absolute inset-0 p-4">
+        <CardContent className="flex-1 bg-muted/20 p-0 relative min-h-0 overflow-hidden">
+          <ScrollArea className="h-[250px] w-full p-4">
             <div className="font-mono text-sm space-y-1">
               {log.length === 0 && (
                 <div className="text-muted-foreground text-center py-4">

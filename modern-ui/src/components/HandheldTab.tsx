@@ -395,8 +395,9 @@ function HandheldSlotCard({
               Port {slot.port}
             </CardTitle>
             {isRunning && (
-              <Badge variant="outline" className="text-xs py-0 bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400 shrink-0">
-                ● Running
+              <Badge variant="outline" className="text-xs py-0 px-2 gap-1.5 bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400 shrink-0 inline-flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+                Running
               </Badge>
             )}
           </div>
