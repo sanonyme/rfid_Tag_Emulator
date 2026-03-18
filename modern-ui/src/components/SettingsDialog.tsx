@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Volume2, Sparkles, Box } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -12,6 +12,7 @@ import { Label } from './ui/label'
 import { themes, applyTheme, saveTheme, getSavedTheme, type Theme } from '../lib/themes'
 import { useSettings } from '../lib/settings-context'
 import type { FontSize, DefaultTab } from '../lib/settings'
+import { IS_MOBILE } from '../lib/platform'
 import { useState, useEffect } from 'react'
 import {
   Select,
@@ -73,7 +74,7 @@ interface SettingsDialogProps {
   noTrigger?: boolean
 }
 
-const TAB_OPTIONS: { value: DefaultTab; label: string }[] = [
+const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'fixed', label: 'Fixed' },
   { value: 'handheld', label: 'Handheld' },
   { value: 'ocr', label: 'OCR' },
@@ -84,6 +85,8 @@ const TAB_OPTIONS: { value: DefaultTab; label: string }[] = [
   { value: 'automation', label: 'Auto' },
   { value: 'generator', label: 'Generator' },
 ]
+
+const TAB_OPTIONS = IS_MOBILE ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam') : TAB_OPTIONS_ALL
 
 export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())

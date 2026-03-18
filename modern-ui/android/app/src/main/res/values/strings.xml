@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Zeus RFID Emulator</string>
+    <string name="title_activity_main">Zeus RFID Emulator</string>
+    <string name="package_name">com.edge.rfidemulator</string>
+    <string name="custom_url_scheme">com.edge.rfidemulator</string>
+</resources>

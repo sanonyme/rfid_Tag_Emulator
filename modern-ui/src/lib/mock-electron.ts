@@ -69,13 +69,46 @@ class MockElectronAPI implements ElectronAPI {
   maximize() { console.log('Mock: maximize'); }
   close() { console.log('Mock: close'); }
 
-  // TCP Emulator
+  // TCP Emulator - validate host reachability via HTTP probe (browser can't do raw TCP)
   tcpConnect(host: string, port: number) {
-    console.log(`Mock: Connecting to ${host}:${port}...`);
-    setTimeout(() => {
-      this._tcpConnected = true;
-      this._trigger(this._tcpCallbacks.connect, `Connected to ${host}:${port}`);
-    }, 1000);
+    console.log(`Mock: Validating reachability of ${host}...`);
+    const probePorts = [8080, 80, port]; // ALE often on 8080/80; also try the requested port
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+    const tryProbe = (p: number) =>
+      fetch(`http://${host}:${p}/`, {
+        method: 'HEAD',
+        mode: 'no-cors', // Rejects on connection refused; resolves if host responds
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+
+    const tryAny = async () => {
+      for (const p of probePorts) {
+        try {
+          await tryProbe(p);
+          return true;
+        } catch {
+          /* try next */
+        }
+      }
+      return false;
+    };
+    tryAny()
+      .then((ok) => {
+        clearTimeout(timeoutId);
+        if (ok) {
+          this._tcpConnected = true;
+          this._trigger(this._tcpCallbacks.connect, `Connected to ${host}:${port}`);
+        } else {
+          this._trigger(this._tcpCallbacks.error, `Host ${host} unreachable. Check IP, network, and firewall.`);
+        }
+      })
+      .catch(() => {
+        clearTimeout(timeoutId);
+        this._trigger(this._tcpCallbacks.error, `Host ${host} unreachable. Check IP, network, and firewall.`);
+      });
   }
 
   tcpDisconnect() {
@@ -167,12 +200,31 @@ class MockElectronAPI implements ElectronAPI {
   onHandheldProgress(callback: (port: number, message: string) => void) { this._handheldCallbacks.progress.push(callback); }
   onHandheldComplete(callback: (port: number, message: string) => void) { this._handheldCallbacks.complete.push(callback); }
 
-  // OCR
+  // OCR - use proxy when in browser (dev server has proxy), else fake success
   ocrSend(host: string, message: string) {
-    console.log(`Mock: Sending OCR to ${host}: ${message}`);
-    setTimeout(() => {
-      this._trigger(this._ocrCallbacks.success, `OCR data sent successfully to ${host}: ${message}`);
-    }, 800);
+    const useProxy = typeof window !== 'undefined' && window.location?.origin?.startsWith('http');
+    if (useProxy) {
+      fetch('/api/ocr-send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host, message }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.success) {
+            this._trigger(this._ocrCallbacks.success, data.message || `Sent to ${host}`);
+          } else {
+            this._trigger(this._ocrCallbacks.error, data.message || 'Send failed');
+          }
+        })
+        .catch((e) => {
+          this._trigger(this._ocrCallbacks.error, e instanceof Error ? e.message : 'Send failed');
+        });
+    } else {
+      setTimeout(() => {
+        this._trigger(this._ocrCallbacks.success, `OCR data sent successfully to ${host}: ${message}`);
+      }, 800);
+    }
   }
 
   onOcrSuccess(callback: (message: string) => void) { this._ocrCallbacks.success.push(callback); }
@@ -240,10 +292,67 @@ class MockElectronAPI implements ElectronAPI {
   onDownloadProgress(_callback: (progress: any) => void) { console.log('Mock: onDownloadProgress registered'); }
   onUpdateDownloaded(_callback: (info: any) => void) { console.log('Mock: onUpdateDownloaded registered'); }
 
-  // ALE API
+  // ALE API - try proxy first (dev server), fallback to direct fetch (PWA or proxy unreachable)
   async aleRequest(url: string, options: any) {
-    console.log('Mock: aleRequest', url, options);
-    return { ok: true, status: 200, statusText: 'OK', data: '{}' };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const tryProxy = typeof window !== 'undefined' && window.location?.origin?.startsWith('http');
+    try {
+      let res: Response;
+      if (tryProxy) {
+        try {
+          const proxyRes = await fetch('/api/ale-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url,
+              method: options?.method || 'GET',
+              headers: options?.headers || {},
+              body: options?.body,
+            }),
+            signal: controller.signal,
+            cache: 'no-store',
+          });
+          const json = await proxyRes.json();
+          if (json && typeof json === 'object' && 'ok' in json) {
+            clearTimeout(timeoutId);
+            return json;
+          }
+        } catch {
+          /* proxy failed or not available, fall through to direct */
+        }
+      }
+      res = await fetch(url, {
+        method: options?.method || 'GET',
+        headers: options?.headers || {},
+        body: options?.body,
+        signal: controller.signal,
+        cache: 'no-store',
+      });
+      clearTimeout(timeoutId);
+      const text = await res.text();
+      const headers: Record<string, string> = {};
+      res.headers.forEach((v, k) => {
+        headers[k] = v;
+      });
+      return {
+        ok: res.ok,
+        status: res.status,
+        statusText: res.statusText,
+        data: text,
+        headers,
+      };
+    } catch (e: unknown) {
+      clearTimeout(timeoutId);
+      const msg = e instanceof Error ? e.message : 'Request failed';
+      return {
+        ok: false,
+        status: 0,
+        statusText: msg,
+        data: null,
+        headers: {} as Record<string, string>,
+      };
+    }
   }
 
   // Inditex API (requires Electron - mock returns error)

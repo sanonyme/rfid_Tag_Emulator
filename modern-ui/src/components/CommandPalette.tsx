@@ -5,6 +5,7 @@ import {
   Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { IS_MOBILE } from '@/lib/platform'
 
 interface Command {
   id: string
@@ -30,7 +31,7 @@ interface CommandPaletteProps {
   host: string
 }
 
-const TAB_COMMANDS: { value: string; label: string; icon: React.ReactNode; num: number }[] = [
+const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; num: number }[] = [
   { value: 'fixed', label: 'Fixed', icon: <Radio className="w-4 h-4" />, num: 1 },
   { value: 'handheld', label: 'Handheld', icon: <Smartphone className="w-4 h-4" />, num: 2 },
   { value: 'ocr', label: 'OCR', icon: <ScanLine className="w-4 h-4" />, num: 3 },
@@ -41,6 +42,10 @@ const TAB_COMMANDS: { value: string; label: string; icon: React.ReactNode; num: 
   { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 8 },
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
 ]
+
+const TAB_COMMANDS = IS_MOBILE
+  ? TAB_COMMANDS_ALL.filter((t) => t.value !== 'adam').map((t, i) => ({ ...t, num: i + 1 }))
+  : TAB_COMMANDS_ALL
 
 export function CommandPalette({
   open,

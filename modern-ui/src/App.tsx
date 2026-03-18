@@ -17,6 +17,8 @@ import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
+import { IS_MOBILE } from './lib/platform'
+import AppMobile from './AppMobile'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { TabNavBar } from './components/TabNavBar'
@@ -26,7 +28,10 @@ import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
 
-const TAB_VALUES = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator'] as const
+const TAB_VALUES_FULL = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator'] as const
+const TAB_VALUES = (IS_MOBILE
+  ? TAB_VALUES_FULL.filter((t) => t !== 'adam')
+  : TAB_VALUES_FULL) as readonly string[]
 
 function App() {
   const [emulator] = useState(() => new TCPEmulatorClient())
@@ -69,7 +74,11 @@ function App() {
     { id: crypto.randomUUID(), name: 'Sequence 1', order: 0, steps: [] }
   ])
 
-  const [activeTab, setActiveTab] = useState<string>(() => loadSettings().defaultTab)
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    const { defaultTab } = loadSettings()
+    if (IS_MOBILE && defaultTab === 'adam') return 'fixed'
+    return defaultTab
+  })
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -213,6 +222,10 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
+  if (IS_MOBILE) {
+    return <AppMobile />
+  }
+
   return (
     <TooltipProvider delayDuration={300}>
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
@@ -334,12 +347,14 @@ function App() {
               />
             </TabsContent>
 
+            {!IS_MOBILE && (
             <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <AdamTab 
                 host={adamHost} 
                 setHost={setAdamHost}
               />
             </TabsContent>
+            )}
 
             <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />

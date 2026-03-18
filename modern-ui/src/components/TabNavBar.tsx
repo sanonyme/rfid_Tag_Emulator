@@ -14,8 +14,9 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { IS_MOBILE } from '@/lib/platform'
 
-const TAB_ITEMS: { value: string; label: string; icon: LucideIcon }[] = [
+const TAB_ITEMS_ALL: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'fixed', label: 'Fixed', icon: Radio },
   { value: 'handheld', label: 'Handheld', icon: Smartphone },
   { value: 'ocr', label: 'OCR', icon: ScanLine },
@@ -26,6 +27,8 @@ const TAB_ITEMS: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'automation', label: 'Auto', icon: Workflow },
   { value: 'generator', label: 'Gen', icon: QrCode },
 ]
+
+const TAB_ITEMS = IS_MOBILE ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam') : TAB_ITEMS_ALL
 
 interface TabNavBarProps {
   value: string
