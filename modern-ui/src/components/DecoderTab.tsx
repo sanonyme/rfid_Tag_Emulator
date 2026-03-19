@@ -4,7 +4,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { EPCDecoder, EPCEncoder } from '../lib/decoder'
+import { EPCDecoder, EPCEncoder, uidToEpcSerial } from '../lib/decoder'
 import { ArrowDown, ArrowUp, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -122,6 +122,7 @@ export function DecoderTab() {
   } | null>(null)
 
   const [copied, setCopied] = useState(false)
+  const [serialIsUid, setSerialIsUid] = useState(false)
 
   const handleDecode = () => {
     if (!epcInput.trim()) {
@@ -152,9 +153,20 @@ export function DecoderTab() {
     }
 
     try {
+      let serial = serialInput.trim()
+      if (serialIsUid) {
+        const parsed = uidToEpcSerial(serial)
+        if (parsed.error) {
+          setEncodedResult({ error: parsed.error })
+          toast.error(parsed.error)
+          return
+        }
+        serial = parsed.serial
+      }
+
       const length = parseInt(companyPrefixLen)
       const filter = parseInt(filterValue)
-      const result = EPCEncoder.encodeSgtin96(gtinInput, serialInput, length, filter)
+      const result = EPCEncoder.encodeSgtin96(gtinInput, serial, length, filter)
       setEncodedResult(result)
       if (result.error) {
         toast.error(result.error)
@@ -294,11 +306,23 @@ export function DecoderTab() {
             <div className="space-y-2">
               <Label>Serial Number</Label>
               <Input 
-                placeholder="e.g. 12345" 
+                placeholder={serialIsUid ? "e.g. E0167801034E89FC" : "e.g. 12345"} 
                 value={serialInput}
                 onChange={(e) => setSerialInput(e.target.value)}
                 className="font-mono"
               />
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="serial-is-uid"
+                  checked={serialIsUid}
+                  onChange={(e) => setSerialIsUid(e.target.checked)}
+                  className="rounded border-border"
+                />
+                <Label htmlFor="serial-is-uid" className="text-xs font-normal cursor-pointer">
+                  Input is UID (E016 + 12 hex)
+                </Label>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

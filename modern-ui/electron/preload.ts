@@ -103,5 +103,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getApiConfig: () => ipcRenderer.invoke('get-api-config'),
   saveApiConfig: (headerName: string, key: string) => ipcRenderer.invoke('save-api-config', headerName, key),
   itxApiRequest: (url: string, body: string) => ipcRenderer.invoke('itx-api-request', url, body),
+
+  // Admin Shell (multi-tab: sessionId required)
+  shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),
+  shellWrite: (sessionId: string, data: string) => ipcRenderer.send('shell-write', sessionId, data),
+  shellKill: (sessionId: string) => ipcRenderer.send('shell-kill', sessionId),
+  shellResize: (sessionId: string, cols: number, rows: number) => ipcRenderer.send('shell-resize', sessionId, cols, rows),
+  onShellData: (callback: (sessionId: string, data: string) => void) => {
+    const handler = (_event: unknown, sessionId: string, data: string) => callback(sessionId, data)
+    ipcRenderer.on('shell-data', handler)
+    return () => ipcRenderer.removeListener('shell-data', handler)
+  },
+  onShellExit: (callback: (sessionId: string, code: number | null, signal: string | null) => void) => {
+    const handler = (_event: unknown, sessionId: string, code: number | null, signal: string | null) => callback(sessionId, code, signal)
+    ipcRenderer.on('shell-exit', handler)
+    return () => ipcRenderer.removeListener('shell-exit', handler)
+  },
 })
 

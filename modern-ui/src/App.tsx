@@ -10,6 +10,8 @@ import { CustomTab } from './components/CustomTab'
 import { AdamTab } from './components/AdamTab'
 import { ApiTab } from './components/Api'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
+import { LinkToUidTab } from './components/LinkToUidTab'
+import { AdminTerminalTab } from './components/AdminTerminalTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
@@ -85,6 +87,7 @@ function App() {
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [saveProfileOpen, setSaveProfileOpen] = useState(false)
   const [base64Open, setBase64Open] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
@@ -273,6 +276,9 @@ function App() {
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenShortcuts={() => setShortcutsOpen(true)}
               inline
+              isAdmin={isAdmin}
+              onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
+              onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
             />
           }
         />
@@ -301,7 +307,7 @@ function App() {
                 connected={connected}
                 setConnected={setConnected}
               />
-              <TabNavBar value={activeTab} className="animate-scale-in" />
+              <TabNavBar value={activeTab} className="animate-scale-in" isAdmin={isAdmin} />
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">
@@ -398,6 +404,17 @@ function App() {
             <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
               <BarcodeGenerator />
             </TabsContent>
+
+            {isAdmin && (
+              <>
+                <TabsContent value="link2uid" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+                  <LinkToUidTab />
+                </TabsContent>
+                <TabsContent value="terminal" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+                  <AdminTerminalTab active={activeTab === 'terminal'} />
+                </TabsContent>
+              </>
+            )}
           </div>
         </Tabs>
       </main>
@@ -417,6 +434,7 @@ function App() {
       onOpenProfiles={() => setProfilesOpen(true)}
       onOpenBase64={handleOpenBase64}
       host={host}
+      isAdmin={isAdmin}
     />
     <Toaster richColors position="bottom-right" />
     </TooltipProvider>

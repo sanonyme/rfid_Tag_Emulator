@@ -11,12 +11,13 @@ import {
   Code2,
   Workflow,
   QrCode,
+  Link2,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
 
-const TAB_ITEMS_ALL: { value: string; label: string; icon: LucideIcon }[] = [
+const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'fixed', label: 'Fixed', icon: Radio },
   { value: 'handheld', label: 'Handheld', icon: Smartphone },
   { value: 'ocr', label: 'OCR', icon: ScanLine },
@@ -28,14 +29,20 @@ const TAB_ITEMS_ALL: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'generator', label: 'Gen', icon: QrCode },
 ]
 
-const TAB_ITEMS = IS_MOBILE ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam') : TAB_ITEMS_ALL
+const TAB_ITEMS_ADMIN = [
+  { value: 'link2uid', label: 'Link→UID', icon: Link2 },
+  { value: 'terminal', label: 'Terminal', icon: Terminal },
+]
 
 interface TabNavBarProps {
   value: string
   className?: string
+  isAdmin?: boolean
 }
 
-export function TabNavBar({ value, className }: TabNavBarProps) {
+export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
+  const TAB_ITEMS_ALL = [...TAB_ITEMS_BASE, ...(isAdmin ? TAB_ITEMS_ADMIN : [])]
+  const TAB_ITEMS = IS_MOBILE ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam') : TAB_ITEMS_ALL
   const [isCompact, setIsCompact] = useState(false)
 
   useEffect(() => {

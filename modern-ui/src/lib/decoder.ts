@@ -127,6 +127,19 @@ export class EPCDecoder {
   }
 }
 
+/** UID format: E016 + 12 hex chars (6 bytes). SGTIN-96 serial is 38 bits, so we take lower 38 bits. */
+export function uidToEpcSerial(uid: string): { serial: string; serialHex: string; error?: string } {
+  const clean = uid.replace(/[^0-9A-Fa-f]/g, '').toUpperCase()
+  if (!/^E016[0-9A-F]{12}$/i.test(clean)) {
+    return { serial: '', serialHex: '', error: 'UID must be E016 + 12 hex chars (e.g. E0167801034E89FC)' }
+  }
+  const serialHex = clean.slice(4) // 12 hex chars = 48 bits
+  const full48 = BigInt('0x' + serialHex)
+  const mask38 = (BigInt(1) << BigInt(38)) - BigInt(1)
+  const serial38 = full48 & mask38
+  return { serial: serial38.toString(), serialHex }
+}
+
 export class EPCEncoder {
   static encodeSgtin96(gtinInput: string, serialInput: string, companyPrefixLength: number = 0, filterValue: number = 0): { epc?: string, error?: string } {
     try {

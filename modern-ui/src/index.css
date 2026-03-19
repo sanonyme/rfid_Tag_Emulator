@@ -393,6 +393,12 @@ button, a, input, select, textarea {
   background-position: center;
 }
 
+/* xterm - prevent last line clipping at bottom */
+[role="application"][aria-label="Terminal - click to focus and type"] .xterm {
+  padding-bottom: 8px;
+  box-sizing: border-box;
+}
+
 /* Skeleton loading */
 @keyframes skeleton-pulse {
   0%, 100% { opacity: 0.4; }

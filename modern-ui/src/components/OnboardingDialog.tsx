@@ -7,7 +7,7 @@ import {
   DialogDescription,
 } from './ui/dialog'
 import { Button } from './ui/button'
-import { Wifi, Radio, Smartphone, ScanLine, Workflow, FolderOpen, ChevronRight, ChevronLeft, X } from 'lucide-react'
+import { Wifi, Radio, Smartphone, ScanLine, Workflow, FolderOpen, ChevronRight, ChevronLeft } from 'lucide-react'
 
 const STEPS = [
   {
@@ -69,42 +69,42 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px] rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl shadow-xl">
-        <DialogHeader className="flex flex-row items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <DialogTitle className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
-                <Icon className="h-5 w-5 text-primary" />
-              </div>
-              {STEPS[step].title}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-muted-foreground leading-relaxed pt-1">
-              {STEPS[step].description}
-            </DialogDescription>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-8 w-8 rounded-full"
-            onClick={handleSkip}
-            aria-label="Skip tutorial"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+      <DialogContent className="sm:max-w-[500px] rounded-2xl border-border/50 bg-card/95 backdrop-blur-xl shadow-xl gap-5">
+        <DialogHeader className="space-y-3">
+          <DialogTitle className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15">
+              <Icon className="h-5 w-5 text-primary" />
+            </div>
+            <span>{STEPS[step].title}</span>
+          </DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground leading-relaxed min-h-[3.5rem]">
+            {STEPS[step].description}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between gap-4 pt-4">
-          <div className="flex gap-1">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex gap-1.5">
             {STEPS.map((_, i) => (
-              <div
+              <button
                 key={i}
-                className={`h-1.5 rounded-full transition-all ${
-                  i === step ? 'w-6 bg-primary' : i < step ? 'w-1.5 bg-primary/50' : 'w-1.5 bg-muted'
+                type="button"
+                onClick={() => setStep(i)}
+                className={`h-2 rounded-full transition-all ${
+                  i === step ? 'w-8 bg-primary' : i < step ? 'w-2 bg-primary/40 hover:bg-primary/60' : 'w-2 bg-muted hover:bg-muted-foreground/20'
                 }`}
+                aria-label={`Go to step ${i + 1}`}
               />
             ))}
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSkip}
+              className="text-muted-foreground"
+            >
+              Skip
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -125,12 +125,6 @@ export function OnboardingDialog({ open, onOpenChange }: OnboardingDialogProps) 
               )}
             </Button>
           </div>
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button variant="ghost" size="sm" onClick={handleSkip} className="text-muted-foreground">
-            Skip tutorial
-          </Button>
         </div>
       </DialogContent>
     </Dialog>

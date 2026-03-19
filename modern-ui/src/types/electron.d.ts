@@ -84,6 +84,14 @@ export interface ElectronAPI {
     data: string | null
     headers?: Record<string, string>
   }>
+
+  // Admin Shell (multi-tab: sessionId required)
+  shellStart?: (sessionId: string, cols?: number, rows?: number) => void
+  shellWrite?: (sessionId: string, data: string) => void
+  shellKill?: (sessionId: string) => void
+  shellResize?: (sessionId: string, cols: number, rows: number) => void
+  onShellData?: (callback: (sessionId: string, data: string) => void) => () => void
+  onShellExit?: (callback: (sessionId: string, code: number | null, signal: string | null) => void) => () => void
 }
 
 declare global {

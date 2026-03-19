@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import * as pty from 'node-pty'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
@@ -36,6 +37,9 @@ autoUpdater.logger.transports = {
 // TCP handlers
 let tcpHandler: TCPEmulatorHandler | null = null
 const handheldHandlers = new Map<number, HandheldServerHandler>()
+
+// Shell/terminal (admin) - multi-tab support
+const shellProcesses = new Map<string, pty.IPty>()
 
 // Check if we're in dev mode - Vite sets VITE_DEV_SERVER_URL when running dev server
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
@@ -320,6 +324,51 @@ app.whenReady().then(() => {
     }
   })
 
+  // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
+  ipcMain.on('shell-start', (_event, sessionId: string, cols: number = 80, rows: number = 24) => {
+    const existing = shellProcesses.get(sessionId)
+    if (existing) {
+      existing.kill()
+      shellProcesses.delete(sessionId)
+    }
+    const isWin = process.platform === 'win32'
+    const shell = isWin ? (process.env.COMSPEC || 'cmd.exe') : (process.env.SHELL || '/bin/bash')
+    const args = isWin ? [] : ['-l']
+    const proc = pty.spawn(shell, args, {
+      name: 'xterm-256color',
+      cols: cols || 80,
+      rows: rows || 24,
+      cwd: process.cwd(),
+      env: process.env as Record<string, string>,
+    })
+    shellProcesses.set(sessionId, proc)
+    proc.onData((data: string) => {
+      mainWindow?.webContents.send('shell-data', sessionId, data)
+    })
+    proc.onExit(({ exitCode, signal }) => {
+      shellProcesses.delete(sessionId)
+      mainWindow?.webContents.send('shell-exit', sessionId, exitCode, signal)
+    })
+  })
+
+  ipcMain.on('shell-write', (_event, sessionId: string, data: string) => {
+    const proc = shellProcesses.get(sessionId)
+    if (proc) proc.write(data)
+  })
+
+  ipcMain.on('shell-resize', (_event, sessionId: string, cols: number, rows: number) => {
+    const proc = shellProcesses.get(sessionId)
+    if (proc) proc.resize(cols, rows)
+  })
+
+  ipcMain.on('shell-kill', (_event, sessionId: string) => {
+    const proc = shellProcesses.get(sessionId)
+    if (proc) {
+      proc.kill()
+      shellProcesses.delete(sessionId)
+    }
+  })
+
   // Auto Updater IPC handlers
   ipcMain.on('check-for-update', () => {
     console.log('Checking for updates...')
@@ -560,6 +609,8 @@ app.on('window-all-closed', () => {
   tcpHandler?.shutdown()
   Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
+  shellProcesses.forEach((proc) => proc.kill())
+  shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
   
   if (process.platform !== 'darwin') {
@@ -572,6 +623,8 @@ app.on('before-quit', () => {
   tcpHandler?.shutdown()
   Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
+  shellProcesses.forEach((proc) => proc.kill())
+  shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
 })
 // trigger rebuild 2

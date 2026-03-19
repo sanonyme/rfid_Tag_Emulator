@@ -13,9 +13,16 @@ import {
   Workflow,
   ChevronRight,
   Keyboard,
+  Shield,
+  LogOut,
+  Link2,
+  Terminal,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { applyTheme, getSavedTheme } from '@/lib/themes'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
 
 const QUICK_TABS = [
   { id: 'fixed', icon: Radio, label: 'Fixed Reader' },
@@ -29,6 +36,9 @@ const THEME_OPTIONS = [
   { key: 'system', icon: Monitor, text: 'System' },
 ] as const
 
+const ADMIN_USER = 'admin'
+const ADMIN_PASS = 'admin'
+
 interface BottomMenuProps {
   activeTab: string
   onSwitchTab: (tab: string) => void
@@ -38,6 +48,9 @@ interface BottomMenuProps {
   onOpenShortcuts?: () => void
   /** When true, renders inline (e.g. in title bar) with submenu opening downward */
   inline?: boolean
+  isAdmin?: boolean
+  onAdminLogin?: () => void
+  onAdminLogout?: () => void
 }
 
 export function BottomMenu({
@@ -48,9 +61,15 @@ export function BottomMenu({
   onOpenSettings,
   onOpenShortcuts,
   inline = false,
+  isAdmin = false,
+  onAdminLogin,
+  onAdminLogout,
 }: BottomMenuProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [view, setView] = useState<'default' | 'tabs' | 'profiles' | 'theme'>('default')
+  const [view, setView] = useState<'default' | 'tabs' | 'profiles' | 'theme' | 'admin'>('default')
+  const [adminUser, setAdminUser] = useState('')
+  const [adminPass, setAdminPass] = useState('')
+  const [adminError, setAdminError] = useState('')
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
     const saved = localStorage.getItem('theme')
     return (saved === 'light' || saved === 'dark' ? saved : 'system') as 'light' | 'dark' | 'system'
@@ -65,6 +84,18 @@ export function BottomMenu({
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
+
+  const handleAdminLogin = () => {
+    setAdminError('')
+    if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
+      onAdminLogin?.()
+      setAdminUser('')
+      setAdminPass('')
+      setView('default')
+    } else {
+      setAdminError('Invalid username or password')
+    }
+  }
 
   const applyThemeOption = (key: 'light' | 'dark' | 'system') => {
     setTheme(key)
@@ -133,6 +164,76 @@ export function BottomMenu({
           </button>
         ))}
       </div>
+    ) : view === 'admin' ? (
+      <div className="w-[270px] p-4" onClick={(e) => e.stopPropagation()}>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <h4 className="font-medium leading-none flex items-center gap-2">
+              <Shield className="w-4 h-4" />
+              {isAdmin ? 'Admin' : 'Admin Login'}
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              {isAdmin ? 'Logged in. Access admin tools.' : 'Enter credentials to access admin tools.'}
+            </p>
+          </div>
+
+          {!isAdmin ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-user" className="text-xs">Username</Label>
+                <Input
+                  id="admin-user"
+                  value={adminUser}
+                  onChange={(e) => { setAdminUser(e.target.value); setAdminError('') }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAdminLogin() }}
+                  placeholder="Username"
+                  className="h-8"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-pass" className="text-xs">Password</Label>
+                <Input
+                  id="admin-pass"
+                  type="password"
+                  value={adminPass}
+                  onChange={(e) => { setAdminPass(e.target.value); setAdminError('') }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleAdminLogin() }}
+                  placeholder="Password"
+                  className="h-8"
+                />
+              </div>
+              {adminError && <p className="text-xs text-destructive">{adminError}</p>}
+              <Button size="sm" className="w-full" onClick={handleAdminLogin}>
+                Login
+              </Button>
+            </>
+          ) : (
+            <div className="space-y-1.5 pt-1">
+              <button
+                onClick={() => { onSwitchTab('link2uid'); setView('default') }}
+                className={`${sharedHover} flex items-center gap-3 w-full`}
+              >
+                <Link2 size={18} className="shrink-0" />
+                <span>Go to Link→UID</span>
+              </button>
+              <button
+                onClick={() => { onSwitchTab('terminal'); setView('default') }}
+                className={`${sharedHover} flex items-center gap-3 w-full`}
+              >
+                <Terminal size={18} className="shrink-0" />
+                <span>Go to Terminal</span>
+              </button>
+              <button
+                onClick={() => { onAdminLogout?.(); setView('default') }}
+                className={`${sharedHover} flex items-center gap-3 w-full text-destructive hover:text-destructive`}
+              >
+                <LogOut size={18} className="shrink-0" />
+                <span>Logout</span>
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
     ) : null
 
   const mainActions: Array<{ id: string; icon: typeof Zap; label: string; onClick?: () => void }> = [
@@ -141,6 +242,7 @@ export function BottomMenu({
     { id: 'shortcuts', icon: Keyboard, label: 'Shortcuts', onClick: onOpenShortcuts },
     { id: 'settings', icon: Settings, label: 'Settings', onClick: onOpenSettings },
     { id: 'theme', icon: theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor, label: 'Theme' },
+    { id: 'admin', icon: Shield, label: 'Admin' },
   ]
 
   const submenuPlacement = inline
@@ -186,7 +288,7 @@ export function BottomMenu({
                 onClick()
                 setView('default')
               } else {
-                setView(view === id ? 'default' : (id as 'tabs' | 'profiles' | 'theme'))
+                setView(view === id ? 'default' : (id as 'tabs' | 'profiles' | 'theme' | 'admin'))
               }
             }}
           >
