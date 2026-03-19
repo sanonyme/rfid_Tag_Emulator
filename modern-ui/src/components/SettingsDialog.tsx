@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from './ui/select'
 import { Switch } from './ui/switch'
+import { OnboardingDialog } from './OnboardingDialog'
 
 function hslToStyle(hsl: string) {
   return `hsl(${hsl})`
@@ -91,6 +92,7 @@ const TAB_OPTIONS = IS_MOBILE ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam'
 export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
   const { settings, setSettings } = useSettings()
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
@@ -228,6 +230,28 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
                   onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Onboarding */}
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-primary" />
+              Help
+            </h4>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                New to the app? Learn how connection, fixed reader, handheld, OCR, automation, and profiles work.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setOnboardingOpen(true)}
+                className="gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                Show tutorial
+              </Button>
             </div>
           </div>
 
@@ -378,6 +402,7 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
         </div>
         </div>
       </DialogContent>
+      <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
     </Dialog>
   )
 }

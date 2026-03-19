@@ -26,7 +26,7 @@ import { CommandPalette } from './components/CommandPalette'
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog'
 import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
-import { Toaster } from 'sonner'
+import { Toaster, toast } from 'sonner'
 
 const TAB_VALUES_FULL = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator'] as const
 const TAB_VALUES = (IS_MOBILE
@@ -186,6 +186,23 @@ function App() {
 
     window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange)
     return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
+  }, [])
+
+  // Toast when update is available (Electron only)
+  React.useEffect(() => {
+    if (!window.electronAPI) return
+    window.electronAPI.onUpdateAvailable(() => {
+      toast.info('Update available', {
+        description: 'A new version is ready. Open Settings to download.',
+        duration: 8000,
+      })
+    })
+    window.electronAPI.onUpdateDownloaded(() => {
+      toast.success('Update ready', {
+        description: 'Restart the app to install the update.',
+        duration: 10000,
+      })
+    })
   }, [])
 
   React.useEffect(() => {

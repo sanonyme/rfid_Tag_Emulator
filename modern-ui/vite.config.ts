@@ -39,10 +39,19 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  optimizeDeps: {
+    entries: [path.join(__dirname, 'index.html')],
+  },
   server: {
     port: 5173,
     host: true,
     strictPort: true,
+    fs: {
+      deny: ['**/android/**', '**/ios/**'],
+    },
+    watch: {
+      ignored: ['**/android/**', '**/ios/**', '**/node_modules/**'],
+    },
   },
   base: './', 
 })
