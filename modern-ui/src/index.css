@@ -23,9 +23,22 @@ body {
 }
 [data-mobile-app='true'] .mobile-main-scroll {
   -webkit-overflow-scrolling: touch;
-  overscroll-behavior-y: contain;
-  scroll-behavior: smooth;
+  /* Allow elastic/bounce in the content area only. */
+  overscroll-behavior-y: auto;
+  scroll-behavior: auto;
 }
+
+/* Extra explicit hook for log containers. */
+.mobile-elastic {
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+[data-mobile-app='true'] .mobile-elastic * {
+  overscroll-behavior-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-mobile-app='true'] .mobile-main-scroll {
     scroll-behavior: auto;

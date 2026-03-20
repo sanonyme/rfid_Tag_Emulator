@@ -1,4 +1,4 @@
-import { Radio, Smartphone, ScanLine, MoreHorizontal } from 'lucide-react'
+import { Radio, Smartphone, ScanLine } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const MAIN_TABS = [
@@ -10,17 +10,16 @@ const MAIN_TABS = [
 interface MobileBottomNavProps {
   activeTab: string
   onTabChange: (tab: string) => void
-  onMorePress: () => void
 }
 
 export function MobileBottomNav({
   activeTab,
   onTabChange,
-  onMorePress,
 }: MobileBottomNavProps) {
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-background/95 backdrop-blur-md border-t border-border/80 safe-area-bottom transition-[background-color,backdrop-filter] duration-300 ease-out"
+      id="mobile-bottom-nav"
+      className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around bg-background/95 backdrop-blur border-t border-border/60 safe-area-bottom"
       style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
     >
       {MAIN_TABS.map((tab) => {
@@ -32,7 +31,7 @@ export function MobileBottomNav({
             type="button"
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-[color,transform] duration-200 ease-out active:scale-[0.97]',
+              'flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
               isActive ? 'text-primary' : 'text-muted-foreground',
             )}
           >
@@ -41,17 +40,6 @@ export function MobileBottomNav({
           </button>
         )
       })}
-      <button
-        type="button"
-        onClick={onMorePress}
-        className={cn(
-          'flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-[color,transform] duration-200 ease-out active:scale-[0.97]',
-          ['custom', 'decoder', 'generator'].includes(activeTab) ? 'text-primary' : 'text-muted-foreground',
-        )}
-      >
-        <MoreHorizontal className="w-6 h-6" />
-        <span className="text-xs font-medium">More</span>
-      </button>
     </nav>
   )
 }

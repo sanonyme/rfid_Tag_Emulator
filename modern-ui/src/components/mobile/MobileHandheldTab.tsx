@@ -58,8 +58,19 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
 
   const addLog = (msg: string) => setLog((p) => [...p, `[${formatTime()}] ${msg}`].slice(-100))
   useEffect(() => {
+    const anchor = logEndRef.current
+    if (!anchor || !logExpanded) return
+    const scroller = anchor.parentElement as HTMLElement | null
+    if (!scroller) return
+    const threshold = 20
+    const isAtBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - threshold
+    if (isAtBottom) scrollLogAnchorIntoView(anchor, 'smooth')
+  }, [log, logExpanded])
+
+  useEffect(() => {
+    if (!logExpanded) return
     scrollLogAnchorIntoView(logEndRef.current, 'smooth')
-  }, [log])
+  }, [logExpanded])
 
   useEffect(() => {
     if (slots.length === 0) {
@@ -229,7 +240,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
                 Clear
               </Button>
             </div>
-            <div className="font-mono text-xs space-y-1 max-h-32 overflow-y-auto bg-muted/30 rounded-lg p-2">
+            <div className="mobile-elastic font-mono text-xs space-y-1 max-h-32 overflow-y-auto bg-muted/30 rounded-lg p-2">
               {log.map((line, i) => (
                 <div key={i} className="text-muted-foreground">{line}</div>
               ))}

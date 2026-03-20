@@ -9,5 +9,12 @@ class AppBridgeViewController: CAPBridgeViewController {
         super.capacitorDidLoad()
         bridge?.registerPluginInstance(OCRTcpPlugin())
         bridge?.registerPluginInstance(FixedReaderTcpPlugin())
+
+        // Keep the outer WKWebView non-elastic.
+        // We want elastic/rubber-band scrolling only inside the app's own scroll
+        // containers (the main tab area + log boxes), not by bouncing the whole webview
+        // which visually affects the sticky header/footer bars.
+        webView?.scrollView.bounces = false
+        webView?.scrollView.alwaysBounceVertical = false
     }
 }

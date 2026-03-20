@@ -53,6 +53,10 @@ function AppMobile() {
 
   const mainRef = useRef<HTMLElement>(null)
 
+  // Keep the main scroll container strictly between the fixed header and footer.
+  const [mainTop, setMainTop] = useState<number>(100)
+  const [mainBottom, setMainBottom] = useState<number>(90)
+
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
     const moreTabs = ['custom', 'decoder', 'generator']
@@ -134,6 +138,21 @@ function AppMobile() {
     }
   }, [])
 
+  // Measure fixed header/footer heights so the main scroll area never goes
+  // behind them (prevents the scrollbar showing under the menus).
+  useEffect(() => {
+    const update = () => {
+      const header = document.getElementById('mobile-header')
+      const footer = document.getElementById('mobile-bottom-nav')
+      if (header) setMainTop(Math.ceil(header.getBoundingClientRect().height))
+      if (footer) setMainBottom(Math.ceil(footer.getBoundingClientRect().height))
+    }
+
+    update()
+    window.addEventListener('resize', update)
+    return () => window.removeEventListener('resize', update)
+  }, [])
+
   useEffect(() => {
     const savedTheme = getSavedTheme()
     const savedMode = localStorage.getItem('theme')
@@ -164,7 +183,7 @@ function AppMobile() {
 
   const renderTabContent = () => {
     const contentClass =
-      'p-4 pb-28 min-h-full bg-background/60 rounded-xl max-w-full overflow-x-hidden'
+      'p-4 min-h-full bg-background/60 rounded-xl max-w-full overflow-x-hidden'
     switch (activeTab) {
       case 'fixed':
         return (
@@ -281,7 +300,7 @@ function AppMobile() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="min-h-screen min-h-[100dvh] flex flex-col safe-area-padding bg-gradient-to-b from-background via-background to-muted/20 dark:via-background dark:to-muted/10">
+      <div className="min-h-screen min-h-[100dvh] flex flex-col bg-gradient-to-b from-background via-background to-muted/20 dark:via-background dark:to-muted/10">
         <MobileHeader
           connected={connected}
           onConnectionPress={() => setConnectionSheetOpen(true)}
@@ -290,7 +309,8 @@ function AppMobile() {
 
         <main
           ref={mainRef}
-          className="mobile-main-scroll flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+          className="mobile-main-scroll fixed left-0 right-0 overflow-y-auto overflow-x-hidden"
+          style={{ top: mainTop, bottom: mainBottom }}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -313,7 +333,6 @@ function AppMobile() {
         <MobileBottomNav
           activeTab={activeTab}
           onTabChange={(tab) => setActiveTab(tab)}
-          onMorePress={() => setMoreMenuOpen(true)}
         />
 
         <MobileConnectionSheet

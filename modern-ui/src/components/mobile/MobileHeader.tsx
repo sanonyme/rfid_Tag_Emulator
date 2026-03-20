@@ -14,7 +14,8 @@ export function MobileHeader({
 }: MobileHeaderProps) {
   return (
     <header
-      className="sticky top-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 border-b border-border/60 shadow-[0_1px_0_0_rgba(0,0,0,0.04)] dark:shadow-none"
+      id="mobile-header"
+      className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between gap-3 px-4 py-3 bg-background/90 backdrop-blur-xl supports-[backdrop-filter]:bg-background/70 border-b border-border/60 shadow-[0_1px_0_0_rgba(0,0,0,0.04)] dark:shadow-none"
       style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
     >
       <div className="min-w-0 flex-1">

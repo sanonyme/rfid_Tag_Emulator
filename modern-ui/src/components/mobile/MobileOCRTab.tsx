@@ -25,7 +25,13 @@ export function MobileOCRTab({ host, message, setMessage }: MobileOCRTabProps) {
 
   const addLog = (m: string) => setLog((p) => [...p, `[${formatTime()}] ${m}`].slice(-100))
   useEffect(() => {
-    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
+    const anchor = logEndRef.current
+    if (!anchor) return
+    const scroller = anchor.parentElement as HTMLElement | null
+    if (!scroller) return
+    const threshold = 20
+    const isAtBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - threshold
+    if (isAtBottom) scrollLogAnchorIntoView(anchor, 'smooth')
   }, [log])
 
   useEffect(() => {
@@ -112,7 +118,7 @@ export function MobileOCRTab({ host, message, setMessage }: MobileOCRTabProps) {
           <CardTitle className="text-base">Log</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="font-mono text-xs space-y-1 max-h-40 overflow-y-auto bg-muted/30 rounded-lg p-2">
+          <div className="mobile-elastic font-mono text-xs space-y-1 max-h-40 overflow-y-auto bg-muted/30 rounded-lg p-2">
             {log.length === 0 ? (
               <p className="text-muted-foreground text-center py-4">No messages yet</p>
             ) : (

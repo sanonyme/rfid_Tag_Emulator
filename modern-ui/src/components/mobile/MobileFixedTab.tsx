@@ -98,6 +98,8 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
   const [logExpanded, setLogExpanded] = useState(true)
+  const prevLogExpandedRef = useRef(logExpanded)
+  const didInitLogScrollRef = useRef(false)
 
   const totalInputRows = [
     ...upcList.trim().split('\n').filter((l) => l.trim()),
@@ -109,8 +111,29 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   }
 
   useEffect(() => {
-    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
-  }, [log])
+    const anchor = logEndRef.current
+    if (!didInitLogScrollRef.current) {
+      didInitLogScrollRef.current = true
+      return
+    }
+    if (!anchor || !logExpanded || log.length === 0) return
+    const scroller = anchor.parentElement as HTMLElement | null
+    if (!scroller) return
+    const threshold = 20
+    const isAtBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - threshold
+    if (isAtBottom) scrollLogAnchorIntoView(anchor, 'smooth')
+  }, [log, logExpanded])
+
+  // When the log panel expands, jump to bottom once so the latest lines are visible.
+  useEffect(() => {
+    // On initial mount, don't force-scroll. Only scroll when user expands
+    // (false -> true transition).
+    const prev = prevLogExpandedRef.current
+    if (logExpanded && !prev && log.length > 0) {
+      scrollLogAnchorIntoView(logEndRef.current, 'smooth')
+    }
+    prevLogExpandedRef.current = logExpanded
+  }, [logExpanded])
 
   useEffect(() => {
     const syncConnectionState = async () => {
@@ -273,7 +296,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   }
 
   return (
-    <div className="flex flex-col gap-4 pb-4">
+    <div className="flex flex-col gap-4 pb-0">
       {/* Tag Defaults */}
       <Card className="border-border/50">
         <CardHeader className="pb-2">
@@ -542,7 +565,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
               )}
               <Button size="sm" variant="ghost" onClick={() => setLog([])}>Clear</Button>
             </div>
-            <div className="font-mono text-xs space-y-1 max-h-40 overflow-y-auto bg-muted/30 rounded-lg p-2">
+            <div className="mobile-elastic font-mono text-xs space-y-1 max-h-40 overflow-y-auto bg-muted/30 rounded-lg p-2">
               {log.length === 0 ? (
                 <p className="text-muted-foreground text-center py-4">No activity yet</p>
               ) : (

@@ -100,7 +100,14 @@ export function MobileConnectionSheet({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[min(400px,85vw)] rounded-2xl overflow-hidden border-border/80 shadow-xl shadow-black/20 backdrop-blur-xl bg-card/95 p-8 !px-12 !pb-10">
+      <DialogContent
+        className="max-w-[min(400px,85vw)] rounded-2xl overflow-hidden border-border/80 shadow-xl shadow-black/20 backdrop-blur-xl bg-card/95 p-8 !px-12 !pb-10"
+        onOpenAutoFocus={(e) => {
+          // Prevent autofocus on the IP input (iOS would immediately open the keyboard).
+          // User can tap the text field when they want the keyboard.
+          e.preventDefault()
+        }}
+      >
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-primary/10 pointer-events-none rounded-2xl" />
         <DialogHeader className="relative space-y-3 pb-1">
           <div className="flex items-center gap-3">

@@ -376,6 +376,16 @@ export function applyTheme(themeName: string, isDark: boolean) {
 
   const root = document.documentElement
   
+  // Avoid infinite loops: applyTheme dispatches THEME_CHANGE_EVENT, and some listeners
+  // may call applyTheme again. If theme/isDark are unchanged, skip dispatch.
+  const prevThemeName = root.dataset.themeName
+  const prevIsDark = root.dataset.themeIsDark === 'true'
+  if (prevThemeName === themeName && prevIsDark === isDark) {
+    return
+  }
+  root.dataset.themeName = themeName
+  root.dataset.themeIsDark = String(isDark)
+
   Object.entries(colors).forEach(([key, value]) => {
     // Convert camelCase to kebab-case for CSS variables
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`
