@@ -28,7 +28,17 @@ export function loadSettings(): AppSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw) as Partial<AppSettings>
-    return { ...DEFAULTS, ...parsed }
+    // Strip legacy keys (e.g. old ALE fields stored before removal)
+    const { fontSize, defaultTab, maxLogLines, connectionTimeoutMs, soundEnabled, card3dEnabled } = parsed
+    return {
+      ...DEFAULTS,
+      ...(fontSize != null && { fontSize }),
+      ...(defaultTab != null && { defaultTab }),
+      ...(maxLogLines != null && { maxLogLines }),
+      ...(connectionTimeoutMs != null && { connectionTimeoutMs }),
+      ...(soundEnabled != null && { soundEnabled }),
+      ...(card3dEnabled != null && { card3dEnabled }),
+    }
   } catch {
     return { ...DEFAULTS }
   }

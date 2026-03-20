@@ -5,7 +5,7 @@ import { Label } from '../ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Send, ScanLine } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 
 interface MobileOCRTabProps {
   host: string
@@ -25,7 +25,7 @@ export function MobileOCRTab({ host, message, setMessage }: MobileOCRTabProps) {
 
   const addLog = (m: string) => setLog((p) => [...p, `[${formatTime()}] ${m}`].slice(-100))
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   useEffect(() => {

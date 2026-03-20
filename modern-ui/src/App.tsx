@@ -191,6 +191,12 @@ function App() {
     return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
   }, [])
 
+  /** Keep tab panel at top when switching tabs (avoids runaway scroll with log autoscroll). */
+  React.useEffect(() => {
+    const panel = document.querySelector('[role="tabpanel"][data-state="active"]') as HTMLElement | null
+    panel?.scrollTo({ top: 0, behavior: 'auto' })
+  }, [activeTab])
+
   // Toast when update is available (Electron only)
   React.useEffect(() => {
     if (!window.electronAPI) return

@@ -1,4 +1,28 @@
-import { ElectronAPI } from '../types/electron';
+import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { OCRTcp } from '../plugins/ocrtcp'
+import { FixedReaderTcp } from '../plugins/fixedreadertcp'
+import { ElectronAPI } from '../types/electron'
+
+/** Real fixed-reader TCP (port 12352, tag lines) — implemented in `FixedReaderTcpPlugin.swift` (iOS only for now). */
+function useIosFixedReaderTcp(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'ios'
+}
+
+function headersToRecord(h: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!h || typeof h !== 'object') return out
+  if (h instanceof Headers) {
+    h.forEach((v, k) => {
+      out[k] = v
+    })
+    return out
+  }
+  for (const [k, v] of Object.entries(h as Record<string, unknown>)) {
+    if (v == null) continue
+    out[k] = Array.isArray(v) ? v.map(String).join(', ') : String(v)
+  }
+  return out
+}
 
 class MockElectronAPI implements ElectronAPI {
   platform = 'win32'; // Mock platform
@@ -69,8 +93,35 @@ class MockElectronAPI implements ElectronAPI {
   maximize() { console.log('Mock: maximize'); }
   close() { console.log('Mock: close'); }
 
-  // TCP Emulator - validate host reachability via HTTP probe (browser can't do raw TCP)
+  constructor() {
+    if (useIosFixedReaderTcp()) {
+      void FixedReaderTcp.addListener('tcpProgress', (e: { message: string }) => {
+        this._trigger(this._tcpCallbacks.progress, e.message)
+      })
+      void FixedReaderTcp.addListener('tcpComplete', (e: { message: string }) => {
+        this._trigger(this._tcpCallbacks.complete, e.message)
+      })
+      void FixedReaderTcp.addListener('tcpError', (e: { message: string }) => {
+        this._trigger(this._tcpCallbacks.error, e.message)
+      })
+    }
+  }
+
+  // TCP Emulator — iOS/Android: real TCP like Electron tcp-handler; browser: HTTP probe only (no raw socket)
   tcpConnect(host: string, port: number) {
+    if (useIosFixedReaderTcp()) {
+      FixedReaderTcp.connect({ host, port })
+        .then(() => {
+          this._tcpConnected = true
+          this._trigger(this._tcpCallbacks.connect, `Connected to ${host}:${port}`)
+        })
+        .catch((e: unknown) => {
+          this._tcpConnected = false
+          this._trigger(this._tcpCallbacks.error, e instanceof Error ? e.message : 'TCP connect failed')
+        })
+      return
+    }
+
     console.log(`Mock: Validating reachability of ${host}...`);
     const probePorts = [8080, 80, port]; // ALE often on 8080/80; also try the requested port
     const controller = new AbortController();
@@ -112,6 +163,18 @@ class MockElectronAPI implements ElectronAPI {
   }
 
   tcpDisconnect() {
+    if (useIosFixedReaderTcp()) {
+      FixedReaderTcp.disconnect()
+        .then(() => {
+          this._tcpConnected = false
+          this._trigger(this._tcpCallbacks.disconnect, 'Disconnected successfully')
+        })
+        .catch(() => {
+          this._tcpConnected = false
+          this._trigger(this._tcpCallbacks.disconnect, 'Disconnected')
+        })
+      return
+    }
     console.log('Mock: Disconnecting...');
     setTimeout(() => {
       this._tcpConnected = false;
@@ -120,6 +183,16 @@ class MockElectronAPI implements ElectronAPI {
   }
 
   tcpSendTags(tags: any[], driverCode: string, delayMs: number) {
+    if (useIosFixedReaderTcp()) {
+      FixedReaderTcp.sendTags({
+        tagsJson: JSON.stringify(tags),
+        driverCode,
+        delayMs: Math.max(0, Math.round(delayMs)),
+      }).catch((e: unknown) => {
+        this._trigger(this._tcpCallbacks.error, e instanceof Error ? e.message : 'Send failed')
+      })
+      return
+    }
     console.log(`Mock: Sending ${tags.length} tags with driver ${driverCode} and delay ${delayMs}`);
     let count = 0;
     const interval = setInterval(() => {
@@ -136,11 +209,24 @@ class MockElectronAPI implements ElectronAPI {
   }
 
   tcpCancelSend() {
+    if (useIosFixedReaderTcp()) {
+      void FixedReaderTcp.cancelSend()
+      return
+    }
     console.log('Mock: Cancel send');
     this._trigger(this._tcpCallbacks.error, 'Send cancelled by user');
   }
 
   async tcpIsConnected() {
+    if (useIosFixedReaderTcp()) {
+      try {
+        const { connected } = await FixedReaderTcp.getConnected()
+        this._tcpConnected = connected
+        return connected
+      } catch {
+        return false
+      }
+    }
     return this._tcpConnected;
   }
 
@@ -200,8 +286,22 @@ class MockElectronAPI implements ElectronAPI {
   onHandheldProgress(callback: (port: number, message: string) => void) { this._handheldCallbacks.progress.push(callback); }
   onHandheldComplete(callback: (port: number, message: string) => void) { this._handheldCallbacks.complete.push(callback); }
 
-  // OCR - use proxy when in browser (dev server has proxy), else fake success
+  // OCR — native iOS/Android: real TCP :10482; browser dev server: proxy; else fake (desktop uses real Electron)
   ocrSend(host: string, message: string) {
+    if (Capacitor.isNativePlatform()) {
+      OCRTcp.send({ host, message })
+        .then((res) => {
+          if (res.ok) {
+            this._trigger(this._ocrCallbacks.success, `Sent to ${host}:10482`)
+          } else {
+            this._trigger(this._ocrCallbacks.error, res.error ?? 'OCR send failed')
+          }
+        })
+        .catch((e: unknown) => {
+          this._trigger(this._ocrCallbacks.error, e instanceof Error ? e.message : 'OCR send failed')
+        })
+      return
+    }
     const useProxy = typeof window !== 'undefined' && window.location?.origin?.startsWith('http');
     if (useProxy) {
       fetch('/api/ocr-send', {
@@ -292,8 +392,42 @@ class MockElectronAPI implements ElectronAPI {
   onDownloadProgress(_callback: (progress: any) => void) { console.log('Mock: onDownloadProgress registered'); }
   onUpdateDownloaded(_callback: (info: any) => void) { console.log('Mock: onUpdateDownloaded registered'); }
 
-  // ALE API - try proxy first (dev server), fallback to direct fetch (PWA or proxy unreachable)
+  // ALE API — Capacitor: native HTTP (no CORS); browser: dev proxy then fetch
   async aleRequest(url: string, options: any) {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const method = (options?.method || 'GET').toUpperCase()
+        const headers = headersToRecord(options?.headers)
+        const nativeResp = await CapacitorHttp.request({
+          url,
+          method,
+          headers,
+          data: options?.body,
+        })
+        let text: string
+        if (typeof nativeResp.data === 'string') text = nativeResp.data
+        else if (nativeResp.data != null) text = JSON.stringify(nativeResp.data)
+        else text = ''
+        const headersOut = headersToRecord(nativeResp.headers)
+        return {
+          ok: nativeResp.status >= 200 && nativeResp.status < 300,
+          status: nativeResp.status,
+          statusText: '',
+          data: text,
+          headers: headersOut,
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Request failed'
+        return {
+          ok: false,
+          status: 0,
+          statusText: msg,
+          data: null,
+          headers: {} as Record<string, string>,
+        }
+      }
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     const tryProxy = typeof window !== 'undefined' && window.location?.origin?.startsWith('http');

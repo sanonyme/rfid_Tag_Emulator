@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ScrollArea } from './ui/scroll-area'
 import { Send, Terminal, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 
 interface CustomTabProps {
   host: string
@@ -31,7 +31,7 @@ export function CustomTab({ host, message, setMessage, port, setPort }: CustomTa
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   // Set up listeners once

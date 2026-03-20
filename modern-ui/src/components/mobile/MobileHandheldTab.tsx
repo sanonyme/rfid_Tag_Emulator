@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 import type { HandheldSlot } from '../HandheldTab'
 
 const DEFAULT_PORT = 10472
@@ -58,7 +58,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
 
   const addLog = (msg: string) => setLog((p) => [...p, `[${formatTime()}] ${msg}`].slice(-100))
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   useEffect(() => {

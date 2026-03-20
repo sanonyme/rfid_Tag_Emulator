@@ -10,6 +10,19 @@ export interface LogicalDevice {
   antennas: number[]
 }
 
+function getAleCredentials(): { username: string; password: string } {
+  const username = (import.meta.env.VITE_ALE_USERNAME as string | undefined)?.trim() || ''
+  const password = (import.meta.env.VITE_ALE_PASSWORD as string | undefined) ?? ''
+  return { username, password }
+}
+
+/** Capacitor / fetch use different header casings; cookies must match for ALE session. */
+function getHeader(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined
+  const key = Object.keys(headers).find((h) => h.toLowerCase() === name.toLowerCase())
+  return key ? headers[key] : undefined
+}
+
 export class AleApiClient {
   private cookies: string | null = null;
 
@@ -17,7 +30,6 @@ export class AleApiClient {
 
   private async request(url: string, options: RequestInit): Promise<string> {
     if (window.electronAPI?.aleRequest) {
-      // Add stored cookies to headers if available
       const headers = { ...(options.headers as any || {}) }
       if (this.cookies) {
         headers['Cookie'] = this.cookies
@@ -27,14 +39,13 @@ export class AleApiClient {
       
       if (!res.ok) throw new Error(`Request failed: ${res.statusText} (${res.status})`)
       
-      // Store cookies if present in response
-      if (res.headers && res.headers['set-cookie']) {
-        this.cookies = res.headers['set-cookie']
+      const setCookie = getHeader(res.headers, 'set-cookie')
+      if (setCookie) {
+        this.cookies = setCookie
       }
       
       return res.data || ''
     } else {
-      // Fallback for browser (might hit CORS)
       const res = await fetch(url, options)
       if (!res.ok) throw new Error(`Request failed: ${res.statusText}`)
       return await res.text()
@@ -42,8 +53,14 @@ export class AleApiClient {
   }
 
   async authenticate(host: string, port: string = '80'): Promise<string> {
+    const { username, password } = getAleCredentials()
+    if (!username) {
+      throw new Error(
+        'ALE username missing. Add VITE_ALE_USERNAME and VITE_ALE_PASSWORD to modern-ui/.env, then rebuild the app (e.g. npm run cap:sync).',
+      )
+    }
+
     if (window.electronAPI?.aleRequest) {
-      // Use standard request proxy but with special credential injection in main process
       const url = `http://${host}:${port}/ALE/api/auth`
       try {
         const response = await window.electronAPI.aleRequest(url, {
@@ -52,8 +69,8 @@ export class AleApiClient {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                username: import.meta.env.VITE_ALE_USERNAME,
-                password: import.meta.env.VITE_ALE_PASSWORD,
+                username,
+                password,
             }),
         })
         
@@ -61,9 +78,9 @@ export class AleApiClient {
             throw new Error(`Auth failed: ${response.statusText}`)
         }
 
-        // Store cookie if present
-        if (response.headers && response.headers['set-cookie']) {
-            this.cookies = response.headers['set-cookie']
+        const setCookie = getHeader(response.headers, 'set-cookie')
+        if (setCookie) {
+            this.cookies = setCookie
         }
 
         const data = response.data || ''
@@ -71,7 +88,7 @@ export class AleApiClient {
           const json = JSON.parse(data)
           if (json.token) return json.token
           if (data && !data.startsWith('{')) return data 
-        } catch (e) {
+        } catch {
           return data
         }
         return data
@@ -81,7 +98,6 @@ export class AleApiClient {
       }
     }
     
-    // Fallback for browser (will fail without CORS/Proxy if not electron)
     const url = `http://${host}:${port}/ALE/api/auth`
     try {
       const data = await this.request(url, {
@@ -90,15 +106,15 @@ export class AleApiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: import.meta.env.VITE_ALE_USERNAME,
-          password: import.meta.env.VITE_ALE_PASSWORD,
+          username,
+          password,
         }),
       })
 
       try {
         const json = JSON.parse(data)
         if (json.token) return json.token
-      } catch (e) {
+      } catch {
         // Not JSON
       }
       
@@ -110,7 +126,6 @@ export class AleApiClient {
   }
 
   async getLogicalDevices(host: string, port: string = '80'): Promise<LogicalDevice[]> {
-    // First authenticate
     const token = await this.authenticate(host, port)
 
     const url = `http://${host}:${port}/ALE/api/logical-device/`
@@ -124,7 +139,6 @@ export class AleApiClient {
       })
 
       const json = JSON.parse(data)
-      // Data is an array of LogicalDevice objects
       if (Array.isArray(json)) {
         return json as LogicalDevice[]
       }

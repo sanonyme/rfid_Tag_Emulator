@@ -8,7 +8,7 @@ import { Send, ScanLine, Copy, Download } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 
 interface OCRTabProps {
   host: string
@@ -33,7 +33,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   // Set up listeners once

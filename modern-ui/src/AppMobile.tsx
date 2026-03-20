@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
 import { MobileFixedTab } from './components/mobile/MobileFixedTab'
 import { MobileHandheldTab } from './components/mobile/MobileHandheldTab'
 import { MobileOCRTab } from './components/mobile/MobileOCRTab'
@@ -21,6 +22,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
 
 function AppMobile() {
+  const reduceMotion = useReducedMotion()
   const [emulator] = useState(() => new TCPEmulatorClient())
 
   const [host, setHost] = useState('')
@@ -48,6 +50,8 @@ function AppMobile() {
   const [automationSequences, setAutomationSequences] = useState<AutomationSequence[]>(() => [
     { id: crypto.randomUUID(), name: 'Sequence 1', order: 0, steps: [] },
   ])
+
+  const mainRef = useRef<HTMLElement>(null)
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
@@ -124,6 +128,13 @@ function AppMobile() {
   }
 
   useEffect(() => {
+    document.documentElement.dataset.mobileApp = 'true'
+    return () => {
+      delete document.documentElement.dataset.mobileApp
+    }
+  }, [])
+
+  useEffect(() => {
     const savedTheme = getSavedTheme()
     const savedMode = localStorage.getItem('theme')
     const dark =
@@ -141,6 +152,15 @@ function AppMobile() {
     window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange)
     return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
   }, [])
+
+  useEffect(() => {
+    const el = mainRef.current
+    if (!el) return
+    const behavior = reduceMotion ? ('auto' as const) : ('smooth' as const)
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: 0, behavior })
+    })
+  }, [activeTab, reduceMotion])
 
   const renderTabContent = () => {
     const contentClass =
@@ -261,15 +281,33 @@ function AppMobile() {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col safe-area-padding">
+      <div className="min-h-screen min-h-[100dvh] flex flex-col safe-area-padding bg-gradient-to-b from-background via-background to-muted/20 dark:via-background dark:to-muted/10">
         <MobileHeader
           connected={connected}
           onConnectionPress={() => setConnectionSheetOpen(true)}
           onMenuPress={() => setMoreMenuOpen(true)}
         />
 
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          {renderTabContent()}
+        <main
+          ref={mainRef}
+          className="mobile-main-scroll flex-1 overflow-y-auto overflow-x-hidden pb-[calc(4.75rem+env(safe-area-inset-bottom,0px))]"
+        >
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={activeTab}
+              className="min-h-full"
+              initial={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={reduceMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: -8 }}
+              transition={
+                reduceMotion
+                  ? { duration: 0 }
+                  : { duration: 0.22, ease: [0.22, 1, 0.36, 1] }
+              }
+            >
+              {renderTabContent()}
+            </motion.div>
+          </AnimatePresence>
         </main>
 
         <MobileBottomNav
@@ -311,7 +349,12 @@ function AppMobile() {
 
         <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} noTrigger />
       </div>
-      <Toaster richColors position="bottom-center" />
+      <Toaster
+        richColors
+        position="top-center"
+        offset={{ top: 'max(12px, env(safe-area-inset-top))' }}
+        mobileOffset={{ top: 'max(12px, env(safe-area-inset-top))' }}
+      />
     </TooltipProvider>
   )
 }

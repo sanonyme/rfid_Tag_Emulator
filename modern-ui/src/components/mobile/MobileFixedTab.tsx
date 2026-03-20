@@ -8,7 +8,7 @@ import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -109,7 +109,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   useEffect(() => {

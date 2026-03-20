@@ -109,8 +109,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['zeus-removebg-preview.png'],
       manifest: {
-        name: 'Zeus RFID Emulator',
-        short_name: 'Zeus Emulator',
+        name: 'Zeus',
+        short_name: 'Zeus',
         description: 'RFID Tag Emulator for Fixed Reader, Handheld, and OCR',
         theme_color: '#3b82f6',
         background_color: '#0f172a',

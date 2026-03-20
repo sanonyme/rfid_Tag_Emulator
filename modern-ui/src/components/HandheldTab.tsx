@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 
 export interface HandheldSlot {
   id: string
@@ -93,7 +93,7 @@ export function HandheldTab({
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   const addSlot = () => {

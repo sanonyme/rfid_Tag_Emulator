@@ -9,7 +9,7 @@ import { ScrollArea } from './ui/scroll-area'
 import { Zap, StopCircle, Activity, RefreshCw, Radio, Copy, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
   Dialog,
@@ -119,7 +119,7 @@ export function FixedTab({
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   const handleCopyLog = () => {

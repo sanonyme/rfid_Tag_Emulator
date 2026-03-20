@@ -51,7 +51,7 @@ import {
 } from 'lucide-react'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient, CustomClient, type TagData, EPCGenerator } from '@/lib/tcp-client'
 import { toast } from 'sonner'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 import type { AutomationStep, AutomationSequence, ActionType } from '@/lib/automation-types'
 import { normalizeSequences, migrateStepsToSequences } from '@/lib/automation-types'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -265,7 +265,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    scrollLogAnchorIntoView(logEndRef.current, 'smooth')
   }, [log])
 
   const updateStepsForSequence = useCallback((seqId: string, updater: (steps: AutomationStep[]) => AutomationStep[]) => {

@@ -2,6 +2,36 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Capacitor / mobile: avoid pinch + double-tap zoom trapping users */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+body {
+  touch-action: pan-x pan-y;
+}
+
+/* Capacitor / mobile shell: momentum scroll + less janky overscroll */
+[data-mobile-app='true'] {
+  -webkit-tap-highlight-color: transparent;
+}
+[data-mobile-app='true'] body,
+[data-mobile-app='true'] #root {
+  min-height: 100%;
+  min-height: 100dvh;
+}
+[data-mobile-app='true'] .mobile-main-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-mobile-app='true'] .mobile-main-scroll {
+    scroll-behavior: auto;
+  }
+}
+
 @layer base {
   :root {
     /* Light mode - Terracotta Palette */

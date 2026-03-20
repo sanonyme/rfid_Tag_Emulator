@@ -5,7 +5,7 @@ import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
 import { Wifi, WifiOff, Power, Activity, ArrowLeftRight } from 'lucide-react'
-import { formatTime } from '@/lib/utils'
+import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
 
 interface AdamTabProps {
   host: string
@@ -36,7 +36,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       return
     }
     if (log.length > 0) {
-      logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      scrollLogAnchorIntoView(logEndRef.current, 'smooth')
     }
   }, [log])
 
