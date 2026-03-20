@@ -54,8 +54,9 @@ function AppMobile() {
   const mainRef = useRef<HTMLElement>(null)
 
   // Keep the main scroll container strictly between the fixed header and footer.
-  const [mainTop, setMainTop] = useState<number>(100)
-  const [mainBottom, setMainBottom] = useState<number>(90)
+  // Conservative defaults; immediately corrected by the measurement effect.
+  const [mainTop, setMainTop] = useState<number>(120)
+  const [mainBottom, setMainBottom] = useState<number>(120)
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
@@ -141,16 +142,49 @@ function AppMobile() {
   // Measure fixed header/footer heights so the main scroll area never goes
   // behind them (prevents the scrollbar showing under the menus).
   useEffect(() => {
-    const update = () => {
-      const header = document.getElementById('mobile-header')
-      const footer = document.getElementById('mobile-bottom-nav')
-      if (header) setMainTop(Math.ceil(header.getBoundingClientRect().height))
-      if (footer) setMainBottom(Math.ceil(footer.getBoundingClientRect().height))
+    const header = document.getElementById('mobile-header')
+    const footer = document.getElementById('mobile-bottom-nav')
+    if (!header || !footer) return
+
+    const measure = () => {
+      // Add a small buffer so borders/shadows can't visually cut cards,
+      // especially on smaller iPhones where safe-area values settle later.
+      const headerH = Math.ceil(header.getBoundingClientRect().height) + 2
+      const footerH = Math.ceil(footer.getBoundingClientRect().height) + 2
+      setMainTop(headerH)
+      setMainBottom(footerH)
     }
 
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
+    measure()
+
+    // Re-measure after layout settles (safe-area + font metrics can change height).
+    const raf1 = requestAnimationFrame(() => {
+      requestAnimationFrame(measure)
+    })
+    const t1 = window.setTimeout(measure, 250)
+    const t2 = window.setTimeout(measure, 700)
+
+    // Ensure we re-check once fonts are ready (iOS can change metrics after first paint).
+    ;(document as Document).fonts?.ready?.then(() => measure()).catch(() => {})
+
+    window.addEventListener('resize', measure)
+    window.addEventListener('orientationchange', measure)
+
+    const ro = new ResizeObserver(() => {
+      // Batch to next frame.
+      requestAnimationFrame(measure)
+    })
+    ro.observe(header)
+    ro.observe(footer)
+
+    return () => {
+      cancelAnimationFrame(raf1)
+      window.clearTimeout(t1)
+      window.clearTimeout(t2)
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('orientationchange', measure)
+      ro.disconnect()
+    }
   }, [])
 
   useEffect(() => {
