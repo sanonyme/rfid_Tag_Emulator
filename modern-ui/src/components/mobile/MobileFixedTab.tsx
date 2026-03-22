@@ -9,6 +9,8 @@ import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronU
 import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
 import { formatTime, scrollLogAnchorIntoView } from '@/lib/utils'
+import { hapticSliderEnd, hapticSliderStart, hapticSliderTick } from '@/lib/haptics'
+import { useSettings } from '@/lib/settings-context'
 import {
   Select,
   SelectContent,
@@ -100,6 +102,10 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   const [logExpanded, setLogExpanded] = useState(true)
   const prevLogExpandedRef = useRef(logExpanded)
   const didInitLogScrollRef = useRef(false)
+
+  const { settings } = useSettings()
+  const lastRssiHapticRef = useRef<number>(0)
+  const rssiDragActiveRef = useRef<boolean>(false)
 
   const totalInputRows = [
     ...upcList.trim().split('\n').filter((l) => l.trim()),
@@ -336,7 +342,39 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
             </div>
             <Slider
               value={[parseFloat(rssi) || -45]}
-              onValueChange={([v]) => setRssi(v.toFixed(1))}
+              onPointerDown={() => {
+                if (!settings.hapticsEnabled) return
+                if (rssiDragActiveRef.current) return
+                rssiDragActiveRef.current = true
+                void hapticSliderStart()
+              }}
+              onPointerUp={() => {
+                if (!settings.hapticsEnabled) return
+                if (!rssiDragActiveRef.current) return
+                rssiDragActiveRef.current = false
+                void hapticSliderEnd()
+              }}
+              onPointerCancel={() => {
+                if (!settings.hapticsEnabled) return
+                if (!rssiDragActiveRef.current) return
+                rssiDragActiveRef.current = false
+                void hapticSliderEnd()
+              }}
+              onValueChange={([v]) => {
+                setRssi(v.toFixed(1))
+                if (!settings.hapticsEnabled) return
+                if (!rssiDragActiveRef.current) return
+                const now = Date.now()
+                if (now - lastRssiHapticRef.current < 60) return
+                lastRssiHapticRef.current = now
+                void hapticSliderTick()
+              }}
+              onValueCommit={() => {
+                if (!settings.hapticsEnabled) return
+                if (!rssiDragActiveRef.current) return
+                rssiDragActiveRef.current = false
+                void hapticSliderEnd()
+              }}
               min={-80}
               max={0}
               step={0.5}

@@ -1,5 +1,6 @@
 import { Wifi, WifiOff, Menu } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import packageJson from '../../../package.json'
 
 interface MobileHeaderProps {
   connected: boolean
@@ -20,8 +21,12 @@ export function MobileHeader({
     >
       <div className="min-w-0 flex-1">
         <h1 className="text-lg font-semibold tracking-tight text-foreground truncate leading-tight">Zeus</h1>
-        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider truncate mt-0.5">
-          RFID emulator
+        <p className="text-[11px] font-medium text-muted-foreground mt-0.5 flex items-center gap-1.5 min-w-0 flex-wrap">
+          <span className="uppercase tracking-wider truncate">RFID emulator</span>
+          <span className="opacity-40 shrink-0" aria-hidden>
+            ·
+          </span>
+          <span className="tabular-nums shrink-0 text-muted-foreground/90">v{packageJson.version}</span>
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">

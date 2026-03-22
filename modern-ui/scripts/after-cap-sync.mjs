@@ -13,7 +13,13 @@ const capJson = path.join(__dirname, '../ios/App/App/capacitor.config.json')
 if (fs.existsSync(capJson)) {
   const raw = fs.readFileSync(capJson, 'utf8')
   const j = JSON.parse(raw)
-  j.packageClassList = []
+  const toRemove = new Set(['OCRTcpPlugin', 'FixedReaderTcpPlugin'])
+  if (Array.isArray(j.packageClassList)) {
+    j.packageClassList = j.packageClassList.filter((x) => !toRemove.has(x))
+  } else {
+    // If Capacitor didn't generate it for some reason, keep it empty rather than breaking local plugin wiring.
+    j.packageClassList = []
+  }
   fs.writeFileSync(capJson, JSON.stringify(j, null, '\t') + '\n')
-  console.log('[after-cap-sync] capacitor.config.json packageClassList cleared (OCRTcp → AppBridgeViewController)')
+  console.log('[after-cap-sync] capacitor.config.json packageClassList filtered (local TCP plugins only)')
 }

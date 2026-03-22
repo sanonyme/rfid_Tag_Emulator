@@ -13,6 +13,8 @@ import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
+import { useSettings } from './lib/settings-context'
+import { hapticButton } from './lib/haptics'
 import { MobileHeader } from './components/mobile/MobileHeader'
 import { MobileBottomNav } from './components/mobile/MobileBottomNav'
 import { MobileMoreMenu } from './components/mobile/MobileMoreMenu'
@@ -24,6 +26,9 @@ import { Toaster } from 'sonner'
 function AppMobile() {
   const reduceMotion = useReducedMotion()
   const [emulator] = useState(() => new TCPEmulatorClient())
+
+  const { settings } = useSettings()
+  const lastHapticAtRef = useRef<number>(0)
 
   const [host, setHost] = useState('')
   const [connected, setConnected] = useState(false)
@@ -138,6 +143,29 @@ function AppMobile() {
       delete document.documentElement.dataset.mobileApp
     }
   }, [])
+
+  // Global haptics: if enabled, vibrate on ANY button tap.
+  useEffect(() => {
+    if (!settings.hapticsEnabled) return
+
+    const handler = (e: MouseEvent) => {
+      const el = e.target as HTMLElement | null
+      const button = el?.closest('button,[role="button"]') as HTMLElement | null
+      if (!button) return
+
+      // Ignore disabled buttons.
+      if (button instanceof HTMLButtonElement && button.disabled) return
+      if (button.getAttribute('aria-disabled') === 'true') return
+
+      const now = Date.now()
+      if (now - lastHapticAtRef.current < 80) return
+      lastHapticAtRef.current = now
+      void hapticButton()
+    }
+
+    document.addEventListener('click', handler, true)
+    return () => document.removeEventListener('click', handler, true)
+  }, [settings.hapticsEnabled])
 
   // Measure fixed header/footer heights so the main scroll area never goes
   // behind them (prevents the scrollbar showing under the menus).

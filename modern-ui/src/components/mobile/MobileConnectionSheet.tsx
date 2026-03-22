@@ -83,7 +83,9 @@ export function MobileConnectionSheet({
     }
   }
 
-  const handleConnect = () => connectTo(localHost)
+  const handleConnect = () => {
+    void connectTo(localHost)
+  }
 
   const handleDisconnect = async () => {
     await emulator.disconnect(() => {

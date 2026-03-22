@@ -160,8 +160,8 @@ export function QrCodeGenerator() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
-      <div className="space-y-6 overflow-y-auto pr-2">
+    <div className="grid min-h-0 min-w-0 gap-6 md:grid-cols-2 h-full overflow-hidden">
+      <div className="min-w-0 space-y-6 overflow-y-auto pr-2">
         <Card className="border-border/50">
           <CardHeader className="pb-3">
             <CardTitle>QR Content Editor</CardTitle>
@@ -222,20 +222,25 @@ export function QrCodeGenerator() {
         </Card>
       </div>
 
-      <div className="space-y-6">
-        <Card className="h-full flex flex-col border-border/50">
+      <div className="min-w-0 space-y-6 flex flex-col min-h-0">
+        <Card className="h-full min-h-0 flex flex-col border-border/50 overflow-hidden">
           <CardHeader>
             <CardTitle>Preview</CardTitle>
             <CardDescription>Live preview of your QR code</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20">
-            <div ref={qrRef} className="p-8 bg-white rounded-lg shadow-lg">
-              <QRCodeSVG
-                value={JSON.stringify(formData)}
-                size={qrSize}
-                level={"M"}
-                includeMargin={true}
-              />
+          <CardContent className="flex-1 min-h-0 min-w-0 flex flex-col items-center justify-center bg-white/5 rounded-lg m-3 sm:m-6 border-2 border-dashed border-muted-foreground/20 overflow-auto">
+            <div
+              ref={qrRef}
+              className="w-full max-w-full min-w-0 box-border flex justify-center p-4 sm:p-6 bg-white rounded-lg shadow-lg"
+            >
+              <div className="w-full max-w-[min(256px,100%)] aspect-square shrink-0 [&_svg]:h-full [&_svg]:w-full [&_svg]:max-h-full [&_svg]:max-w-full">
+                <QRCodeSVG
+                  value={JSON.stringify(formData)}
+                  size={qrSize}
+                  level={"M"}
+                  includeMargin={true}
+                />
+              </div>
             </div>
           </CardContent>
           <div className="p-6 pt-0 flex justify-center gap-4">

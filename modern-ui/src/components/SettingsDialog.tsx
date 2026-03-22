@@ -237,15 +237,27 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
                   <Sparkles className="w-4 h-4 text-primary shrink-0" />
                   Feedback
                 </h4>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <Label>Sound effects</Label>
-                    <p className="text-xs text-muted-foreground mt-0.5">Connection and send cues</p>
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <Label>Sound effects</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Connection and send cues</p>
+                    </div>
+                    <Switch
+                      checked={settings.soundEnabled}
+                      onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
+                    />
                   </div>
-                  <Switch
-                    checked={settings.soundEnabled}
-                    onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
-                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <Label>Haptics</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">Vibration feedback for button taps</p>
+                    </div>
+                    <Switch
+                      checked={settings.hapticsEnabled}
+                      onCheckedChange={(v: boolean) => setSettings({ hapticsEnabled: v })}
+                    />
+                  </div>
                 </div>
               </div>
             ) : (
@@ -263,6 +275,16 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
                     <Switch
                       checked={settings.soundEnabled}
                       onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Haptics</Label>
+                      <p className="text-xs text-muted-foreground">Vibration feedback for button taps</p>
+                    </div>
+                    <Switch
+                      checked={settings.hapticsEnabled}
+                      onCheckedChange={(v: boolean) => setSettings({ hapticsEnabled: v })}
                     />
                   </div>
                   <div className="flex items-center justify-between">

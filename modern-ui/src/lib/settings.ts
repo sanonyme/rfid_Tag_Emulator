@@ -11,6 +11,7 @@ export interface AppSettings {
   maxLogLines: number
   connectionTimeoutMs: number
   soundEnabled: boolean
+  hapticsEnabled: boolean
   card3dEnabled: boolean
 }
 
@@ -20,6 +21,7 @@ const DEFAULTS: AppSettings = {
   maxLogLines: 1000,
   connectionTimeoutMs: 10000,
   soundEnabled: false,
+  hapticsEnabled: true,
   card3dEnabled: false,
 }
 
@@ -29,7 +31,7 @@ export function loadSettings(): AppSettings {
     if (!raw) return { ...DEFAULTS }
     const parsed = JSON.parse(raw) as Partial<AppSettings>
     // Strip legacy keys (e.g. old ALE fields stored before removal)
-    const { fontSize, defaultTab, maxLogLines, connectionTimeoutMs, soundEnabled, card3dEnabled } = parsed
+    const { fontSize, defaultTab, maxLogLines, connectionTimeoutMs, soundEnabled, hapticsEnabled, card3dEnabled } = parsed
     return {
       ...DEFAULTS,
       ...(fontSize != null && { fontSize }),
@@ -37,6 +39,7 @@ export function loadSettings(): AppSettings {
       ...(maxLogLines != null && { maxLogLines }),
       ...(connectionTimeoutMs != null && { connectionTimeoutMs }),
       ...(soundEnabled != null && { soundEnabled }),
+      ...(hapticsEnabled != null && { hapticsEnabled }),
       ...(card3dEnabled != null && { card3dEnabled }),
     }
   } catch {

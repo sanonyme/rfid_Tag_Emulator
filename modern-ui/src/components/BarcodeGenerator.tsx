@@ -164,9 +164,9 @@ export function BarcodeGenerator() {
           </TabsList>
         </div>
 
-        <TabsContent value="barcode" className="flex-1 mt-0">
-          <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
-            <div className="space-y-6 overflow-y-auto pr-2">
+        <TabsContent value="barcode" className="flex-1 mt-0 min-h-0 min-w-0">
+          <div className="grid min-h-0 min-w-0 gap-6 md:grid-cols-2 h-full overflow-hidden">
+            <div className="min-w-0 space-y-6 overflow-y-auto pr-2">
               <Card className="border-border/50">
                 <CardHeader className="pb-3">
                   <CardTitle>Configuration</CardTitle>
@@ -280,16 +280,19 @@ export function BarcodeGenerator() {
               </Card>
             </div>
 
-            <div className="space-y-6">
-              <Card className="h-full flex flex-col border-border/50">
+            <div className="min-w-0 space-y-6 flex flex-col min-h-0">
+              <Card className="h-full min-h-0 flex flex-col border-border/50 overflow-hidden">
                 <CardHeader>
                   <CardTitle>Preview</CardTitle>
                   <CardDescription>Live preview of your generated barcodes</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20 overflow-y-auto">
-                  <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-8 items-center">
+                <CardContent className="flex-1 min-h-0 min-w-0 flex flex-col items-center justify-center bg-white/5 rounded-lg m-3 sm:m-6 border-2 border-dashed border-muted-foreground/20 overflow-auto">
+                  <div ref={barcodeRef} className="w-full max-w-full min-w-0 box-border p-4 sm:p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-6 sm:gap-8 items-center">
                     {barcodes.map((barcode) => (
-                        <div key={barcode.id} className="flex flex-col items-center">
+                        <div
+                          key={barcode.id}
+                          className="w-full min-w-0 max-w-full flex flex-col items-center justify-center [&_svg]:max-w-full [&_svg]:h-auto"
+                        >
                         <Barcode 
                           value={barcode.text}
                           format={barcode.format}
@@ -319,7 +322,7 @@ export function BarcodeGenerator() {
           </div>
         </TabsContent>
 
-        <TabsContent value="qrcode" className="flex-1 mt-0">
+        <TabsContent value="qrcode" className="flex-1 mt-0 min-h-0 min-w-0">
           <QrCodeGenerator />
         </TabsContent>
       </Tabs>
