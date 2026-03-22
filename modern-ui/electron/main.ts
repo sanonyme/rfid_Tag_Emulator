@@ -78,6 +78,11 @@ function createWindow() {
     titleBarStyle: isLinux ? 'default' : 'hidden', // Default titlebar on Linux
   })
 
+  // macOS: titleBarStyle 'hidden' still draws traffic lights; custom controls live in TitleBar.
+  if (process.platform === 'darwin' && mainWindow) {
+    mainWindow.setWindowButtonVisibility(false)
+  }
+
   // Show window when page is fully loaded
   mainWindow.webContents.once('did-finish-load', () => {
     console.log('Page fully loaded, showing window')
