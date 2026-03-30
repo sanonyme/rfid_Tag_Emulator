@@ -435,6 +435,8 @@ function App() {
       onOpenBase64={handleOpenBase64}
       host={host}
       isAdmin={isAdmin}
+      onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
+      onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
     />
     <Toaster richColors position="bottom-right" />
     </TooltipProvider>

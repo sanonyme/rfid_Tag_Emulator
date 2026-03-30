@@ -26,6 +26,7 @@ import {
 } from '../ui/dialog'
 import { ScrollArea } from '../ui/scroll-area'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
+import { Switch } from '../ui/switch'
 
 interface MobileFixedTabProps {
   emulator: TCPEmulatorClient
@@ -98,6 +99,10 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
   const [logExpanded, setLogExpanded] = useState(true)
+
+  const [rssiRandomize, setRssiRandomize] = useState(false)
+  const [rssiRandMin, setRssiRandMin] = useState('')
+  const [rssiRandMax, setRssiRandMax] = useState('')
 
   const totalInputRows = [
     ...upcList.trim().split('\n').filter((l) => l.trim()),
@@ -174,6 +179,39 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     const selectedAntennas = antenna.split(',').filter(Boolean).map(Number)
     if (selectedAntennas.length === 0) selectedAntennas.push(1)
 
+    const baseRssiNumber = (() => {
+      const n = parseFloat(rssi)
+      return Number.isFinite(n) ? n : -45
+    })()
+    const defaultRandomMin = -90
+    const defaultRandomMax = -20
+
+    const parseMaybeNumber = (s: string) => {
+      if (!s.trim()) return null
+      const n = parseFloat(s)
+      return Number.isFinite(n) ? n : null
+    }
+
+    let effectiveMin = baseRssiNumber
+    let effectiveMax = baseRssiNumber
+    if (rssiRandomize) {
+      const minN = parseMaybeNumber(rssiRandMin)
+      const maxN = parseMaybeNumber(rssiRandMax)
+      effectiveMin = minN ?? defaultRandomMin
+      effectiveMax = maxN ?? defaultRandomMax
+      if (effectiveMin > effectiveMax) {
+        ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+      }
+    }
+
+    const getTagRssi = () => {
+      if (!rssiRandomize) return rssi
+      const val = effectiveMin === effectiveMax
+        ? effectiveMin
+        : effectiveMin + Math.random() * (effectiveMax - effectiveMin)
+      return val.toFixed(1)
+    }
+
     const targetUids = selectedUids.length > 0 ? selectedUids : ['']
 
     if (epcList.trim()) {
@@ -187,7 +225,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
         if (epc) {
           for (const targetUid of targetUids) {
             for (const ant of selectedAntennas) {
-              tags.push({ epc, tid: customTid || epc, uid: targetUid, antenna: ant, rssi })
+                      tags.push({ epc, tid: customTid || epc, uid: targetUid, antenna: ant, rssi: getTagRssi() })
             }
           }
         }
@@ -207,7 +245,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           for (const targetUid of targetUids) {
             for (const epc of epcs) {
               for (const ant of selectedAntennas) {
-                tags.push({ epc, tid: customTid?.trim() || epc, uid: targetUid, antenna: ant, rssi })
+                  tags.push({ epc, tid: customTid?.trim() || epc, uid: targetUid, antenna: ant, rssi: getTagRssi() })
               }
             }
           }
@@ -318,6 +356,44 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
               max={0}
               step={0.5}
             />
+
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between gap-3">
+                <Label className="text-sm">Randomize RSSI per tag</Label>
+                <Switch checked={rssiRandomize} onCheckedChange={setRssiRandomize} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label htmlFor="rssi-min" className="text-xs text-muted-foreground">Min</Label>
+                  <Input
+                    id="rssi-min"
+                    type="number"
+                    step="0.5"
+                    value={rssiRandMin}
+                    onChange={(e) => setRssiRandMin(e.target.value)}
+                    placeholder="-90"
+                    disabled={!rssiRandomize}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="rssi-max" className="text-xs text-muted-foreground">Max</Label>
+                  <Input
+                    id="rssi-max"
+                    type="number"
+                    step="0.5"
+                    value={rssiRandMax}
+                    onChange={(e) => setRssiRandMax(e.target.value)}
+                    placeholder="-20"
+                    disabled={!rssiRandomize}
+                    className="h-8 text-xs font-mono"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Leave Min/Max empty to use defaults (-90 to -20 dBm).
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>

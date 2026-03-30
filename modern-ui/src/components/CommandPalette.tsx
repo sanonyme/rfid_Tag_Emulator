@@ -6,6 +6,9 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
+import { Button } from './ui/button'
+import { Input } from './ui/input'
+import { Label } from './ui/label'
 
 interface Command {
   id: string
@@ -30,6 +33,8 @@ interface CommandPaletteProps {
   onOpenBase64: () => void
   host: string
   isAdmin?: boolean
+  onAdminLogin?: () => void
+  onAdminLogout?: () => void
 }
 
 const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; num: number }[] = [
@@ -65,6 +70,8 @@ export function CommandPalette({
   onOpenBase64,
   host,
   isAdmin,
+  onAdminLogin,
+  onAdminLogout,
 }: CommandPaletteProps) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -72,6 +79,25 @@ export function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null)
 
   const tabCommands = isAdmin ? [...TAB_COMMANDS_BASE, TAB_COMMAND_LINK2UID, TAB_COMMAND_TERMINAL] : TAB_COMMANDS_BASE
+  const ADMIN_USER = 'admin'
+  const ADMIN_PASS = 'admin'
+
+  const [adminLoginOpen, setAdminLoginOpen] = useState(false)
+  const [adminUser, setAdminUser] = useState('')
+  const [adminPass, setAdminPass] = useState('')
+  const [adminError, setAdminError] = useState('')
+
+  const handleAdminLogin = () => {
+    setAdminError('')
+    if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
+      onAdminLogin?.()
+      setAdminLoginOpen(false)
+      onOpenChange(false)
+      return
+    }
+    setAdminError('Invalid username or password')
+  }
+
   const commands: Command[] = [
     ...tabCommands.map((t) => ({
       id: `tab-${t.value}`,
@@ -81,6 +107,21 @@ export function CommandPalette({
       action: () => { onSwitchTab(t.value); onOpenChange(false) },
       group: 'Navigation',
     })),
+    isAdmin
+      ? {
+          id: 'admin-logout',
+          label: 'Admin Logout',
+          icon: <User className="w-4 h-4" />,
+          action: () => { onAdminLogout?.(); onOpenChange(false) },
+          group: 'Admin',
+        }
+      : {
+          id: 'admin-login',
+          label: 'Admin Login',
+          icon: <User className="w-4 h-4" />,
+          action: () => setAdminLoginOpen(true),
+          group: 'Admin',
+        },
     connected
       ? {
           id: 'disconnect',
@@ -184,6 +225,13 @@ export function CommandPalette({
   }, [selectedIndex])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (adminLoginOpen) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setAdminLoginOpen(false)
+      }
+      return
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setSelectedIndex((i) => Math.min(i + 1, filtered.length - 1))
@@ -224,64 +272,120 @@ export function CommandPalette({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Type a command..."
             className="flex-1 h-12 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none"
+            disabled={adminLoginOpen}
           />
           <kbd className="hidden sm:inline-flex h-5 items-center gap-1 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
             ESC
           </kbd>
         </div>
 
-        <div ref={listRef} className="max-h-[320px] overflow-y-auto p-2">
-          {filtered.length === 0 && (
-            <p className="py-6 text-center text-sm text-muted-foreground">No results found.</p>
-          )}
-          {Object.entries(groups).map(([group, cmds]) => (
-            <div key={group}>
-              <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{group}</p>
-              {cmds.map((cmd) => {
-                const idx = globalIdx++
-                return (
-                  <button
-                    key={cmd.id}
-                    data-selected={idx === selectedIndex}
-                    className={cn(
-                      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors",
-                      idx === selectedIndex
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground hover:bg-accent"
-                    )}
-                    onClick={cmd.action}
-                    onMouseEnter={() => setSelectedIndex(idx)}
-                  >
-                    <span className={cn("shrink-0", idx === selectedIndex ? "text-primary-foreground" : "text-muted-foreground")}>{cmd.icon}</span>
-                    <span className="flex-1 text-left">{cmd.label}</span>
-                    {cmd.shortcut && (
-                      <kbd className={cn(
-                        "hidden sm:inline-flex h-5 items-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium",
-                        idx === selectedIndex
-                          ? "border-primary-foreground/30 text-primary-foreground/70"
-                          : "border-border bg-muted text-muted-foreground"
-                      )}>
-                        {cmd.shortcut}
-                      </kbd>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </div>
+        {adminLoginOpen ? (
+          <div className="p-4">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <h3 className="font-semibold text-sm">Admin Login</h3>
+                <p className="text-xs text-muted-foreground">Use the local credentials to enable admin tools.</p>
+              </div>
 
-        <div className="flex items-center justify-between gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground">
-          <span>
-            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">↑↓</kbd> navigate
-          </span>
-          <span>
-            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">↵</kbd> select
-          </span>
-          <span>
-            <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">Ctrl+K</kbd> toggle
-          </span>
-        </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-user" className="text-xs">Username</Label>
+                <Input
+                  id="admin-user"
+                  value={adminUser}
+                  onChange={(e) => setAdminUser(e.target.value)}
+                  placeholder="admin"
+                  className="h-9"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="admin-pass" className="text-xs">Password</Label>
+                <Input
+                  id="admin-pass"
+                  type="password"
+                  value={adminPass}
+                  onChange={(e) => setAdminPass(e.target.value)}
+                  placeholder="admin"
+                  className="h-9"
+                />
+              </div>
+
+              {adminError && <p className="text-xs text-destructive">{adminError}</p>}
+
+              <div className="flex gap-2">
+                <Button size="sm" className="flex-1" onClick={handleAdminLogin}>
+                  Login
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="flex-1"
+                  onClick={() => {
+                    setAdminLoginOpen(false)
+                    setAdminError('')
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div ref={listRef} className="max-h-[320px] overflow-y-auto p-2">
+            {filtered.length === 0 && (
+              <p className="py-6 text-center text-sm text-muted-foreground">No results found.</p>
+            )}
+            {Object.entries(groups).map(([group, cmds]) => (
+              <div key={group}>
+                <p className="px-2 py-1.5 text-xs font-medium text-muted-foreground">{group}</p>
+                {cmds.map((cmd) => {
+                  const idx = globalIdx++
+                  return (
+                    <button
+                      key={cmd.id}
+                      data-selected={idx === selectedIndex}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm cursor-pointer transition-colors",
+                        idx === selectedIndex
+                          ? "bg-primary text-primary-foreground"
+                          : "text-foreground hover:bg-accent"
+                      )}
+                      onClick={cmd.action}
+                      onMouseEnter={() => setSelectedIndex(idx)}
+                    >
+                      <span className={cn("shrink-0", idx === selectedIndex ? "text-primary-foreground" : "text-muted-foreground")}>{cmd.icon}</span>
+                      <span className="flex-1 text-left">{cmd.label}</span>
+                      {cmd.shortcut && (
+                        <kbd className={cn(
+                          "hidden sm:inline-flex h-5 items-center gap-1 rounded border px-1.5 font-mono text-[10px] font-medium",
+                          idx === selectedIndex
+                            ? "border-primary-foreground/30 text-primary-foreground/70"
+                            : "border-border bg-muted text-muted-foreground"
+                        )}>
+                          {cmd.shortcut}
+                        </kbd>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {!adminLoginOpen && (
+          <div className="flex items-center justify-between gap-4 px-4 py-2 border-t border-border text-xs text-muted-foreground">
+            <span>
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">↑↓</kbd> navigate
+            </span>
+            <span>
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">↵</kbd> select
+            </span>
+            <span>
+              <kbd className="rounded border border-border bg-muted px-1 font-mono text-[10px]">Ctrl+K</kbd> toggle
+            </span>
+          </div>
+        )}
       </div>
     </div>
   )

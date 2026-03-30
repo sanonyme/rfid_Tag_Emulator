@@ -555,6 +555,43 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
         const selectedUids = (step.params.uid || '').split(',').filter(Boolean)
         const targetUids = selectedUids.length > 0 ? selectedUids : ['']
 
+        const baseRssiStr = step.params.rssi || '-45.0'
+        const baseRssiNumber = (() => {
+          const n = parseFloat(baseRssiStr)
+          return Number.isFinite(n) ? n : -45.0
+        })()
+        const defaultRandomMin = -90
+        const defaultRandomMax = -20
+
+        const rssiRandomize = step.params.rssiRandomize === true
+
+        const parseMaybeNumber = (s?: string) => {
+          if (!s || !s.trim()) return null
+          const n = parseFloat(s)
+          return Number.isFinite(n) ? n : null
+        }
+
+        let effectiveMin = baseRssiNumber
+        let effectiveMax = baseRssiNumber
+        if (rssiRandomize) {
+          const minN = parseMaybeNumber(step.params.rssiRandMin)
+          const maxN = parseMaybeNumber(step.params.rssiRandMax)
+          effectiveMin = minN ?? defaultRandomMin
+          effectiveMax = maxN ?? defaultRandomMax
+          if (effectiveMin > effectiveMax) {
+            ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+          }
+        }
+
+        const getTagRssi = () => {
+          if (!rssiRandomize) return baseRssiStr
+          const val =
+            effectiveMin === effectiveMax
+              ? effectiveMin
+              : effectiveMin + Math.random() * (effectiveMax - effectiveMin)
+          return val.toFixed(1)
+        }
+
         // Parse UPC List
         if (step.params.upcList) {
             const lines = step.params.upcList.split('\n')
@@ -578,7 +615,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                               tid: customTid?.trim() || step.params.tid || epc,
                               uid: targetUid,
                               antenna: ant,
-                              rssi: step.params.rssi || '-45.0'
+                              rssi: getTagRssi()
                           })
                         }
                       }
@@ -602,7 +639,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                             tid: customTid || step.params.tid || epc,
                             uid: targetUid,
                             antenna: ant,
-                            rssi: step.params.rssi || '-45.0'
+                            rssi: getTagRssi()
                         })
                       }
                     }
@@ -626,7 +663,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                           tid: step.params.tid || epc,
                           uid: targetUid,
                           antenna: ant,
-                          rssi: step.params.rssi || '-45.0'
+                          rssi: getTagRssi()
                       })
                     }
                   }
@@ -639,7 +676,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                         tid: step.params.tid || step.params.epc,
                         uid: targetUid,
                         antenna: ant,
-                        rssi: step.params.rssi || '-45.0'
+                        rssi: getTagRssi()
                     })
                   }
                 }

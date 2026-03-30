@@ -27,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "./ui/select"
+import { Switch } from './ui/switch'
 import { useSettings } from '@/lib/settings-context'
 
 interface FixedTabProps {
@@ -97,6 +98,10 @@ export function FixedTab({
   const [looping, setLooping] = useState(false)
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+
+  const [rssiRandomize, setRssiRandomize] = useState(false)
+  const [rssiRandMin, setRssiRandMin] = useState('')
+  const [rssiRandMax, setRssiRandMax] = useState('')
 
   // API State
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
@@ -222,6 +227,39 @@ export function FixedTab({
     const selectedAntennas = antenna.split(',').filter(Boolean).map(Number)
     if (selectedAntennas.length === 0) selectedAntennas.push(1)
 
+    const baseRssiNumber = (() => {
+      const n = parseFloat(rssi)
+      return Number.isFinite(n) ? n : -45
+    })()
+    const defaultRandomMin = -90
+    const defaultRandomMax = -20
+
+    const parseMaybeNumber = (s: string) => {
+      if (!s.trim()) return null
+      const n = parseFloat(s)
+      return Number.isFinite(n) ? n : null
+    }
+
+    let effectiveMin = baseRssiNumber
+    let effectiveMax = baseRssiNumber
+    if (rssiRandomize) {
+      const minN = parseMaybeNumber(rssiRandMin)
+      const maxN = parseMaybeNumber(rssiRandMax)
+      effectiveMin = minN ?? defaultRandomMin
+      effectiveMax = maxN ?? defaultRandomMax
+      if (effectiveMin > effectiveMax) {
+        ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+      }
+    }
+
+    const getTagRssi = () => {
+      if (!rssiRandomize) return rssi
+      const val = effectiveMin === effectiveMax
+        ? effectiveMin
+        : effectiveMin + Math.random() * (effectiveMax - effectiveMin)
+      return val.toFixed(1)
+    }
+
     // Parse EPC or EPC,TID (one EPC per line, TID optional)
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
@@ -240,7 +278,7 @@ export function FixedTab({
                 tid: customTid || epc,
                 uid: targetUid,
                 antenna: ant,
-                rssi,
+                rssi: getTagRssi(),
               })
             }
           }
@@ -270,7 +308,7 @@ export function FixedTab({
                     tid: customTid?.trim() || epc,
                     uid: targetUid,
                     antenna: ant,
-                    rssi,
+                    rssi: getTagRssi(),
                   })
                 }
               }
@@ -413,6 +451,44 @@ export function FixedTab({
                 onChange={(e) => setRssi(e.target.value)}
                 className="h-8 text-xs font-mono"
               />
+
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between gap-3">
+                  <Label className="text-sm">Randomize RSSI per tag</Label>
+                  <Switch checked={rssiRandomize} onCheckedChange={setRssiRandomize} />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="rssi-min" className="text-xs text-muted-foreground">Min</Label>
+                    <Input
+                      id="rssi-min"
+                      type="number"
+                      step="0.5"
+                      value={rssiRandMin}
+                      onChange={(e) => setRssiRandMin(e.target.value)}
+                      placeholder="-90"
+                      disabled={!rssiRandomize}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="rssi-max" className="text-xs text-muted-foreground">Max</Label>
+                    <Input
+                      id="rssi-max"
+                      type="number"
+                      step="0.5"
+                      value={rssiRandMax}
+                      onChange={(e) => setRssiRandMax(e.target.value)}
+                      placeholder="-20"
+                      disabled={!rssiRandomize}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  Leave Min/Max empty to use defaults (-90 to -20 dBm).
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

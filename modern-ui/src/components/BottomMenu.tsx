@@ -137,7 +137,7 @@ export function BottomMenu({
             className={cn(
               sharedHover,
               'flex items-center gap-3',
-              activeTab === id && 'bg-primary/15 text-primary'
+              activeTab === id && 'bg-primary/15 text-primary dark:bg-white/15 dark:text-white'
             )}
           >
             <Icon size={18} className="text-muted-foreground group-hover:text-foreground shrink-0" />
@@ -155,7 +155,7 @@ export function BottomMenu({
             className={cn(
               'flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-150 flex-1',
               theme === key
-                ? 'bg-primary/20 text-primary border border-primary/30'
+                ? 'bg-primary/20 text-primary border border-primary/30 dark:bg-white/15 dark:text-white dark:border-white/25'
                 : 'text-muted-foreground hover:bg-muted'
             )}
           >
@@ -281,7 +281,9 @@ export function BottomMenu({
             title={label}
             className={cn(
               'p-1.5 rounded-md transition-all duration-150',
-              view === id ? 'bg-primary/20 text-primary' : 'hover:bg-muted text-muted-foreground hover:text-foreground'
+              view === id
+                ? 'bg-primary/20 text-primary dark:bg-white/15 dark:text-white'
+                : 'hover:bg-muted text-muted-foreground hover:text-foreground'
             )}
             onClick={() => {
               if (onClick) {

@@ -17,6 +17,12 @@ export interface AutomationStep {
     uid?: string
     antenna?: string
     rssi?: string
+    /** When true, each emitted tag gets its own RSSI between rssiRandMin/rssiRandMax */
+    rssiRandomize?: boolean
+    /** Optional random RSSI range; if empty, falls back to rssi */
+    rssiRandMin?: string
+    /** Optional random RSSI range; if empty, falls back to rssi */
+    rssiRandMax?: string
     driver?: string
     epcList?: string
     upcList?: string

@@ -22,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
+import { Switch } from './ui/switch'
 import type { AutomationStep, ActionType } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
@@ -370,6 +371,47 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     onChange={(e) => onSaveParams(step.id, { rssi: e.target.value })}
                     className="h-9 text-xs font-mono"
                   />
+
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label className="text-xs">Randomize RSSI per tag</Label>
+                      <Switch
+                        checked={step.params.rssiRandomize ?? false}
+                        onCheckedChange={(v) => onSaveParams(step.id, { rssiRandomize: v })}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor="rssi-rand-min" className="text-xs text-muted-foreground">Min</Label>
+                        <Input
+                          id="rssi-rand-min"
+                          type="number"
+                          step="0.5"
+                          value={step.params.rssiRandMin ?? ''}
+                          onChange={(e) => onSaveParams(step.id, { rssiRandMin: e.target.value })}
+                          placeholder="-90"
+                          disabled={!(step.params.rssiRandomize ?? false)}
+                          className="h-9 text-xs font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label htmlFor="rssi-rand-max" className="text-xs text-muted-foreground">Max</Label>
+                        <Input
+                          id="rssi-rand-max"
+                          type="number"
+                          step="0.5"
+                          value={step.params.rssiRandMax ?? ''}
+                          onChange={(e) => onSaveParams(step.id, { rssiRandMax: e.target.value })}
+                          placeholder="-20"
+                          disabled={!(step.params.rssiRandomize ?? false)}
+                          className="h-9 text-xs font-mono"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Leave Min/Max empty to use defaults (-90 to -20 dBm).
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
