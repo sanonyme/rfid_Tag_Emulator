@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "6.0.0",
+  "version": "6.1.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Anexya",
@@ -55,7 +55,8 @@
     "tailwindcss-animate": "^1.0.7"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3"
+    "serialize-javascript": "^7.0.3",
+    "node-gyp": "^12.2.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.2.0",
