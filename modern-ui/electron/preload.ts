@@ -104,6 +104,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveApiConfig: (headerName: string, key: string) => ipcRenderer.invoke('save-api-config', headerName, key),
   itxApiRequest: (url: string, body: string) => ipcRenderer.invoke('itx-api-request', url, body),
 
+  // Database
+  dbConnect: (host: string, user: string, password: string) => ipcRenderer.invoke('db-connect', host, user, password),
+  dbDisconnect: () => ipcRenderer.invoke('db-disconnect'),
+  dbGetTables: (database: string) => ipcRenderer.invoke('db-get-tables', database),
+  dbGetTableData: (database: string, table: string, limit?: number, offset?: number) =>
+    ipcRenderer.invoke('db-get-table-data', database, table, limit, offset),
+  dbExecuteQuery: (query: string, database?: string) => ipcRenderer.invoke('db-execute-query', query, database),
+
   // Admin Shell (multi-tab: sessionId required)
   shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),
   shellWrite: (sessionId: string, data: string) => ipcRenderer.send('shell-write', sessionId, data),

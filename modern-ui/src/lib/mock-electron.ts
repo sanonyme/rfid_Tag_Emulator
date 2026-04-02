@@ -375,6 +375,21 @@ class MockElectronAPI implements ElectronAPI {
   private _triggerHandheld(callbacks: ((port: number, message: string) => void)[], port: number, message: string) {
     callbacks.forEach(cb => cb(port, message));
   }
+
+  // Database (mock – no-ops in browser)
+  async dbConnect(_host: string, _user: string, _password: string) {
+    return { ok: false as const, error: 'Database not available in browser mode' }
+  }
+  async dbDisconnect() {}
+  async dbGetTables(_database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbGetTableData(_database: string, _table: string, _limit?: number, _offset?: number) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbExecuteQuery(_query: string, _database?: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
 }
 
 export function initMockElectron() {

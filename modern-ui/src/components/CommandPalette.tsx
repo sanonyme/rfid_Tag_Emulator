@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Radio, Smartphone, ScanLine, Terminal, Server, Globe,
-  Code2, Workflow, QrCode, Link2, Wifi, WifiOff, Moon, Sun,
+  Code2, Workflow, QrCode, Database, Link2, Wifi, WifiOff, Moon, Sun,
   Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -47,6 +47,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 7 },
   { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 8 },
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
+  { value: 'database', label: 'Database', icon: <Database className="w-4 h-4" />, num: 0 },
 ]
 
 const TAB_COMMANDS_BASE = IS_MOBILE

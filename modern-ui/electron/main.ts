@@ -6,6 +6,7 @@ import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMask } from './adam-handler.js'
+import { dbConnect, dbDisconnect, dbGetTables, dbGetTableData, dbExecuteQuery } from './db-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -324,6 +325,32 @@ app.whenReady().then(() => {
     }
   })
 
+  // Database IPC handlers
+  ipcMain.handle('db-connect', async (_event, host: string, user: string, password: string) => {
+    console.log(`DB: Connect request to ${host} as ${user}`)
+    return dbConnect(host, user, password)
+  })
+
+  ipcMain.handle('db-disconnect', async () => {
+    console.log('DB: Disconnect request')
+    return dbDisconnect()
+  })
+
+  ipcMain.handle('db-get-tables', async (_event, database: string) => {
+    console.log(`DB: Get tables for ${database}`)
+    return dbGetTables(database)
+  })
+
+  ipcMain.handle('db-get-table-data', async (_event, database: string, table: string, limit?: number, offset?: number) => {
+    console.log(`DB: Get data for ${database}.${table}`)
+    return dbGetTableData(database, table, limit, offset)
+  })
+
+  ipcMain.handle('db-execute-query', async (_event, query: string, database?: string) => {
+    console.log(`DB: Execute query on ${database || 'default'}`)
+    return dbExecuteQuery(query, database)
+  })
+
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
   ipcMain.on('shell-start', (_event, sessionId: string, cols: number = 80, rows: number = 24) => {
     const existing = shellProcesses.get(sessionId)
@@ -612,6 +639,7 @@ app.on('window-all-closed', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
+  dbDisconnect()
   
   if (process.platform !== 'darwin') {
     app.quit()
@@ -626,5 +654,6 @@ app.on('before-quit', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
+  dbDisconnect()
 })
 // trigger rebuild 2

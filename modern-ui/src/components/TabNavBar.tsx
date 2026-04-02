@@ -11,6 +11,7 @@ import {
   Code2,
   Workflow,
   QrCode,
+  Database,
   Link2,
   type LucideIcon,
 } from 'lucide-react'
@@ -27,6 +28,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'decoder', label: 'Decoder', icon: Code2 },
   { value: 'automation', label: 'Auto', icon: Workflow },
   { value: 'generator', label: 'Gen', icon: QrCode },
+  { value: 'database', label: 'DB', icon: Database },
 ]
 
 const TAB_ITEMS_ADMIN = [
