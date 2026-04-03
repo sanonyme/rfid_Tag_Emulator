@@ -390,6 +390,12 @@ class MockElectronAPI implements ElectronAPI {
   async dbExecuteQuery(_query: string, _database?: string) {
     return { ok: false as const, error: 'Not connected' }
   }
+  async dbGetPrimaryKeys(_database: string, _table: string) {
+    return [] as string[]
+  }
+  async dbUpdateCell(_database: string, _table: string, _primaryKeys: Record<string, any>, _column: string, _value: any) {
+    return { ok: false as const, error: 'Not connected' }
+  }
 }
 
 export function initMockElectron() {

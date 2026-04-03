@@ -111,6 +111,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbGetTableData: (database: string, table: string, limit?: number, offset?: number) =>
     ipcRenderer.invoke('db-get-table-data', database, table, limit, offset),
   dbExecuteQuery: (query: string, database?: string) => ipcRenderer.invoke('db-execute-query', query, database),
+  dbGetPrimaryKeys: (database: string, table: string) => ipcRenderer.invoke('db-get-primary-keys', database, table),
+  dbUpdateCell: (database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) =>
+    ipcRenderer.invoke('db-update-cell', database, table, primaryKeys, column, value),
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),

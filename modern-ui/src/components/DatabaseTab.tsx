@@ -22,6 +22,8 @@ import {
   ArrowUpDown,
   Plus,
   Trash2,
+  Check,
+  RotateCcw,
 } from 'lucide-react'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
@@ -93,6 +95,11 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   const tabCounter = useRef(1)
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
+
+  const [primaryKeys, setPrimaryKeys] = useState<string[]>([])
+  const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string } | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [editSaving, setEditSaving] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -166,8 +173,12 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     setSortColumn(null)
     setSortDir(null)
     setTableSearch('')
+    setEditingCell(null)
 
-    const result = await window.electronAPI.dbGetTableData(dbName, tableName, 1000, 0)
+    const [result, pks] = await Promise.all([
+      window.electronAPI.dbGetTableData(dbName, tableName, 1000, 0),
+      window.electronAPI.dbGetPrimaryKeys(dbName, tableName),
+    ])
     if (result.ok) {
       setTableColumns(result.columns)
       setTableRows(result.rows)
@@ -177,6 +188,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       setTableRows([])
       setTableTotal(0)
     }
+    setPrimaryKeys(pks)
     setTableLoading(false)
   }, [])
 
@@ -453,6 +465,52 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     navigator.clipboard.writeText(String(value ?? ''))
   }
 
+  const startEditing = (row: any, rowIdx: number, col: string, currentValue: any) => {
+    if (primaryKeys.length === 0) return
+    editingRowRef.current = row
+    setEditingCell({ rowIdx, col })
+    setEditValue(currentValue === null ? '' : String(currentValue))
+  }
+
+  const cancelEditing = () => {
+    setEditingCell(null)
+    setEditValue('')
+  }
+
+  const editingRowRef = useRef<any>(null)
+
+  const saveEdit = useCallback(async () => {
+    if (!editingCell || !window.electronAPI || primaryKeys.length === 0) return
+    const row = editingRowRef.current
+    if (!row) return
+
+    const pkValues: Record<string, any> = {}
+    for (const pk of primaryKeys) {
+      pkValues[pk] = row[pk]
+    }
+
+    setEditSaving(true)
+    const result = await window.electronAPI.dbUpdateCell(
+      selectedDb, selectedTable, pkValues, editingCell.col, editValue || null
+    )
+    setEditSaving(false)
+
+    if (result.ok) {
+      setTableRows((prev) =>
+        prev.map((r) => {
+          const match = primaryKeys.every((pk) => r[pk] === row[pk])
+          if (!match) return r
+          return { ...r, [editingCell.col]: editValue || null }
+        })
+      )
+      setEditingCell(null)
+      setEditValue('')
+    } else {
+      setError(result.error)
+      setTimeout(() => setError(''), 3000)
+    }
+  }, [editingCell, editValue, primaryKeys, selectedDb, selectedTable])
+
   const filteredRows = tableRows.filter((row) => {
     if (!tableSearch) return true
     const q = tableSearch.toLowerCase()
@@ -608,6 +666,12 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                       <Hash className="w-3 h-3" />
                       {tableTotal.toLocaleString()} rows
                     </span>
+                    {primaryKeys.length > 0 && (
+                      <span className="text-[10px] text-blue-500/70 flex items-center gap-1" title={`Editable — Primary key: ${primaryKeys.join(', ')}`}>
+                        <RotateCcw className="w-2.5 h-2.5" />
+                        editable
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="relative">
@@ -658,24 +722,57 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                         {sortedRows.map((row, i) => (
                           <tr key={i} className="border-b border-border/30 hover:bg-white/3 dark:hover:bg-white/5 transition-colors group">
                             <td className="px-3 py-1.5 text-xs text-muted-foreground tabular-nums">{i + 1}</td>
-                            {tableColumns.map((col) => (
-                              <td
-                                key={col}
-                                className="px-3 py-1.5 font-mono text-xs max-w-[300px] truncate relative"
-                                title={String(row[col] ?? 'NULL')}
-                              >
-                                <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>
-                                  {row[col] === null ? 'NULL' : String(row[col])}
-                                </span>
-                                <button
-                                  onClick={() => copyCell(row[col])}
-                                  className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-opacity"
-                                  title="Copy"
+                            {tableColumns.map((col) => {
+                              const isEditing = editingCell?.rowIdx === i && editingCell?.col === col
+                              return (
+                                <td
+                                  key={col}
+                                  className={cn(
+                                    'px-3 py-1.5 font-mono text-xs max-w-[300px] relative',
+                                    isEditing ? 'p-0' : 'truncate',
+                                    primaryKeys.length > 0 && !isEditing && 'cursor-pointer'
+                                  )}
+                                  title={isEditing ? undefined : String(row[col] ?? 'NULL')}
+                                  onDoubleClick={() => !isEditing && startEditing(row, i, col, row[col])}
                                 >
-                                  <Copy className="w-3 h-3 text-muted-foreground" />
-                                </button>
-                              </td>
-                            ))}
+                                  {isEditing ? (
+                                    <div className="flex items-center gap-0">
+                                      <input
+                                        autoFocus
+                                        value={editValue}
+                                        onChange={(e) => setEditValue(e.target.value)}
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter') saveEdit()
+                                          if (e.key === 'Escape') cancelEditing()
+                                          if (e.key === 'Tab') { e.preventDefault(); saveEdit() }
+                                        }}
+                                        disabled={editSaving}
+                                        className="w-full px-2 py-1 text-xs font-mono bg-background border border-blue-500/50 rounded-sm focus:outline-none focus:ring-1 focus:ring-blue-500/50"
+                                      />
+                                      <button onClick={saveEdit} disabled={editSaving} className="p-1 text-green-500 hover:bg-green-500/10 rounded-sm shrink-0" title="Save (Enter)">
+                                        {editSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                      </button>
+                                      <button onClick={cancelEditing} className="p-1 text-muted-foreground hover:bg-white/10 rounded-sm shrink-0" title="Cancel (Esc)">
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>
+                                        {row[col] === null ? 'NULL' : String(row[col])}
+                                      </span>
+                                      <button
+                                        onClick={() => copyCell(row[col])}
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-opacity"
+                                        title="Copy"
+                                      >
+                                        <Copy className="w-3 h-3 text-muted-foreground" />
+                                      </button>
+                                    </>
+                                  )}
+                                </td>
+                              )
+                            })}
                           </tr>
                         ))}
                         {sortedRows.length === 0 && (

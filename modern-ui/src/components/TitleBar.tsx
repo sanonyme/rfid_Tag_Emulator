@@ -1,6 +1,6 @@
 import { Minimize2, Maximize2, X } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
-import logoImage from '/zeus-removebg-preview.png'
+import logoImage from '/ZeusLogoNoBG.png'
 import packageJson from '../../package.json' // Import version from package.json
 
 interface TitleBarProps {
@@ -49,7 +49,7 @@ export function TitleBar({ settingsOpen, onSettingsOpenChange, actionsMenu }: Ti
           <img 
             src={logoImage} 
             alt="edge logo" 
-            className="w-16 h-16 object-contain relative transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+            className="w-12 h-12 object-contain relative transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
           />
         </div>
         <div>

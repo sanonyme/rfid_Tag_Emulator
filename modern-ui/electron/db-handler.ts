@@ -136,6 +136,53 @@ export async function dbExecuteQuery(
   }
 }
 
+export async function dbGetPrimaryKeys(
+  database: string,
+  table: string
+): Promise<string[]> {
+  if (!connection) return []
+  try {
+    const [rows] = await connection.query(
+      `SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+       WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
+       ORDER BY ORDINAL_POSITION`,
+      [database, table]
+    )
+    return (rows as any[]).map((r: any) => r.COLUMN_NAME)
+  } catch {
+    return []
+  }
+}
+
+export async function dbUpdateCell(
+  database: string,
+  table: string,
+  primaryKeys: Record<string, any>,
+  column: string,
+  value: any
+): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const setClauses = `\`${column}\` = ?`
+    const whereEntries = Object.entries(primaryKeys)
+    if (whereEntries.length === 0) return { ok: false, error: 'No primary key provided' }
+
+    const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+    const whereValues = whereEntries.map(([, v]) => v)
+
+    const sql = `UPDATE \`${table}\` SET ${setClauses} WHERE ${whereClauses} LIMIT 1`
+    const params = [value === '' ? null : value, ...whereValues]
+
+    const [result] = await connection.query(sql, params)
+    const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    return { ok: true, affectedRows: affected }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
 export function dbIsConnected(): boolean {
   return connection !== null
 }

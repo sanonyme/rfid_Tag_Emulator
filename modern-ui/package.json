@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "6.1.0",
+  "version": "6.2.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Anexya",
@@ -80,6 +80,7 @@
     "electron-builder": "^26.8.1",
     "jsmodbus": "^4.0.4",
     "postcss": "^8.4.33",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.3.3",
     "vite": "^7.3.1",
@@ -109,7 +110,7 @@
     "asar": true,
     "extraResources": [
       {
-        "from": "public/zeus-removebg-preview.png",
+        "from": "public/ZeusLogoNoBG.png",
         "to": "logo.png"
       }
     ],
@@ -117,7 +118,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "resources/icon-256.png"
+      "icon": "resources/ZeusIcon-256.png"
     },
     "nsis": {
       "oneClick": true,
@@ -135,13 +136,13 @@
         "tar.gz"
       ],
       "category": "Development",
-      "icon": "resources/app-icon-1024.png"
+      "icon": "resources/ZeusIcon.png"
     },
     "mac": {
       "target": [
         "dmg"
       ],
-      "icon": "resources/app-icon-1024.png"
+      "icon": "resources/ZeusIcon.png"
     },
     "publish": [
       {

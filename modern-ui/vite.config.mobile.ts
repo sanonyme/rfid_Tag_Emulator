@@ -107,7 +107,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['zeus-removebg-preview.png'],
+      includeAssets: ['ZeusLogoNoBG.png'],
       manifest: {
         name: 'Zeus RFID Emulator',
         short_name: 'Zeus Emulator',
@@ -120,13 +120,13 @@ export default defineConfig({
         start_url: './',
         icons: [
           {
-            src: 'zeus-removebg-preview.png',
+            src: 'ZeusLogoNoBG.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: 'zeus-removebg-preview.png',
+            src: 'ZeusLogoNoBG.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'any maskable',

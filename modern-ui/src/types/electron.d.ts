@@ -91,6 +91,8 @@ export interface ElectronAPI {
   dbGetTables: (database: string) => Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }>
   dbGetTableData: (database: string, table: string, limit?: number, offset?: number) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
   dbExecuteQuery: (query: string, database?: string) => Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; message?: string } | { ok: false; error: string }>
+  dbGetPrimaryKeys: (database: string, table: string) => Promise<string[]>
+  dbUpdateCell: (database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) => Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }>
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart?: (sessionId: string, cols?: number, rows?: number) => void

@@ -6,7 +6,7 @@ import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMask } from './adam-handler.js'
-import { dbConnect, dbDisconnect, dbGetTables, dbGetTableData, dbExecuteQuery } from './db-handler.js'
+import { dbConnect, dbDisconnect, dbGetTables, dbGetTableData, dbExecuteQuery, dbGetPrimaryKeys, dbUpdateCell } from './db-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -67,7 +67,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     frame: isLinux, // Keep frame on Linux for better compatibility
-    icon: path.join(__dirname, '../resources/app-icon-1024.png'), // App icon
+    icon: path.join(__dirname, '../resources/ZeusIcon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -349,6 +349,15 @@ app.whenReady().then(() => {
   ipcMain.handle('db-execute-query', async (_event, query: string, database?: string) => {
     console.log(`DB: Execute query on ${database || 'default'}`)
     return dbExecuteQuery(query, database)
+  })
+
+  ipcMain.handle('db-get-primary-keys', async (_event, database: string, table: string) => {
+    return dbGetPrimaryKeys(database, table)
+  })
+
+  ipcMain.handle('db-update-cell', async (_event, database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) => {
+    console.log(`DB: Update ${database}.${table}.${column}`)
+    return dbUpdateCell(database, table, primaryKeys, column, value)
   })
 
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
