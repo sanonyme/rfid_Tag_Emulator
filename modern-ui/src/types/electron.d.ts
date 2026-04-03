@@ -138,6 +138,22 @@ export interface ElectronAPI {
     database: string,
     table: string
   ) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+  dbGetDatabaseSchema: (
+    database: string
+  ) => Promise<
+    | {
+        ok: true
+        tables: { name: string; columns: { name: string; type: string; key: string }[] }[]
+        foreignKeys: {
+          constraintName: string
+          childTable: string
+          childColumns: string[]
+          parentTable: string
+          parentColumns: string[]
+        }[]
+      }
+    | { ok: false; error: string }
+  >
 
   safeStoreSet: (key: string, value: string) => Promise<boolean>
   safeStoreGet: (key: string) => Promise<string | null>

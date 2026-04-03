@@ -36,7 +36,9 @@ import {
   Unlock,
   CheckSquare,
   Square,
+  Network,
 } from 'lucide-react'
+import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { sql, MySQL } from '@codemirror/lang-sql'
@@ -83,7 +85,7 @@ interface QueryHistoryEntry {
 }
 
 type SortDir = 'asc' | 'desc' | null
-type TableView = 'data' | 'structure'
+type TableView = 'data' | 'structure' | 'schema'
 
 const PAGE_SIZES = [25, 50, 100, 500, 1000] as const
 const DANGEROUS_SQL = /^\s*(UPDATE|DELETE|INSERT|DROP|ALTER|TRUNCATE|REPLACE|RENAME|CREATE)\b/i
@@ -196,6 +198,19 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   const [tableView, setTableView] = useState<TableView>('data')
   const [tableStructure, setTableStructure] = useState<ColumnInfo[]>([])
   const [structureLoading, setStructureLoading] = useState(false)
+
+  const [schemaData, setSchemaData] = useState<{
+    tables: { name: string; columns: { name: string; type: string; key: string }[] }[]
+    foreignKeys: {
+      constraintName: string
+      childTable: string
+      childColumns: string[]
+      parentTable: string
+      parentColumns: string[]
+    }[]
+  } | null>(null)
+  const [schemaLoading, setSchemaLoading] = useState(false)
+  const [schemaError, setSchemaError] = useState('')
 
   // Query history
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>(loadQueryHistory)
@@ -327,6 +342,9 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     setShowQueryResults(false)
     setAutoRefresh(false)
     setSelectedRowIdxs(new Set())
+    setSchemaData(null)
+    setSchemaError('')
+    setTableView('data')
   }, [])
 
   const toggleDatabase = useCallback(async (dbName: string) => {
@@ -376,6 +394,20 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     setTableLoading(false)
   }, [])
 
+  const loadSchema = useCallback(async () => {
+    if (!window.electronAPI || !selectedDb) return
+    setSchemaLoading(true)
+    setSchemaError('')
+    const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
+    setSchemaLoading(false)
+    if (res.ok) {
+      setSchemaData({ tables: res.tables, foreignKeys: res.foreignKeys })
+    } else {
+      setSchemaError(res.error)
+      setSchemaData(null)
+    }
+  }, [selectedDb])
+
   const refreshDatabases = useCallback(async () => {
     if (!window.electronAPI) return
     setRefreshing(true)
@@ -400,11 +432,14 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       if (selectedDb && selectedTable) {
         loadPage(selectedDb, selectedTable, currentPage, pageSize)
       }
+      if (selectedDb && tableView === 'schema') {
+        await loadSchema()
+      }
     } else {
       setError(result.error)
     }
     setRefreshing(false)
-  }, [host, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage])
+  }, [host, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
 
   const handleSelectTable = useCallback(async (dbName: string, tableName: string) => {
     setSelectedDb(dbName)
@@ -452,6 +487,11 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       loadStructure()
     }
   }, [loadStructure, tableStructure.length])
+
+  useEffect(() => {
+    if (tableView !== 'schema' || !selectedDb) return
+    loadSchema()
+  }, [tableView, selectedDb, loadSchema])
 
   const executeQuery = useCallback(async (sqlText: string) => {
     if (!window.electronAPI || !sqlText.trim()) return
@@ -1134,23 +1174,41 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       {/* Main Content */}
       <div ref={containerRef} className="flex-1 flex flex-col min-w-0 min-h-0">
         <div className="flex-1 min-h-0 flex flex-col border border-border/50 rounded-xl bg-muted/20 overflow-hidden relative">
-            {selectedTable ? (
+            {selectedDb && (selectedTable || tableView === 'schema') ? (
               <>
                 <div className="flex items-center justify-between px-4 py-2 border-b border-border/50 shrink-0 gap-2">
                   <div className="flex items-center gap-2 min-w-0">
-                    <Table2 className="w-4 h-4 text-blue-500 shrink-0" />
-                    <span className="font-semibold text-sm truncate">
-                      <span className="text-muted-foreground">{selectedDb}.</span>{selectedTable}
-                    </span>
-                    <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
-                      <Hash className="w-3 h-3" />
-                      {tableTotal.toLocaleString()} rows
-                    </span>
-                    {primaryKeys.length > 0 && (
-                      <span className={cn('text-[10px] flex items-center gap-1 shrink-0', readOnly ? 'text-amber-500/70' : 'text-blue-500/70')} title={readOnly ? 'Read-only mode' : `Primary key: ${primaryKeys.join(', ')}`}>
-                        {readOnly ? <Lock className="w-2.5 h-2.5" /> : <RotateCcw className="w-2.5 h-2.5" />}
-                        {readOnly ? 'read-only' : 'editable'}
-                      </span>
+                    {tableView === 'schema' ? (
+                      <>
+                        <Network className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span className="font-semibold text-sm truncate">
+                          <span className="text-muted-foreground">{selectedDb}</span>
+                          <span className="text-muted-foreground/80"> · schema</span>
+                        </span>
+                        {schemaData && (
+                          <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full shrink-0">
+                            {schemaData.tables.length} tables
+                            {schemaData.foreignKeys.length > 0 && ` · ${schemaData.foreignKeys.length} FK`}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <Table2 className="w-4 h-4 text-blue-500 shrink-0" />
+                        <span className="font-semibold text-sm truncate">
+                          <span className="text-muted-foreground">{selectedDb}.</span>{selectedTable}
+                        </span>
+                        <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0">
+                          <Hash className="w-3 h-3" />
+                          {tableTotal.toLocaleString()} rows
+                        </span>
+                        {primaryKeys.length > 0 && (
+                          <span className={cn('text-[10px] flex items-center gap-1 shrink-0', readOnly ? 'text-amber-500/70' : 'text-blue-500/70')} title={readOnly ? 'Read-only mode' : `Primary key: ${primaryKeys.join(', ')}`}>
+                            {readOnly ? <Lock className="w-2.5 h-2.5" /> : <RotateCcw className="w-2.5 h-2.5" />}
+                            {readOnly ? 'read-only' : 'editable'}
+                          </span>
+                        )}
+                      </>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -1201,9 +1259,10 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                       )}
                     </div>
 
-                    <div className="flex rounded-md border border-border/50 overflow-hidden">
-                      <button onClick={() => handleViewToggle('data')} className={cn('px-2.5 py-1 text-[10px] font-medium transition-colors', tableView === 'data' ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground')}>Data</button>
-                      <button onClick={() => handleViewToggle('structure')} className={cn('px-2.5 py-1 text-[10px] font-medium transition-colors border-l border-border/50', tableView === 'structure' ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground')}>Structure</button>
+                    <div className="flex rounded-md border border-border/50 overflow-hidden shrink-0">
+                      <button onClick={() => handleViewToggle('data')} className={cn('px-2 py-1 text-[10px] font-medium transition-colors', tableView === 'data' ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground')}>Data</button>
+                      <button onClick={() => handleViewToggle('structure')} className={cn('px-2 py-1 text-[10px] font-medium transition-colors border-l border-border/50', tableView === 'structure' ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground')}>Structure</button>
+                      <button onClick={() => handleViewToggle('schema')} className={cn('px-2 py-1 text-[10px] font-medium transition-colors border-l border-border/50', tableView === 'schema' ? 'bg-blue-500/15 text-blue-500 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground')} title="Tables and foreign keys">Schema</button>
                     </div>
                   </div>
                 </div>
@@ -1239,7 +1298,29 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                   </div>
                 )}
 
-                {tableView === 'structure' ? (
+                {tableView === 'schema' ? (
+                  schemaLoading ? (
+                    <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+                  ) : schemaError ? (
+                    <div className="flex-1 flex items-center justify-center px-4">
+                      <div className="flex items-center gap-2 text-destructive text-sm text-center">
+                        <AlertCircle className="w-4 h-4 shrink-0" />
+                        <span>{schemaError}</span>
+                      </div>
+                    </div>
+                  ) : schemaData ? (
+                    <div className="flex-1 min-h-0 flex flex-col p-2 gap-1">
+                      <p className="text-[10px] text-muted-foreground px-2 shrink-0">
+                        Arrows run from child table → referenced table. Scroll wheel zooms; drag empty canvas to pan; drag table cards to rearrange.
+                      </p>
+                      <div className="relative flex-1 min-h-[420px] min-w-0">
+                        <DatabaseSchemaGraph tables={schemaData.tables} foreignKeys={schemaData.foreignKeys} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">No schema data</div>
+                  )
+                ) : tableView === 'structure' ? (
                   structureLoading ? (
                     <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
                   ) : (
@@ -1392,7 +1473,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 text-muted-foreground">
                 <Table2 className="w-10 h-10 opacity-20" />
-                <p className="text-sm">Select a table from the sidebar to view its data</p>
+                <p className="text-sm text-center max-w-xs">Select a table from the sidebar to view data, structure, or the full database schema.</p>
               </div>
             )}
           </div>

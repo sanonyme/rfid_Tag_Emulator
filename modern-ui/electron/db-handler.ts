@@ -338,6 +338,115 @@ export async function dbExportTable(
   }
 }
 
+export interface DbSchemaColumn {
+  name: string
+  type: string
+  key: string
+}
+
+export interface DbSchemaTable {
+  name: string
+  columns: DbSchemaColumn[]
+}
+
+export interface DbSchemaForeignKey {
+  constraintName: string
+  childTable: string
+  childColumns: string[]
+  parentTable: string
+  parentColumns: string[]
+}
+
+/** Tables + foreign keys from INFORMATION_SCHEMA for ER-style visualization */
+export async function dbGetDatabaseSchema(
+  database: string
+): Promise<
+  | { ok: true; tables: DbSchemaTable[]; foreignKeys: DbSchemaForeignKey[] }
+  | { ok: false; error: string }
+> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  if (database.includes('`') || database.includes('\0')) {
+    return { ok: false, error: 'Invalid database name' }
+  }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const [colRows] = await connection.query(
+      `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY, ORDINAL_POSITION
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = ?
+       ORDER BY TABLE_NAME, ORDINAL_POSITION`,
+      [database]
+    )
+
+    const tableMap = new Map<string, DbSchemaTable>()
+    for (const r of colRows as any[]) {
+      const tname = String(r.TABLE_NAME)
+      if (!tableMap.has(tname)) {
+        tableMap.set(tname, { name: tname, columns: [] })
+      }
+      tableMap.get(tname)!.columns.push({
+        name: String(r.COLUMN_NAME),
+        type: String(r.COLUMN_TYPE),
+        key: String(r.COLUMN_KEY || ''),
+      })
+    }
+
+    const [fkRows] = await connection.query(
+      `SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME,
+              REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, ORDINAL_POSITION
+       FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+       WHERE TABLE_SCHEMA = ?
+         AND REFERENCED_TABLE_NAME IS NOT NULL
+       ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`,
+      [database]
+    )
+
+    type FkGroup = {
+      constraintName: string
+      childTable: string
+      parentTable: string
+      pairs: { child: string; parent: string }[]
+    }
+    const fkGroups = new Map<string, FkGroup>()
+    for (const r of fkRows as any[]) {
+      const childTable = String(r.TABLE_NAME)
+      const cname = String(r.CONSTRAINT_NAME)
+      const key = `${childTable}\0${cname}`
+      const parentTable = String(r.REFERENCED_TABLE_NAME)
+      if (!fkGroups.has(key)) {
+        fkGroups.set(key, {
+          constraintName: cname,
+          childTable,
+          parentTable,
+          pairs: [],
+        })
+      }
+      fkGroups.get(key)!.pairs.push({
+        child: String(r.COLUMN_NAME),
+        parent: String(r.REFERENCED_COLUMN_NAME),
+      })
+    }
+
+    const foreignKeys: DbSchemaForeignKey[] = []
+    for (const g of fkGroups.values()) {
+      foreignKeys.push({
+        constraintName: g.constraintName,
+        childTable: g.childTable,
+        childColumns: g.pairs.map((p) => p.child),
+        parentTable: g.parentTable,
+        parentColumns: g.pairs.map((p) => p.parent),
+      })
+    }
+
+    const tables = Array.from(tableMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+
+    return { ok: true, tables, foreignKeys }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Schema load failed' }
+  }
+}
+
 export function dbIsConnected(): boolean {
   return connection !== null
 }

@@ -298,10 +298,10 @@ function App() {
         dialogsOnly
       />
 
-      <div className="flex flex-1 overflow-hidden relative z-10">
+      <div className="electron-no-drag flex flex-1 overflow-hidden relative z-10 min-h-0">
         
         {/* Main Content */}
-        <main className="flex-1 container px-6 py-6 overflow-hidden">
+        <main className="flex-1 container px-6 py-6 overflow-hidden min-h-0">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
             <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
               <ConnectionStatus

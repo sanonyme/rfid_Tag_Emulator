@@ -131,6 +131,17 @@
   app-region: no-drag;
 }
 
+/*
+ * Frameless Electron (Windows/macOS): without this, pan gestures and sometimes
+ * wheel events on the page are treated as window-drag / don't reach canvases.
+ * Only the title bar uses .draggable; everything below must be no-drag.
+ */
+.electron-no-drag,
+.electron-no-drag * {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
 /* Enhanced Animations */
 @keyframes slideInUp {
   from {

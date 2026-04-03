@@ -122,6 +122,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbDeleteRows: (database: string, table: string, rows: Record<string, any>[]) =>
     ipcRenderer.invoke('db-delete-rows', database, table, rows),
   dbExportTable: (database: string, table: string) => ipcRenderer.invoke('db-export-table', database, table),
+  dbGetDatabaseSchema: (database: string) => ipcRenderer.invoke('db-get-database-schema', database),
 
   safeStoreSet: (key: string, value: string) => ipcRenderer.invoke('safe-store-set', key, value),
   safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),

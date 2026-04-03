@@ -19,6 +19,7 @@ import {
   dbInsertRow,
   dbDeleteRows,
   dbExportTable,
+  dbGetDatabaseSchema,
 } from './db-handler.js'
 
 // Load environment variables
@@ -395,6 +396,11 @@ app.whenReady().then(() => {
   ipcMain.handle('db-export-table', async (_event, database: string, table: string) => {
     console.log(`DB: Export table ${database}.${table}`)
     return dbExportTable(database, table)
+  })
+
+  ipcMain.handle('db-get-database-schema', async (_event, database: string) => {
+    console.log(`DB: Get schema for ${database}`)
+    return dbGetDatabaseSchema(database)
   })
 
   const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
