@@ -114,6 +114,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbGetPrimaryKeys: (database: string, table: string) => ipcRenderer.invoke('db-get-primary-keys', database, table),
   dbUpdateCell: (database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) =>
     ipcRenderer.invoke('db-update-cell', database, table, primaryKeys, column, value),
+  dbGetTableStructure: (database: string, table: string) => ipcRenderer.invoke('db-get-table-structure', database, table),
+  dbDeleteRow: (database: string, table: string, primaryKeys: Record<string, any>) =>
+    ipcRenderer.invoke('db-delete-row', database, table, primaryKeys),
+  dbInsertRow: (database: string, table: string, values: Record<string, any>) =>
+    ipcRenderer.invoke('db-insert-row', database, table, values),
+  dbDeleteRows: (database: string, table: string, rows: Record<string, any>[]) =>
+    ipcRenderer.invoke('db-delete-rows', database, table, rows),
+  dbExportTable: (database: string, table: string) => ipcRenderer.invoke('db-export-table', database, table),
+
+  safeStoreSet: (key: string, value: string) => ipcRenderer.invoke('safe-store-set', key, value),
+  safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),
+  safeStoreDelete: (key: string) => ipcRenderer.invoke('safe-store-delete', key),
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),

@@ -236,6 +236,9 @@ function App() {
         if (num >= 1 && num <= 9) {
           e.preventDefault()
           setActiveTab(TAB_VALUES[num - 1])
+        } else if (e.key === '0') {
+          e.preventDefault()
+          setActiveTab(TAB_VALUES[9])
         }
       }
     }

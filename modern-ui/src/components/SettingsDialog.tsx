@@ -85,6 +85,7 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'decoder', label: 'Decoder' },
   { value: 'automation', label: 'Auto' },
   { value: 'generator', label: 'Generator' },
+  { value: 'database', label: 'Database' },
 ]
 
 const TAB_OPTIONS = IS_MOBILE ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam') : TAB_OPTIONS_ALL

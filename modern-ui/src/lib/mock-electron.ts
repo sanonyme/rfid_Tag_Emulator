@@ -396,6 +396,30 @@ class MockElectronAPI implements ElectronAPI {
   async dbUpdateCell(_database: string, _table: string, _primaryKeys: Record<string, any>, _column: string, _value: any) {
     return { ok: false as const, error: 'Not connected' }
   }
+  async dbGetTableStructure(_database: string, _table: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbDeleteRow(_database: string, _table: string, _primaryKeys: Record<string, any>) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbInsertRow(_database: string, _table: string, _values: Record<string, any>) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbDeleteRows(_database: string, _table: string, _rows: Record<string, any>[]) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbExportTable(_database: string, _table: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async safeStoreSet(_key: string, _value: string) {
+    return true
+  }
+  async safeStoreGet(_key: string) {
+    return null
+  }
+  async safeStoreDelete(_key: string) {
+    return undefined
+  }
 }
 
 export function initMockElectron() {

@@ -19,6 +19,16 @@ function sanitizeRow(row: any): any {
   return out
 }
 
+export interface ColumnInfo {
+  name: string
+  type: string
+  nullable: boolean
+  defaultValue: string | null
+  key: string
+  extra: string
+  comment: string
+}
+
 export async function dbConnect(host: string, user: string, password: string): Promise<{ ok: true; databases: string[] } | { ok: false; error: string }> {
   try {
     if (connection) {
@@ -86,7 +96,9 @@ export async function dbGetTableData(
   table: string,
   limit = 1000,
   offset = 0
-): Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string> } | { ok: false; error: string }
+> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
     await connection.query(`USE \`${database}\``)
@@ -100,7 +112,13 @@ export async function dbGetTableData(
     )
     const columns = (fields as any[]).map((f: any) => f.name)
 
-    return { ok: true, columns, rows: (rows as any[]).map(sanitizeRow), total }
+    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
+    const columnTypes: Record<string, string> = {}
+    for (const r of colRows as any[]) {
+      columnTypes[String(r.Field)] = String(r.Type)
+    }
+
+    return { ok: true, columns, rows: (rows as any[]).map(sanitizeRow), total, columnTypes }
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
@@ -180,6 +198,143 @@ export async function dbUpdateCell(
     return { ok: true, affectedRows: affected }
   } catch (err: any) {
     return { ok: false, error: err.message }
+  }
+}
+
+export async function dbGetTableStructure(
+  database: string,
+  table: string
+): Promise<{ ok: true; columns: ColumnInfo[] } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    const [rows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
+    const columns: ColumnInfo[] = (rows as any[]).map((r: any) => ({
+      name: String(r.Field),
+      type: String(r.Type),
+      nullable: r.Null === 'YES',
+      defaultValue: r.Default === null || r.Default === undefined ? null : String(r.Default),
+      key: String(r.Key ?? ''),
+      extra: String(r.Extra ?? ''),
+      comment: String(r.Comment ?? ''),
+    }))
+    return { ok: true, columns }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function dbDeleteRow(
+  database: string,
+  table: string,
+  primaryKeys: Record<string, any>
+): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const whereEntries = Object.entries(primaryKeys)
+    if (whereEntries.length === 0) return { ok: false, error: 'No primary key provided' }
+
+    const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+    const whereValues = whereEntries.map(([, v]) => v)
+
+    const sql = `DELETE FROM \`${table}\` WHERE ${whereClauses} LIMIT 1`
+    const [result] = await connection.query(sql, whereValues)
+    const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    return { ok: true, affectedRows: affected }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function dbInsertRow(
+  database: string,
+  table: string,
+  values: Record<string, any>
+): Promise<{ ok: true; insertId: any } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const entries = Object.entries(values)
+    if (entries.length === 0) return { ok: false, error: 'No columns to insert' }
+
+    const colList = entries.map(([k]) => `\`${k}\``).join(', ')
+    const placeholders = entries.map(() => '?').join(', ')
+    const sql = `INSERT INTO \`${table}\` (${colList}) VALUES (${placeholders})`
+    const params = entries.map(([, v]) => v)
+
+    const [result] = await connection.query(sql, params)
+    const insertId = sanitizeValue((result as any).insertId)
+    return { ok: true, insertId }
+  } catch (err: any) {
+    return { ok: false, error: err.message }
+  }
+}
+
+export async function dbDeleteRows(
+  database: string,
+  table: string,
+  rows: Record<string, any>[]
+): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const pkCols = await dbGetPrimaryKeys(database, table)
+    if (pkCols.length === 0) return { ok: false, error: 'No primary key on table' }
+
+    let totalAffected = 0
+    const conn = connection
+    for (const row of rows) {
+      const whereEntries = pkCols.map((col) => [col, row[col]] as [string, any])
+      if (whereEntries.some(([, v]) => v === undefined)) {
+        return { ok: false, error: 'Row missing primary key field' }
+      }
+      const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+      const whereValues = whereEntries.map(([, v]) => v)
+      const sql = `DELETE FROM \`${table}\` WHERE ${whereClauses} LIMIT 1`
+      const [result] = await conn.query(sql, whereValues)
+      totalAffected += parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    }
+    return { ok: true, affectedRows: totalAffected }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Delete failed' }
+  }
+}
+
+export async function dbExportTable(
+  database: string,
+  table: string
+): Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  try {
+    await connection.query(`USE \`${database}\``)
+
+    const [countResult] = await connection.query(`SELECT COUNT(*) as cnt FROM \`${table}\``)
+    const total = parseInt(String((countResult as any[])[0].cnt), 10) || 0
+
+    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
+    const columns = (colRows as any[]).map((r: any) => String(r.Field))
+
+    const allRows: any[] = []
+    const batchSize = 5000
+    let offset = 0
+    const conn = connection
+
+    while (true) {
+      const [batch] = await conn.query(`SELECT * FROM \`${table}\` LIMIT ? OFFSET ?`, [batchSize, offset])
+      const batchArr = batch as any[]
+      if (batchArr.length === 0) break
+      for (const r of batchArr) {
+        allRows.push(sanitizeRow(r))
+      }
+      offset += batchSize
+    }
+
+    return { ok: true, columns, rows: allRows, total }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Export failed' }
   }
 }
 

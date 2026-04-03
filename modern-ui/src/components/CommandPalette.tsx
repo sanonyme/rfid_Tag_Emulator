@@ -37,7 +37,7 @@ interface CommandPaletteProps {
   onAdminLogout?: () => void
 }
 
-const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; num: number }[] = [
+const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; num?: number }[] = [
   { value: 'fixed', label: 'Fixed', icon: <Radio className="w-4 h-4" />, num: 1 },
   { value: 'handheld', label: 'Handheld', icon: <Smartphone className="w-4 h-4" />, num: 2 },
   { value: 'ocr', label: 'OCR', icon: <ScanLine className="w-4 h-4" />, num: 3 },
@@ -47,7 +47,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 7 },
   { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 8 },
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
-  { value: 'database', label: 'Database', icon: <Database className="w-4 h-4" />, num: 0 },
+  { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
 ]
 
 const TAB_COMMANDS_BASE = IS_MOBILE
@@ -104,7 +104,7 @@ export function CommandPalette({
       id: `tab-${t.value}`,
       label: `Go to ${t.label}`,
       icon: t.icon,
-      shortcut: `Ctrl+${t.num}`,
+      shortcut: t.num !== undefined ? `Ctrl+${t.num}` : undefined,
       action: () => { onSwitchTab(t.value); onOpenChange(false) },
       group: 'Navigation',
     })),
@@ -205,7 +205,10 @@ export function CommandPalette({
   ]
 
   const filtered = query.trim()
-    ? commands.filter((c) => c.label.toLowerCase().includes(query.toLowerCase()))
+    ? commands.filter((c) => {
+        const q = query.toLowerCase()
+        return c.label.toLowerCase().includes(q) || c.group.toLowerCase().includes(q)
+      })
     : commands
 
   useEffect(() => {

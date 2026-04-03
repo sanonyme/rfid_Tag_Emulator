@@ -89,10 +89,59 @@ export interface ElectronAPI {
   dbConnect: (host: string, user: string, password: string) => Promise<{ ok: true; databases: string[] } | { ok: false; error: string }>
   dbDisconnect: () => Promise<void>
   dbGetTables: (database: string) => Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }>
-  dbGetTableData: (database: string, table: string, limit?: number, offset?: number) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+  dbGetTableData: (
+    database: string,
+    table: string,
+    limit?: number,
+    offset?: number
+  ) => Promise<
+    | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string> }
+    | { ok: false; error: string }
+  >
   dbExecuteQuery: (query: string, database?: string) => Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; message?: string } | { ok: false; error: string }>
   dbGetPrimaryKeys: (database: string, table: string) => Promise<string[]>
   dbUpdateCell: (database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) => Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }>
+  dbGetTableStructure: (
+    database: string,
+    table: string
+  ) => Promise<
+    | {
+        ok: true
+        columns: {
+          name: string
+          type: string
+          nullable: boolean
+          defaultValue: string | null
+          key: string
+          extra: string
+          comment: string
+        }[]
+      }
+    | { ok: false; error: string }
+  >
+  dbDeleteRow: (
+    database: string,
+    table: string,
+    primaryKeys: Record<string, any>
+  ) => Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }>
+  dbInsertRow: (
+    database: string,
+    table: string,
+    values: Record<string, any>
+  ) => Promise<{ ok: true; insertId: any } | { ok: false; error: string }>
+  dbDeleteRows: (
+    database: string,
+    table: string,
+    rows: Record<string, any>[]
+  ) => Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }>
+  dbExportTable: (
+    database: string,
+    table: string
+  ) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+
+  safeStoreSet: (key: string, value: string) => Promise<boolean>
+  safeStoreGet: (key: string) => Promise<string | null>
+  safeStoreDelete: (key: string) => Promise<void>
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart?: (sessionId: string, cols?: number, rows?: number) => void

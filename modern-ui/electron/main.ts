@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import * as pty from 'node-pty'
@@ -6,7 +6,20 @@ import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMask } from './adam-handler.js'
-import { dbConnect, dbDisconnect, dbGetTables, dbGetTableData, dbExecuteQuery, dbGetPrimaryKeys, dbUpdateCell } from './db-handler.js'
+import {
+  dbConnect,
+  dbDisconnect,
+  dbGetTables,
+  dbGetTableData,
+  dbExecuteQuery,
+  dbGetPrimaryKeys,
+  dbUpdateCell,
+  dbGetTableStructure,
+  dbDeleteRow,
+  dbInsertRow,
+  dbDeleteRows,
+  dbExportTable,
+} from './db-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -358,6 +371,79 @@ app.whenReady().then(() => {
   ipcMain.handle('db-update-cell', async (_event, database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) => {
     console.log(`DB: Update ${database}.${table}.${column}`)
     return dbUpdateCell(database, table, primaryKeys, column, value)
+  })
+
+  ipcMain.handle('db-get-table-structure', async (_event, database: string, table: string) => {
+    return dbGetTableStructure(database, table)
+  })
+
+  ipcMain.handle('db-delete-row', async (_event, database: string, table: string, primaryKeys: Record<string, any>) => {
+    console.log(`DB: Delete row ${database}.${table}`)
+    return dbDeleteRow(database, table, primaryKeys)
+  })
+
+  ipcMain.handle('db-insert-row', async (_event, database: string, table: string, values: Record<string, any>) => {
+    console.log(`DB: Insert row ${database}.${table}`)
+    return dbInsertRow(database, table, values)
+  })
+
+  ipcMain.handle('db-delete-rows', async (_event, database: string, table: string, rows: Record<string, any>[]) => {
+    console.log(`DB: Bulk delete ${database}.${table} (${rows?.length ?? 0} row(s))`)
+    return dbDeleteRows(database, table, rows ?? [])
+  })
+
+  ipcMain.handle('db-export-table', async (_event, database: string, table: string) => {
+    console.log(`DB: Export table ${database}.${table}`)
+    return dbExportTable(database, table)
+  })
+
+  const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
+
+  ipcMain.handle('safe-store-set', async (_event, key: string, value: string) => {
+    const encrypted = safeStorage.encryptString(value)
+    const base64 = encrypted.toString('base64')
+    const secretsPath = getSecretsPath()
+    let data: Record<string, string> = {}
+    if (fs.existsSync(secretsPath)) {
+      try {
+        const raw = fs.readFileSync(secretsPath, 'utf-8')
+        data = JSON.parse(raw)
+        if (!data || typeof data !== 'object') data = {}
+      } catch {
+        data = {}
+      }
+    }
+    data[key] = base64
+    fs.writeFileSync(secretsPath, JSON.stringify(data), 'utf-8')
+    return true
+  })
+
+  ipcMain.handle('safe-store-get', async (_event, key: string) => {
+    const secretsPath = getSecretsPath()
+    if (!fs.existsSync(secretsPath)) return null
+    try {
+      const raw = fs.readFileSync(secretsPath, 'utf-8')
+      const data = JSON.parse(raw) as Record<string, string>
+      const base64 = data?.[key]
+      if (base64 === undefined || base64 === null) return null
+      return safeStorage.decryptString(Buffer.from(base64, 'base64'))
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('safe-store-delete', async (_event, key: string) => {
+    const secretsPath = getSecretsPath()
+    if (!fs.existsSync(secretsPath)) return
+    try {
+      const raw = fs.readFileSync(secretsPath, 'utf-8')
+      const data = JSON.parse(raw) as Record<string, string>
+      if (!data || typeof data !== 'object') return
+      delete data[key]
+      fs.writeFileSync(secretsPath, JSON.stringify(data), 'utf-8')
+    } catch {
+      /* ignore */
+    }
   })
 
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
