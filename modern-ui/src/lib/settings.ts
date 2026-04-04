@@ -3,7 +3,18 @@
 const STORAGE_KEY = 'rfid-emulator-settings'
 
 export type FontSize = 'compact' | 'normal' | 'large'
-export type DefaultTab = 'fixed' | 'handheld' | 'ocr' | 'custom' | 'adam' | 'api' | 'decoder' | 'automation' | 'generator' | 'database'
+export type DefaultTab =
+  | 'fixed'
+  | 'handheld'
+  | 'ocr'
+  | 'custom'
+  | 'adam'
+  | 'api'
+  | 'decoder'
+  | 'automation'
+  | 'generator'
+  | 'database'
+  | 'sftp'
 
 export interface AppSettings {
   fontSize: FontSize

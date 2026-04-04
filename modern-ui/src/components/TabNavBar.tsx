@@ -12,6 +12,7 @@ import {
   Workflow,
   QrCode,
   Database,
+  FolderInput,
   Link2,
   type LucideIcon,
 } from 'lucide-react'
@@ -29,6 +30,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'automation', label: 'Auto', icon: Workflow },
   { value: 'generator', label: 'Gen', icon: QrCode },
   { value: 'database', label: 'DB', icon: Database },
+  { value: 'sftp', label: 'SFTP', icon: FolderInput },
 ]
 
 const TAB_ITEMS_ADMIN = [

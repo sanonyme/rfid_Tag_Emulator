@@ -17,7 +17,7 @@ export default defineConfig({
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
-              external: ['electron', 'electron-updater', 'node-pty', 'mysql2', 'mysql2/promise'],
+              external: ['electron', 'electron-updater', 'node-pty', 'mysql2', 'mysql2/promise', 'ssh2'],
             },
           },
         },

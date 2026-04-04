@@ -423,6 +423,39 @@ class MockElectronAPI implements ElectronAPI {
   async safeStoreDelete(_key: string) {
     return undefined
   }
+
+  private sftpUnavailable() {
+    return { ok: false as const, error: 'SFTP is only available in the desktop app.' }
+  }
+
+  async sftpConnect(_host: string, _port: number, _username: string, _password: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpDisconnect() {}
+  async sftpReaddir(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpReadFile(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpWriteFile(_remotePath: string, _base64Data: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpWriteTextFile(_remotePath: string, _text: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpMkdir(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpRename(_oldPath: string, _newPath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpUnlink(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpRmrf(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
 }
 
 export function initMockElectron() {

@@ -159,11 +159,17 @@ export function BarcodeGenerator() {
   return (
     <div className="h-full">
       <Tabs defaultValue="barcode" className="h-full flex flex-col">
-        <div className="flex justify-center mb-4">
-          <TabsList>
-            <TabsTrigger value="barcode">Barcodes</TabsTrigger>
-            <TabsTrigger value="qrcode">QR Codes</TabsTrigger>
-            <TabsTrigger value="batch">Batch Export</TabsTrigger>
+        <div className="mb-4 px-2">
+          <TabsList className="mx-auto grid w-full max-w-2xl grid-cols-3 gap-1 p-1">
+            <TabsTrigger value="barcode" className="w-full px-2 sm:px-3">
+              Barcodes
+            </TabsTrigger>
+            <TabsTrigger value="qrcode" className="w-full px-2 sm:px-3">
+              QR Codes
+            </TabsTrigger>
+            <TabsTrigger value="batch" className="w-full px-2 sm:px-3">
+              Batch Export
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -289,22 +295,29 @@ export function BarcodeGenerator() {
                   <CardTitle>Preview</CardTitle>
                   <CardDescription>Live preview of your generated barcodes</CardDescription>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20 overflow-y-auto">
-                  <div ref={barcodeRef} className="p-8 bg-white rounded-lg shadow-lg transition-all duration-200 flex flex-col gap-8 items-center">
-                    {barcodes.map((barcode) => (
-                        <div key={barcode.id} className="flex flex-col items-center">
-                        <Barcode 
-                          value={barcode.text}
-                          format={barcode.format}
-                          width={width}
-                          height={barcode.height}
-                          displayValue={displayValue}
-                          background="#ffffff"
-                          lineColor="#000000"
-                          margin={0}
-                        />
+                <CardContent className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-0">
+                  <div className="flex min-h-[300px] flex-1 flex-col overflow-hidden rounded-lg border border-dashed border-muted-foreground/25 bg-white/5">
+                    <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto p-4">
+                      <div
+                        ref={barcodeRef}
+                        className="flex flex-col items-center gap-8 rounded-lg bg-white p-8 shadow-lg transition-all duration-200"
+                      >
+                        {barcodes.map((barcode) => (
+                          <div key={barcode.id} className="flex flex-col items-center">
+                            <Barcode
+                              value={barcode.text}
+                              format={barcode.format}
+                              width={width}
+                              height={barcode.height}
+                              displayValue={displayValue}
+                              background="#ffffff"
+                              lineColor="#000000"
+                              margin={0}
+                            />
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
                   </div>
                 </CardContent>
                 <div className="p-6 pt-0 flex justify-center gap-4">
@@ -540,7 +553,7 @@ function BatchExport() {
             <CardDescription>Review and generate your batch export</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 flex flex-col gap-4">
-            <div className="flex-1 flex flex-col items-center justify-center gap-4 bg-white/5 rounded-lg border-2 border-dashed border-muted-foreground/20 p-6 min-h-[200px]">
+            <div className="flex min-h-[200px] flex-1 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-muted-foreground/25 bg-white/5 p-6">
               {values.length === 0 ? (
                 <div className="text-center text-muted-foreground">
                   <FileText className="w-10 h-10 mx-auto opacity-30 mb-2" />

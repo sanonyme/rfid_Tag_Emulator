@@ -159,6 +159,51 @@ export interface ElectronAPI {
   safeStoreGet: (key: string) => Promise<string | null>
   safeStoreDelete: (key: string) => Promise<void>
 
+  // SFTP (Electron main / ssh2)
+  sftpConnect: (
+    host: string,
+    port: number,
+    username: string,
+    password: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpDisconnect: () => Promise<void>
+  sftpReaddir: (
+    remotePath: string
+  ) => Promise<
+    | {
+        ok: true
+        entries: {
+          name: string
+          type: 'file' | 'folder'
+          size?: number
+          mtime?: number
+          mode?: number
+          uid?: number
+          gid?: number
+        }[]
+      }
+    | { ok: false; error: string }
+  >
+  sftpReadFile: (
+    remotePath: string
+  ) => Promise<
+    | { ok: true; text: string; isBinary: false; size: number }
+    | { ok: true; isBinary: true; size: number; previewBase64: string }
+    | { ok: false; error: string }
+  >
+  sftpWriteFile: (
+    remotePath: string,
+    base64Data: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpWriteTextFile: (
+    remotePath: string,
+    text: string
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpMkdir: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpRename: (oldPath: string, newPath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpUnlink: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpRmrf: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+
   // Admin Shell (multi-tab: sessionId required)
   shellStart?: (sessionId: string, cols?: number, rows?: number) => void
   shellWrite?: (sessionId: string, data: string) => void

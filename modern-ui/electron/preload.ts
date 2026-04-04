@@ -124,6 +124,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbExportTable: (database: string, table: string) => ipcRenderer.invoke('db-export-table', database, table),
   dbGetDatabaseSchema: (database: string) => ipcRenderer.invoke('db-get-database-schema', database),
 
+  sftpConnect: (host: string, port: number, username: string, password: string) =>
+    ipcRenderer.invoke('sftp-connect', host, port, username, password),
+  sftpDisconnect: () => ipcRenderer.invoke('sftp-disconnect'),
+  sftpReaddir: (remotePath: string) => ipcRenderer.invoke('sftp-readdir', remotePath),
+  sftpReadFile: (remotePath: string) => ipcRenderer.invoke('sftp-read-file', remotePath),
+  sftpWriteFile: (remotePath: string, base64Data: string) =>
+    ipcRenderer.invoke('sftp-write-file', remotePath, base64Data),
+  sftpWriteTextFile: (remotePath: string, text: string) =>
+    ipcRenderer.invoke('sftp-write-text-file', remotePath, text),
+  sftpMkdir: (remotePath: string) => ipcRenderer.invoke('sftp-mkdir', remotePath),
+  sftpRename: (oldPath: string, newPath: string) => ipcRenderer.invoke('sftp-rename', oldPath, newPath),
+  sftpUnlink: (remotePath: string) => ipcRenderer.invoke('sftp-unlink', remotePath),
+  sftpRmrf: (remotePath: string) => ipcRenderer.invoke('sftp-rmrf', remotePath),
+
   safeStoreSet: (key: string, value: string) => ipcRenderer.invoke('safe-store-set', key, value),
   safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),
   safeStoreDelete: (key: string) => ipcRenderer.invoke('safe-store-delete', key),

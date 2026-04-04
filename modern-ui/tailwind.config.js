@@ -57,7 +57,12 @@ export default {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
-  			}
+  			},
+  			fileTree: {
+  				bg: 'hsl(var(--file-tree-bg))',
+  				hover: 'hsl(var(--file-tree-hover))'
+  			},
+  			folderIcon: 'hsl(var(--folder-icon))'
   		},
   		borderRadius: {
   			lg: 'var(--radius)',

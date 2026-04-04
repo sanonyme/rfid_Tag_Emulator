@@ -86,9 +86,12 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'automation', label: 'Auto' },
   { value: 'generator', label: 'Generator' },
   { value: 'database', label: 'Database' },
+  { value: 'sftp', label: 'SFTP' },
 ]
 
-const TAB_OPTIONS = IS_MOBILE ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam') : TAB_OPTIONS_ALL
+const TAB_OPTIONS = IS_MOBILE
+  ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp')
+  : TAB_OPTIONS_ALL
 
 export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())

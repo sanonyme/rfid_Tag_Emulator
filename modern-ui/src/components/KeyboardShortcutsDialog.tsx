@@ -18,6 +18,7 @@ const SHORTCUTS = [
     { label: 'Go to Decoder', keys: 'Ctrl+7' },
     { label: 'Go to Auto', keys: 'Ctrl+8' },
     { label: 'Go to Generator', keys: 'Ctrl+9' },
+    { label: 'Go to Database', keys: 'Ctrl+0' },
   ]},
   { group: 'General', items: [
     { label: 'Command palette', keys: 'Ctrl+K' },

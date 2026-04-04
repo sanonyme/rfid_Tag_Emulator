@@ -39,6 +39,10 @@
     --ring: 16 53% 50%;
 
     --radius: 0.5rem;
+
+    --file-tree-bg: 30 12% 96%;
+    --file-tree-hover: 30 15% 92%;
+    --folder-icon: 16 45% 42%;
   }
 
   .dark {
@@ -71,6 +75,10 @@
     --border: 217 32% 17%;
     --input: 217 32% 17%;
     --ring: 16 60% 60%;
+
+    --file-tree-bg: 222 40% 14%;
+    --file-tree-hover: 217 32% 20%;
+    --folder-icon: 16 55% 58%;
   }
 }
 

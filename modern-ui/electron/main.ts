@@ -21,6 +21,18 @@ import {
   dbExportTable,
   dbGetDatabaseSchema,
 } from './db-handler.js'
+import {
+  sftpConnect,
+  sftpDisconnect,
+  sftpReaddir,
+  sftpReadFile,
+  sftpWriteFile,
+  sftpWriteTextFile,
+  sftpMkdir,
+  sftpRename,
+  sftpUnlink,
+  sftpRmrf,
+} from './sftp-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -403,6 +415,31 @@ app.whenReady().then(() => {
     return dbGetDatabaseSchema(database)
   })
 
+  // SFTP (ssh2, single session)
+  ipcMain.handle(
+    'sftp-connect',
+    async (_event, host: string, port: number, username: string, password: string) => {
+      console.log(`SFTP: Connect ${host}:${port} as ${username}`)
+      return sftpConnect(host, port, username, password)
+    }
+  )
+  ipcMain.handle('sftp-disconnect', async () => {
+    console.log('SFTP: Disconnect')
+    await sftpDisconnect()
+  })
+  ipcMain.handle('sftp-readdir', async (_event, remotePath: string) => sftpReaddir(remotePath))
+  ipcMain.handle('sftp-read-file', async (_event, remotePath: string) => sftpReadFile(remotePath))
+  ipcMain.handle('sftp-write-file', async (_event, remotePath: string, base64Data: string) =>
+    sftpWriteFile(remotePath, base64Data)
+  )
+  ipcMain.handle('sftp-write-text-file', async (_event, remotePath: string, text: string) =>
+    sftpWriteTextFile(remotePath, text)
+  )
+  ipcMain.handle('sftp-mkdir', async (_event, remotePath: string) => sftpMkdir(remotePath))
+  ipcMain.handle('sftp-rename', async (_event, oldPath: string, newPath: string) => sftpRename(oldPath, newPath))
+  ipcMain.handle('sftp-unlink', async (_event, remotePath: string) => sftpUnlink(remotePath))
+  ipcMain.handle('sftp-rmrf', async (_event, remotePath: string) => sftpRmrf(remotePath))
+
   const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
 
   ipcMain.handle('safe-store-set', async (_event, key: string, value: string) => {
@@ -741,6 +778,7 @@ app.on('window-all-closed', () => {
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
   dbDisconnect()
+  void sftpDisconnect()
   
   if (process.platform !== 'darwin') {
     app.quit()
@@ -756,5 +794,6 @@ app.on('before-quit', () => {
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
   dbDisconnect()
+  void sftpDisconnect()
 })
 // trigger rebuild 2

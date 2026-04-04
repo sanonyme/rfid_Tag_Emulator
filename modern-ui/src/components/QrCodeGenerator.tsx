@@ -228,14 +228,16 @@ export function QrCodeGenerator() {
             <CardTitle>Preview</CardTitle>
             <CardDescription>Live preview of your QR code</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col items-center justify-center min-h-[300px] bg-white/5 rounded-lg m-6 border-2 border-dashed border-muted-foreground/20">
-            <div ref={qrRef} className="p-8 bg-white rounded-lg shadow-lg">
-              <QRCodeSVG
-                value={JSON.stringify(formData)}
-                size={qrSize}
-                level={"M"}
-                includeMargin={true}
-              />
+          <CardContent className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-0">
+            <div className="flex min-h-[300px] flex-1 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-muted-foreground/25 bg-white/5 p-8">
+              <div ref={qrRef} className="rounded-lg bg-white p-8 shadow-lg">
+                <QRCodeSVG
+                  value={JSON.stringify(formData)}
+                  size={qrSize}
+                  level={"M"}
+                  includeMargin={true}
+                />
+              </div>
             </div>
           </CardContent>
           <div className="p-6 pt-0 flex justify-center gap-4">

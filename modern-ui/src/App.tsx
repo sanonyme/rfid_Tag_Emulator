@@ -11,6 +11,7 @@ import { AdamTab } from './components/AdamTab'
 import { ApiTab } from './components/Api'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { DatabaseTab } from './components/DatabaseTab'
+import { SftpTab } from './components/SftpTab'
 import { LinkToUidTab } from './components/LinkToUidTab'
 import { AdminTerminalTab } from './components/AdminTerminalTab'
 import { TitleBar } from './components/TitleBar'
@@ -31,7 +32,7 @@ import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster, toast } from 'sonner'
 
-const TAB_VALUES_FULL = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator', 'database'] as const
+const TAB_VALUES_FULL = ['fixed', 'handheld', 'ocr', 'custom', 'adam', 'api', 'decoder', 'automation', 'generator', 'database', 'sftp'] as const
 const TAB_VALUES = (IS_MOBILE
   ? TAB_VALUES_FULL.filter((t) => t !== 'adam')
   : TAB_VALUES_FULL) as readonly string[]
@@ -411,6 +412,10 @@ function App() {
 
             <TabsContent value="database" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
               <DatabaseTab host={host} connected={connected} />
+            </TabsContent>
+
+            <TabsContent value="sftp" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+              <SftpTab host={host} setHost={setHost} />
             </TabsContent>
 
             {isAdmin && (

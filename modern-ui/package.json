@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "6.2.0",
+  "version": "6.3.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Anexya",
@@ -47,7 +47,7 @@
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
     "electron-updater": "^6.3.9",
-    "framer-motion": "^12.37.0",
+    "framer-motion": "^12.38.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.263.1",
     "mysql2": "^3.20.0",
@@ -57,6 +57,7 @@
     "react-barcode": "^1.4.0",
     "react-dom": "^18.3.1",
     "sonner": "^2.0.7",
+    "ssh2": "^1.17.0",
     "tailwind-merge": "^2.6.0",
     "tailwindcss-animate": "^1.0.7"
   },
@@ -72,6 +73,7 @@
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
+    "@types/ssh2": "^1.15.5",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
