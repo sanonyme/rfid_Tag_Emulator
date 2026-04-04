@@ -14,10 +14,13 @@ export function formatUnixMode(mode: number | undefined): string {
   return typeChar + tri((mode >> 6) & 7) + tri((mode >> 3) & 7) + tri(mode & 7)
 }
 
-/** Human-readable size; folders use server `size` when non-zero (often block size), else "—". */
+/**
+ * Human-readable size for files. Folders always show "—": SFTP/Unix directory `st_size`
+ * is the on-disk directory entry size (often 4096 B), not total contents.
+ */
 export function formatSftpSize(bytes: number | undefined, isFolder: boolean): string {
+  if (isFolder) return '—'
   if (bytes === undefined || bytes < 0) return '—'
-  if (isFolder && bytes === 0) return '—'
   const n = bytes
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${Math.max(1, Math.round(n / 1024))} KB`

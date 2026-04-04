@@ -456,6 +456,33 @@ class MockElectronAPI implements ElectronAPI {
   async sftpRmrf(_remotePath: string) {
     return this.sftpUnavailable()
   }
+  async sftpDownloadSaveDialog(_remotePath: string, _operationId: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpDownloadToPath(_remotePath: string, _localPath: string, _operationId: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpUploadFromLocal(_localPath: string, _remotePath: string, _operationId: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpCopyRemoteFile(_remoteSrc: string, _remoteDest: string, _operationId: string) {
+    return this.sftpUnavailable()
+  }
+  async localPickFolder() {
+    return { ok: false as const, cancelled: true as const }
+  }
+  async localReaddir(_root: string, _dirPath: string) {
+    return this.sftpUnavailable()
+  }
+  onSftpTransferProgress(_callback: (payload: { operationId: string; loaded: number; total: number }) => void) {
+    return () => {}
+  }
+  async localWriteFileBase64(_root: string, _filePath: string, _base64Data: string) {
+    return { ok: false as const, error: 'Not available in browser.' }
+  }
+  async localPathParent(_root: string, _cwd: string) {
+    return { ok: true as const, parent: null }
+  }
 }
 
 export function initMockElectron() {

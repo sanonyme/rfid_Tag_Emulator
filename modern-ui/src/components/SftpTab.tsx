@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
+import { Textarea } from './ui/textarea'
 import { ScrollArea } from './ui/scroll-area'
 import {
   Dialog,
@@ -11,7 +12,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog'
-import { SftpFileTree, SFTP_DND_MIME, type SftpFileNode } from './sftp/SftpFileTree'
+import {
+  SftpFileTree,
+  SFTP_DND_MIME,
+  type SftpFileNode,
+  type SftpSortKey,
+} from './sftp/SftpFileTree'
+import { LocalDirList, LOCAL_DND_MIME, type LocalEntryRow } from './sftp/LocalDirList'
 import {
   FolderInput,
   Loader2,
@@ -26,6 +33,13 @@ import {
   Monitor,
   CheckSquare,
   ListChecks,
+  Download,
+  Pencil,
+  Copy,
+  FolderOpen,
+  ChevronRight,
+  ChevronDown,
+  PanelBottom,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
@@ -45,6 +59,12 @@ function parentDir(filePath: string): string {
   const i = trimmed.lastIndexOf('/')
   if (i <= 0) return '/'
   return trimmed.slice(0, i) || '/'
+}
+
+function joinLocalDir(base: string, fileName: string): string {
+  const win = window.electronAPI?.platform === 'win32'
+  const sep = win ? '\\' : '/'
+  return `${base.replace(/[/\\]+$/, '')}${sep}${fileName.replace(/^[/\\]+/, '')}`
 }
 
 function fileExtension(name: string): string | undefined {
@@ -102,6 +122,15 @@ function getDirectChildPaths(nodes: SftpFileNode[], dir: string): string[] {
   return parent.children.map((c) => c.path)
 }
 
+type TransferItem = {
+  id: string
+  label: string
+  kind: 'download' | 'upload' | 'copy'
+  status: 'running' | 'done' | 'error'
+  progress: number
+  error?: string
+}
+
 interface SftpTabProps {
   host: string
   setHost: (h: string) => void
@@ -125,6 +154,12 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [uploadTargetDir, setUploadTargetDir] = useState('/')
   const [dropHighlightPath, setDropHighlightPath] = useState<string | null>(null)
+  const [expandedPaths, setExpandedPaths] = useState(() => new Set<string>())
+  const [sortKey, setSortKey] = useState<SftpSortKey>('name')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
+  const [localSortDir, setLocalSortDir] = useState<'asc' | 'desc'>('asc')
+  const [foldersFirst, setFoldersFirst] = useState(true)
+  const [pathGoInput, setPathGoInput] = useState('/')
 
   const [selectMode, setSelectMode] = useState(false)
   const [selectedPaths, setSelectedPaths] = useState(() => new Set<string>())
@@ -138,11 +173,56 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
   const [createName, setCreateName] = useState('')
   const [createBusy, setCreateBusy] = useState(false)
 
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
+  const [renameBusy, setRenameBusy] = useState(false)
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [editText, setEditText] = useState('')
+  const [editBusy, setEditBusy] = useState(false)
+  const [editPath, setEditPath] = useState<string | null>(null)
+
+  const [transferQueue, setTransferQueue] = useState<TransferItem[]>([])
+  const [queueOpen, setQueueOpen] = useState(true)
+
+  const [localRoot, setLocalRoot] = useState<string | null>(null)
+  const [localCwd, setLocalCwd] = useState<string | null>(null)
+  const [localRows, setLocalRows] = useState<LocalEntryRow[]>([])
+  const [localSelectedPath, setLocalSelectedPath] = useState<string | null>(null)
+  const [localDropHighlight, setLocalDropHighlight] = useState(false)
+  const [localSortKey, setLocalSortKey] = useState<SftpSortKey>('name')
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<SftpFileNode[]>([])
   useEffect(() => {
     treeRef.current = tree
   }, [tree])
+
+  const nextOpId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
+
+  const pushTransfer = useCallback((item: Omit<TransferItem, 'status' | 'progress'>) => {
+    setTransferQueue((q) => [
+      ...q,
+      { ...item, status: 'running', progress: 0 },
+    ])
+  }, [])
+
+  const updateTransfer = useCallback(
+    (id: string, patch: Partial<Pick<TransferItem, 'status' | 'progress' | 'error'>>) => {
+      setTransferQueue((q) => q.map((t) => (t.id === id ? { ...t, ...patch } : t)))
+    },
+    [],
+  )
+
+  useEffect(() => {
+    if (!api?.onSftpTransferProgress) return
+    return api.onSftpTransferProgress(({ operationId, loaded, total }) => {
+      const pct = total > 0 ? Math.min(100, Math.round((100 * loaded) / total)) : 0
+      setTransferQueue((q) =>
+        q.map((t) => (t.id === operationId ? { ...t, progress: pct } : t)),
+      )
+    })
+  }, [api])
 
   const loadDir = useCallback(async (remotePath: string): Promise<SftpFileNode[]> => {
     if (!api?.sftpReaddir) return []
@@ -155,7 +235,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
       extension: e.type === 'file' ? fileExtension(e.name) : undefined,
       loaded: e.type === 'file' ? true : false,
       children: e.type === 'folder' ? undefined : undefined,
-      sizeBytes: e.size,
+      sizeBytes: e.type === 'file' ? e.size : undefined,
       mtimeSec: e.mtime,
       mode: e.mode,
       uid: e.uid,
@@ -177,7 +257,6 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     [connected, api, loadDir],
   )
 
-  /** Reload one directory and merge into the tree (falls back to full root refresh if path is not in tree). */
   const refreshDirectory = useCallback(
     async (dirPath: string, silent?: boolean) => {
       if (!connected || !api?.sftpReaddir) return
@@ -207,6 +286,130 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     },
     [connected, api, loadDir],
   )
+
+  const refreshLocalListing = useCallback(async () => {
+    if (!api?.localReaddir || !localRoot || !localCwd) return
+    const r = await api.localReaddir(localRoot, localCwd)
+    if (!r.ok) {
+      toast.error(r.error)
+      return
+    }
+    setLocalRows(
+      r.entries.map((e) => ({
+        name: e.name,
+        path: joinLocalDir(localCwd, e.name),
+        type: e.type,
+        sizeBytes: e.type === 'file' ? e.size : undefined,
+        mtimeSec: e.mtime,
+        mode: e.mode,
+      })),
+    )
+  }, [api, localRoot, localCwd])
+
+  useEffect(() => {
+    void refreshLocalListing()
+  }, [refreshLocalListing])
+
+  const handleSortChange = useCallback((key: SftpSortKey) => {
+    setSortKey((prev) => {
+      if (prev === key) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        return prev
+      }
+      setSortDir('asc')
+      return key
+    })
+  }, [])
+
+  const handleLocalSortChange = useCallback((key: SftpSortKey) => {
+    setLocalSortKey((prev) => {
+      if (prev === key) {
+        setLocalSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+        return prev
+      }
+      setLocalSortDir('asc')
+      return key
+    })
+  }, [])
+
+  const navigateRemotePath = useCallback(
+    async (targetPath: string) => {
+      const norm = targetPath.replace(/\/+/g, '/').trim().replace(/\/$/, '') || '/'
+      if (!connected || !api?.sftpReaddir) return
+      try {
+        let t = await loadDir('/')
+        setTree(t)
+        const exp = new Set<string>()
+        if (norm === '/') {
+          setUploadTargetDir('/')
+          setSelectedPath(null)
+          setExpandedPaths(exp)
+          setPathGoInput('/')
+          return
+        }
+        const parts = norm.split('/').filter(Boolean)
+        let parentPath = '/'
+        for (let i = 0; i < parts.length; i++) {
+          const part = parts[i]!
+          const nextPath = posixJoin(parentPath, part)
+          if (parentPath !== '/') {
+            const pn = findNode(t, parentPath)
+            if (!pn?.loaded) {
+              const loaded = await loadDir(parentPath)
+              t = setChildrenAtPath(t, parentPath, loaded)
+              setTree(t)
+            }
+          }
+          const siblings =
+            parentPath === '/' ? t : findNode(t, parentPath)?.children
+          if (!siblings?.length) {
+            const loaded = await loadDir(parentPath)
+            t = parentPath === '/' ? loaded : setChildrenAtPath(t, parentPath, loaded)
+            setTree(t)
+          }
+          const sib = (parentPath === '/' ? t : findNode(t, parentPath)!.children!).find(
+            (x) => x.name === part,
+          )
+          if (!sib) {
+            toast.error(`Path not found: ${nextPath}`)
+            return
+          }
+          if (sib.type === 'file') {
+            if (i === parts.length - 1) {
+              setSelectedPath(nextPath)
+              setUploadTargetDir(parentPath)
+              setExpandedPaths(exp)
+              setTree(t)
+              setPathGoInput(norm)
+              return
+            }
+            toast.error('Not a directory')
+            return
+          }
+          exp.add(nextPath)
+          if (!sib.loaded) {
+            const kids = await loadDir(nextPath)
+            t = setChildrenAtPath(t, nextPath, kids)
+            setTree(t)
+          }
+          parentPath = nextPath
+        }
+        setUploadTargetDir(parentPath)
+        setSelectedPath(null)
+        setExpandedPaths(exp)
+        setTree(t)
+        setPathGoInput(norm)
+        toast.success('Navigated')
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Navigation failed')
+      }
+    },
+    [connected, api, loadDir],
+  )
+
+  useEffect(() => {
+    setPathGoInput(uploadTargetDir)
+  }, [uploadTargetDir])
 
   useEffect(() => {
     ;(async () => {
@@ -289,6 +492,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
         setSelectedPath(null)
         setSelectedPaths(new Set())
         setSelectMode(false)
+        setExpandedPaths(new Set())
         toast.success('SFTP connected')
       } catch (e) {
         setConnError(e instanceof Error ? e.message : 'Failed to list root')
@@ -308,22 +512,37 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     setSelectedPath(null)
     setSelectedPaths(new Set())
     setSelectMode(false)
+    setExpandedPaths(new Set())
+    setTransferQueue([])
   }, [api])
 
   const handleToggleFolder = useCallback(
     async (node: SftpFileNode) => {
-      if (node.type !== 'folder' || !api || node.loaded || node.loading) return
-      setTree((prev) => setNodeLoading(prev, node.path, true))
-      try {
-        const children = await loadDir(node.path)
-        setTree((prev) => setChildrenAtPath(prev, node.path, children))
-      } catch (e) {
-        setTree((prev) => setNodeLoading(prev, node.path, false))
-        toast.error(e instanceof Error ? e.message : 'Failed to open folder')
+      if (node.type !== 'folder' || !api) return
+      if (node.loading) return
+      if (!node.loaded) {
+        setTree((prev) => setNodeLoading(prev, node.path, true))
+        try {
+          const children = await loadDir(node.path)
+          setTree((prev) => setChildrenAtPath(prev, node.path, children))
+        } catch (e) {
+          setTree((prev) => setNodeLoading(prev, node.path, false))
+          toast.error(e instanceof Error ? e.message : 'Failed to open folder')
+          return
+        }
       }
+      setExpandedPaths((prev) => new Set(prev).add(node.path))
     },
     [api, loadDir],
   )
+
+  const onRequestCollapse = useCallback((path: string) => {
+    setExpandedPaths((prev) => {
+      const n = new Set(prev)
+      n.delete(path)
+      return n
+    })
+  }, [])
 
   const togglePathSelection = useCallback((path: string) => {
     setSelectedPaths((prev) => {
@@ -355,9 +574,80 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     toast.success(`Selected ${paths.length} item(s)`)
   }, [tree, uploadTargetDir])
 
+  const downloadRemoteFile = useCallback(
+    async (remotePath: string, label: string) => {
+      if (!api?.sftpDownloadSaveDialog) {
+        toast.error('Download requires the latest desktop build')
+        return
+      }
+      const id = nextOpId()
+      pushTransfer({ id, label, kind: 'download' })
+      const r = await api.sftpDownloadSaveDialog(remotePath, id)
+      if ('cancelled' in r && r.cancelled) {
+        updateTransfer(id, { status: 'done', progress: 100 })
+        return
+      }
+      if (r.ok) {
+        updateTransfer(id, { status: 'done', progress: 100 })
+        toast.success('Downloaded')
+      } else {
+        updateTransfer(id, { status: 'error', error: 'error' in r ? r.error : 'Failed' })
+        toast.error('error' in r ? r.error : 'Download failed')
+      }
+    },
+    [api, pushTransfer, updateTransfer],
+  )
+
+  const downloadToLocalPath = useCallback(
+    async (remotePath: string, localPath: string, label: string) => {
+      if (!api?.sftpDownloadToPath) return
+      const id = nextOpId()
+      pushTransfer({ id, label, kind: 'download' })
+      const r = await api.sftpDownloadToPath(remotePath, localPath, id)
+      if (r.ok) {
+        updateTransfer(id, { status: 'done', progress: 100 })
+      } else {
+        updateTransfer(id, { status: 'error', error: r.error })
+        toast.error(r.error)
+      }
+    },
+    [api, pushTransfer, updateTransfer],
+  )
+
+  const pickLocalRoot = useCallback(async () => {
+    if (!api?.localPickFolder) return
+    const r = await api.localPickFolder()
+    if (!r.ok || !('path' in r) || !r.path) return
+    setLocalRoot(r.path)
+    setLocalCwd(r.path)
+    setLocalSelectedPath(null)
+    toast.success('Local folder set')
+  }, [api])
+
   const handleDropOnDir = useCallback(
     async (targetDir: string, e: React.DragEvent) => {
       if (!api) return
+      const localRaw = e.dataTransfer.getData(LOCAL_DND_MIME)
+      if (localRaw && api.sftpUploadFromLocal) {
+        try {
+          const { path: localPath, name } = JSON.parse(localRaw) as { path: string; name: string }
+          const id = nextOpId()
+          pushTransfer({ id, label: `${name} → remote`, kind: 'upload' })
+          const dest = posixJoin(targetDir, name)
+          const r = await api.sftpUploadFromLocal(localPath, dest, id)
+          if (r.ok) {
+            updateTransfer(id, { status: 'done', progress: 100 })
+            toast.success('Uploaded')
+            await refreshDirectory(targetDir, true)
+          } else {
+            updateTransfer(id, { status: 'error', error: r.error })
+            toast.error(r.error)
+          }
+        } catch {
+          toast.error('Upload failed')
+        }
+        return
+      }
       const raw = e.dataTransfer.getData(SFTP_DND_MIME)
       if (raw) {
         try {
@@ -410,7 +700,55 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
         await refreshDirectory(targetDir, true)
       }
     },
-    [api, refreshRoot, refreshDirectory, selectedPath],
+    [api, refreshRoot, refreshDirectory, selectedPath, pushTransfer, updateTransfer],
+  )
+
+  const handleDropOnLocal = useCallback(
+    async (localDirPath: string, e: React.DragEvent) => {
+      if (!api || !localRoot) return
+      e.preventDefault()
+      const raw = e.dataTransfer.getData(SFTP_DND_MIME)
+      if (raw) {
+        try {
+          const { path: remotePath, name, type } = JSON.parse(raw) as {
+            path: string
+            name: string
+            type: string
+          }
+          if (type !== 'file') {
+            toast.error('Download folders from remote tree one file at a time')
+            return
+          }
+          const localPath = joinLocalDir(localDirPath, name)
+          await downloadToLocalPath(remotePath, localPath, name)
+          await refreshLocalListing()
+        } catch {
+          toast.error('Download failed')
+        }
+        return
+      }
+      const files = e.dataTransfer.files
+      if (files?.length && api.localWriteFileBase64) {
+        for (const f of Array.from(files)) {
+          try {
+            const buf = await f.arrayBuffer()
+            const b64 = arrayBufferToBase64(buf)
+            const dest = joinLocalDir(localDirPath, f.name)
+            const w = await api.localWriteFileBase64(localRoot, dest, b64)
+            if (!w.ok) {
+              toast.error(w.error)
+              break
+            }
+          } catch {
+            toast.error(`Save failed: ${f.name}`)
+            break
+          }
+        }
+        toast.success('Saved to local folder')
+        await refreshLocalListing()
+      }
+    },
+    [api, localRoot, downloadToLocalPath, refreshLocalListing],
   )
 
   const submitCreate = useCallback(async () => {
@@ -453,29 +791,39 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   const onPickFiles = useCallback(
     async (list: FileList | null) => {
-      if (!list?.length || !api?.sftpWriteFile) return
-      let okCount = 0
+      if (!list?.length || !api) return
       for (const f of Array.from(list)) {
-        try {
-          const buf = await f.arrayBuffer()
-          const b64 = arrayBufferToBase64(buf)
-          const dest = posixJoin(uploadTargetDir, f.name)
-          const w = await api.sftpWriteFile(dest, b64)
-          if (!w.ok) {
-            toast.error(`${f.name}: ${w.error}`)
+        const dest = posixJoin(uploadTargetDir, f.name)
+        const filePath = (f as File & { path?: string }).path
+        if (filePath && api.sftpUploadFromLocal) {
+          const id = nextOpId()
+          pushTransfer({ id, label: f.name, kind: 'upload' })
+          const r = await api.sftpUploadFromLocal(filePath, dest, id)
+          if (r.ok) updateTransfer(id, { status: 'done', progress: 100 })
+          else {
+            updateTransfer(id, { status: 'error', error: r.error })
+            toast.error(`${f.name}: ${r.error}`)
+          }
+        } else {
+          try {
+            const buf = await f.arrayBuffer()
+            const b64 = arrayBufferToBase64(buf)
+            const w = await api.sftpWriteFile(dest, b64)
+            if (!w.ok) {
+              toast.error(`${f.name}: ${w.error}`)
+              break
+            }
+          } catch {
+            toast.error(`Upload failed: ${f.name}`)
             break
           }
-          okCount++
-        } catch {
-          toast.error(`Upload failed: ${f.name}`)
-          break
         }
       }
-      if (okCount > 0) toast.success(`Uploaded ${okCount} file(s)`)
+      toast.success('Upload finished')
       await refreshDirectory(uploadTargetDir, true)
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
-    [api, uploadTargetDir, refreshDirectory],
+    [api, uploadTargetDir, refreshDirectory, pushTransfer, updateTransfer],
   )
 
   const confirmDelete = useCallback(async () => {
@@ -502,6 +850,110 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
       await refreshRoot(true)
     }
   }, [deleteTargets, api, refreshRoot])
+
+  const submitRename = useCallback(async () => {
+    const node = selectedPath ? findNode(tree, selectedPath) : null
+    if (!selectedPath || !node || !api?.sftpRename) return
+    const safe = renameValue.trim().replace(/[/\\]/g, '')
+    if (!safe) {
+      toast.error('Invalid name')
+      return
+    }
+    const newPath = posixJoin(parentDir(selectedPath), safe)
+    if (newPath === selectedPath) {
+      setRenameOpen(false)
+      return
+    }
+    setRenameBusy(true)
+    try {
+      const r = await api.sftpRename(selectedPath, newPath)
+      if (r.ok) {
+        toast.success('Renamed')
+        setRenameOpen(false)
+        setSelectedPath(newPath)
+        await refreshRoot(true)
+      } else {
+        toast.error(r.error)
+      }
+    } finally {
+      setRenameBusy(false)
+    }
+  }, [selectedPath, tree, renameValue, api, refreshRoot])
+
+  const openEditDialog = useCallback(async () => {
+    const node = selectedPath ? findNode(tree, selectedPath) : null
+    if (!selectedPath || !node || node.type !== 'file' || !api?.sftpReadFile) return
+    const r = await api.sftpReadFile(selectedPath)
+    if (!r.ok) {
+      toast.error(r.error)
+      return
+    }
+    if (r.ok && 'isBinary' in r && r.isBinary) {
+      toast.error('Binary file — use Download instead')
+      return
+    }
+    if (r.ok && 'text' in r) {
+      setEditPath(selectedPath)
+      setEditText(r.text)
+      setEditOpen(true)
+    }
+  }, [selectedPath, tree, api])
+
+  const submitEdit = useCallback(async () => {
+    if (!editPath || !api?.sftpWriteTextFile) return
+    setEditBusy(true)
+    try {
+      const r = await api.sftpWriteTextFile(editPath, editText)
+      if (r.ok) {
+        toast.success('Saved')
+        setEditOpen(false)
+        await refreshDirectory(parentDir(editPath), true)
+      } else {
+        toast.error(r.error)
+      }
+    } finally {
+      setEditBusy(false)
+    }
+  }, [editPath, editText, api, refreshDirectory])
+
+  const duplicateRemoteFile = useCallback(async () => {
+    const node = selectedPath ? findNode(tree, selectedPath) : null
+    if (!selectedPath || !node || node.type !== 'file' || !api?.sftpCopyRemoteFile) return
+    const base = node.name
+    const dot = base.lastIndexOf('.')
+    const copyName =
+      dot > 0 ? `${base.slice(0, dot)}-copy${base.slice(dot)}` : `${base}-copy`
+    const dest = posixJoin(parentDir(selectedPath), copyName)
+    const id = nextOpId()
+    pushTransfer({ id, label: `Copy ${base}`, kind: 'copy' })
+    const r = await api.sftpCopyRemoteFile(selectedPath, dest, id)
+    if (r.ok) {
+      updateTransfer(id, { status: 'done', progress: 100 })
+      toast.success('Duplicated on server')
+      await refreshDirectory(parentDir(selectedPath), true)
+    } else {
+      updateTransfer(id, { status: 'error', error: r.error })
+      toast.error(r.error)
+    }
+  }, [selectedPath, tree, api, pushTransfer, updateTransfer, refreshDirectory])
+
+  const batchDownload = useCallback(async () => {
+    if (!api?.localPickFolder || !api.sftpDownloadToPath) return
+    const files = Array.from(selectedPaths)
+      .map((p) => findNode(tree, p))
+      .filter((n): n is SftpFileNode => Boolean(n && n.type === 'file'))
+    if (files.length === 0) {
+      toast.message('Select one or more files')
+      return
+    }
+    const pick = await api.localPickFolder()
+    if (!pick.ok || !('path' in pick) || !pick.path) return
+    for (const n of files) {
+      const localPath = joinLocalDir(pick.path, n.name)
+      await downloadToLocalPath(n.path, localPath, n.name)
+    }
+    toast.success(`Queued ${files.length} download(s)`)
+  }, [api, selectedPaths, tree, downloadToLocalPath])
 
   const selectedNode = selectedPath ? findNode(tree, selectedPath) : null
 
@@ -601,8 +1053,11 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     )
   }
 
+  const breadcrumbSegments =
+    uploadTargetDir === '/' ? [] : uploadTargetDir.replace(/\/+$/, '').split('/').filter(Boolean)
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2 shrink-0">
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleDisconnect()}>
           <Unplug className="w-3.5 h-3.5" />
@@ -616,6 +1071,19 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           <RefreshCw className="w-3.5 h-3.5" />
           Refresh
         </Button>
+        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void pickLocalRoot()}>
+          <FolderOpen className="w-3.5 h-3.5" />
+          Local folder
+        </Button>
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={foldersFirst}
+            onChange={(e) => setFoldersFirst(e.target.checked)}
+            className="rounded border-border/50 accent-primary w-3.5 h-3.5"
+          />
+          Folders first
+        </label>
         <Button
           variant={selectMode ? 'default' : 'secondary'}
           size="sm"
@@ -631,10 +1099,16 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           {selectMode ? 'Selecting…' : 'Select'}
         </Button>
         {selectMode && (
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => selectAllInTargetDir()}>
-            <ListChecks className="w-3.5 h-3.5" />
-            All in target
-          </Button>
+          <>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => selectAllInTargetDir()}>
+              <ListChecks className="w-3.5 h-3.5" />
+              All in target
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void batchDownload()}>
+              <Download className="w-3.5 h-3.5" />
+              Download to…
+            </Button>
+          </>
         )}
         <Button
           variant="secondary"
@@ -663,6 +1137,50 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
         <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
           <Upload className="w-3.5 h-3.5" />
           Upload
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
+          onClick={() => void downloadRemoteFile(selectedPath!, selectedNode!.name)}
+        >
+          <Download className="w-3.5 h-3.5" />
+          Download
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!selectedPath || !selectedNode}
+          onClick={() => {
+            if (!selectedNode) return
+            setRenameValue(selectedNode.name)
+            setRenameOpen(true)
+          }}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Rename
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
+          onClick={() => void openEditDialog()}
+        >
+          <Pencil className="w-3.5 h-3.5" />
+          Edit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
+          onClick={() => void duplicateRemoteFile()}
+        >
+          <Copy className="w-3.5 h-3.5" />
+          Duplicate
         </Button>
         <input
           ref={fileInputRef}
@@ -702,6 +1220,48 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           Delete
         </Button>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2 shrink-0 text-xs">
+        <span className="text-muted-foreground">Remote path</span>
+        <div className="flex flex-wrap items-center gap-0.5 font-mono">
+          <button
+            type="button"
+            className="text-primary hover:underline px-0.5"
+            onClick={() => void navigateRemotePath('/')}
+          >
+            /
+          </button>
+          {breadcrumbSegments.map((seg, i) => {
+            const full = '/' + breadcrumbSegments.slice(0, i + 1).join('/')
+            return (
+              <span key={full} className="flex items-center text-muted-foreground">
+                <ChevronRight className="w-3 h-3 shrink-0" />
+                <button
+                  type="button"
+                  className="text-primary hover:underline px-0.5 max-w-[120px] truncate"
+                  title={full}
+                  onClick={() => void navigateRemotePath(full)}
+                >
+                  {seg}
+                </button>
+              </span>
+            )
+          })}
+        </div>
+        <Input
+          value={pathGoInput}
+          onChange={(e) => setPathGoInput(e.target.value)}
+          className="h-7 max-w-xs font-mono text-xs"
+          placeholder="/path/on/server"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') void navigateRemotePath(pathGoInput.trim() || '/')
+          }}
+        />
+        <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => void navigateRemotePath(pathGoInput.trim() || '/')}>
+          Go
+        </Button>
+      </div>
+
       <p className="text-xs text-muted-foreground shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1">
         <span>
           Upload / new items go to: <span className="font-mono text-foreground">{uploadTargetDir}</span>
@@ -714,47 +1274,145 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
         )}
       </p>
 
-      <div
-        className={cn(
-          'flex flex-1 min-h-0 flex-col rounded-xl border border-border/50 p-2',
-          dropHighlightPath === '/' && 'ring-2 ring-primary/50',
+      <div className="flex flex-1 min-h-0 flex-col lg:flex-row gap-2">
+        {localRoot && localCwd && (
+          <div className="flex-1 min-w-0 min-h-[240px] lg:max-w-[50%] flex flex-col">
+            <LocalDirList
+              rows={localRows}
+              cwd={localCwd}
+              canGoUp={localCwd !== localRoot}
+              selectedPath={localSelectedPath}
+              onSelect={(row) => {
+                setLocalSelectedPath(row.path)
+                if (row.type === 'file') {
+                  /* noop */
+                }
+              }}
+              onOpenFolder={(row) => setLocalCwd(row.path)}
+              onGoUp={async () => {
+                if (!api?.localPathParent || !localRoot) return
+                const r = await api.localPathParent(localRoot, localCwd)
+                if (r.ok && r.parent) setLocalCwd(r.parent)
+              }}
+              sortKey={localSortKey}
+              sortDir={localSortDir}
+              foldersFirst={foldersFirst}
+              onSortChange={handleLocalSortChange}
+              dropHighlight={localDropHighlight}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'copy'
+                setLocalDropHighlight(true)
+              }}
+              onDragLeave={() => setLocalDropHighlight(false)}
+              onDropToPath={(dir, ev) => {
+                setLocalDropHighlight(false)
+                void handleDropOnLocal(dir, ev)
+              }}
+              onLocalDragStart={(row, ev) => {
+                ev.dataTransfer.setData(
+                  LOCAL_DND_MIME,
+                  JSON.stringify({ path: row.path, name: row.name, type: row.type }),
+                )
+                ev.dataTransfer.effectAllowed = 'copy'
+              }}
+            />
+          </div>
         )}
-        onDragOver={(e) => {
-          if (selectMode) return
-          e.preventDefault()
-          e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
-          setDropHighlightPath('/')
-        }}
-        onDragLeave={() => setDropHighlightPath(null)}
-        onDrop={(e) => {
-          if (selectMode) return
-          e.preventDefault()
-          setDropHighlightPath(null)
-          void handleDropOnDir('/', e)
-        }}
-      >
-        <ScrollArea className="flex-1 min-h-[280px] basis-0 h-full max-h-[calc(100vh-220px)]">
-          <SftpFileTree
-            data={tree}
-            selectedPath={selectedPath}
-            selectMode={selectMode}
-            selectedPaths={selectedPaths}
-            onTogglePath={togglePathSelection}
-            onSelect={handleSelectNode}
-            onToggleFolder={(n) => void handleToggleFolder(n)}
-            dropHighlightPath={dropHighlightPath}
-            onFolderDragOver={setDropHighlightPath}
-            onFolderDrop={(dir, ev) => void handleDropOnDir(dir, ev)}
-            onNodeDragStart={(node, ev) => {
-              ev.dataTransfer.setData(
-                SFTP_DND_MIME,
-                JSON.stringify({ path: node.path, name: node.name, type: node.type }),
-              )
-              ev.dataTransfer.effectAllowed = 'move'
-            }}
-          />
-        </ScrollArea>
+
+        <div
+          className={cn(
+            'flex flex-1 min-h-0 min-w-0 flex-col rounded-xl border border-border/50 p-2',
+            dropHighlightPath === '/' && 'ring-2 ring-primary/50',
+          )}
+          onDragOver={(e) => {
+            if (selectMode) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
+            setDropHighlightPath('/')
+          }}
+          onDragLeave={() => setDropHighlightPath(null)}
+          onDrop={(e) => {
+            if (selectMode) return
+            e.preventDefault()
+            setDropHighlightPath(null)
+            void handleDropOnDir('/', e)
+          }}
+        >
+          <ScrollArea className="flex-1 min-h-[240px] basis-0 h-full max-h-[calc(100vh-280px)]">
+            <SftpFileTree
+              data={tree}
+              title="Remote"
+              selectedPath={selectedPath}
+              selectMode={selectMode}
+              selectedPaths={selectedPaths}
+              onTogglePath={togglePathSelection}
+              onSelect={handleSelectNode}
+              onToggleFolder={(n) => void handleToggleFolder(n)}
+              dropHighlightPath={dropHighlightPath}
+              onFolderDragOver={setDropHighlightPath}
+              onFolderDrop={(dir, ev) => void handleDropOnDir(dir, ev)}
+              onNodeDragStart={(node, ev) => {
+                ev.dataTransfer.setData(
+                  SFTP_DND_MIME,
+                  JSON.stringify({ path: node.path, name: node.name, type: node.type }),
+                )
+                ev.dataTransfer.effectAllowed = 'move'
+              }}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              foldersFirst={foldersFirst}
+              onSortChange={handleSortChange}
+              expandedPaths={expandedPaths}
+              onRequestCollapse={onRequestCollapse}
+            />
+          </ScrollArea>
+        </div>
       </div>
+
+      {transferQueue.length > 0 && (
+        <div className="shrink-0 rounded-lg border border-border/50 bg-background/80">
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/30"
+            onClick={() => setQueueOpen((o) => !o)}
+          >
+            <PanelBottom className="w-3.5 h-3.5" />
+            Transfers ({transferQueue.length})
+            {queueOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+          </button>
+          {queueOpen && (
+            <ul className="max-h-32 overflow-y-auto border-t border-border/40 px-3 py-2 space-y-2 text-xs">
+              {transferQueue.map((t) => (
+                <li key={t.id} className="space-y-1">
+                  <div className="flex justify-between gap-2">
+                    <span className="truncate font-mono">{t.label}</span>
+                    <span
+                      className={cn(
+                        'shrink-0',
+                        t.status === 'error' && 'text-destructive',
+                        t.status === 'done' && 'text-emerald-600',
+                      )}
+                    >
+                      {t.status === 'running' && `${t.progress}%`}
+                      {t.status === 'done' && 'Done'}
+                      {t.status === 'error' && (t.error || 'Error')}
+                    </span>
+                  </div>
+                  {t.status === 'running' && (
+                    <div className="h-1 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${t.progress}%` }}
+                      />
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <Dialog open={!!deleteTargets?.length} onOpenChange={(o) => !o && setDeleteTargets(null)}>
         <DialogContent>
@@ -832,6 +1490,56 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
             </Button>
             <Button disabled={createBusy || !createName.trim()} onClick={() => void submitCreate()}>
               {createBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameOpen} onOpenChange={setRenameOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rename</DialogTitle>
+            <DialogDescription>
+              In <span className="font-mono text-foreground">{parentDir(selectedPath || '')}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            className="font-mono"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !renameBusy) void submitRename()
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={renameBusy} onClick={() => void submitRename()}>
+              {renameBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Rename'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Edit file</DialogTitle>
+            <DialogDescription className="font-mono truncate">{editPath}</DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            className="min-h-[240px] font-mono text-sm flex-1"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={editBusy} onClick={() => void submitEdit()}>
+              {editBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Save'}
             </Button>
           </DialogFooter>
         </DialogContent>

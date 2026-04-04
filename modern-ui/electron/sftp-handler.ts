@@ -1,4 +1,7 @@
+import fs from 'fs'
 import path from 'path'
+import { Transform } from 'stream'
+import { pipeline } from 'stream/promises'
 import { Client } from 'ssh2'
 import type { SFTPWrapper, FileEntry, Stats } from 'ssh2'
 
@@ -339,6 +342,108 @@ export async function sftpRmrf(
     } else {
       await promisifySftp<void>((cb) => s.unlink(p, cb))
     }
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+/** Stream remote file to local path (any size). */
+export async function sftpDownloadToLocalFile(
+  remotePath: string,
+  localPath: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const p = normalizeRemotePath(remotePath)
+  try {
+    const stats = await promisifySftp<Stats>((cb) => s.stat(p, cb))
+    if (stats.isDirectory()) return { ok: false, error: 'Cannot download a directory' }
+    const total = typeof stats.size === 'number' ? stats.size : 0
+    let loaded = 0
+    const rs = s.createReadStream(p)
+    const ws = fs.createWriteStream(localPath)
+    const t = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        loaded += chunk.length
+        onProgress?.(loaded, total)
+        cb(null, chunk)
+      },
+    })
+    await pipeline(rs, t, ws)
+    onProgress?.(total, total)
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    try {
+      fs.unlinkSync(localPath)
+    } catch {
+      /* ignore */
+    }
+    return { ok: false, error: msg }
+  }
+}
+
+/** Stream local file to remote path (any size). */
+export async function sftpUploadFromLocalFile(
+  localPath: string,
+  remotePath: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const p = normalizeRemotePath(remotePath)
+  try {
+    const st = await fs.promises.stat(localPath)
+    if (!st.isFile()) return { ok: false, error: 'Not a file' }
+    const total = st.size
+    let loaded = 0
+    const rs = fs.createReadStream(localPath)
+    const ws = s.createWriteStream(p)
+    const t = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        loaded += chunk.length
+        onProgress?.(loaded, total)
+        cb(null, chunk)
+      },
+    })
+    await pipeline(rs, t, ws)
+    onProgress?.(total, total)
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+/** Copy a remote file to another path on the same server (streaming). */
+export async function sftpCopyRemoteFile(
+  remoteSrc: string,
+  remoteDest: string,
+  onProgress?: (loaded: number, total: number) => void,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const a = normalizeRemotePath(remoteSrc)
+  const b = normalizeRemotePath(remoteDest)
+  try {
+    const stats = await promisifySftp<Stats>((cb) => s.stat(a, cb))
+    if (stats.isDirectory()) return { ok: false, error: 'Use download for folders' }
+    const total = typeof stats.size === 'number' ? stats.size : 0
+    let loaded = 0
+    const rs = s.createReadStream(a)
+    const ws = s.createWriteStream(b)
+    const t = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        loaded += chunk.length
+        onProgress?.(loaded, total)
+        cb(null, chunk)
+      },
+    })
+    await pipeline(rs, t, ws)
+    onProgress?.(total, total)
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

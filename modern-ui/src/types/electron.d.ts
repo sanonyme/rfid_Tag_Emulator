@@ -203,6 +203,59 @@ export interface ElectronAPI {
   sftpRename: (oldPath: string, newPath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpUnlink: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpRmrf: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpDownloadSaveDialog: (
+    remotePath: string,
+    operationId: string,
+  ) => Promise<
+    | { ok: true; localPath: string }
+    | { ok: false; error: string; cancelled?: boolean }
+  >
+  sftpDownloadToPath: (
+    remotePath: string,
+    localPath: string,
+    operationId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpUploadFromLocal: (
+    localPath: string,
+    remotePath: string,
+    operationId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpCopyRemoteFile: (
+    remoteSrc: string,
+    remoteDest: string,
+    operationId: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  localPickFolder: () => Promise<{ ok: true; path: string } | { ok: false; cancelled?: boolean }>
+  localReaddir: (
+    root: string,
+    dirPath: string,
+  ) => Promise<
+    | {
+        ok: true
+        entries: {
+          name: string
+          type: 'file' | 'folder'
+          size?: number
+          mtime?: number
+          mode?: number
+        }[]
+      }
+    | { ok: false; error: string }
+  >
+  onSftpTransferProgress: (
+    callback: (payload: { operationId: string; loaded: number; total: number }) => void,
+  ) => () => void
+  localWriteFileBase64: (
+    root: string,
+    filePath: string,
+    base64Data: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  localPathParent: (
+    root: string,
+    cwd: string,
+  ) => Promise<
+    { ok: true; parent: string | null } | { ok: false; error: string }
+  >
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart?: (sessionId: string, cols?: number, rows?: number) => void

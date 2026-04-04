@@ -1,0 +1,20 @@
+{
+	"appId": "com.edge.rfidemulator",
+	"appName": "Zeus",
+	"webDir": "dist",
+	"zoomEnabled": false,
+	"ios": {
+		"zoomEnabled": false
+	},
+	"android": {
+		"zoomEnabled": false
+	},
+	"plugins": {
+		"CapacitorHttp": {
+			"enabled": true
+		}
+	},
+	"packageClassList": [
+		"HapticsPlugin"
+	]
+}

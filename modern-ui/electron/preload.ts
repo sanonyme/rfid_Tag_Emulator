@@ -137,6 +137,29 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpRename: (oldPath: string, newPath: string) => ipcRenderer.invoke('sftp-rename', oldPath, newPath),
   sftpUnlink: (remotePath: string) => ipcRenderer.invoke('sftp-unlink', remotePath),
   sftpRmrf: (remotePath: string) => ipcRenderer.invoke('sftp-rmrf', remotePath),
+  sftpDownloadSaveDialog: (remotePath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-download-save-dialog', remotePath, operationId),
+  sftpDownloadToPath: (remotePath: string, localPath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-download-to-path', remotePath, localPath, operationId),
+  sftpUploadFromLocal: (localPath: string, remotePath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-upload-from-local', localPath, remotePath, operationId),
+  sftpCopyRemoteFile: (remoteSrc: string, remoteDest: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-copy-remote-file', remoteSrc, remoteDest, operationId),
+  localPickFolder: () => ipcRenderer.invoke('local-pick-folder'),
+  localReaddir: (root: string, dirPath: string) => ipcRenderer.invoke('local-readdir', root, dirPath),
+  localWriteFileBase64: (root: string, filePath: string, base64Data: string) =>
+    ipcRenderer.invoke('local-write-file-base64', root, filePath, base64Data),
+  localPathParent: (root: string, cwd: string) => ipcRenderer.invoke('local-path-parent', root, cwd),
+  onSftpTransferProgress: (
+    callback: (payload: { operationId: string; loaded: number; total: number }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      payload: { operationId: string; loaded: number; total: number },
+    ) => callback(payload)
+    ipcRenderer.on('sftp-transfer-progress', handler)
+    return () => ipcRenderer.removeListener('sftp-transfer-progress', handler)
+  },
 
   safeStoreSet: (key: string, value: string) => ipcRenderer.invoke('safe-store-set', key, value),
   safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),

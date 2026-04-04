@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import * as pty from 'node-pty'
@@ -32,7 +32,11 @@ import {
   sftpRename,
   sftpUnlink,
   sftpRmrf,
+  sftpDownloadToLocalFile,
+  sftpUploadFromLocalFile,
+  sftpCopyRemoteFile,
 } from './sftp-handler.js'
+import { localReaddir, localWriteFileBase64, localParentDir } from './local-fs-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -439,6 +443,78 @@ app.whenReady().then(() => {
   ipcMain.handle('sftp-rename', async (_event, oldPath: string, newPath: string) => sftpRename(oldPath, newPath))
   ipcMain.handle('sftp-unlink', async (_event, remotePath: string) => sftpUnlink(remotePath))
   ipcMain.handle('sftp-rmrf', async (_event, remotePath: string) => sftpRmrf(remotePath))
+
+  ipcMain.handle(
+    'sftp-download-save-dialog',
+    async (event, remotePath: string, operationId: string) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const base = path.posix.basename(String(remotePath).replace(/\\/g, '/')) || 'download'
+      const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
+        defaultPath: base,
+        buttonLabel: 'Save',
+      })
+      if (canceled || !filePath) {
+        return { ok: false as const, cancelled: true as const }
+      }
+      const r = await sftpDownloadToLocalFile(remotePath, filePath, (loaded, total) => {
+        event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
+      })
+      return r.ok ? { ok: true as const, localPath: filePath } : r
+    },
+  )
+
+  ipcMain.handle(
+    'sftp-download-to-path',
+    async (event, remotePath: string, localPath: string, operationId: string) => {
+      const r = await sftpDownloadToLocalFile(remotePath, localPath, (loaded, total) => {
+        event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
+      })
+      return r
+    },
+  )
+
+  ipcMain.handle(
+    'sftp-upload-from-local',
+    async (event, localPath: string, remotePath: string, operationId: string) => {
+      const r = await sftpUploadFromLocalFile(localPath, remotePath, (loaded, total) => {
+        event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
+      })
+      return r
+    },
+  )
+
+  ipcMain.handle(
+    'sftp-copy-remote-file',
+    async (event, remoteSrc: string, remoteDest: string, operationId: string) => {
+      const r = await sftpCopyRemoteFile(remoteSrc, remoteDest, (loaded, total) => {
+        event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
+      })
+      return r
+    },
+  )
+
+  ipcMain.handle('local-pick-folder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (canceled || !filePaths?.[0]) return { ok: false as const, cancelled: true as const }
+    return { ok: true as const, path: filePaths[0] }
+  })
+
+  ipcMain.handle('local-readdir', async (_event, root: string, dirPath: string) =>
+    localReaddir(root, dirPath),
+  )
+
+  ipcMain.handle(
+    'local-write-file-base64',
+    async (_event, root: string, filePath: string, base64Data: string) =>
+      localWriteFileBase64(root, filePath, base64Data),
+  )
+
+  ipcMain.handle('local-path-parent', async (_event, root: string, cwd: string) =>
+    localParentDir(root, cwd),
+  )
 
   const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import {
   formatSftpSize,
@@ -8,6 +8,8 @@ import {
 } from './sftp-column-format'
 
 export const SFTP_DND_MIME = 'application/x-rfid-sftp-node'
+
+export type SftpSortKey = 'name' | 'size' | 'mtime' | 'mode' | 'owner'
 
 export interface SftpFileNode {
   path: string
@@ -32,9 +34,44 @@ const col = {
   owner: 'w-[4.75rem] min-w-[4.75rem] shrink-0 truncate',
 }
 
+function sortChildren(
+  nodes: SftpFileNode[],
+  sortKey: SftpSortKey,
+  sortDir: 'asc' | 'desc',
+  foldersFirst: boolean,
+): SftpFileNode[] {
+  const mul = sortDir === 'asc' ? 1 : -1
+  return [...nodes].sort((a, b) => {
+    if (foldersFirst && a.type !== b.type) {
+      return a.type === 'folder' ? -1 : 1
+    }
+    let c = 0
+    switch (sortKey) {
+      case 'name':
+        c = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+        break
+      case 'size':
+        c = (a.sizeBytes ?? 0) - (b.sizeBytes ?? 0)
+        break
+      case 'mtime':
+        c = (a.mtimeSec ?? 0) - (b.mtimeSec ?? 0)
+        break
+      case 'mode':
+        c = (a.mode ?? 0) - (b.mode ?? 0)
+        break
+      case 'owner':
+        c = String(a.uid ?? '').localeCompare(String(b.uid ?? ''))
+        if (c === 0) c = String(a.gid ?? '').localeCompare(String(b.gid ?? ''))
+        break
+    }
+    return c * mul
+  })
+}
+
 interface SftpFileTreeProps {
   data: SftpFileNode[]
   className?: string
+  title?: string
   selectedPath: string | null
   selectMode: boolean
   selectedPaths: ReadonlySet<string>
@@ -45,6 +82,12 @@ interface SftpFileTreeProps {
   onFolderDragOver: (path: string | null) => void
   onFolderDrop: (targetDir: string, e: React.DragEvent) => void
   onNodeDragStart: (node: SftpFileNode, e: React.DragEvent) => void
+  sortKey: SftpSortKey
+  sortDir: 'asc' | 'desc'
+  foldersFirst: boolean
+  onSortChange: (key: SftpSortKey) => void
+  expandedPaths: ReadonlySet<string>
+  onRequestCollapse: (path: string) => void
 }
 
 interface FileItemProps {
@@ -61,6 +104,11 @@ interface FileItemProps {
   onFolderDragOver: (path: string | null) => void
   onFolderDrop: (targetDir: string, e: React.DragEvent) => void
   onNodeDragStart: (node: SftpFileNode, e: React.DragEvent) => void
+  sortKey: SftpSortKey
+  sortDir: 'asc' | 'desc'
+  foldersFirst: boolean
+  expandedPaths: ReadonlySet<string>
+  onRequestCollapse: (path: string) => void
 }
 
 const getFileIcon = (extension?: string) => {
@@ -113,6 +161,110 @@ function EmptyMetaCells() {
   )
 }
 
+function HeaderCell({
+  label,
+  active,
+  sortDir,
+  align,
+  onClick,
+}: {
+  label: string
+  active: boolean
+  sortDir: 'asc' | 'desc'
+  align?: 'right'
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        align === 'right' ? col.size : '',
+        align !== 'right' && label === 'Name' && 'min-w-0 flex-1 pl-2 text-left',
+        align !== 'right' && label !== 'Name' && col[label === 'Changed' ? 'changed' : label === 'Rights' ? 'rights' : 'owner'],
+        'rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
+        align === 'right' && 'text-right',
+        active && 'text-primary',
+      )}
+    >
+      {label}
+      {active && <span className="ml-0.5 tabular-nums">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+    </button>
+  )
+}
+
+function ColumnHeaderRow({
+  selectMode,
+  sortKey,
+  sortDir,
+  onSortChange,
+}: {
+  selectMode: boolean
+  sortKey: SftpSortKey
+  sortDir: 'asc' | 'desc'
+  onSortChange: (key: SftpSortKey) => void
+}) {
+  return (
+    <div
+      className={cn(
+        'flex w-full min-w-0 items-center gap-1.5 border-b border-border/40 pb-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
+        'sm:text-xs',
+      )}
+    >
+      {selectMode && <div className="w-3.5 shrink-0" aria-hidden />}
+      <HeaderCell
+        label="Name"
+        active={sortKey === 'name'}
+        sortDir={sortDir}
+        onClick={() => onSortChange('name')}
+      />
+      <HeaderCell
+        label="Size"
+        active={sortKey === 'size'}
+        sortDir={sortDir}
+        align="right"
+        onClick={() => onSortChange('size')}
+      />
+      <button
+        type="button"
+        onClick={() => onSortChange('mtime')}
+        className={cn(
+          col.changed,
+          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
+          sortKey === 'mtime' && 'text-primary',
+        )}
+      >
+        Changed
+        {sortKey === 'mtime' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </button>
+      <button
+        type="button"
+        onClick={() => onSortChange('mode')}
+        className={cn(
+          col.rights,
+          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors font-mono',
+          sortKey === 'mode' && 'text-primary',
+        )}
+      >
+        Rights
+        {sortKey === 'mode' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </button>
+      <button
+        type="button"
+        onClick={() => onSortChange('owner')}
+        className={cn(
+          col.owner,
+          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
+          sortKey === 'owner' && 'text-primary',
+        )}
+      >
+        Owner
+        {sortKey === 'owner' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </button>
+    </div>
+  )
+}
+
 function FileItem({
   node,
   depth,
@@ -127,12 +279,20 @@ function FileItem({
   onFolderDragOver,
   onFolderDrop,
   onNodeDragStart,
+  sortKey,
+  sortDir,
+  foldersFirst,
+  expandedPaths,
+  onRequestCollapse,
 }: FileItemProps) {
-  const [isOpen, setIsOpen] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
 
   const isFolder = node.type === 'folder'
-  const childList = node.children ?? []
+  const isOpen = expandedPaths.has(node.path)
+  const childList = useMemo(
+    () => sortChildren(node.children ?? [], sortKey, sortDir, foldersFirst),
+    [node.children, sortKey, sortDir, foldersFirst],
+  )
   const hasChildrenBlock = isFolder && (node.loading || childList.length > 0)
   const fileIcon = getFileIcon(node.extension)
   const isSelected = !selectMode && selectedPath === node.path
@@ -144,10 +304,10 @@ function FileItem({
   const toggleFolderOpen = (e?: React.SyntheticEvent) => {
     e?.stopPropagation()
     if (!isFolder) return
-    const opening = !isOpen
-    setIsOpen(opening)
-    if (opening) {
-      onToggleFolder(node)
+    if (isOpen) {
+      onRequestCollapse(node.path)
+    } else {
+      void onToggleFolder(node)
     }
   }
 
@@ -349,6 +509,11 @@ function FileItem({
               onFolderDragOver={onFolderDragOver}
               onFolderDrop={onFolderDrop}
               onNodeDragStart={onNodeDragStart}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              foldersFirst={foldersFirst}
+              expandedPaths={expandedPaths}
+              onRequestCollapse={onRequestCollapse}
             />
           ))}
         </div>
@@ -357,27 +522,10 @@ function FileItem({
   )
 }
 
-function ColumnHeaderRow({ selectMode }: { selectMode: boolean }) {
-  return (
-    <div
-      className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 border-b border-border/40 pb-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
-        'sm:text-xs',
-      )}
-    >
-      {selectMode && <div className="w-3.5 shrink-0" aria-hidden />}
-      <div className="min-w-0 flex-1 pl-2">Name</div>
-      <div className={cn(col.size, 'text-right')}>Size</div>
-      <div className={col.changed}>Changed</div>
-      <div className={col.rights}>Rights</div>
-      <div className={col.owner}>Owner</div>
-    </div>
-  )
-}
-
 export function SftpFileTree({
   data,
   className,
+  title = 'Remote',
   selectedPath,
   selectMode,
   selectedPaths,
@@ -388,8 +536,17 @@ export function SftpFileTree({
   onFolderDragOver,
   onFolderDrop,
   onNodeDragStart,
+  sortKey,
+  sortDir,
+  foldersFirst,
+  onSortChange,
+  expandedPaths,
+  onRequestCollapse,
 }: SftpFileTreeProps) {
-  const list = data ?? []
+  const list = useMemo(
+    () => sortChildren(data ?? [], sortKey, sortDir, foldersFirst),
+    [data, sortKey, sortDir, foldersFirst],
+  )
   return (
     <div
       className={cn(
@@ -403,10 +560,15 @@ export function SftpFileTree({
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
         </div>
-        <span className="text-xs text-muted-foreground ml-2">explorer</span>
+        <span className="text-xs text-muted-foreground ml-2">{title}</span>
       </div>
 
-      <ColumnHeaderRow selectMode={selectMode} />
+      <ColumnHeaderRow
+        selectMode={selectMode}
+        sortKey={sortKey}
+        sortDir={sortDir}
+        onSortChange={onSortChange}
+      />
 
       <div className="space-y-0.5 min-w-0">
         {list.map((node, index) => (
@@ -425,6 +587,11 @@ export function SftpFileTree({
             onFolderDragOver={onFolderDragOver}
             onFolderDrop={onFolderDrop}
             onNodeDragStart={onNodeDragStart}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            foldersFirst={foldersFirst}
+            expandedPaths={expandedPaths}
+            onRequestCollapse={onRequestCollapse}
           />
         ))}
       </div>
