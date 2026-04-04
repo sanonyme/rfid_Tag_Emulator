@@ -87,10 +87,11 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'generator', label: 'Generator' },
   { value: 'database', label: 'Database' },
   { value: 'sftp', label: 'SFTP' },
+  { value: 'netscan', label: 'LAN scan' },
 ]
 
 const TAB_OPTIONS = IS_MOBILE
-  ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp')
+  ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp' && t.value !== 'netscan')
   : TAB_OPTIONS_ALL
 
 export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialogProps = {}) {

@@ -1,4 +1,4 @@
-import { ElectronAPI } from '../types/electron';
+import { ElectronAPI, type NetScanStartPayload } from '../types/electron';
 
 class MockElectronAPI implements ElectronAPI {
   platform = 'win32'; // Mock platform
@@ -482,6 +482,24 @@ class MockElectronAPI implements ElectronAPI {
   }
   async localPathParent(_root: string, _cwd: string) {
     return { ok: true as const, parent: null }
+  }
+  async netScanGetInterfaces() {
+    return { ok: true as const, interfaces: [] as { name: string; address: string; netmask: string; cidr: number; networkCidr: string }[] }
+  }
+  async netScanStart(_payload: NetScanStartPayload) {
+    return { ok: false as const, error: 'LAN scan is only available in the desktop app.' }
+  }
+  async netScanCancel() {
+    return { ok: true as const }
+  }
+  onNetScanHost(_callback: (payload: { ip: string; alive: boolean; hostname?: string; done: number; total: number }) => void) {
+    return () => {}
+  }
+  onNetScanDone(_callback: (payload: { total: number }) => void) {
+    return () => {}
+  }
+  onNetScanError(_callback: (payload: { message: string }) => void) {
+    return () => {}
   }
 }
 

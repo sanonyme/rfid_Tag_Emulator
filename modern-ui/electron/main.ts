@@ -37,6 +37,12 @@ import {
   sftpCopyRemoteFile,
 } from './sftp-handler.js'
 import { localReaddir, localWriteFileBase64, localParentDir } from './local-fs-handler.js'
+import {
+  cancelNetScan,
+  getIpv4Interfaces,
+  startNetScan,
+  type NetScanStartPayload,
+} from './net-scan-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -58,11 +64,11 @@ const __dirname = path.dirname(__filename)
 // Auto-updater logging
 autoUpdater.logger = console
 // @ts-ignore
-autoUpdater.logger.transports = { 
-  file: { 
+autoUpdater.logger.transports = {
+  file: {
     level: 'info',
     // Mock the file transport if needed or let electron-updater handle it
-  } 
+  }
 }
 
 // TCP handlers
@@ -88,12 +94,12 @@ function createWindow() {
   console.log('Creating Electron window...')
   console.log('Dev mode:', isDev)
   console.log('VITE_DEV_SERVER_URL:', process.env.VITE_DEV_SERVER_URL)
-  
+
   const isLinux = process.platform === 'linux'
-  
+
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 855,
+    width: 1250,
+    height: 900,
     minWidth: 800,
     minHeight: 600,
     frame: isLinux, // Keep frame on Linux for better compatibility
@@ -113,16 +119,16 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     console.log('Page fully loaded, showing window')
     console.log('OPEN_DEVTOOLS env var:', process.env.OPEN_DEVTOOLS)
-    
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.show()
       mainWindow.focus()
-      
+
       // Only open DevTools if explicitly requested via OPEN_DEVTOOLS=true
       const shouldOpenDevTools = process.env.OPEN_DEVTOOLS === 'true' || process.env.OPEN_DEVTOOLS === '1'
-      
+
       console.log('Should open DevTools:', shouldOpenDevTools)
-      
+
       if (shouldOpenDevTools) {
         setTimeout(() => {
           if (mainWindow && !mainWindow.isDestroyed()) {
@@ -185,12 +191,12 @@ app.commandLine.appendSwitch('renderer-process-limit', '1')
 app.whenReady().then(() => {
   console.log('App ready, creating window...')
   const window = createWindow()
-  
+
   if (window) {
     // Initialize TCP handlers
     tcpHandler = new TCPEmulatorHandler(window)
   }
-  
+
   // Window control IPC handlers
   ipcMain.on('window-minimize', () => {
     console.log('IPC: window-minimize received')
@@ -200,7 +206,7 @@ app.whenReady().then(() => {
       win.minimize()
     }
   })
-  
+
   ipcMain.on('window-maximize', () => {
     console.log('IPC: window-maximize received')
     const win = BrowserWindow.getFocusedWindow()
@@ -214,7 +220,7 @@ app.whenReady().then(() => {
       }
     }
   })
-  
+
   ipcMain.on('window-close', () => {
     console.log('IPC: window-close received')
     const win = BrowserWindow.getFocusedWindow()
@@ -516,6 +522,15 @@ app.whenReady().then(() => {
     localParentDir(root, cwd),
   )
 
+  ipcMain.handle('net-scan-get-interfaces', () => ({ ok: true as const, interfaces: getIpv4Interfaces() }))
+  ipcMain.handle('net-scan-start', async (event, payload: NetScanStartPayload) =>
+    startNetScan(event.sender, payload),
+  )
+  ipcMain.handle('net-scan-cancel', () => {
+    cancelNetScan()
+    return { ok: true as const }
+  })
+
   const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
 
   ipcMain.handle('safe-store-set', async (_event, key: string, value: string) => {
@@ -757,28 +772,28 @@ app.whenReady().then(() => {
   // ALE API Proxy to bypass CORS
   ipcMain.handle('ale-request', async (_event, url: string, options: any) => {
     console.log(`ALE Request: ${options?.method || 'GET'} ${url}`)
-    
+
     // Inject credentials if this is an auth request with placeholder values
     if (url.includes('/ALE/api/auth') && options.body) {
-        try {
-            const body = JSON.parse(options.body)
-            if (body.username === 'use_env_vars') {
-                console.log('Injecting credentials into auth request')
-                // Strictly use environment variables, no hardcoded fallbacks
-                const username = process.env.VITE_ALE_USERNAME
-                const password = process.env.VITE_ALE_PASSWORD
-                
-                if (!username || !password) {
-                    throw new Error("Missing ALE credentials in environment variables")
-                }
-                
-                body.username = username
-                body.password = password
-                options.body = JSON.stringify(body)
-            }
-        } catch (e) {
-            console.error('Failed to parse auth body for injection', e)
+      try {
+        const body = JSON.parse(options.body)
+        if (body.username === 'use_env_vars') {
+          console.log('Injecting credentials into auth request')
+          // Strictly use environment variables, no hardcoded fallbacks
+          const username = process.env.VITE_ALE_USERNAME
+          const password = process.env.VITE_ALE_PASSWORD
+
+          if (!username || !password) {
+            throw new Error("Missing ALE credentials in environment variables")
+          }
+
+          body.username = username
+          body.password = password
+          options.body = JSON.stringify(body)
         }
+      } catch (e) {
+        console.error('Failed to parse auth body for injection', e)
+      }
     }
 
     const ALE_TIMEOUT_MS = 15000
@@ -794,7 +809,7 @@ app.whenReady().then(() => {
       response.headers.forEach((val, key) => {
         headers[key] = val
       })
-      
+
       return {
         ok: response.ok,
         status: response.status,
@@ -855,7 +870,7 @@ app.on('window-all-closed', () => {
   if (mainWindow) disconnectAdam(mainWindow)
   dbDisconnect()
   void sftpDisconnect()
-  
+
   if (process.platform !== 'darwin') {
     app.quit()
   }

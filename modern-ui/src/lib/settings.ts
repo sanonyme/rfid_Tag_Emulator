@@ -15,6 +15,7 @@ export type DefaultTab =
   | 'generator'
   | 'database'
   | 'sftp'
+  | 'netscan'
 
 export interface AppSettings {
   fontSize: FontSize

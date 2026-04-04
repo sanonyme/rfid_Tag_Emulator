@@ -1,3 +1,8 @@
+export type NetScanStartPayload =
+  | { mode: 'cidr'; cidr: string; concurrency?: number }
+  | { mode: 'range'; start: string; end: string; concurrency?: number }
+  | { mode: 'allSubnets'; concurrency?: number }
+
 export interface ElectronAPI {
   platform: string
   minimize: () => void
@@ -256,6 +261,32 @@ export interface ElectronAPI {
   ) => Promise<
     { ok: true; parent: string | null } | { ok: false; error: string }
   >
+
+  netScanGetInterfaces: () => Promise<{
+    ok: true
+    interfaces: {
+      name: string
+      address: string
+      netmask: string
+      cidr: number
+      networkCidr: string
+    }[]
+  }>
+  netScanStart: (
+    payload: NetScanStartPayload,
+  ) => Promise<{ ok: true; total: number } | { ok: false; error: string }>
+  netScanCancel: () => Promise<{ ok: true }>
+  onNetScanHost: (
+    callback: (payload: {
+      ip: string
+      alive: boolean
+      hostname?: string
+      done: number
+      total: number
+    }) => void,
+  ) => () => void
+  onNetScanDone: (callback: (payload: { total: number }) => void) => () => void
+  onNetScanError: (callback: (payload: { message: string }) => void) => () => void
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart?: (sessionId: string, cols?: number, rows?: number) => void

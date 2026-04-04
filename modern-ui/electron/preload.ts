@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { NetScanStartPayload } from './net-scan-handler.js'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -150,6 +151,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
   localWriteFileBase64: (root: string, filePath: string, base64Data: string) =>
     ipcRenderer.invoke('local-write-file-base64', root, filePath, base64Data),
   localPathParent: (root: string, cwd: string) => ipcRenderer.invoke('local-path-parent', root, cwd),
+
+  netScanGetInterfaces: () => ipcRenderer.invoke('net-scan-get-interfaces'),
+  netScanStart: (payload: NetScanStartPayload) => ipcRenderer.invoke('net-scan-start', payload),
+  netScanCancel: () => ipcRenderer.invoke('net-scan-cancel'),
+  onNetScanHost: (
+    callback: (payload: {
+      ip: string
+      alive: boolean
+      hostname?: string
+      done: number
+      total: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, payload: Parameters<typeof callback>[0]) => callback(payload)
+    ipcRenderer.on('net-scan-host', handler)
+    return () => ipcRenderer.removeListener('net-scan-host', handler)
+  },
+  onNetScanDone: (callback: (payload: { total: number }) => void) => {
+    const handler = (_e: unknown, payload: { total: number }) => callback(payload)
+    ipcRenderer.on('net-scan-done', handler)
+    return () => ipcRenderer.removeListener('net-scan-done', handler)
+  },
+  onNetScanError: (callback: (payload: { message: string }) => void) => {
+    const handler = (_e: unknown, payload: { message: string }) => callback(payload)
+    ipcRenderer.on('net-scan-error', handler)
+    return () => ipcRenderer.removeListener('net-scan-error', handler)
+  },
+
   onSftpTransferProgress: (
     callback: (payload: { operationId: string; loaded: number; total: number }) => void,
   ) => {

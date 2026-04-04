@@ -14,6 +14,7 @@ import {
   Database,
   FolderInput,
   Link2,
+  Radar,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -31,6 +32,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'generator', label: 'Gen', icon: QrCode },
   { value: 'database', label: 'DB', icon: Database },
   { value: 'sftp', label: 'SFTP', icon: FolderInput },
+  { value: 'netscan', label: 'LAN', icon: Radar },
 ]
 
 const TAB_ITEMS_ADMIN = [
@@ -46,7 +48,9 @@ interface TabNavBarProps {
 
 export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
   const TAB_ITEMS_ALL = [...TAB_ITEMS_BASE, ...(isAdmin ? TAB_ITEMS_ADMIN : [])]
-  const TAB_ITEMS = IS_MOBILE ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam') : TAB_ITEMS_ALL
+  const TAB_ITEMS = IS_MOBILE
+    ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'netscan')
+    : TAB_ITEMS_ALL
   const [isCompact, setIsCompact] = useState(false)
 
   useEffect(() => {

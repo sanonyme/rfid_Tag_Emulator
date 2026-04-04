@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Radio, Smartphone, ScanLine, Terminal, Server, Globe,
-  Code2, Workflow, QrCode, Database, FolderInput, Link2, Wifi, WifiOff, Moon, Sun,
+  Code2, Workflow, QrCode, Database, FolderInput, Link2, Radar, Wifi, WifiOff, Moon, Sun,
   Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -49,10 +49,14 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
   { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
   { value: 'sftp', label: 'SFTP', icon: <FolderInput className="w-4 h-4" /> },
+  { value: 'netscan', label: 'LAN scan', icon: <Radar className="w-4 h-4" /> },
 ]
 
 const TAB_COMMANDS_BASE = IS_MOBILE
-  ? TAB_COMMANDS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp').map((t, i) => ({ ...t, num: i + 1 }))
+  ? TAB_COMMANDS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp' && t.value !== 'netscan').map((t, i) => ({
+      ...t,
+      num: i + 1,
+    }))
   : TAB_COMMANDS_ALL
 
 const TAB_COMMAND_LINK2UID = { value: 'link2uid', label: 'Link→UID', icon: <Link2 className="w-4 h-4" />, num: 10 }
