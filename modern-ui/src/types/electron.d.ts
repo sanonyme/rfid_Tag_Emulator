@@ -280,7 +280,7 @@ export interface ElectronAPI {
     callback: (payload: {
       ip: string
       alive: boolean
-      hostname?: string
+      hostname?: string | null
       done: number
       total: number
     }) => void,

@@ -48,7 +48,8 @@ export function getIpv4Interfaces(): NetInterfaceInfo[] {
     const addrs = nets[name]
     if (!addrs) continue
     for (const a of addrs) {
-      const fam = a.family
+      // Node types use string; older runtimes sometimes used numeric 4.
+      const fam = a.family as 'IPv4' | 'IPv6' | number
       const isV4 = fam === 'IPv4' || fam === 4
       if (!isV4 || a.internal) continue
       if (!a.netmask) continue
@@ -121,7 +122,71 @@ export function enumerateAllLocalSubnetsMerged(): string[] | null {
   return Array.from(set).sort((x, y) => (parseIpv4Strict(x)! - parseIpv4Strict(y)!))
 }
 
-function pingOnce(ip: string, signal: AbortSignal): Promise<boolean> {
+/** Parse `ping -a` output: `… NAME [x.x.x.x] …` (strict English + loose bracket form for other locales). */
+function parseWindowsPingAHostname(stdout: string, targetIp: string): string | undefined {
+  const ipQuad = /^\d{1,3}(\.\d{1,3}){3}$/
+  for (const line of stdout.split(/\r?\n/)) {
+    const t = line.trim()
+    if (!t.includes(`[${targetIp}]`)) continue
+
+    const strict = t.match(/^Pinging\s+(.+?)\s+\[(\d{1,3}(?:\.\d{1,3}){3})\]/i)
+    if (strict && strict[2] === targetIp) {
+      const name = strict[1]!.trim()
+      if (name !== targetIp) return name
+    }
+
+    const loose = t.match(/(\S+)\s*\[(\d{1,3}(?:\.\d{1,3}){3})\]/)
+    if (loose && loose[2] === targetIp) {
+      const name = loose[1]!.trim()
+      if (name !== targetIp && !ipQuad.test(name)) return name
+    }
+  }
+  return undefined
+}
+
+function parseGetentHostsLine(stdout: string, ip: string): string | undefined {
+  const line = stdout.trim().split(/\r?\n/)[0] ?? ''
+  if (!line) return undefined
+  const parts = line.split(/\s+/).filter(Boolean)
+  if (parts.length < 2) return undefined
+  if (parts[0] === ip) return parts[1]
+  if (parts[1] === ip) return parts[0]
+  return undefined
+}
+
+/** PTR / nss fallbacks; `windowsPingHint` comes from `ping -a` on Windows. */
+async function resolveHostnameForIp(
+  ip: string,
+  windowsPingHint?: string,
+): Promise<string | undefined> {
+  if (windowsPingHint) return windowsPingHint
+  try {
+    const names = await dns.reverse(ip)
+    return names[0]
+  } catch {
+    /* no PTR */
+  }
+  if (process.platform === 'linux') {
+    try {
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile('getent', ['hosts', ip], { timeout: 3000, encoding: 'utf8' }, (err, out) => {
+          if (err) reject(err)
+          else resolve(typeof out === 'string' ? out : '')
+        })
+      })
+      return parseGetentHostsLine(stdout, ip)
+    } catch {
+      /* not in nss/hosts */
+    }
+  }
+  return undefined
+}
+
+/**
+ * ICMP reachability only. Do not use `ping -a` here: on Windows, `-a` ties into name resolution and can
+ * make reachable hosts look offline when no friendly name is found.
+ */
+function pingReachable(ip: string, signal: AbortSignal): Promise<boolean> {
   const platform = process.platform
   const args =
     platform === 'win32'
@@ -151,6 +216,35 @@ function pingOnce(ip: string, signal: AbortSignal): Promise<boolean> {
         /* ignore */
       }
       resolve(false)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    child.on('close', () => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+/** Second ping on Windows: parse name from output; exit code is ignored (reachability used `pingReachable`). */
+function windowsPingAForHostname(ip: string, signal: AbortSignal): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve(undefined)
+      return
+    }
+    let child: ChildProcess
+    try {
+      child = execFile('ping', ['-a', '-n', '1', '-w', '1000', ip], { timeout: 4000, encoding: 'utf8' }, (_err, stdout) => {
+        resolve(parseWindowsPingAHostname(String(stdout ?? ''), ip))
+      })
+    } catch {
+      resolve(undefined)
+      return
+    }
+    const onAbort = () => {
+      try {
+        child.kill('SIGKILL')
+      } catch {
+        /* ignore */
+      }
+      resolve(undefined)
     }
     signal.addEventListener('abort', onAbort, { once: true })
     child.on('close', () => signal.removeEventListener('abort', onAbort))
@@ -241,22 +335,32 @@ export function startNetScan(
     try {
       await runPool(ips, concurrency, signal, async (ip) => {
         if (signal.aborted || wc.isDestroyed()) return
-        const alive = await pingOnce(ip, signal)
-        let hostname: string | undefined
-        if (alive && !signal.aborted) {
-          try {
-            const names = await dns.reverse(ip)
-            hostname = names[0]
-          } catch {
-            /* no PTR */
-          }
-        }
+        const alive = await pingReachable(ip, signal)
         completed += 1
+        // Always send reachability first; `hostname: null` keeps the key on the wire for consistent merging.
         if (!wc.isDestroyed()) {
           wc.send('net-scan-host', {
             ip,
             alive,
-            hostname,
+            hostname: null,
+            done: completed,
+            total,
+          })
+        }
+        if (!alive || signal.aborted || wc.isDestroyed()) return
+
+        let name: string | undefined
+        if (process.platform === 'win32') {
+          name = await windowsPingAForHostname(ip, signal)
+        }
+        if (!name) {
+          name = await resolveHostnameForIp(ip, undefined)
+        }
+        if (!signal.aborted && !wc.isDestroyed() && name) {
+          wc.send('net-scan-host', {
+            ip,
+            alive,
+            hostname: name,
             done: completed,
             total,
           })

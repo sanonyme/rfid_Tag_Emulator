@@ -111,11 +111,18 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
     const u1 = api.onNetScanHost((payload) => {
       setProgress({ done: payload.done, total: payload.total })
       setRows((prev) => {
+        const prevRow = prev.find((x) => x.ip === payload.ip)
         const next = prev.filter((x) => x.ip !== payload.ip)
+        const hostname =
+          payload.hostname != null && payload.hostname !== ''
+            ? payload.hostname
+            : prevRow?.hostname
+        const alive =
+          typeof payload.alive === 'boolean' ? payload.alive : (prevRow?.alive ?? false)
         next.push({
           ip: payload.ip,
-          alive: payload.alive,
-          hostname: payload.hostname,
+          alive,
+          hostname,
         })
         return next.sort((a, b) => {
           const pa = a.ip.split('.').map(Number)
