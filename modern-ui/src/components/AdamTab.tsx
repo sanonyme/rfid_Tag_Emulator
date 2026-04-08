@@ -146,7 +146,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
 
   return (
     <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-tour="tour-adam-top">
         {/* Connection Card */}
         <Card className="tab-card">
           <CardHeader>
@@ -258,7 +258,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       </div>
 
       {/* DO Control Card */}
-      <Card className="tab-card">
+      <Card className="tab-card" data-tour="tour-adam-do">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Power className="w-5 h-5 text-primary" />
@@ -288,7 +288,7 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-[200px] flex flex-col border-border/50 bg-card">
+      <Card className="flex-1 min-h-[200px] flex flex-col border-border/50 bg-card" data-tour="tour-adam-log">
         <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm">Log</CardTitle>

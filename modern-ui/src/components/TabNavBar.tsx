@@ -65,7 +65,10 @@ export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
   return (
     <LayoutGroup id="tab-nav-bar">
       <div className={cn('flex justify-center overflow-x-auto', className)}>
-        <TabsList className="inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full">
+        <TabsList
+          className="inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full"
+          data-tour="tour-tab-nav"
+        >
           {TAB_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = value === item.value

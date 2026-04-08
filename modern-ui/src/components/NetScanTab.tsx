@@ -191,7 +191,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
   if (!hasApi) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6">
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6" data-tour="tour-netscan-root">
         <Monitor className="w-12 h-12 text-muted-foreground" />
         <div>
           <h2 className="text-lg font-semibold text-foreground">LAN scan</h2>
@@ -204,7 +204,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4" data-tour="tour-netscan-root">
       <div className="flex flex-wrap items-start gap-4 shrink-0">
         <div className="flex items-center gap-2 text-primary">
           <Radar className="w-8 h-8" />

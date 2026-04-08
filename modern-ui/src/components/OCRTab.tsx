@@ -120,7 +120,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   return (
     <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto">
       {/* OCR Input Card */}
-      <Card className="border-border/50 bg-card">
+      <Card className="border-border/50 bg-card" data-tour="tour-ocr-main">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <ScanLine className="w-5 h-5 text-primary" />
@@ -174,7 +174,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col">
+      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col" data-tour="tour-ocr-log">
         <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm flex items-center gap-2">

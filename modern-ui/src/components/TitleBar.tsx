@@ -9,10 +9,11 @@ interface TitleBarProps {
   port?: string
   settingsOpen?: boolean
   onSettingsOpenChange?: (open: boolean) => void
+  onStartInteractiveTour?: () => void
   actionsMenu?: React.ReactNode
 }
 
-export function TitleBar({ settingsOpen, onSettingsOpenChange, actionsMenu }: TitleBarProps) {
+export function TitleBar({ settingsOpen, onSettingsOpenChange, onStartInteractiveTour, actionsMenu }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {
@@ -73,7 +74,12 @@ export function TitleBar({ settingsOpen, onSettingsOpenChange, actionsMenu }: Ti
           {actionsMenu}
         </div>
         <div className="no-drag">
-          <SettingsDialog open={settingsOpen} onOpenChange={onSettingsOpenChange} noTrigger />
+          <SettingsDialog
+            open={settingsOpen}
+            onOpenChange={onSettingsOpenChange}
+            onStartInteractiveTour={onStartInteractiveTour}
+            noTrigger
+          />
         </div>
         
         <div className="flex ml-2 no-drag gap-0.5">

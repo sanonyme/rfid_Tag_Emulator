@@ -225,7 +225,7 @@ export function HandheldTab({
   return (
     <div className="flex flex-col gap-4 h-full min-h-0">
       {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0" data-tour="tour-handheld-toolbar">
         <p className="text-sm text-muted-foreground">
           Configure VSBL Debug on each device to connect to <strong className="text-foreground">YOUR_PC_IP:PORT</strong>.
         </p>
@@ -253,7 +253,7 @@ export function HandheldTab({
       </div>
 
       {/* Handheld slots - scrollable grid when many */}
-      <ScrollArea className="flex-1 min-h-[200px] rounded-lg border border-border/30">
+      <ScrollArea className="flex-1 min-h-[200px] rounded-lg border border-border/30" data-tour="tour-handheld-slots">
         <div
           className="grid gap-4 p-1"
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
@@ -278,7 +278,7 @@ export function HandheldTab({
       </ScrollArea>
 
       {/* Log Area */}
-      <Card className="shrink-0 min-h-[140px] max-h-[200px] border-border/50 bg-card">
+      <Card className="shrink-0 min-h-[140px] max-h-[200px] border-border/50 bg-card" data-tour="tour-handheld-log">
         <CardHeader className="py-2 px-4 border-b border-border/50">
           <div className="flex justify-between items-center">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -435,7 +435,7 @@ function HandheldSlotCard({
         </div>
 
         {/* UPC / EPC tabs - full width textareas */}
-        <Tabs defaultValue="upc" className="w-full">
+        <Tabs defaultValue="upc" className="w-full" data-tour="tour-handheld-input-modes">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="upc" className="text-xs">UPC → EPC</TabsTrigger>
             <TabsTrigger value="epc" className="text-xs">Direct EPC</TabsTrigger>

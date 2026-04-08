@@ -32,6 +32,8 @@ import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog'
 import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster, toast } from 'sonner'
+import { AppTour } from './components/AppTour'
+import { TourInteractionProvider } from './contexts/TourInteractionContext'
 
 const TAB_VALUES_FULL = [
   'fixed',
@@ -104,6 +106,7 @@ function App() {
   const [saveProfileOpen, setSaveProfileOpen] = useState(false)
   const [base64Open, setBase64Open] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
+  const [tourRun, setTourRun] = useState(false)
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
@@ -237,7 +240,9 @@ function App() {
         const target = e.target as HTMLElement
         if (!target.closest('input') && !target.closest('textarea')) {
           e.preventDefault()
-          setShortcutsOpen((v) => !v)
+          setShortcutsOpen(false)
+          setSettingsOpen(false)
+          setTourRun(true)
           return
         }
       }
@@ -267,6 +272,7 @@ function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
+    <TourInteractionProvider tourRun={tourRun}>
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
       {currentTheme === 'christmas' && <SnowOverlay />}
       {/* Animated Background Elements */}
@@ -286,6 +292,10 @@ function App() {
           port={port} 
           settingsOpen={settingsOpen}
           onSettingsOpenChange={setSettingsOpen}
+          onStartInteractiveTour={() => {
+            setSettingsOpen(false)
+            setTourRun(true)
+          }}
           actionsMenu={
             <BottomMenu
               activeTab={activeTab}
@@ -294,6 +304,11 @@ function App() {
               onOpenSaveCurrent={() => setSaveProfileOpen(true)}
               onOpenSettings={() => setSettingsOpen(true)}
               onOpenShortcuts={() => setShortcutsOpen(true)}
+              onStartInteractiveTour={() => {
+                setSettingsOpen(false)
+                setShortcutsOpen(false)
+                setTourRun(true)
+              }}
               inline
               isAdmin={isAdmin}
               onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
@@ -470,6 +485,15 @@ function App() {
       onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
     />
     <Toaster richColors position="bottom-right" />
+    <AppTour
+      run={tourRun}
+      onRunChange={setTourRun}
+      activeTab={activeTab}
+      setActiveTab={setActiveTab}
+      isAdmin={isAdmin}
+      emulatorConnected={connected}
+    />
+    </TourInteractionProvider>
     </TooltipProvider>
   )
 }

@@ -43,6 +43,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
+import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 
 const SFTP_CREDS_KEY = 'sftp-creds'
 
@@ -137,6 +138,7 @@ interface SftpTabProps {
 }
 
 export function SftpTab({ host, setHost }: SftpTabProps) {
+  const tourIx = useTourInteractionOptional()
   const api = window.electronAPI
   const hasSftp = Boolean(api?.sftpConnect)
 
@@ -197,6 +199,14 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
   useEffect(() => {
     treeRef.current = tree
   }, [tree])
+
+  useEffect(() => {
+    tourIx?.setSftpShellConnected(connected)
+  }, [connected, tourIx])
+
+  useEffect(() => {
+    tourIx?.setSftpRemoteListed(connected && tree.length > 0)
+  }, [connected, tree.length, tourIx])
 
   const nextOpId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 
@@ -959,7 +969,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   if (!hasSftp) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6">
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6" data-tour="tour-sftp">
         <Monitor className="w-12 h-12 text-muted-foreground" />
         <div>
           <h2 className="text-lg font-semibold text-foreground">SFTP explorer</h2>
@@ -974,7 +984,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center gap-6 py-10 px-6 max-w-lg mx-auto">
+      <div className="flex flex-col items-center justify-center gap-6 py-10 px-6 max-w-lg mx-auto" data-tour="tour-sftp-connect">
         <div className="flex items-center gap-3 text-primary">
           <FolderInput className="w-10 h-10" />
           <h2 className="text-xl font-semibold text-foreground">SFTP</h2>
@@ -1057,7 +1067,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     uploadTargetDir === '/' ? [] : uploadTargetDir.replace(/\/+$/, '').split('/').filter(Boolean)
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2" data-tour="tour-sftp">
       <div className="flex flex-wrap items-center gap-2 shrink-0">
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleDisconnect()}>
           <Unplug className="w-3.5 h-3.5" />
@@ -1325,6 +1335,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
             'flex flex-1 min-h-0 min-w-0 flex-col rounded-xl border border-border/50 p-2',
             dropHighlightPath === '/' && 'ring-2 ring-primary/50',
           )}
+          data-tour="tour-sftp-remote"
           onDragOver={(e) => {
             if (selectMode) return
             e.preventDefault()

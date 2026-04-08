@@ -933,7 +933,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
       {/* Main: Sequence list + Canvas + Execution */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Sequence list (left) */}
-        <div className="w-72 shrink-0 flex flex-col border-r border-border/50 bg-card/50 min-w-0">
+        <div className="w-72 shrink-0 flex flex-col border-r border-border/50 bg-card/50 min-w-0" data-tour="tour-automation-sequences">
           <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between gap-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <ListOrdered className="h-3.5 w-3.5" /> Sequences
@@ -1116,6 +1116,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
           <div
             ref={canvasRef}
             className="relative flex-1 min-h-[400px] overflow-hidden rounded-xl border border-border/30 bg-background/40 cursor-grab active:cursor-grabbing"
+            data-tour="tour-automation-canvas"
             role="region"
             aria-label="Workflow canvas"
             tabIndex={0}
@@ -1192,7 +1193,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
         {/* Right Sidebar - Execution only (config via dialog) */}
         <div className="w-[320px] shrink-0 flex flex-col min-h-0 overflow-hidden border-l border-border/50 bg-card">
           {/* Execution */}
-          <Card className="flex flex-col flex-1 min-h-0 border-0 border-t border-border/50 rounded-none overflow-hidden">
+          <Card className="flex flex-col flex-1 min-h-0 border-0 border-t border-border/50 rounded-none overflow-hidden" data-tour="tour-automation-execution">
             <CardHeader className="pb-3 pt-4 px-5 shrink-0">
               <CardTitle className="text-base font-semibold">Execution</CardTitle>
               <CardDescription>Control playback</CardDescription>

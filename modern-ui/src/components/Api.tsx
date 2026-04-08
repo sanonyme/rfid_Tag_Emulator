@@ -396,7 +396,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   return (
     <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto relative">
       {/* Request Card - Bruno style */}
-      <Card className="tab-card">
+      <Card className="tab-card" data-tour="tour-api-request">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Globe className="w-5 h-5 text-primary" />
@@ -552,7 +552,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
       </Card>
 
       {/* Response Card */}
-      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col">
+      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col" data-tour="tour-api-response">
         <CardHeader className="py-2 border-b border-border/50 shrink-0">
           <div className="flex justify-between items-center flex-wrap gap-2">
             <CardTitle className="text-sm flex items-center gap-2">

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './ui/button'
+import { Input } from './ui/input'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '@/lib/utils'
 import {
@@ -38,6 +39,8 @@ import {
   Square,
   Network,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
@@ -90,6 +93,14 @@ type TableView = 'data' | 'structure' | 'schema'
 const PAGE_SIZES = [25, 50, 100, 500, 1000] as const
 const DANGEROUS_SQL = /^\s*(UPDATE|DELETE|INSERT|DROP|ALTER|TRUNCATE|REPLACE|RENAME|CREATE)\b/i
 
+const SYSTEM_DATABASES = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
+
+function quoteIdent(name: string): string {
+  return '`' + String(name).replace(/`/g, '``') + '`'
+}
+
+const NEW_DB_NAME_RE = /^[a-zA-Z0-9$_-]{1,64}$/
+
 const HISTORY_KEY = 'db-query-history'
 function loadQueryHistory(): QueryHistoryEntry[] {
   try {
@@ -141,6 +152,7 @@ function downloadFile(content: string, filename: string, mime: string) {
 const DB_CREDS_KEY = 'db-credentials'
 
 export function DatabaseTab({ host, connected }: DatabaseTabProps) {
+  const tourIx = useTourInteractionOptional()
   const [dbConnected, setDbConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState('')
@@ -150,8 +162,17 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   const [rememberCreds, setRememberCreds] = useState(false)
   const [credsLoaded, setCredsLoaded] = useState(false)
 
+  useEffect(() => {
+    tourIx?.setDbMysqlConnected(dbConnected)
+  }, [dbConnected, tourIx])
+
   const [selectedDb, setSelectedDb] = useState('')
   const [selectedTable, setSelectedTable] = useState('')
+
+  useEffect(() => {
+    tourIx?.setDbTableSelected(Boolean(selectedTable))
+  }, [selectedTable, tourIx])
+
   const [tableColumns, setTableColumns] = useState<string[]>([])
   const [tableRows, setTableRows] = useState<any[]>([])
   const [tableTotal, setTableTotal] = useState(0)
@@ -184,6 +205,21 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   const tabCounter = useRef(1)
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
+
+  type SidebarCtx =
+    | { x: number; y: number; kind: 'database'; dbName: string }
+    | { x: number; y: number; kind: 'table'; dbName: string; tableName: string }
+  const [sidebarCtx, setSidebarCtx] = useState<SidebarCtx | null>(null)
+
+  type SchemaConfirmState =
+    | { kind: 'truncate'; db: string; table: string }
+    | { kind: 'dropTable'; db: string; table: string }
+    | { kind: 'dropDatabase'; db: string }
+  const [schemaConfirm, setSchemaConfirm] = useState<SchemaConfirmState | null>(null)
+
+  const [createDbOpen, setCreateDbOpen] = useState(false)
+  const [createDbName, setCreateDbName] = useState('')
+  const [schemaBusy, setSchemaBusy] = useState(false)
 
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([])
   const [editingCell, setEditingCell] = useState<{ rowIdx: number; col: string } | null>(null)
@@ -441,6 +477,106 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     setRefreshing(false)
   }, [host, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
 
+  /** Runs DDL/DML from the sidebar; bypasses read-only (user confirms in dialog). */
+  const executeMutationSql = useCallback(async (sql: string, useDatabase?: string): Promise<boolean> => {
+    if (!window.electronAPI || !sql.trim()) return false
+    setSchemaBusy(true)
+    try {
+      const result = await window.electronAPI.dbExecuteQuery(sql.trim(), useDatabase)
+      if (result.ok) {
+        toast.success(result.message || 'Done')
+        return true
+      }
+      toast.error(result.error)
+      return false
+    } finally {
+      setSchemaBusy(false)
+    }
+  }, [])
+
+  const openDatabaseSidebarMenu = useCallback((e: React.MouseEvent, dbName: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dbConnected) return
+    setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'database', dbName })
+  }, [dbConnected])
+
+  const openTableSidebarMenu = useCallback((e: React.MouseEvent, dbName: string, tableName: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dbConnected) return
+    setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'table', dbName, tableName })
+  }, [dbConnected])
+
+  const handleConfirmSchemaAction = useCallback(async () => {
+    if (!schemaConfirm || !window.electronAPI) return
+    const q = schemaConfirm
+    let sql = ''
+    let useDb: string | undefined
+
+    if (q.kind === 'truncate') {
+      sql = `TRUNCATE TABLE ${quoteIdent(q.table)}`
+      useDb = q.db
+    } else if (q.kind === 'dropTable') {
+      sql = `DROP TABLE ${quoteIdent(q.table)}`
+      useDb = q.db
+    } else {
+      sql = `DROP DATABASE ${quoteIdent(q.db)}`
+      useDb = undefined
+    }
+
+    const ok = await executeMutationSql(sql, useDb)
+    setSchemaConfirm(null)
+
+    if (!ok) return
+
+    if (q.kind === 'dropDatabase') {
+      if (selectedDb === q.db) {
+        setSelectedDb('')
+        setSelectedTable('')
+        setTableColumns([])
+        setTableRows([])
+        setTableTotal(0)
+        setSchemaData(null)
+        setTableView('data')
+      }
+    } else if (q.kind === 'dropTable') {
+      if (selectedDb === q.db && selectedTable === q.table) {
+        setSelectedTable('')
+        setTableColumns([])
+        setTableRows([])
+        setTableTotal(0)
+      }
+    } else if (q.kind === 'truncate' && selectedDb === q.db && selectedTable === q.table) {
+      await loadPage(q.db, q.table, currentPage, pageSize)
+    }
+
+    await refreshDatabases()
+  }, [
+    schemaConfirm,
+    executeMutationSql,
+    selectedDb,
+    selectedTable,
+    loadPage,
+    currentPage,
+    pageSize,
+    refreshDatabases,
+  ])
+
+  const handleCreateDatabaseSubmit = useCallback(async () => {
+    const name = createDbName.trim()
+    if (!NEW_DB_NAME_RE.test(name)) {
+      toast.error('Invalid name (letters, digits, _, $, - only; max 64).')
+      return
+    }
+    const ok = await executeMutationSql(`CREATE DATABASE ${quoteIdent(name)}`, undefined)
+    if (ok) {
+      setCreateDbOpen(false)
+      setCreateDbName('')
+      await refreshDatabases()
+    }
+  }, [createDbName, executeMutationSql, refreshDatabases])
+
   const handleSelectTable = useCallback(async (dbName: string, tableName: string) => {
     setSelectedDb(dbName)
     setSelectedTable(tableName)
@@ -500,6 +636,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       setQueryError('Blocked: Read-only mode is active. Disable it to run write queries.')
       setQueryMessage('')
       setShowQueryResults(true)
+      tourIx?.markDbQueryRan()
       return
     }
 
@@ -524,6 +661,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       setQueryError(result.error)
     }
     setQueryRunning(false)
+    tourIx?.markDbQueryRan()
 
     const entry: QueryHistoryEntry = { sql: sqlText.trim(), timestamp: Date.now(), database: selectedDbRef.current || undefined }
     setQueryHistory((prev) => {
@@ -531,7 +669,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       saveQueryHistory(next)
       return next
     })
-  }, [readOnly])
+  }, [readOnly, tourIx])
 
   const handleRunQuery = useCallback((sqlOverride?: string) => {
     if (sqlOverride) {
@@ -728,13 +866,19 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   }, [])
 
   useEffect(() => {
-    const close = () => setCtxMenu(null)
-    if (ctxMenu) {
+    const close = () => {
+      setCtxMenu(null)
+      setSidebarCtx(null)
+    }
+    if (ctxMenu || sidebarCtx) {
       window.addEventListener('click', close)
       window.addEventListener('keydown', close)
-      return () => { window.removeEventListener('click', close); window.removeEventListener('keydown', close) }
+      return () => {
+        window.removeEventListener('click', close)
+        window.removeEventListener('keydown', close)
+      }
     }
-  }, [ctxMenu])
+  }, [ctxMenu, sidebarCtx])
 
   useEffect(() => {
     if (!showExportMenu && !showHistory && !showAutoRefreshMenu) return
@@ -963,7 +1107,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
 
   if (!connected) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground">
+      <div className="flex flex-col items-center justify-center h-full gap-4 text-muted-foreground" data-tour="tour-database">
         <Database className="w-16 h-16 opacity-30" />
         <p className="text-lg font-medium">Connect to an IP first</p>
         <p className="text-sm">Use the connection button above to connect to a reader, then access the database.</p>
@@ -973,7 +1117,7 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
 
   if (!dbConnected) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-6">
+      <div className="flex flex-col items-center justify-center h-full gap-6" data-tour="tour-db-mysql-connect">
         <div className="flex flex-col items-center gap-3">
           <Database className="w-16 h-16 opacity-30" />
           <h2 className="text-xl font-semibold">Database Explorer</h2>
@@ -1032,9 +1176,13 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0" data-tour="tour-database">
       {/* Sidebar */}
-      <div className="shrink-0 flex flex-col border border-border/50 rounded-xl bg-muted/30 overflow-hidden" style={{ width: sidebarWidth }}>
+      <div
+        className="shrink-0 flex flex-col border border-border/50 rounded-xl bg-muted/30 overflow-hidden"
+        style={{ width: sidebarWidth }}
+        data-tour="tour-db-sidebar"
+      >
         <div className="flex items-center justify-between px-3 py-2.5 border-b border-border/50">
           <div className="flex items-center gap-2">
             <Database className="w-4 h-4 text-blue-500" />
@@ -1120,7 +1268,12 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
           <div className="p-1.5 space-y-0.5 overflow-hidden">
             {databases.map((db) => (
               <div key={db.name}>
-                <button onClick={() => toggleDatabase(db.name)} className={cn('w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/5 dark:hover:bg-white/10', db.expanded && 'bg-white/5 dark:bg-white/8')}>
+                <button
+                  type="button"
+                  onClick={() => toggleDatabase(db.name)}
+                  onContextMenu={(e) => openDatabaseSidebarMenu(e, db.name)}
+                  className={cn('w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-white/5 dark:hover:bg-white/10', db.expanded && 'bg-white/5 dark:bg-white/8')}
+                >
                   {db.loading ? <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" /> : db.expanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />}
                   <Database className="w-3.5 h-3.5 shrink-0 text-amber-500" />
                   <span className="truncate font-medium text-left">{db.name}</span>
@@ -1130,7 +1283,13 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                     {db.tables.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-2 py-1 italic">No tables</p>
                     ) : db.tables.map((t) => (
-                      <button key={t.name} onClick={() => handleSelectTable(db.name, t.name)} className={cn('w-full min-w-0 flex items-center gap-1 px-2 py-1 rounded-md text-sm transition-colors overflow-hidden', selectedDb === db.name && selectedTable === t.name ? 'bg-blue-500/20 text-blue-600 dark:text-blue-300 font-medium ring-1 ring-blue-500/30' : 'hover:bg-white/5 dark:hover:bg-white/10 text-foreground')}>
+                      <button
+                        key={t.name}
+                        type="button"
+                        onClick={() => handleSelectTable(db.name, t.name)}
+                        onContextMenu={(e) => openTableSidebarMenu(e, db.name, t.name)}
+                        className={cn('w-full min-w-0 flex items-center gap-1 px-2 py-1 rounded-md text-sm transition-colors overflow-hidden', selectedDb === db.name && selectedTable === t.name ? 'bg-blue-500/20 text-blue-600 dark:text-blue-300 font-medium ring-1 ring-blue-500/30' : 'hover:bg-white/5 dark:hover:bg-white/10 text-foreground')}
+                      >
                         <Table2 className="w-3.5 h-3.5 shrink-0 text-blue-500" />
                         <span className="truncate text-left flex-1 min-w-0">{t.name}</span>
                       </button>
@@ -1483,7 +1642,11 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
         </div>
 
         {/* SQL Editor */}
-        <div className="shrink-0 flex flex-col border border-border/50 rounded-xl bg-muted/20 overflow-hidden" style={{ height: editorHeight }}>
+        <div
+          className="shrink-0 flex flex-col border border-border/50 rounded-xl bg-muted/20 overflow-hidden"
+          style={{ height: editorHeight }}
+          data-tour="tour-db-sql-panel"
+        >
           <div className="flex items-center border-b border-border/50 shrink-0 bg-muted/30">
             <div className="flex-1 flex items-center overflow-x-auto min-w-0">
               {queryTabs.map((tab) => (
@@ -1611,6 +1774,167 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
             </div>
           </div>
         </div>, document.body
+      )}
+
+      {/* Sidebar tree context menu */}
+      {sidebarCtx && createPortal(
+        <div
+          className="fixed z-[9999] min-w-[200px] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 animate-in fade-in-0 zoom-in-95"
+          style={{ left: sidebarCtx.x, top: sidebarCtx.y }}
+          onClick={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {sidebarCtx.kind === 'database' ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarCtx(null)
+                  setCreateDbName('')
+                  setCreateDbOpen(true)
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+              >
+                <PlusCircle className="w-3.5 h-3.5 text-green-500" />
+                New database…
+              </button>
+              <div className="border-t border-border/50 my-1" />
+              <button
+                type="button"
+                disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
+                title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be dropped from here' : undefined}
+                onClick={() => {
+                  setSidebarCtx(null)
+                  setSchemaConfirm({ kind: 'dropDatabase', db: sidebarCtx.dbName })
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive disabled:opacity-40 disabled:pointer-events-none"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Delete database…
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarCtx(null)
+                  setSchemaConfirm({
+                    kind: 'truncate',
+                    db: sidebarCtx.dbName,
+                    table: sidebarCtx.tableName,
+                  })
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-amber-500" />
+                Empty table…
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarCtx(null)
+                  setSchemaConfirm({
+                    kind: 'dropTable',
+                    db: sidebarCtx.dbName,
+                    table: sidebarCtx.tableName,
+                  })
+                }}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Drop table…
+              </button>
+            </>
+          )}
+        </div>,
+        document.body,
+      )}
+
+      {schemaConfirm && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-md w-full mx-4">
+            <div className="flex items-center gap-2 text-destructive mb-3">
+              <AlertCircle className="w-5 h-5 shrink-0" />
+              <span className="font-semibold">
+                {schemaConfirm.kind === 'truncate' && 'Empty table'}
+                {schemaConfirm.kind === 'dropTable' && 'Drop table'}
+                {schemaConfirm.kind === 'dropDatabase' && 'Delete database'}
+              </span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-2">
+              {schemaConfirm.kind === 'truncate' && (
+                <>
+                  Run <code className="text-xs font-mono bg-muted/50 px-1 rounded">TRUNCATE TABLE</code> on{' '}
+                  <span className="font-mono text-foreground">{schemaConfirm.db}.{schemaConfirm.table}</span>? All rows are removed; structure stays. Fails if foreign keys reference this table.
+                </>
+              )}
+              {schemaConfirm.kind === 'dropTable' && (
+                <>
+                  Permanently drop <span className="font-mono text-foreground">{schemaConfirm.db}.{schemaConfirm.table}</span>? This cannot be undone.
+                </>
+              )}
+              {schemaConfirm.kind === 'dropDatabase' && (
+                <>
+                  Permanently drop database <span className="font-mono text-foreground">{schemaConfirm.db}</span> and all of its tables? This cannot be undone.
+                </>
+              )}
+            </p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Runs on the server even if query editor read-only mode is on.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setSchemaConfirm(null)} disabled={schemaBusy}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" className="gap-1" onClick={() => void handleConfirmSchemaAction()} disabled={schemaBusy}>
+                {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                Confirm
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {createDbOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Database className="w-5 h-5 text-amber-500" />
+              <span className="font-semibold">New database</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-2">Name: letters, digits, _, $, - (max 64).</p>
+            <Input
+              value={createDbName}
+              onChange={(e) => setCreateDbName(e.target.value)}
+              placeholder="my_database"
+              className="font-mono text-sm mb-4"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleCreateDatabaseSubmit()
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCreateDbOpen(false)
+                  setCreateDbName('')
+                }}
+                disabled={schemaBusy}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" className="gap-1" onClick={() => void handleCreateDatabaseSubmit()} disabled={schemaBusy}>
+                {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
 
       {/* Right-click Context Menu */}

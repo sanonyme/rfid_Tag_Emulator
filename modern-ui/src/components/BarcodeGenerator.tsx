@@ -160,14 +160,14 @@ export function BarcodeGenerator() {
     <div className="h-full">
       <Tabs defaultValue="barcode" className="h-full flex flex-col">
         <div className="mb-4 px-2">
-          <TabsList className="mx-auto grid w-full max-w-2xl grid-cols-3 gap-1 p-1">
+          <TabsList className="mx-auto grid w-full max-w-2xl grid-cols-3 gap-1 p-1" data-tour="tour-gen-modes">
             <TabsTrigger value="barcode" className="w-full px-2 sm:px-3">
               Barcodes
             </TabsTrigger>
             <TabsTrigger value="qrcode" className="w-full px-2 sm:px-3">
               QR Codes
             </TabsTrigger>
-            <TabsTrigger value="batch" className="w-full px-2 sm:px-3">
+            <TabsTrigger value="batch" className="w-full px-2 sm:px-3" data-tour="tour-gen-batch-tab">
               Batch Export
             </TabsTrigger>
           </TabsList>
@@ -176,7 +176,7 @@ export function BarcodeGenerator() {
         <TabsContent value="barcode" className="flex-1 mt-0">
           <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
             <div className="space-y-6 overflow-y-auto pr-2">
-              <Card className="border-border/50">
+              <Card className="border-border/50" data-tour="tour-gen-config">
                 <CardHeader className="pb-3">
                   <CardTitle>Configuration</CardTitle>
                   <CardDescription>Customize your barcode settings</CardDescription>
@@ -290,7 +290,7 @@ export function BarcodeGenerator() {
             </div>
 
             <div className="space-y-6">
-              <Card className="h-full flex flex-col border-border/50">
+              <Card className="h-full flex flex-col border-border/50" data-tour="tour-gen-preview">
                 <CardHeader>
                   <CardTitle>Preview</CardTitle>
                   <CardDescription>Live preview of your generated barcodes</CardDescription>

@@ -17,6 +17,7 @@ import {
   LogOut,
   Link2,
   Terminal,
+  HelpCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { applyTheme, getSavedTheme } from '@/lib/themes'
@@ -46,6 +47,8 @@ interface BottomMenuProps {
   onOpenSaveCurrent: () => void
   onOpenSettings: () => void
   onOpenShortcuts?: () => void
+  /** Spotlight UI tour (same as pressing ?) */
+  onStartInteractiveTour?: () => void
   /** When true, renders inline (e.g. in title bar) with submenu opening downward */
   inline?: boolean
   isAdmin?: boolean
@@ -60,6 +63,7 @@ export function BottomMenu({
   onOpenSaveCurrent,
   onOpenSettings,
   onOpenShortcuts,
+  onStartInteractiveTour,
   inline = false,
   isAdmin = false,
   onAdminLogin,
@@ -239,6 +243,12 @@ export function BottomMenu({
   const mainActions: Array<{ id: string; icon: typeof Zap; label: string; onClick?: () => void }> = [
     { id: 'tabs', icon: Zap, label: 'Quick tabs' },
     { id: 'profiles', icon: FolderOpen, label: 'Profiles' },
+    {
+      id: 'tour',
+      icon: HelpCircle,
+      label: 'Interactive tour (? key)',
+      onClick: onStartInteractiveTour,
+    },
     { id: 'shortcuts', icon: Keyboard, label: 'Shortcuts', onClick: onOpenShortcuts },
     { id: 'settings', icon: Settings, label: 'Settings', onClick: onOpenSettings },
     { id: 'theme', icon: theme === 'dark' ? Moon : theme === 'light' ? Sun : Monitor, label: 'Theme' },

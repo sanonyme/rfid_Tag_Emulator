@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map } from 'lucide-react'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -73,6 +73,8 @@ interface SettingsDialogProps {
   onOpenChange?: (open: boolean) => void
   /** When true, no trigger button - dialog opens only via open prop */
   noTrigger?: boolean
+  /** Starts the spotlight UI tour (closes Settings first) */
+  onStartInteractiveTour?: () => void
 }
 
 const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
@@ -94,7 +96,7 @@ const TAB_OPTIONS = IS_MOBILE
   ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp' && t.value !== 'netscan')
   : TAB_OPTIONS_ALL
 
-export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialogProps = {}) {
+export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteractiveTour }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
   const { settings, setSettings } = useSettings()
   const [onboardingOpen, setOnboardingOpen] = useState(false)
@@ -244,19 +246,37 @@ export function SettingsDialog({ open, onOpenChange, noTrigger }: SettingsDialog
               <BookOpen className="w-4 h-4 text-primary" />
               Help
             </h4>
-            <div className="space-y-2">
+            <div className="space-y-3">
               <p className="text-sm text-muted-foreground leading-relaxed">
-                New to the app? Learn how connection, fixed reader, handheld, OCR, automation, and profiles work.
+                <strong className="text-foreground">Quick overview</strong> — short slides inside this dialog.
+                <br />
+                <strong className="text-foreground">Interactive tour</strong> — spotlights real tabs and panels (desktop main window).
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setOnboardingOpen(true)}
-                className="gap-2"
-              >
-                <BookOpen className="w-4 h-4" />
-                Show tutorial
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOnboardingOpen(true)}
+                  className="gap-2"
+                >
+                  <BookOpen className="w-4 h-4" />
+                  Quick overview
+                </Button>
+                {onStartInteractiveTour && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange?.(false)
+                      onStartInteractiveTour()
+                    }}
+                    className="gap-2"
+                  >
+                    <Map className="w-4 h-4" />
+                    Interactive tour
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
 

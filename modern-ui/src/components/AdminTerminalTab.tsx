@@ -219,7 +219,7 @@ export function AdminTerminalTab({ active }: AdminTerminalTabProps) {
 
   if (noElectron) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
+      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center" data-tour="tour-admin-terminal">
         <TerminalIcon className="w-16 h-16 text-muted-foreground" />
         <p className="text-muted-foreground">
           Terminal is only available in the Electron desktop app.
@@ -232,7 +232,7 @@ export function AdminTerminalTab({ active }: AdminTerminalTabProps) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="flex flex-col h-full min-h-0" data-tour="tour-admin-terminal">
       <div className="flex items-center gap-2 mb-2">
         <Tooltip>
           <TooltipTrigger asChild>

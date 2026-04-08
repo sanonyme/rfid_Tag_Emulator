@@ -385,7 +385,7 @@ export function FixedTab({
       <div className="space-y-4 overflow-y-auto pr-2">
         
         {/* Tag Defaults */}
-        <Card className="border-border/50 bg-card">
+        <Card className="border-border/50 bg-card" data-tour="tour-fixed-tag-defaults">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg">Tag Defaults</CardTitle>
           </CardHeader>
@@ -494,7 +494,7 @@ export function FixedTab({
         </Card>
 
         {/* Driver Settings */}
-        <Card className="border-border/50 bg-card">
+        <Card className="border-border/50 bg-card" data-tour="tour-fixed-driver">
           <CardHeader className="pb-4">
             <CardTitle className="text-lg flex items-center gap-2">
               <Zap className="w-5 h-5 text-primary" />
@@ -619,7 +619,7 @@ export function FixedTab({
       {/* Right Side - Tag Management & Log */}
       <div className="flex flex-col gap-4 min-h-0">
         {/* Tag Input */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4" data-tour="tour-fixed-tags">
           <Card className="border-border/50 bg-card">
             <CardHeader className="pb-4">
               <CardTitle className="text-base">UPC → EPC Generation</CardTitle>
@@ -665,7 +665,7 @@ export function FixedTab({
         </div>
 
         {/* Send Controls */}
-        <Card className="border-border/50 bg-card">
+        <Card className="border-border/50 bg-card" data-tour="tour-fixed-send">
           <CardContent className="p-4">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <div className="space-y-1">
@@ -709,7 +709,7 @@ export function FixedTab({
         </Card>
 
         {/* Log Area */}
-        <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col overflow-hidden">
+        <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col overflow-hidden" data-tour="tour-fixed-log">
           <CardHeader className="py-2 border-b border-border/50 shrink-0">
             <div className="flex justify-between items-center gap-2">
               <CardTitle className="text-sm flex items-center gap-2">

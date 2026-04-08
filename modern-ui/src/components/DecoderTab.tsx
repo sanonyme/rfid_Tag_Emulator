@@ -190,7 +190,7 @@ export function DecoderTab() {
     <div className="min-h-full flex flex-col gap-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
         {/* Decoder Section */}
-        <Card className="flex flex-col h-full border-border/50 bg-card">
+        <Card className="flex flex-col h-full border-border/50 bg-card" data-tour="tour-decoder-decode">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ArrowDown className="w-5 h-5 text-primary" />
@@ -259,7 +259,7 @@ export function DecoderTab() {
         </Card>
 
         {/* Encoder Section */}
-        <Card className="flex flex-col h-full border-border/50 bg-card">
+        <Card className="flex flex-col h-full border-border/50 bg-card" data-tour="tour-decoder-encode">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ArrowUp className="w-5 h-5 text-primary" />

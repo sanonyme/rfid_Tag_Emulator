@@ -22,7 +22,7 @@ const SHORTCUTS = [
   ]},
   { group: 'General', items: [
     { label: 'Command palette', keys: 'Ctrl+K' },
-    { label: 'Keyboard shortcuts', keys: '?' },
+    { label: 'Interactive UI tour', keys: '?' },
   ]},
   { group: 'Window', items: [
     { label: 'Toggle fullscreen', keys: 'F11' },

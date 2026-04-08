@@ -7,38 +7,33 @@ import {
   DialogDescription,
 } from './ui/dialog'
 import { Button } from './ui/button'
-import { Wifi, Radio, Smartphone, ScanLine, Workflow, FolderOpen, ChevronRight, ChevronLeft } from 'lucide-react'
+import { Wifi, Radio, ScanLine, Workflow, FolderOpen, ChevronRight, ChevronLeft } from 'lucide-react'
 
 const STEPS = [
   {
     icon: Wifi,
-    title: 'Connect to your Edge server',
-    description: 'Enter the IP address of your RFID Edge server and connect. The app uses TCP port 12352 by default. Use the connection button in the title bar or status area.',
+    title: 'Connect',
+    description: 'Use the connection control (top) to reach your Edge server on port 12352.',
   },
   {
     icon: Radio,
-    title: 'Fixed Reader',
-    description: 'Simulate RFID tags from a fixed reader. Enter UPC codes with counts (e.g. 038257246520,12) or paste EPCs directly. Choose driver (LLRP, ARP, etc.), antenna, and RSSI. Click Send to emulate tag reads.',
-  },
-  {
-    icon: Smartphone,
-    title: 'Handheld',
-    description: 'Act as a handheld server so clients can subscribe to tag events. Configure UPC/EPC lists per port. Clients connect to the handheld port (default 10472) to receive simulated tag reads.',
+    title: 'Fixed & handheld',
+    description: 'Fixed tab sends reader tags; Handheld runs local ports for VSBL Debug clients.',
   },
   {
     icon: ScanLine,
-    title: 'OCR & Custom',
-    description: 'Send OCR messages to Inditex/Tempe systems (port 10482) or custom TCP messages to any host/port. Useful for testing barcode workflows.',
+    title: 'OCR, custom, API',
+    description: 'OCR and Custom tabs send TCP payloads; API tab posts to Inditex-style endpoints.',
   },
   {
     icon: Workflow,
-    title: 'Automation',
-    description: 'Build sequences of actions: delays, OCR messages, fixed tag reads, handheld tags. Add steps, configure them, and run the full sequence to automate testing scenarios.',
+    title: 'Automation & tools',
+    description: 'Automation chains steps on a canvas. Decoder, generator, DB, SFTP, and LAN scan live in the other tabs.',
   },
   {
     icon: FolderOpen,
-    title: 'Profiles & Settings',
-    description: 'Save your connection, tags, and automation configs as profiles. Switch between them quickly. Customize appearance, themes, and behavior in Settings.',
+    title: 'Profiles',
+    description: 'Save and load setups from the ⋮ menu. For a guided walkthrough of the UI, use Settings → Interactive tour (desktop).',
   },
 ]
 

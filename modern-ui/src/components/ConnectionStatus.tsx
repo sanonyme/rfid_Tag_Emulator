@@ -6,6 +6,7 @@ import { Wifi, WifiOff, X, Clock } from 'lucide-react'
 import { TCPEmulatorClient } from '@/lib/tcp-client'
 import { cn } from '@/lib/utils'
 import { playConnect, playDisconnect } from '@/lib/sounds'
+import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 
 const RECENT_HOSTS_KEY = 'recent-hosts'
 const MAX_RECENT = 8
@@ -43,6 +44,7 @@ export function ConnectionStatus({
   connected,
   setConnected
 }: ConnectionStatusProps) {
+  const tourIx = useTourInteractionOptional()
   const [isOpen, setIsOpen] = useState(false)
   const [localHost, setLocalHost] = useState(host)
   const [recentHosts, setRecentHosts] = useState<string[]>(loadRecentHosts)
@@ -88,16 +90,18 @@ export function ConnectionStatus({
   const handleMouseEnter = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     setIsOpen(true)
+    tourIx?.setConnectionPopoverOpen(true)
   }
 
   const handleMouseLeave = () => {
     timeoutRef.current = setTimeout(() => {
       setIsOpen(false)
+      tourIx?.setConnectionPopoverOpen(false)
     }, 300)
   }
 
   return (
-    <div className="relative inline-flex items-center">
+    <div className="relative inline-flex items-center" data-tour="tour-connection">
         <div
             className={cn(
                 "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 focus:outline-none focus-visible:outline-none",
