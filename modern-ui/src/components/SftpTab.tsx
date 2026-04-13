@@ -40,12 +40,19 @@ import {
   ChevronRight,
   ChevronDown,
   PanelBottom,
+  Database,
+  ShieldAlert,
+  FlaskConical,
+  Rocket,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 
 const SFTP_CREDS_KEY = 'sftp-creds'
+const DB_CREDS_KEY = 'db-credentials'
+
+type MigrateEnv = 'prod' | 'staging'
 
 function posixJoin(dir: string, name: string): string {
   const d = dir.replace(/\/+$/, '') || '/'
@@ -186,6 +193,13 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   const [transferQueue, setTransferQueue] = useState<TransferItem[]>([])
   const [queueOpen, setQueueOpen] = useState(true)
+  const [migrateOpen, setMigrateOpen] = useState(false)
+  const [migrateEnv, setMigrateEnv] = useState<MigrateEnv>('staging')
+  const [migrateConfirmText, setMigrateConfirmText] = useState('')
+  const [migrateBusy, setMigrateBusy] = useState(false)
+  const [migrateDbUser, setMigrateDbUser] = useState('')
+  const [migrateDbPass, setMigrateDbPass] = useState('')
+  const [migrateCredsLoaded, setMigrateCredsLoaded] = useState(false)
 
   const [localRoot, setLocalRoot] = useState<string | null>(null)
   const [localCwd, setLocalCwd] = useState<string | null>(null)
@@ -296,6 +310,74 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     },
     [connected, api, loadDir],
   )
+
+  const migrateTarget =
+    migrateEnv === 'prod'
+      ? {
+          label: 'Production',
+          dbName: 'ats_db',
+          sftpPath: '/usr/local/edge/data/vsbl',
+          confirmKeyword: 'prod',
+        }
+      : {
+          label: 'Staging',
+          dbName: 'ats_db_staging',
+          sftpPath: '/usr/local/edge/data/vsbl-staging',
+          confirmKeyword: 'staging',
+        }
+
+  const isMissingPathError = (msg: string): boolean =>
+    /no such file|not exist|does not exist|enoent/i.test(msg)
+
+  const runMigrateCleanup = useCallback(async () => {
+    if (!api?.sftpRmrf || !api?.dbConnect || !api?.dbExecuteQuery || !api?.dbDisconnect) return
+    if (migrateConfirmText.trim().toLowerCase() !== migrateTarget.confirmKeyword) {
+      toast.error(`Type "${migrateTarget.confirmKeyword}" to confirm`)
+      return
+    }
+    if (!migrateDbUser.trim()) {
+      toast.error('Database username is required')
+      return
+    }
+    setMigrateBusy(true)
+    try {
+      const dropSql = `DROP DATABASE IF EXISTS \`${migrateTarget.dbName.replace(/`/g, '``')}\``
+      const conn = await api.dbConnect(host.trim(), migrateDbUser.trim(), migrateDbPass)
+      if (!conn.ok) throw new Error(`DB connect failed: ${conn.error}`)
+      const dbResult = await api.dbExecuteQuery(dropSql)
+      if (!dbResult.ok) {
+        throw new Error(`DB cleanup failed: ${dbResult.error}`)
+      }
+
+      const rmResult = await api.sftpRmrf(migrateTarget.sftpPath)
+      if (!rmResult.ok && !isMissingPathError(rmResult.error)) {
+        throw new Error(`SFTP cleanup failed: ${rmResult.error}`)
+      }
+
+      setMigrateOpen(false)
+      setMigrateConfirmText('')
+      toast.success(`${migrateTarget.label} cleanup completed`, {
+        description: `Dropped ${migrateTarget.dbName} and removed ${migrateTarget.sftpPath}`,
+      })
+      await refreshRoot(true)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Migration cleanup failed')
+    } finally {
+      await api.dbDisconnect()
+      setMigrateBusy(false)
+    }
+  }, [
+    api,
+    host,
+    migrateConfirmText,
+    migrateDbPass,
+    migrateDbUser,
+    migrateTarget.confirmKeyword,
+    migrateTarget.dbName,
+    migrateTarget.label,
+    migrateTarget.sftpPath,
+    refreshRoot,
+  ])
 
   const refreshLocalListing = useCallback(async () => {
     if (!api?.localReaddir || !localRoot || !localCwd) return
@@ -484,6 +566,38 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     }
     localStorage.removeItem(SFTP_CREDS_KEY)
   }, [api])
+
+  useEffect(() => {
+    if (!migrateOpen) return
+    ;(async () => {
+      setMigrateCredsLoaded(false)
+      try {
+        if (api?.safeStoreGet) {
+          const raw = await api.safeStoreGet(DB_CREDS_KEY)
+          if (raw) {
+            const parsed = JSON.parse(raw) as { user?: string; pass?: string }
+            setMigrateDbUser(parsed.user || '')
+            setMigrateDbPass(parsed.pass || '')
+            setMigrateCredsLoaded(true)
+            return
+          }
+        }
+      } catch {
+        /* fall through */
+      }
+      try {
+        const raw = localStorage.getItem(DB_CREDS_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { user?: string; pass?: string }
+          setMigrateDbUser(parsed.user || '')
+          setMigrateDbPass(parsed.pass || '')
+        }
+      } catch {
+        /* ignore */
+      }
+      setMigrateCredsLoaded(true)
+    })()
+  }, [api, migrateOpen])
 
   const handleConnect = useCallback(async () => {
     if (!api?.sftpConnect || !sftpUser.trim() || !host.trim()) return
@@ -1085,6 +1199,17 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           <FolderOpen className="w-3.5 h-3.5" />
           Local folder
         </Button>
+        <Button
+          size="sm"
+          className="gap-1.5 bg-gradient-to-r from-amber-500 to-rose-500 text-white hover:from-amber-500/90 hover:to-rose-500/90"
+          onClick={() => {
+            setMigrateConfirmText('')
+            setMigrateOpen(true)
+          }}
+        >
+          <Database className="w-3.5 h-3.5" />
+          Migrate cleanup
+        </Button>
         <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
           <input
             type="checkbox"
@@ -1424,6 +1549,128 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           )}
         </div>
       )}
+
+      <Dialog open={migrateOpen} onOpenChange={setMigrateOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldAlert className="w-5 h-5 text-amber-500" />
+              Migrate cleanup
+            </DialogTitle>
+            <DialogDescription>
+              Choose environment and run one-click cleanup for database + SFTP path.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMigrateEnv('staging')}
+                className={cn(
+                  'rounded-xl border p-3 text-left transition-all',
+                  migrateEnv === 'staging'
+                    ? 'border-primary/70 bg-primary/10 shadow-sm'
+                    : 'border-border/50 hover:border-primary/40 bg-background/40',
+                )}
+              >
+                <div className="flex items-center gap-2 font-medium">
+                  <FlaskConical className="w-4 h-4 text-primary" />
+                  Staging
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground font-mono">ats_db_staging + /usr/local/edge/data/vsbl-staging</p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMigrateEnv('prod')}
+                className={cn(
+                  'rounded-xl border p-3 text-left transition-all',
+                  migrateEnv === 'prod'
+                    ? 'border-rose-500/60 bg-rose-500/10 shadow-sm'
+                    : 'border-border/50 hover:border-rose-500/40 bg-background/40',
+                )}
+              >
+                <div className="flex items-center gap-2 font-medium">
+                  <Rocket className="w-4 h-4 text-rose-500" />
+                  Production
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground font-mono">ats_db + /usr/local/edge/data/vsbl</p>
+              </button>
+            </div>
+
+            <div className="rounded-xl border border-border/50 bg-muted/20 p-3 space-y-1.5">
+              <p className="text-xs text-muted-foreground">Target preview</p>
+              <p className="text-sm">
+                Environment:{' '}
+                <span className={cn('font-semibold', migrateEnv === 'prod' ? 'text-rose-500' : 'text-primary')}>
+                  {migrateTarget.label}
+                </span>
+              </p>
+              <p className="font-mono text-xs text-muted-foreground">DROP DATABASE IF EXISTS `{migrateTarget.dbName}`</p>
+              <p className="font-mono text-xs text-muted-foreground">SFTP rm -rf {migrateTarget.sftpPath}</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Database username</Label>
+                <Input
+                  value={migrateDbUser}
+                  onChange={(e) => setMigrateDbUser(e.target.value)}
+                  placeholder={migrateCredsLoaded ? 'mysql user' : 'Loading credentials...'}
+                  className="font-mono"
+                  disabled={migrateBusy || !migrateCredsLoaded}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Database password</Label>
+                <Input
+                  type="password"
+                  value={migrateDbPass}
+                  onChange={(e) => setMigrateDbPass(e.target.value)}
+                  placeholder="mysql password"
+                  className="font-mono"
+                  disabled={migrateBusy || !migrateCredsLoaded}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Type <span className="font-mono text-foreground">{migrateTarget.confirmKeyword}</span> to confirm
+              </Label>
+              <Input
+                value={migrateConfirmText}
+                onChange={(e) => setMigrateConfirmText(e.target.value)}
+                className="font-mono"
+                placeholder={`Type "${migrateTarget.confirmKeyword}"`}
+                disabled={migrateBusy}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => setMigrateOpen(false)}
+              disabled={migrateBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              className="gap-1.5 bg-gradient-to-r from-amber-500 to-rose-500 text-white hover:from-amber-500/90 hover:to-rose-500/90"
+              disabled={
+                migrateBusy ||
+                !migrateDbUser.trim() ||
+                migrateConfirmText.trim().toLowerCase() !== migrateTarget.confirmKeyword
+              }
+              onClick={() => void runMigrateCleanup()}
+            >
+              {migrateBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+              Run cleanup
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!deleteTargets?.length} onOpenChange={(o) => !o && setDeleteTargets(null)}>
         <DialogContent>

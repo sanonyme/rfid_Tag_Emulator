@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { NetScanStartPayload } from './net-scan-handler.js'
+import type { ReaderDiscoveryPayload } from './reader-discovery-handler.js'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -177,6 +178,90 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_e: unknown, payload: { message: string }) => callback(payload)
     ipcRenderer.on('net-scan-error', handler)
     return () => ipcRenderer.removeListener('net-scan-error', handler)
+  },
+
+  // UDP Edge Discovery
+  udpDiscoveryStart: (localPort: number, listenDurationMs: number) =>
+    ipcRenderer.invoke('udp-discovery-start', localPort, listenDurationMs),
+  udpDiscoveryStop: () => ipcRenderer.invoke('udp-discovery-stop'),
+  udpDiscoverySendProbe: (targetIp: string, targetPort: number, message: string) =>
+    ipcRenderer.invoke('udp-discovery-send-probe', targetIp, targetPort, message),
+  udpDiscoveryIsRunning: () => ipcRenderer.invoke('udp-discovery-is-running'),
+  onUdpDiscoveryDevice: (
+    callback: (device: {
+      ip: string
+      port: number
+      guid: string
+      mac: string
+      version: string
+      lastPDUpdate: string
+      errors: string
+      name: string
+      raw: string
+      discoveredAt: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, device: Parameters<typeof callback>[0]) => callback(device)
+    ipcRenderer.on('udp-discovery-device', handler)
+    return () => ipcRenderer.removeListener('udp-discovery-device', handler)
+  },
+  onUdpDiscoveryRaw: (
+    callback: (payload: { data: string; from: string; fromPort: number; timestamp: number }) => void,
+  ) => {
+    const handler = (_e: unknown, payload: Parameters<typeof callback>[0]) => callback(payload)
+    ipcRenderer.on('udp-discovery-raw', handler)
+    return () => ipcRenderer.removeListener('udp-discovery-raw', handler)
+  },
+  onUdpDiscoveryStarted: (callback: (payload: { port: number }) => void) => {
+    const handler = (_e: unknown, payload: { port: number }) => callback(payload)
+    ipcRenderer.on('udp-discovery-started', handler)
+    return () => ipcRenderer.removeListener('udp-discovery-started', handler)
+  },
+  onUdpDiscoveryStopped: (callback: (payload: { reason: string }) => void) => {
+    const handler = (_e: unknown, payload: { reason: string }) => callback(payload)
+    ipcRenderer.on('udp-discovery-stopped', handler)
+    return () => ipcRenderer.removeListener('udp-discovery-stopped', handler)
+  },
+  onUdpDiscoveryError: (callback: (payload: { message: string }) => void) => {
+    const handler = (_e: unknown, payload: { message: string }) => callback(payload)
+    ipcRenderer.on('udp-discovery-error', handler)
+    return () => ipcRenderer.removeListener('udp-discovery-error', handler)
+  },
+  readerDiscoveryStart: (payload: ReaderDiscoveryPayload) =>
+    ipcRenderer.invoke('reader-discovery-start', payload),
+  readerDiscoveryCancel: () => ipcRenderer.invoke('reader-discovery-cancel'),
+  onReaderDiscoveryHost: (
+    callback: (payload: {
+      ip: string
+      done: number
+      total: number
+      found: number
+      openPorts: number[]
+      reader?: {
+        ip: string
+        vendor: 'impinj' | 'seuic' | 'unknown'
+        confidence: 'low' | 'medium' | 'high'
+        openPorts: number[]
+        reason: string
+        title?: string
+        server?: string
+        url?: string
+      } | null
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, payload: Parameters<typeof callback>[0]) => callback(payload)
+    ipcRenderer.on('reader-discovery-host', handler)
+    return () => ipcRenderer.removeListener('reader-discovery-host', handler)
+  },
+  onReaderDiscoveryDone: (callback: (payload: { total: number; found: number }) => void) => {
+    const handler = (_e: unknown, payload: { total: number; found: number }) => callback(payload)
+    ipcRenderer.on('reader-discovery-done', handler)
+    return () => ipcRenderer.removeListener('reader-discovery-done', handler)
+  },
+  onReaderDiscoveryError: (callback: (payload: { message: string }) => void) => {
+    const handler = (_e: unknown, payload: { message: string }) => callback(payload)
+    ipcRenderer.on('reader-discovery-error', handler)
+    return () => ipcRenderer.removeListener('reader-discovery-error', handler)
   },
 
   onSftpTransferProgress: (

@@ -3,6 +3,11 @@ export type NetScanStartPayload =
   | { mode: 'range'; start: string; end: string; concurrency?: number }
   | { mode: 'allSubnets'; concurrency?: number }
 
+export type ReaderDiscoveryPayload =
+  | { mode: 'cidr'; cidr: string; concurrency?: number; timeoutMs?: number }
+  | { mode: 'range'; start: string; end: string; concurrency?: number; timeoutMs?: number }
+  | { mode: 'allSubnets'; concurrency?: number; timeoutMs?: number }
+
 export interface ElectronAPI {
   platform: string
   minimize: () => void
@@ -261,6 +266,64 @@ export interface ElectronAPI {
   ) => Promise<
     { ok: true; parent: string | null } | { ok: false; error: string }
   >
+
+  // UDP Edge Discovery
+  udpDiscoveryStart: (
+    localPort: number,
+    listenDurationMs: number,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  udpDiscoveryStop: () => Promise<{ ok: true }>
+  udpDiscoverySendProbe: (
+    targetIp: string,
+    targetPort: number,
+    message: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  udpDiscoveryIsRunning: () => Promise<boolean>
+  onUdpDiscoveryDevice: (
+    callback: (device: {
+      ip: string
+      port: number
+      guid: string
+      mac: string
+      version: string
+      lastPDUpdate: string
+      errors: string
+      name: string
+      raw: string
+      discoveredAt: number
+    }) => void,
+  ) => () => void
+  onUdpDiscoveryRaw: (
+    callback: (payload: { data: string; from: string; fromPort: number; timestamp: number }) => void,
+  ) => () => void
+  onUdpDiscoveryStarted: (callback: (payload: { port: number }) => void) => () => void
+  onUdpDiscoveryStopped: (callback: (payload: { reason: string }) => void) => () => void
+  onUdpDiscoveryError: (callback: (payload: { message: string }) => void) => () => void
+  readerDiscoveryStart: (
+    payload: ReaderDiscoveryPayload,
+  ) => Promise<{ ok: true; total: number } | { ok: false; error: string }>
+  readerDiscoveryCancel: () => Promise<{ ok: true }>
+  onReaderDiscoveryHost: (
+    callback: (payload: {
+      ip: string
+      done: number
+      total: number
+      found: number
+      openPorts: number[]
+      reader?: {
+        ip: string
+        vendor: 'impinj' | 'seuic' | 'unknown'
+        confidence: 'low' | 'medium' | 'high'
+        openPorts: number[]
+        reason: string
+        title?: string
+        server?: string
+        url?: string
+      } | null
+    }) => void,
+  ) => () => void
+  onReaderDiscoveryDone: (callback: (payload: { total: number; found: number }) => void) => () => void
+  onReaderDiscoveryError: (callback: (payload: { message: string }) => void) => () => void
 
   netScanGetInterfaces: () => Promise<{
     ok: true

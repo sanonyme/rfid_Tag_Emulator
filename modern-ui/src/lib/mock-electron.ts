@@ -1,4 +1,4 @@
-import { ElectronAPI, type NetScanStartPayload } from '../types/electron';
+import { ElectronAPI, type NetScanStartPayload, type ReaderDiscoveryPayload } from '../types/electron';
 
 class MockElectronAPI implements ElectronAPI {
   platform = 'win32'; // Mock platform
@@ -499,6 +499,67 @@ class MockElectronAPI implements ElectronAPI {
     return () => {}
   }
   onNetScanError(_callback: (payload: { message: string }) => void) {
+    return () => {}
+  }
+
+  async udpDiscoveryStart(_localPort: number, _listenDurationMs: number) {
+    return { ok: false as const, error: 'UDP discovery is only available in the desktop app.' }
+  }
+  async udpDiscoveryStop() {
+    return { ok: true as const }
+  }
+  async udpDiscoverySendProbe(_targetIp: string, _targetPort: number, _message: string) {
+    return { ok: false as const, error: 'UDP discovery is only available in the desktop app.' }
+  }
+  async udpDiscoveryIsRunning() {
+    return false
+  }
+  onUdpDiscoveryDevice(_callback: (device: any) => void) {
+    return () => {}
+  }
+  onUdpDiscoveryRaw(_callback: (payload: any) => void) {
+    return () => {}
+  }
+  onUdpDiscoveryStarted(_callback: (payload: { port: number }) => void) {
+    return () => {}
+  }
+  onUdpDiscoveryStopped(_callback: (payload: { reason: string }) => void) {
+    return () => {}
+  }
+  onUdpDiscoveryError(_callback: (payload: { message: string }) => void) {
+    return () => {}
+  }
+  async readerDiscoveryStart(_payload: ReaderDiscoveryPayload) {
+    return { ok: false as const, error: 'Reader discovery is only available in the desktop app.' }
+  }
+  async readerDiscoveryCancel() {
+    return { ok: true as const }
+  }
+  onReaderDiscoveryHost(
+    _callback: (payload: {
+      ip: string
+      done: number
+      total: number
+      found: number
+      openPorts: number[]
+      reader?: {
+        ip: string
+        vendor: 'impinj' | 'seuic' | 'unknown'
+        confidence: 'low' | 'medium' | 'high'
+        openPorts: number[]
+        reason: string
+        title?: string
+        server?: string
+        url?: string
+      } | null
+    }) => void,
+  ) {
+    return () => {}
+  }
+  onReaderDiscoveryDone(_callback: (payload: { total: number; found: number }) => void) {
+    return () => {}
+  }
+  onReaderDiscoveryError(_callback: (payload: { message: string }) => void) {
     return () => {}
   }
 }

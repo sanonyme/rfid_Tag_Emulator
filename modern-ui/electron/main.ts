@@ -43,6 +43,17 @@ import {
   startNetScan,
   type NetScanStartPayload,
 } from './net-scan-handler.js'
+import {
+  startUdpDiscovery,
+  stopUdpDiscovery,
+  sendUdpProbe,
+  isUdpDiscoveryRunning,
+} from './udp-discovery-handler.js'
+import {
+  startReaderDiscovery,
+  cancelReaderDiscovery,
+  type ReaderDiscoveryPayload,
+} from './reader-discovery-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -531,6 +542,28 @@ app.whenReady().then(() => {
     return { ok: true as const }
   })
 
+  // UDP Edge Discovery
+  ipcMain.handle('udp-discovery-start', (event, localPort: number, listenDurationMs: number) =>
+    startUdpDiscovery(event.sender, localPort, listenDurationMs),
+  )
+  ipcMain.handle('udp-discovery-stop', () => {
+    stopUdpDiscovery()
+    return { ok: true as const }
+  })
+  ipcMain.handle(
+    'udp-discovery-send-probe',
+    (_event, targetIp: string, targetPort: number, message: string) =>
+      sendUdpProbe(targetIp, targetPort, message),
+  )
+  ipcMain.handle('udp-discovery-is-running', () => isUdpDiscoveryRunning())
+  ipcMain.handle('reader-discovery-start', async (event, payload: ReaderDiscoveryPayload) =>
+    startReaderDiscovery(event.sender, payload),
+  )
+  ipcMain.handle('reader-discovery-cancel', () => {
+    cancelReaderDiscovery()
+    return { ok: true as const }
+  })
+
   const getSecretsPath = () => path.join(app.getPath('userData'), 'secrets.json')
 
   ipcMain.handle('safe-store-set', async (_event, key: string, value: string) => {
@@ -868,6 +901,8 @@ app.on('window-all-closed', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
+  stopUdpDiscovery()
+  cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnect()
 
@@ -884,6 +919,8 @@ app.on('before-quit', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   if (mainWindow) disconnectAdam(mainWindow)
+  stopUdpDiscovery()
+  cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnect()
 })

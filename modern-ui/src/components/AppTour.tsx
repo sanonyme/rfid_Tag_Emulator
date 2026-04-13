@@ -174,7 +174,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'top',
       title: 'Try it: connect to the Edge server',
       content:
-        'Hover the status orb to open the panel, enter your reader / Edge IP, and connect on TCP port 12352. Recent hosts are saved for quick reuse.',
+        'Hover the status orb to open the panel, enter your Edge IP, and connect on TCP port 12352. Recent hosts are saved for quick reuse.',
       data: { tab: 'fixed', interactive: 'emulator_connect' } satisfies TourStepData,
     },
     {
@@ -197,7 +197,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'right',
       title: 'Fixed — driver & device',
       content:
-        'Pick logical devices via ALE, set the reader driver family, and adjust inter-read delay (ms).',
+        'Pick logical devices, set the reader driver family, and adjust inter-read delay (ms). If the logical device is not found, check the ALE port / modify it t o 80 or 8080.',
       data: { tab: 'fixed' } satisfies TourStepData,
     },
     {
@@ -226,7 +226,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       target: '[data-tour="tour-handheld-toolbar"]',
       placement: 'bottom',
       title: 'Handheld — toolbar',
-      content: 'Add ports, start/stop all servers, or send tags to every running handheld slot.',
+      content: 'Add ports, start/stop all servers, or send tags to every running handheld slot. Make sure to configure VSBL Debug on each device to connect to YOUR_PC_IP:PORT.',
       data: { tab: 'handheld' } satisfies TourStepData,
     },
     {
