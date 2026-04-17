@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -13,9 +13,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogTrigger,
 } from './ui/dialog'
-import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2 } from 'lucide-react'
+import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2, FileSpreadsheet, Eye, PlayCircle, Square, Trash2, Download, ChevronDown, ChevronRight, Package } from 'lucide-react'
 
 /** Normalize pipe-table row label for lookup (trim, collapse spaces, lowercase). */
 function normalizeTableLabel(label: string): string {
@@ -173,6 +172,277 @@ function applySubstitutionTableToBody(
   return { nextBody: next, unknownLabels, tokensNotInBody, remainingPlaceholders }
 }
 
+/** Parse a CSV/TSV line with support for quoted fields and escaped double-quotes (""). */
+function parseDelimitedLine(line: string, delim: string): string[] {
+  const cells: string[] = []
+  let cur = ''
+  let inQuotes = false
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"'
+          i++
+        } else {
+          inQuotes = false
+        }
+      } else {
+        cur += ch
+      }
+    } else {
+      if (ch === '"') {
+        inQuotes = true
+      } else if (ch === delim) {
+        cells.push(cur)
+        cur = ''
+      } else {
+        cur += ch
+      }
+    }
+  }
+  cells.push(cur)
+  return cells
+}
+
+export interface BulkDecodedRow {
+  rowIndex: number
+  id: string
+  bodyBase64: string
+  retryCount?: string
+  ignoreFlag?: string
+  /** Current (possibly edited / substituted) payload sent when Send is clicked. */
+  decoded: string
+  /** Pristine decoded-from-base64 payload, used for the Reset action. */
+  originalDecoded: string
+  decodeError?: string
+  status: 'idle' | 'sending' | 'success' | 'error' | 'skipped'
+  responseStatus?: number
+  responseStatusText?: string
+  errorMessage?: string
+  durationMs?: number
+}
+
+/** Decode a base64 (standard or URL-safe) string to UTF-8 text. */
+function decodeBase64ToUtf8(b64: string): string {
+  let cleaned = b64.replace(/\s/g, '').replace(/-/g, '+').replace(/_/g, '/')
+  // Pad to multiple of 4
+  const pad = cleaned.length % 4
+  if (pad === 2) cleaned += '=='
+  else if (pad === 3) cleaned += '='
+  else if (pad === 1) throw new Error('Invalid base64 length')
+  const raw = atob(cleaned)
+  const bytes = new Uint8Array(raw.length)
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
+  return new TextDecoder('utf-8').decode(bytes)
+}
+
+/** Pretty-print JSON if decoded text parses as JSON; otherwise return raw decoded text. */
+function maybePrettyJson(text: string): string {
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2)
+  } catch {
+    return text
+  }
+}
+
+/** Return parsed JSON or the original string if parsing fails. */
+function safeParseJson(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+/**
+ * The canonical set of fields we expect on a single, fully-populated `boxQrs` entry.
+ * Used to report what's still missing after a merge (so the user knows the upstream
+ * payload was truncated, not just split).
+ */
+const BOXQRS_EXPECTED_FIELDS = [
+  'qrCodeVersion',
+  'cartonBoxType',
+  'brandAndSection',
+  'productType',
+  'model',
+  'quality',
+  'color',
+  'size',
+  'season',
+  'units',
+  'batchQuantity',
+  'unitsPerBatch',
+  'orderSupplierId',
+  'orderCode',
+  'orderDestinationCd',
+  'cartonBoxNumber',
+  'batch',
+  'totalCartonBoxes',
+  'cartonBoxId',
+  'packingId',
+  'sdkSizeId',
+] as const
+
+export interface BoxQrsCheckResult {
+  /** `true` when the payload is parseable and has a `boxQrs` we could inspect. */
+  ok: boolean
+  /** `true` when a structural issue was detected and `fixed` contains a rewritten payload. */
+  needsFix: boolean
+  /** Human-readable summary shown in the UI. */
+  message: string
+  /** Rewritten JSON when `needsFix` is true, otherwise `undefined`. */
+  fixed?: string
+  /** Fields from BOXQRS_EXPECTED_FIELDS that are still missing after merging. */
+  missingFields: string[]
+}
+
+/**
+ * Inspect the `boxQrs` array in a decoded payload:
+ *   - If there are multiple objects (upstream split `},{` bug), merge them into one.
+ *   - Report any expected fields that are still missing after the merge.
+ *
+ * The input must be a JSON object string; arrays / primitives / invalid JSON are
+ * returned as `ok:false` with an explanatory message.
+ */
+function checkAndFixBoxQrs(text: string): BoxQrsCheckResult {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch (e: any) {
+    return {
+      ok: false,
+      needsFix: false,
+      message: `Not valid JSON: ${e?.message || 'parse error'}`,
+      missingFields: [],
+    }
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return {
+      ok: false,
+      needsFix: false,
+      message: 'Payload root is not a JSON object.',
+      missingFields: [],
+    }
+  }
+  const root = parsed as Record<string, unknown>
+  if (!('boxQrs' in root)) {
+    return {
+      ok: false,
+      needsFix: false,
+      message: 'Payload has no `boxQrs` field.',
+      missingFields: [],
+    }
+  }
+  const boxQrs = root.boxQrs
+  if (!Array.isArray(boxQrs)) {
+    return {
+      ok: false,
+      needsFix: false,
+      message: '`boxQrs` is not an array.',
+      missingFields: [],
+    }
+  }
+  if (boxQrs.length === 0) {
+    return {
+      ok: false,
+      needsFix: false,
+      message: '`boxQrs` array is empty.',
+      missingFields: [...BOXQRS_EXPECTED_FIELDS],
+    }
+  }
+
+  const merged: Record<string, unknown> = {}
+  let contributed = 0
+  for (const entry of boxQrs) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)) {
+      Object.assign(merged, entry as Record<string, unknown>)
+      contributed++
+    }
+  }
+  const missing = BOXQRS_EXPECTED_FIELDS.filter((k) => !(k in merged))
+
+  if (boxQrs.length === 1) {
+    return {
+      ok: true,
+      needsFix: false,
+      message: missing.length
+        ? `boxQrs OK (1 entry). Missing fields: ${missing.join(', ')}.`
+        : 'boxQrs OK (1 entry, all expected fields present).',
+      missingFields: missing,
+    }
+  }
+
+  root.boxQrs = [merged]
+  const fixed = JSON.stringify(root, null, 2)
+  const summary = `Merged ${contributed} boxQrs entr${contributed === 1 ? 'y' : 'ies'} into 1.`
+  return {
+    ok: true,
+    needsFix: true,
+    message: missing.length
+      ? `${summary} Still missing: ${missing.join(', ')}.`
+      : `${summary} All expected fields present.`,
+    fixed,
+    missingFields: missing,
+  }
+}
+
+/**
+ * Parse a TSV/CSV dump with header row containing at least `id` and `body` columns.
+ * The `body` column is expected to be base64-encoded JSON.
+ */
+function parseBulkCsv(text: string): BulkDecodedRow[] {
+  const lines = text.split(/\r?\n/).filter((l) => l.length > 0)
+  if (lines.length === 0) return []
+
+  const firstTab = (lines[0].match(/\t/g) ?? []).length
+  const firstComma = (lines[0].match(/,/g) ?? []).length
+  const delim = firstTab >= firstComma && firstTab > 0 ? '\t' : ','
+
+  const header = parseDelimitedLine(lines[0], delim).map((c) => c.trim().toLowerCase())
+  const idIdx = header.findIndex((h) => h === 'id')
+  const bodyIdx = header.findIndex((h) => h === 'body')
+  const retryIdx = header.findIndex((h) => h === 'retry_count' || h === 'retrycount')
+  const ignoreIdx = header.findIndex((h) => h === 'ignore_flag' || h === 'ignoreflag')
+
+  const hasHeader = idIdx >= 0 && bodyIdx >= 0
+  const startLine = hasHeader ? 1 : 0
+  const aIdIdx = hasHeader ? idIdx : 0
+  const aBodyIdx = hasHeader ? bodyIdx : 1
+  const aRetryIdx = hasHeader ? retryIdx : 2
+  const aIgnoreIdx = hasHeader ? ignoreIdx : 3
+
+  const rows: BulkDecodedRow[] = []
+  for (let i = startLine; i < lines.length; i++) {
+    const cells = parseDelimitedLine(lines[i], delim)
+    if (cells.length < 2) continue
+    const id = (cells[aIdIdx] ?? '').trim()
+    const bodyB64 = (cells[aBodyIdx] ?? '').trim()
+    if (!bodyB64) continue
+
+    let decoded = ''
+    let decodeError: string | undefined
+    try {
+      decoded = maybePrettyJson(decodeBase64ToUtf8(bodyB64))
+    } catch (e: any) {
+      decodeError = e?.message || 'Failed to decode'
+    }
+
+    rows.push({
+      rowIndex: rows.length,
+      id,
+      bodyBase64: bodyB64,
+      retryCount: aRetryIdx >= 0 ? cells[aRetryIdx]?.trim() : undefined,
+      ignoreFlag: aIgnoreIdx >= 0 ? cells[aIgnoreIdx]?.trim() : undefined,
+      decoded,
+      originalDecoded: decoded,
+      decodeError,
+      status: 'idle',
+    })
+  }
+  return rows
+}
+
 function JsonHighlight({ json }: { json: string }) {
   if (!json) return null
   const parts = json.split(/("(?:[^"\\]|\\.)*")\s*(:)?|(\b(?:true|false|null)\b)|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g)
@@ -220,6 +490,17 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   const [base64Output, setBase64Output] = useState('')
   const [base64Error, setBase64Error] = useState<string | null>(null)
   const [base64Mode, setBase64Mode] = useState<'decode' | 'encode'>('decode')
+
+  // Bulk CSV/TSV decoder state
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkInput, setBulkInput] = useState('')
+  const [bulkRows, setBulkRows] = useState<BulkDecodedRow[]>([])
+  const [bulkExpanded, setBulkExpanded] = useState<Record<number, boolean>>({})
+  const [bulkCopiedIdx, setBulkCopiedIdx] = useState<number | null>(null)
+  const [bulkSendingAll, setBulkSendingAll] = useState(false)
+  const [bulkParseError, setBulkParseError] = useState<string | null>(null)
+  const [bulkDelayMs, setBulkDelayMs] = useState(250)
+  const bulkStopRef = useRef(false)
 
   useEffect(() => {
     window.electronAPI?.getApiConfig?.().then((config) => {
@@ -380,6 +661,302 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
     }
   }
 
+  const handleBulkParse = () => {
+    setBulkParseError(null)
+    setBulkCopiedIdx(null)
+    setBulkExpanded({})
+    const trimmed = bulkInput.trim()
+    if (!trimmed) {
+      setBulkRows([])
+      setBulkParseError('Paste CSV/TSV data first.')
+      return
+    }
+    try {
+      const rows = parseBulkCsv(trimmed)
+      if (rows.length === 0) {
+        setBulkParseError('No rows found. Make sure the data has a header with at least `id` and `body` columns.')
+        setBulkRows([])
+        return
+      }
+      const decodeFailures = rows.filter((r) => r.decodeError).length
+      setBulkRows(rows)
+      if (decodeFailures > 0) {
+        setBulkParseError(
+          `Parsed ${rows.length} row${rows.length === 1 ? '' : 's'} (${decodeFailures} with decode error${decodeFailures === 1 ? '' : 's'}).`,
+        )
+      }
+    } catch (e: any) {
+      setBulkParseError(e?.message || 'Failed to parse input.')
+      setBulkRows([])
+    }
+  }
+
+  const handleBulkClear = () => {
+    setBulkInput('')
+    setBulkRows([])
+    setBulkExpanded({})
+    setBulkParseError(null)
+    setBulkCopiedIdx(null)
+  }
+
+  const handleBulkCopyRow = async (idx: number) => {
+    const row = bulkRows[idx]
+    if (!row) return
+    const text = row.decodeError ? row.bodyBase64 : row.decoded
+    try {
+      await navigator.clipboard.writeText(text)
+      setBulkCopiedIdx(idx)
+      setTimeout(() => setBulkCopiedIdx((v) => (v === idx ? null : v)), 1500)
+    } catch {
+      // ignore
+    }
+  }
+
+  const handleBulkLoadIntoBody = (idx: number) => {
+    const row = bulkRows[idx]
+    if (!row || row.decodeError) return
+    setBody(row.decoded)
+  }
+
+  const handleBulkEditRow = (idx: number, next: string) => {
+    setBulkRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, decoded: next, status: 'idle' } : r)),
+    )
+  }
+
+  const handleBulkResetRow = (idx: number) => {
+    setBulkRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, decoded: r.originalDecoded, status: 'idle' } : r)),
+    )
+  }
+
+  const handleBulkPrettifyRow = (idx: number) => {
+    setBulkRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, decoded: maybePrettyJson(r.decoded) } : r)),
+    )
+  }
+
+  /** Inspect a single row's `boxQrs`; merge any multi-object split and report the result. */
+  const handleBulkCheckBoxQrsRow = (idx: number) => {
+    const row = bulkRows[idx]
+    if (!row || row.decodeError) return
+    const result = checkAndFixBoxQrs(row.decoded)
+    if (result.needsFix && result.fixed) {
+      setBulkRows((prev) =>
+        prev.map((r, i) => (i === idx ? { ...r, decoded: result.fixed!, status: 'idle' } : r)),
+      )
+    }
+    setBulkParseError(`Row ${row.id || `#${idx + 1}`}: ${result.message}`)
+  }
+
+  /**
+   * Scan every row's `boxQrs` and fix any that have a multi-object split.
+   * Aggregates counts so you can see at a glance how many were bad, how many were
+   * already OK, and how many have missing expected fields.
+   */
+  const handleBulkCheckBoxQrsAll = () => {
+    if (bulkRows.length === 0) return
+    let fixed = 0
+    let alreadyOk = 0
+    let noBoxQrs = 0
+    let invalid = 0
+    const rowsMissingFields: string[] = []
+
+    const updated = bulkRows.map((r) => {
+      if (r.decodeError) {
+        invalid++
+        return r
+      }
+      const res = checkAndFixBoxQrs(r.decoded)
+      if (!res.ok) {
+        // "no boxQrs" / "empty array" / "not an object" all land here.
+        if (res.message.includes('`boxQrs`')) noBoxQrs++
+        else invalid++
+        return r
+      }
+      if (res.missingFields.length > 0) {
+        rowsMissingFields.push(r.id || `#${r.rowIndex + 1}`)
+      }
+      if (res.needsFix && res.fixed) {
+        fixed++
+        return { ...r, decoded: res.fixed, status: 'idle' as const }
+      }
+      alreadyOk++
+      return r
+    })
+    setBulkRows(updated)
+
+    const parts: string[] = []
+    parts.push(`Fixed ${fixed}/${bulkRows.length} row(s).`)
+    if (alreadyOk) parts.push(`${alreadyOk} already OK.`)
+    if (noBoxQrs) parts.push(`${noBoxQrs} without boxQrs.`)
+    if (invalid) parts.push(`${invalid} invalid/decode-error.`)
+    if (rowsMissingFields.length) {
+      parts.push(
+        `Rows with missing expected fields: ${rowsMissingFields.slice(0, 5).join(', ')}${
+          rowsMissingFields.length > 5 ? `, +${rowsMissingFields.length - 5} more` : ''
+        }.`,
+      )
+    }
+    setBulkParseError(parts.join(' '))
+  }
+
+  /** Apply the placeholder substitution table to a single row's payload. */
+  const handleBulkApplyTableRow = (idx: number) => {
+    if (!substitutionTable.trim()) {
+      setBulkParseError('Paste a placeholder table at the top first, then Apply.')
+      return
+    }
+    const row = bulkRows[idx]
+    if (!row || row.decodeError) return
+    const { nextBody } = applySubstitutionTableToBody(row.decoded, substitutionTable)
+    setBulkRows((prev) =>
+      prev.map((r, i) => (i === idx ? { ...r, decoded: nextBody, status: 'idle' } : r)),
+    )
+    setBulkParseError(null)
+  }
+
+  /**
+   * Apply the placeholder substitution table to every bulk row. Aggregates the
+   * unknown labels / tokens-not-found / remaining {{...}} placeholders across all
+   * rows and surfaces a single summary message at the bottom of the toolbar.
+   */
+  const handleBulkApplyTableAll = () => {
+    if (!substitutionTable.trim()) {
+      setBulkParseError('Paste a placeholder table at the top first, then Apply.')
+      return
+    }
+    if (bulkRows.length === 0) return
+
+    let applied = 0
+    const unknownLabels = new Set<string>()
+    const tokensNotInAny = new Map<string, number>() // token → # rows where it was missing
+    const remaining = new Set<string>()
+
+    const updated = bulkRows.map((r) => {
+      if (r.decodeError) return r
+      const res = applySubstitutionTableToBody(r.decoded, substitutionTable)
+      res.unknownLabels.forEach((l) => unknownLabels.add(l))
+      res.tokensNotInBody.forEach((t) =>
+        tokensNotInAny.set(t, (tokensNotInAny.get(t) ?? 0) + 1),
+      )
+      res.remainingPlaceholders.forEach((p) => remaining.add(p))
+      if (res.nextBody !== r.decoded) applied++
+      return { ...r, decoded: res.nextBody, status: 'idle' as const }
+    })
+    setBulkRows(updated)
+
+    const parts: string[] = [`Applied to ${applied}/${bulkRows.length} row(s).`]
+    if (unknownLabels.size) {
+      parts.push(`Unrecognized: ${[...unknownLabels].join(', ')}.`)
+    }
+    // A token "not in body" only matters if it's missing from EVERY applicable row.
+    const applicable = bulkRows.filter((r) => !r.decodeError).length
+    const globallyMissing = [...tokensNotInAny.entries()]
+      .filter(([, count]) => count === applicable && applicable > 0)
+      .map(([t]) => `{{${t}}}`)
+    if (globallyMissing.length) {
+      parts.push(`Not present in any row: ${globallyMissing.join(', ')}.`)
+    }
+    if (remaining.size) {
+      parts.push(`Still unresolved: ${[...remaining].join(', ')}.`)
+    }
+    setBulkParseError(parts.join(' '))
+  }
+
+  const handleBulkExportJson = async () => {
+    if (!bulkRows.length) return
+    const payload = bulkRows.map((r) => ({
+      id: r.id,
+      retryCount: r.retryCount,
+      ignoreFlag: r.ignoreFlag,
+      decoded: r.decodeError ? null : safeParseJson(r.decoded),
+      decodeError: r.decodeError,
+    }))
+    const text = JSON.stringify(payload, null, 2)
+    try {
+      await navigator.clipboard.writeText(text)
+      setBulkCopiedIdx(-1)
+      setTimeout(() => setBulkCopiedIdx((v) => (v === -1 ? null : v)), 1500)
+    } catch {
+      // ignore
+    }
+  }
+
+  const sendOneRow = async (idx: number): Promise<void> => {
+    const row = bulkRows[idx]
+    if (!row || row.decodeError) return
+    if (!window.electronAPI?.itxApiRequest) {
+      setBulkRows((prev) =>
+        prev.map((r, i) =>
+          i === idx ? { ...r, status: 'error', errorMessage: 'Electron API not available' } : r,
+        ),
+      )
+      return
+    }
+    setBulkRows((prev) => prev.map((r, i) => (i === idx ? { ...r, status: 'sending' } : r)))
+    const start = performance.now()
+    try {
+      const res = await window.electronAPI.itxApiRequest(url, row.decoded)
+      const durationMs = Math.round(performance.now() - start)
+      setBulkRows((prev) =>
+        prev.map((r, i) =>
+          i === idx
+            ? {
+                ...r,
+                status: res.ok ? 'success' : 'error',
+                responseStatus: res.status,
+                responseStatusText: res.statusText,
+                errorMessage: res.ok ? undefined : res.data || res.statusText || undefined,
+                durationMs,
+              }
+            : r,
+        ),
+      )
+    } catch (err: any) {
+      const durationMs = Math.round(performance.now() - start)
+      setBulkRows((prev) =>
+        prev.map((r, i) =>
+          i === idx
+            ? {
+                ...r,
+                status: 'error',
+                errorMessage: err?.message || String(err),
+                durationMs,
+              }
+            : r,
+        ),
+      )
+    }
+  }
+
+  const handleBulkSendOne = async (idx: number) => {
+    await sendOneRow(idx)
+  }
+
+  const handleBulkSendAll = async () => {
+    if (bulkSendingAll) {
+      bulkStopRef.current = true
+      return
+    }
+    bulkStopRef.current = false
+    setBulkSendingAll(true)
+    try {
+      for (let i = 0; i < bulkRows.length; i++) {
+        if (bulkStopRef.current) break
+        const r = bulkRows[i]
+        if (!r || r.decodeError) continue
+        await sendOneRow(i)
+        if (bulkDelayMs > 0 && i < bulkRows.length - 1) {
+          await new Promise((res) => setTimeout(res, bulkDelayMs))
+        }
+      }
+    } finally {
+      setBulkSendingAll(false)
+      bulkStopRef.current = false
+    }
+  }
+
   const handleBase64Copy = async () => {
     if (!base64Output) return
     try {
@@ -514,16 +1091,30 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <Label htmlFor="api-body">Request Body (JSON)</Label>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handlePrettifyBody}
-                disabled={sending}
-                className="h-7 px-2 text-xs"
-              >
-                <Braces className="w-3.5 h-3.5 mr-1" />
-                Prettify
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onBase64OpenChange?.(true)}
+                  disabled={sending}
+                  className="h-7 px-2 text-xs"
+                  title="Base64 Decode / Encode"
+                >
+                  <Braces className="w-3.5 h-3.5 mr-1" />
+                  Base64
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handlePrettifyBody}
+                  disabled={sending}
+                  className="h-7 px-2 text-xs"
+                >
+                  <Braces className="w-3.5 h-3.5 mr-1" />
+                  Prettify
+                </Button>
+              </div>
             </div>
             <Textarea
               id="api-body"
@@ -608,18 +1199,361 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
         </CardContent>
       </Card>
 
-      {/* Small floating Base64 trigger - click to open decoder */}
+      {/* Bulk CSV / TSV Base64 Decoder */}
+      <Card className="tab-card">
+        <CardHeader
+          className="cursor-pointer select-none"
+          onClick={() => setBulkOpen((v) => !v)}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {bulkOpen ? (
+                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              )}
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileSpreadsheet className="w-4 h-4 text-primary" />
+                Bulk CSV / TSV Base64 Decoder
+              </CardTitle>
+              {bulkRows.length > 0 && (
+                <Badge variant="secondary" className="ml-1">
+                  {bulkRows.length} row{bulkRows.length === 1 ? '' : 's'}
+                </Badge>
+              )}
+            </div>
+            <CardDescription className="hidden sm:block text-right">
+              Paste rows with <code className="font-mono text-[11px]">id</code> / <code className="font-mono text-[11px]">body</code> columns.
+            </CardDescription>
+          </div>
+        </CardHeader>
+        {bulkOpen && (
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-csv-input" className="text-xs text-muted-foreground">
+                CSV / TSV (supports quoted fields with escaped <code className="font-mono">""</code>)
+              </Label>
+              <Textarea
+                id="bulk-csv-input"
+                value={bulkInput}
+                onChange={(e) => setBulkInput(e.target.value)}
+                placeholder={'"id"\t"body"\t"retry_count"\t"ignore_flag"\n"4759"\t"eyJib3giOn..."\t"10"\t"1"'}
+                className="font-mono text-xs min-h-[140px] resize-y"
+                disabled={bulkSendingAll}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                onClick={handleBulkParse}
+                disabled={bulkSendingAll}
+                variant="secondary"
+              >
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Parse & Decode
+              </Button>
+              <Button
+                type="button"
+                onClick={handleBulkClear}
+                variant="ghost"
+                disabled={bulkSendingAll}
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear
+              </Button>
+              {bulkRows.length > 0 && (
+                <>
+                  <Button
+                    type="button"
+                    onClick={handleBulkApplyTableAll}
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkSendingAll || !substitutionTable.trim()}
+                    title={
+                      substitutionTable.trim()
+                        ? 'Substitute {{TOKENS}} in every row using the placeholder table above'
+                        : 'Paste a placeholder table at the top first'
+                    }
+                  >
+                    <Table2 className="w-3.5 h-3.5 mr-1.5" />
+                    Apply table to all
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleBulkCheckBoxQrsAll}
+                    variant="outline"
+                    size="sm"
+                    disabled={bulkSendingAll}
+                    title="Check boxQrs on every row. If it has a split-object bug (},{ in the middle), the two objects are merged into one."
+                  >
+                    <Package className="w-3.5 h-3.5 mr-1.5" />
+                    Check boxQrs (all)
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleBulkExportJson}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {bulkCopiedIdx === -1 ? (
+                      <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5 mr-1.5" />
+                    )}
+                    {bulkCopiedIdx === -1 ? 'Copied!' : 'Copy all as JSON'}
+                  </Button>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Label htmlFor="bulk-delay" className="text-xs text-muted-foreground">
+                      Delay (ms)
+                    </Label>
+                    <Input
+                      id="bulk-delay"
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={bulkDelayMs}
+                      onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
+                      disabled={bulkSendingAll}
+                      className="h-8 w-20 text-xs"
+                    />
+                    <Button
+                      type="button"
+                      onClick={handleBulkSendAll}
+                      variant={bulkSendingAll ? 'destructive' : 'default'}
+                      size="sm"
+                    >
+                      {bulkSendingAll ? (
+                        <>
+                          <Square className="w-3.5 h-3.5 mr-1.5" />
+                          Stop
+                        </>
+                      ) : (
+                        <>
+                          <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
+                          Send all
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {bulkParseError && (
+              <p className="text-xs text-muted-foreground">{bulkParseError}</p>
+            )}
+
+            {bulkRows.length > 0 && (
+              <div className="rounded-lg border border-border/60 overflow-hidden">
+                <div className="grid grid-cols-[90px_1fr_180px_200px] items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border/60 text-xs font-medium text-muted-foreground">
+                  <div>ID</div>
+                  <div>Decoded preview</div>
+                  <div>Status</div>
+                  <div className="text-right">Actions</div>
+                </div>
+                <ScrollArea className="h-[420px]">
+                  <div className="divide-y divide-border/60">
+                    {bulkRows.map((row, idx) => {
+                      const isExpanded = !!bulkExpanded[idx]
+                      const preview = row.decodeError
+                        ? row.decodeError
+                        : row.decoded.replace(/\s+/g, ' ').slice(0, 160)
+                      const isEdited = !row.decodeError && row.decoded !== row.originalDecoded
+                      const hasUnresolvedPlaceholder = /\{\{[A-Z0-9_]+\}\}/.test(row.decoded)
+                      return (
+                        <div
+                          key={`${row.id}-${idx}`}
+                          className="grid grid-cols-[90px_1fr_180px_200px] items-start gap-2 px-3 py-2 text-xs hover:bg-muted/20"
+                        >
+                          <div className="font-mono font-semibold text-primary">
+                            {row.id || `#${idx + 1}`}
+                          </div>
+                          <div className="min-w-0">
+                            {isExpanded ? (
+                              row.decodeError ? (
+                                <pre className="font-mono text-[11px] whitespace-pre-wrap break-all bg-destructive/10 text-destructive rounded p-2 border border-destructive/40">
+                                  {row.decodeError}
+                                </pre>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  <Textarea
+                                    value={row.decoded}
+                                    onChange={(e) => handleBulkEditRow(idx, e.target.value)}
+                                    disabled={row.status === 'sending' || bulkSendingAll}
+                                    spellCheck={false}
+                                    className="font-mono text-[11px] min-h-[140px] max-h-[340px] resize-y bg-muted/20"
+                                  />
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[11px]"
+                                      onClick={() => handleBulkApplyTableRow(idx)}
+                                      disabled={row.status === 'sending' || bulkSendingAll}
+                                      title="Substitute {{TOKENS}} using the placeholder table above"
+                                    >
+                                      <Table2 className="w-3 h-3 mr-1" />
+                                      Apply table
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[11px]"
+                                      onClick={() => handleBulkCheckBoxQrsRow(idx)}
+                                      disabled={row.status === 'sending' || bulkSendingAll}
+                                      title="Verify boxQrs is a single merged object; fix split-object bug if present"
+                                    >
+                                      <Package className="w-3 h-3 mr-1" />
+                                      Fix boxQrs
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[11px]"
+                                      onClick={() => handleBulkPrettifyRow(idx)}
+                                      disabled={row.status === 'sending' || bulkSendingAll}
+                                    >
+                                      <Braces className="w-3 h-3 mr-1" />
+                                      Prettify
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-2 text-[11px]"
+                                      onClick={() => handleBulkResetRow(idx)}
+                                      disabled={!isEdited || row.status === 'sending' || bulkSendingAll}
+                                      title="Restore original decoded payload"
+                                    >
+                                      Reset
+                                    </Button>
+                                    {isEdited && (
+                                      <Badge variant="outline" className="text-[10px] ml-auto">
+                                        edited
+                                      </Badge>
+                                    )}
+                                    {hasUnresolvedPlaceholder && (
+                                      <Badge variant="outline" className="text-[10px] border-amber-500/60 text-amber-600 dark:text-amber-400">
+                                        has {'{{...}}'}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+                              )
+                            ) : (
+                              <div
+                                className={`font-mono truncate ${row.decodeError ? 'text-destructive' : 'text-muted-foreground'}`}
+                                title={row.decoded}
+                              >
+                                {preview}
+                                {row.decoded.length > 160 ? '…' : ''}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {row.status === 'sending' && (
+                              <Badge variant="secondary" className="gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                Sending
+                              </Badge>
+                            )}
+                            {row.status === 'success' && (
+                              <Badge variant="default" className="gap-1 bg-green-500/90 hover:bg-green-500/90">
+                                <CheckCircle className="w-3 h-3" />
+                                {row.responseStatus}
+                                {row.durationMs != null && (
+                                  <span className="opacity-80 ml-1">{row.durationMs}ms</span>
+                                )}
+                              </Badge>
+                            )}
+                            {row.status === 'error' && (
+                              <Badge variant="destructive" className="gap-1" title={row.errorMessage}>
+                                <XCircle className="w-3 h-3" />
+                                {row.responseStatus ?? 'ERR'}
+                              </Badge>
+                            )}
+                            {row.decodeError && (
+                              <Badge variant="destructive" className="gap-1">
+                                decode
+                              </Badge>
+                            )}
+                            {!isExpanded && isEdited && (
+                              <Badge variant="outline" className="text-[10px]">
+                                edited
+                              </Badge>
+                            )}
+                            {row.ignoreFlag === '1' && row.status === 'idle' && (
+                              <Badge variant="outline" className="text-[10px]">
+                                ignore=1
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => setBulkExpanded((prev) => ({ ...prev, [idx]: !prev[idx] }))}
+                              title={isExpanded ? 'Collapse' : 'Expand / edit'}
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleBulkCopyRow(idx)}
+                              title="Copy decoded JSON"
+                            >
+                              {bulkCopiedIdx === idx ? (
+                                <Check className="w-3.5 h-3.5 text-green-500" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleBulkLoadIntoBody(idx)}
+                              disabled={!!row.decodeError}
+                              title="Load into request body"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 px-2"
+                              onClick={() => handleBulkSendOne(idx)}
+                              disabled={!!row.decodeError || row.status === 'sending' || bulkSendingAll}
+                              title="Send this row"
+                            >
+                              <Send className="w-3 h-3 mr-1" />
+                              Send
+                            </Button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
+            )}
+          </CardContent>
+        )}
+      </Card>
+
+      {/* Base64 decoder dialog - opened via the "Base64" button next to Prettify */}
       <Dialog open={base64Open} onOpenChange={onBase64OpenChange}>
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className="absolute bottom-4 right-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 transition-colors shadow-sm"
-            title="Base64 Decode / Encode"
-          >
-            <Braces className="w-3.5 h-3.5" />
-            Base64
-          </button>
-        </DialogTrigger>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">

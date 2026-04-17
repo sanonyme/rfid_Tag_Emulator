@@ -38,7 +38,7 @@ function AppMobile() {
   const [fixedEpcList, setFixedEpcList] = useState('')
 
   const [handheldSlots, setHandheldSlots] = useState<HandheldSlot[]>([
-    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '' },
+    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '', startSerial: '1' },
   ])
 
   const [ocrMessage, setOcrMessage] = useState('')
@@ -89,6 +89,7 @@ function AppMobile() {
           port: 10472,
           upcList: profile.hhUpcList || '',
           epcList: profile.hhEpcList || '',
+          startSerial: '1',
         },
       ])
     }

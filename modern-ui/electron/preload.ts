@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { NetScanStartPayload } from './net-scan-handler.js'
-import type { ReaderDiscoveryPayload } from './reader-discovery-handler.js'
+import type { ReaderDiscoveryPayload, ReaderVendor } from './reader-discovery-handler.js'
 
 contextBridge.exposeInMainWorld('electronAPI', {
   platform: process.platform,
@@ -239,7 +239,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       openPorts: number[]
       reader?: {
         ip: string
-        vendor: 'impinj' | 'seuic' | 'unknown'
+        vendor: ReaderVendor
+        vendorLabel: string
         confidence: 'low' | 'medium' | 'high'
         openPorts: number[]
         reason: string

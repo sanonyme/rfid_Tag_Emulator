@@ -16,6 +16,8 @@ export interface HandheldSlot {
   port: number
   upcList: string
   epcList: string
+  /** Starting serial value used by SGTIN-96 encoding of the UPC list. Defaults to "1". */
+  startSerial?: string
 }
 
 interface HandheldTabProps {
@@ -32,13 +34,15 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
 
   if (slot.upcList.trim()) {
     const lines = slot.upcList.trim().split('\n')
+    let serial = Math.max(1, parseInt(slot.startSerial || '1') || 1)
     for (const line of lines) {
       const trimmed = line.trim()
       if (!trimmed) continue
       const [upc, countStr, customTid] = trimmed.split(',')
       const count = parseInt(countStr?.trim() || '0')
       if (count > 0 && upc) {
-        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count)
+        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
+        serial += count
         allTags.push(...epcs.map(epc => ({
           epc,
           tid: customTid?.trim() || epc
@@ -105,7 +109,8 @@ export function HandheldTab({
         id: crypto.randomUUID(),
         port: newPort,
         upcList: '',
-        epcList: ''
+        epcList: '',
+        startSerial: '1'
       }
     ])
   }
@@ -460,6 +465,24 @@ function HandheldSlotCard({
               placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
               className="font-mono text-xs min-h-[110px] resize-y"
             />
+            <div className="flex items-center gap-2 mt-2">
+              <label htmlFor={`start-serial-${slot.id}`} className="text-xs text-muted-foreground shrink-0">
+                Start Serial
+              </label>
+              <Input
+                id={`start-serial-${slot.id}`}
+                type="number"
+                min={1}
+                max={999999999}
+                value={slot.startSerial ?? '1'}
+                onChange={(e) => onUpdate({ startSerial: e.target.value })}
+                className="h-8 w-28 font-mono text-xs"
+                title="Starting SGTIN-96 serial number for the UPC list; increments across lines"
+              />
+              <span className="text-[10px] text-muted-foreground/80 truncate">
+                Used by SGTIN-96 encoding; continues across lines
+              </span>
+            </div>
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
             <div className="flex items-center justify-between gap-2 mb-1.5">

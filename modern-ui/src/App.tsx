@@ -22,11 +22,13 @@ import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
+import { cn } from './lib/utils'
 import { IS_MOBILE } from './lib/platform'
 import AppMobile from './AppMobile'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
 import { TabNavBar } from './components/TabNavBar'
+import { TabSidebar } from './components/TabSidebar'
 import { CommandPalette } from './components/CommandPalette'
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog'
 import { BottomMenu } from './components/BottomMenu'
@@ -76,7 +78,7 @@ function App() {
 
   // Handheld Tab persistent state (multi-port slots)
   const [handheldSlots, setHandheldSlots] = useState<HandheldSlot[]>([
-    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '' }
+    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '', startSerial: '1' }
   ])
 
   // OCR Tab persistent state
@@ -148,7 +150,7 @@ function App() {
     if (profile.handheldSlots?.length) {
       setHandheldSlots(profile.handheldSlots)
     } else if (profile.hhUpcList !== undefined || profile.hhEpcList !== undefined) {
-      setHandheldSlots([{ id: crypto.randomUUID(), port: 10472, upcList: profile.hhUpcList || '', epcList: profile.hhEpcList || '' }])
+      setHandheldSlots([{ id: crypto.randomUUID(), port: 10472, upcList: profile.hhUpcList || '', epcList: profile.hhEpcList || '', startSerial: '1' }])
     }
     setOcrMessage(profile.ocrMessage)
     if (profile.customPort) setCustomPort(profile.customPort)
@@ -329,19 +331,49 @@ function App() {
       />
 
       <div className="electron-no-drag flex flex-1 overflow-hidden relative z-10 min-h-0">
-        
-        {/* Main Content */}
-        <main className="flex-1 container px-6 py-6 overflow-hidden min-h-0">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
-            <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-4">
-              <ConnectionStatus
-                emulator={emulator}
-                host={host}
-                setHost={setHost}
-                connected={connected}
-                setConnected={setConnected}
-              />
-              <TabNavBar value={activeTab} className="animate-scale-in" isAdmin={isAdmin} />
+        <Tabs
+          value={activeTab}
+          onValueChange={setActiveTab}
+          className="flex flex-1 min-h-0 min-w-0 overflow-hidden"
+        >
+          {isAdmin && <TabSidebar value={activeTab} />}
+
+          {/* Main Content */}
+          <main
+            className={cn(
+              'flex-1 min-w-0 container overflow-hidden min-h-0 flex flex-col',
+              isAdmin ? 'px-4 py-4' : 'px-6 py-6',
+            )}
+          >
+            <div
+              className={cn(
+                'flex items-center gap-4',
+                isAdmin
+                  ? 'flex-row justify-start mb-2'
+                  : 'flex-col md:flex-row justify-center mb-4',
+              )}
+            >
+              {!isAdmin && (
+                <ConnectionStatus
+                  emulator={emulator}
+                  host={host}
+                  setHost={setHost}
+                  connected={connected}
+                  setConnected={setConnected}
+                />
+              )}
+              {!isAdmin && (
+                <TabNavBar value={activeTab} className="animate-scale-in" isAdmin={isAdmin} />
+              )}
+              {isAdmin && (
+                <ConnectionStatus
+                  emulator={emulator}
+                  host={host}
+                  setHost={setHost}
+                  connected={connected}
+                  setConnected={setConnected}
+                />
+              )}
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">
@@ -461,9 +493,9 @@ function App() {
                 </TabsContent>
               </>
             )}
-          </div>
+            </div>
+          </main>
         </Tabs>
-      </main>
       </div>
     </div>
     <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />

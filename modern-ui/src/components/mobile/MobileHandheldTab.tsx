@@ -20,13 +20,15 @@ function getClient(port: number) {
 function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] {
   const all: { epc: string; tid?: string }[] = []
   if (slot.upcList.trim()) {
+    let serial = Math.max(1, parseInt(slot.startSerial || '1') || 1)
     for (const line of slot.upcList.trim().split('\n')) {
       const t = line.trim()
       if (!t) continue
       const [upc, countStr, customTid] = t.split(',')
       const count = parseInt(countStr?.trim() || '0')
       if (count > 0 && upc) {
-        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count)
+        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
+        serial += count
         all.push(...epcs.map((epc) => ({ epc, tid: customTid?.trim() || epc })))
       }
     }
@@ -63,11 +65,11 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
 
   useEffect(() => {
     if (slots.length === 0) {
-      setSlots([{ id: crypto.randomUUID(), port: DEFAULT_PORT, upcList: '', epcList: '' }])
+      setSlots([{ id: crypto.randomUUID(), port: DEFAULT_PORT, upcList: '', epcList: '', startSerial: '1' }])
     }
   }, [])
 
-  const slot = slots[0] ?? { id: crypto.randomUUID(), port: DEFAULT_PORT, upcList: '', epcList: '' }
+  const slot = slots[0] ?? { id: crypto.randomUUID(), port: DEFAULT_PORT, upcList: '', epcList: '', startSerial: '1' }
 
   const isRunning = runningPorts.has(slot.port)
   const isSending = sendingPorts.has(slot.port)
@@ -172,7 +174,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
               <TabsTrigger value="upc">UPC → EPC</TabsTrigger>
               <TabsTrigger value="epc">Direct EPC</TabsTrigger>
             </TabsList>
-            <TabsContent value="upc" className="mt-3">
+            <TabsContent value="upc" className="mt-3 space-y-2">
               <DropTextarea
                 value={slot.upcList}
                 onChange={(e) => updateSlot({ upcList: e.target.value })}
@@ -180,6 +182,20 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
                 placeholder="00000000000001,5"
                 className="font-mono text-sm min-h-[100px]"
               />
+              <div className="flex items-center gap-2">
+                <label htmlFor={`m-start-serial-${slot.id}`} className="text-xs text-muted-foreground shrink-0">
+                  Start Serial
+                </label>
+                <Input
+                  id={`m-start-serial-${slot.id}`}
+                  type="number"
+                  min={1}
+                  max={999999999}
+                  value={slot.startSerial ?? '1'}
+                  onChange={(e) => updateSlot({ startSerial: e.target.value })}
+                  className="h-10 w-32 font-mono text-sm"
+                />
+              </div>
             </TabsContent>
             <TabsContent value="epc" className="mt-3">
               <DropTextarea

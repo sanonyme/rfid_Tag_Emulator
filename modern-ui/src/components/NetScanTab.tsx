@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Radar, Play, Square, Monitor, Loader2, Copy, Check, Radio, Trash2, Send, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
-import type { NetScanStartPayload, ReaderDiscoveryPayload } from '../types/electron'
+import type { NetScanStartPayload, ReaderDiscoveryPayload, ReaderVendor } from '../types/electron'
 
 // --- UDP Edge Discovery types and hook ---
 
@@ -148,19 +148,151 @@ function useUdpDiscovery(setHost: (h: string) => void) {
   }
 }
 
-type ReaderVendor = 'impinj' | 'seuic' | 'unknown'
 type ReaderConfidence = 'low' | 'medium' | 'high'
 type ReaderMode = 'cidr' | 'range' | 'allSubnets'
 
 interface ReaderCandidate {
   ip: string
   vendor: ReaderVendor
+  vendorLabel: string
   confidence: ReaderConfidence
   openPorts: number[]
   reason: string
   title?: string
   server?: string
   url?: string
+}
+
+const VENDOR_ROW_BG: Record<ReaderVendor, string> = {
+  impinj: 'bg-orange-500/5',
+  zebra: 'bg-slate-800/5',
+  alien: 'bg-lime-500/5',
+  thingmagic: 'bg-violet-500/5',
+  caen: 'bg-rose-500/5',
+  nordicid: 'bg-cyan-500/5',
+  honeywell: 'bg-red-500/5',
+  sick: 'bg-yellow-500/5',
+  feig: 'bg-orange-600/5',
+  kathrein: 'bg-red-700/5',
+  csl: 'bg-teal-500/5',
+  invengo: 'bg-indigo-500/5',
+  nedap: 'bg-pink-500/5',
+  turck: 'bg-yellow-600/5',
+  balluff: 'bg-blue-700/5',
+  seuic: 'bg-amber-500/5',
+  siemens: 'bg-teal-600/5',
+  chainway: 'bg-green-700/5',
+  bluebird: 'bg-blue-600/5',
+  chafon: 'bg-purple-500/5',
+  datalogic: 'bg-red-600/5',
+  generic: 'bg-emerald-500/5',
+  unknown: 'bg-muted/30',
+}
+
+function vendorBadgeClass(vendor: ReaderVendor): string {
+  return VENDOR_ROW_BG[vendor] ?? 'bg-muted/30'
+}
+
+/**
+ * Per-vendor metadata used to render a logo badge.
+ *  - `domain`     : the official corporate website. We fetch its favicon at
+ *                   runtime (Google's public favicon service, then DuckDuckGo
+ *                   as a fallback) — favicons are published by each vendor as
+ *                   their own identifying mark, so this gives us real brand
+ *                   logos without shipping any trademarked assets with the app.
+ *  - `letters/bg/fg` : brand-coloured monogram shown while the favicon loads,
+ *                      and as a permanent fallback when the machine is offline
+ *                      or the vendor has no usable favicon.
+ */
+const VENDOR_LOGO: Record<
+  ReaderVendor,
+  { letters: string; bg: string; fg: string; title: string; domain?: string }
+> = {
+  impinj:     { letters: 'IP', bg: '#FF6900', fg: '#FFFFFF', title: 'Impinj',                     domain: 'impinj.com' },
+  zebra:      { letters: 'ZE', bg: '#000000', fg: '#FFFFFF', title: 'Zebra / Motorola',           domain: 'zebra.com' },
+  alien:      { letters: 'AL', bg: '#8BC53F', fg: '#0B1A0B', title: 'Alien Technology',           domain: 'alientechnology.com' },
+  thingmagic: { letters: 'TM', bg: '#6B46C1', fg: '#FFFFFF', title: 'ThingMagic / JADAK',         domain: 'jadaktech.com' },
+  caen:       { letters: 'CA', bg: '#E31837', fg: '#FFFFFF', title: 'CAEN RFID',                  domain: 'caenrfid.com' },
+  nordicid:   { letters: 'NI', bg: '#0066CC', fg: '#FFFFFF', title: 'Nordic ID',                  domain: 'nordicid.com' },
+  honeywell:  { letters: 'HW', bg: '#EE3124', fg: '#FFFFFF', title: 'Honeywell / Intermec',       domain: 'honeywell.com' },
+  sick:       { letters: 'SK', bg: '#F9B000', fg: '#0B0B0B', title: 'SICK',                       domain: 'sick.com' },
+  feig:       { letters: 'FE', bg: '#E40613', fg: '#FFFFFF', title: 'FEIG OBID',                  domain: 'feig.de' },
+  kathrein:   { letters: 'KA', bg: '#C8102E', fg: '#FFFFFF', title: 'Kathrein Solutions',         domain: 'kathrein-solutions.com' },
+  csl:        { letters: 'CS', bg: '#00A896', fg: '#FFFFFF', title: 'CSL / Convergence Systems',  domain: 'convergence.com.hk' },
+  invengo:    { letters: 'IV', bg: '#1E3A8A', fg: '#FFFFFF', title: 'Invengo',                    domain: 'invengo.com' },
+  nedap:      { letters: 'ND', bg: '#EC008C', fg: '#FFFFFF', title: 'Nedap',                      domain: 'nedap.com' },
+  turck:      { letters: 'TU', bg: '#FFD100', fg: '#0B0B0B', title: 'Turck',                      domain: 'turck.com' },
+  balluff:    { letters: 'BA', bg: '#005CA9', fg: '#FFFFFF', title: 'Balluff',                    domain: 'balluff.com' },
+  seuic:      { letters: 'SE', bg: '#F39200', fg: '#FFFFFF', title: 'SEUIC / AUTOID',             domain: 'seuic.com' },
+  siemens:    { letters: 'SI', bg: '#009999', fg: '#FFFFFF', title: 'Siemens SIMATIC RF',         domain: 'siemens.com' },
+  chainway:   { letters: 'CW', bg: '#006633', fg: '#FFFFFF', title: 'Chainway',                   domain: 'chainway.net' },
+  bluebird:   { letters: 'BB', bg: '#0066B3', fg: '#FFFFFF', title: 'Bluebird / Pidion',          domain: 'bluebirdcorp.com' },
+  chafon:     { letters: 'CF', bg: '#7C3AED', fg: '#FFFFFF', title: 'Chafon',                     domain: 'chafon.com' },
+  datalogic:  { letters: 'DL', bg: '#E4002B', fg: '#FFFFFF', title: 'Datalogic',                  domain: 'datalogic.com' },
+  generic:    { letters: 'RF', bg: '#10B981', fg: '#FFFFFF', title: 'Generic RFID reader' },
+  unknown:    { letters: '?',  bg: '#6B7280', fg: '#FFFFFF', title: 'Unknown' },
+}
+
+function faviconUrl(domain: string, size: number): string {
+  // Google's public favicon service. It returns the vendor's own favicon,
+  // which is effectively their logo.
+  return `https://www.google.com/s2/favicons?domain=${domain}&sz=${Math.max(32, size * 2)}`
+}
+
+function faviconFallbackUrl(domain: string): string {
+  // DuckDuckGo's icon service — used only if Google's endpoint fails, so the
+  // logo still shows up when one service is unreachable.
+  return `https://icons.duckduckgo.com/ip3/${domain}.ico`
+}
+
+function VendorLogo({ vendor, size = 24 }: { vendor: ReaderVendor; size?: number }) {
+  const def = VENDOR_LOGO[vendor] ?? VENDOR_LOGO.unknown
+  const [stage, setStage] = useState<'primary' | 'fallback' | 'monogram'>(
+    def.domain ? 'primary' : 'monogram',
+  )
+  const s = `${size}px`
+
+  if (stage !== 'monogram' && def.domain) {
+    const src = stage === 'primary' ? faviconUrl(def.domain, size) : faviconFallbackUrl(def.domain)
+    return (
+      <div
+        title={def.title}
+        aria-label={def.title}
+        className="rounded-md flex items-center justify-center bg-white shadow-sm ring-1 ring-black/10 flex-shrink-0 overflow-hidden"
+        style={{ width: s, height: s }}
+      >
+        <img
+          src={src}
+          alt={def.title}
+          width={size - 4}
+          height={size - 4}
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={() => setStage(stage === 'primary' ? 'fallback' : 'monogram')}
+          style={{ display: 'block', objectFit: 'contain' }}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      title={def.title}
+      aria-label={def.title}
+      className="rounded-md flex items-center justify-center font-bold tracking-tight shadow-sm ring-1 ring-black/10 flex-shrink-0"
+      style={{
+        width: s,
+        height: s,
+        backgroundColor: def.bg,
+        color: def.fg,
+        fontSize: size <= 20 ? '8px' : '9.5px',
+        letterSpacing: '-0.02em',
+        lineHeight: 1,
+      }}
+    >
+      {def.letters}
+    </div>
+  )
 }
 
 function useReaderDiscovery(defaultCidr: string) {
@@ -717,9 +849,12 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <div className="space-y-1">
                 <h2 className="text-lg font-semibold text-foreground">RFID Reader Discovery</h2>
                 <p className="text-xs text-muted-foreground max-w-3xl">
-                  Vendor-aware scan for <span className="font-semibold text-foreground">Impinj</span> and{' '}
-                  <span className="font-semibold text-foreground">SEUIC</span>. Uses a practical fingerprint approach:
-                  LLRP ports (5084/5085) plus HTTP/HTTPS title/server keyword checks.
+                  Vendor-agnostic scan for fixed RFID readers. Probes LLRP (5084/5085), Feig/OBID
+                  (10001), Impinj REST (14150), HTTP/HTTPS and telnet, then fingerprints 20+ vendors
+                  (Impinj, Zebra, Alien, ThingMagic, CAEN, Nordic&nbsp;ID, Honeywell, SICK, FEIG,
+                  Kathrein, CSL, Invengo, Nedap, Turck, Balluff, SEUIC, Siemens, Chainway, Chafon,
+                  Datalogic, …). White-label / OEM readers with LLRP open are still reported as
+                  generic RFID readers.
                 </p>
               </div>
             </div>
@@ -829,7 +964,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <div className="min-w-[760px]">
                 <div className="sticky top-0 z-10 flex items-center gap-2 px-3 py-2 border-b border-border/40 bg-muted/30 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   <div className="w-36">IP</div>
-                  <div className="w-20">Vendor</div>
+                  <div className="w-44">Vendor</div>
                   <div className="w-24">Confidence</div>
                   <div className="w-28">Open ports</div>
                   <div className="w-40">Service hint</div>
@@ -838,7 +973,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                 </div>
                 {readers.results.length === 0 && !readers.scanning && (
                   <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-                    Run reader discovery to detect Impinj/SEUIC readers on your LAN.
+                    Run reader discovery to detect any RFID reader on your LAN (LLRP + HTTP vendor fingerprint).
                   </p>
                 )}
                 {readers.results.map((r) => (
@@ -846,11 +981,14 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                     key={r.ip}
                     className={cn(
                       'flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono text-sm',
-                      r.vendor === 'impinj' ? 'bg-blue-500/5' : r.vendor === 'seuic' ? 'bg-amber-500/5' : 'bg-emerald-500/5',
+                      vendorBadgeClass(r.vendor),
                     )}
                   >
                     <div className="w-36 truncate">{r.ip}</div>
-                    <div className="w-20 text-xs uppercase">{r.vendor}</div>
+                    <div className="w-44 text-xs flex items-center gap-2 min-w-0" title={r.vendorLabel || r.vendor}>
+                      <VendorLogo vendor={r.vendor} />
+                      <span className="truncate">{r.vendorLabel || r.vendor}</span>
+                    </div>
                     <div className="w-24 text-xs">{r.confidence}</div>
                     <div className="w-28 text-xs">{r.openPorts.join(', ') || '—'}</div>
                     <div className="w-40 text-xs truncate">{r.title || r.server || r.url || '—'}</div>

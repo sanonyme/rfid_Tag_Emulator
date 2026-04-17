@@ -1,4 +1,4 @@
-import { ElectronAPI, type NetScanStartPayload, type ReaderDiscoveryPayload } from '../types/electron';
+import { ElectronAPI, type NetScanStartPayload, type ReaderDiscoveryPayload, type ReaderVendor } from '../types/electron';
 
 class MockElectronAPI implements ElectronAPI {
   platform = 'win32'; // Mock platform
@@ -544,7 +544,8 @@ class MockElectronAPI implements ElectronAPI {
       openPorts: number[]
       reader?: {
         ip: string
-        vendor: 'impinj' | 'seuic' | 'unknown'
+        vendor: ReaderVendor
+        vendorLabel: string
         confidence: 'low' | 'medium' | 'high'
         openPorts: number[]
         reason: string

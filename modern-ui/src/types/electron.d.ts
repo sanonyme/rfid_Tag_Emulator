@@ -8,6 +8,31 @@ export type ReaderDiscoveryPayload =
   | { mode: 'range'; start: string; end: string; concurrency?: number; timeoutMs?: number }
   | { mode: 'allSubnets'; concurrency?: number; timeoutMs?: number }
 
+export type ReaderVendor =
+  | 'impinj'
+  | 'zebra'
+  | 'alien'
+  | 'thingmagic'
+  | 'caen'
+  | 'nordicid'
+  | 'honeywell'
+  | 'sick'
+  | 'feig'
+  | 'kathrein'
+  | 'csl'
+  | 'invengo'
+  | 'nedap'
+  | 'turck'
+  | 'balluff'
+  | 'seuic'
+  | 'siemens'
+  | 'chainway'
+  | 'bluebird'
+  | 'chafon'
+  | 'datalogic'
+  | 'generic'
+  | 'unknown'
+
 export interface ElectronAPI {
   platform: string
   minimize: () => void
@@ -312,7 +337,8 @@ export interface ElectronAPI {
       openPorts: number[]
       reader?: {
         ip: string
-        vendor: 'impinj' | 'seuic' | 'unknown'
+        vendor: ReaderVendor
+        vendorLabel: string
         confidence: 'low' | 'medium' | 'high'
         openPorts: number[]
         reason: string
