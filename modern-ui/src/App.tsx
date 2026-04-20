@@ -15,6 +15,7 @@ import { SftpTab } from './components/SftpTab'
 import { NetScanTab } from './components/NetScanTab'
 import { LinkToUidTab } from './components/LinkToUidTab'
 import { AdminTerminalTab } from './components/AdminTerminalTab'
+import { SystemLogAnalyzerTab } from './components/SystemLogAnalyzerTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
@@ -490,6 +491,9 @@ function App() {
                 </TabsContent>
                 <TabsContent value="terminal" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
                   <AdminTerminalTab active={activeTab === 'terminal'} />
+                </TabsContent>
+                <TabsContent value="logs" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+                  <SystemLogAnalyzerTab />
                 </TabsContent>
               </>
             )}

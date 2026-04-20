@@ -15,6 +15,7 @@ import {
   FolderInput,
   Link2,
   Radar,
+  LineChart,
   PanelLeftClose,
   PanelLeftOpen,
   Shield,
@@ -23,7 +24,7 @@ import {
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
 
-type TabItem = { value: string; label: string; icon: LucideIcon }
+type TabItem = { value: string; label: string; icon: LucideIcon; badge?: string }
 type TabGroup = { id: string; label: string; items: TabItem[] }
 
 const GROUPS: TabGroup[] = [
@@ -63,6 +64,7 @@ const ADMIN_GROUP: TabGroup = {
   items: [
     { value: 'link2uid', label: 'Link → UID', icon: Link2 },
     { value: 'terminal', label: 'Terminal', icon: Terminal },
+    { value: 'logs', label: 'Log Analyzer', icon: LineChart, badge: 'BETA' },
   ],
 }
 
@@ -231,7 +233,32 @@ export function TabSidebar({ value, className }: TabSidebarProps) {
                         )}
                         strokeWidth={2.25}
                       />
-                      {expanded && <span className="relative z-10 truncate">{item.label}</span>}
+                      {expanded && (
+                        <>
+                          <span className="relative z-10 truncate">{item.label}</span>
+                          {item.badge && (
+                            <span
+                              className={cn(
+                                'relative z-10 ml-auto shrink-0 rounded-full px-1.5 py-px text-[9px] font-bold tracking-wider',
+                                'bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/30',
+                                'dark:bg-amber-400/15 dark:text-amber-300 dark:ring-amber-400/30',
+                              )}
+                            >
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {!expanded && item.badge && (
+                        <span
+                          aria-hidden
+                          className={cn(
+                            'absolute top-0.5 right-0.5 z-10 h-1.5 w-1.5 rounded-full',
+                            'bg-amber-500 ring-1 ring-background',
+                            'dark:bg-amber-400',
+                          )}
+                        />
+                      )}
                     </TabsTrigger>
                   )
                 })}
