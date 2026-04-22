@@ -1,4 +1,5 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -23,6 +24,9 @@ import {
 } from './ui/select'
 import { Switch } from './ui/switch'
 import { OnboardingDialog } from './OnboardingDialog'
+import { BackupRestoreDialog } from './BackupRestoreDialog'
+import { downloadBackup, readBackupFile, type BackupFile } from '@/lib/backup'
+import { InstallRegistryPanel } from './InstallRegistryPanel'
 
 function hslToStyle(hsl: string) {
   return `hsl(${hsl})`
@@ -103,6 +107,7 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
+  const [pendingBackup, setPendingBackup] = useState<BackupFile | null>(null)
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
@@ -150,6 +155,37 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
     if (window.electronAPI) {
       window.electronAPI.quitAndInstall()
     }
+  }
+
+  const handleExportBackup = () => {
+    try {
+      downloadBackup()
+      toast.success('Backup exported', {
+        description: 'Your profiles, sequences, settings and themes were saved.',
+      })
+    } catch (err) {
+      toast.error('Export failed', { description: String(err) })
+    }
+  }
+
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const parsed = await readBackupFile(file)
+      setPendingBackup(parsed)
+    } catch (err) {
+      toast.error('Could not read backup', { description: (err as Error).message })
+    }
+  }
+
+  const handleBackupRestored = () => {
+    setPendingBackup(null)
+    toast.success('Backup restored', {
+      description: 'Reloading the app to apply everything…',
+    })
+    setTimeout(() => window.location.reload(), 800)
   }
 
   return (
@@ -307,6 +343,45 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
             </div>
           </div>
 
+          {/* Backup & Restore */}
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Archive className="w-4 h-4 text-primary" />
+              Backup & Restore
+            </h4>
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Save or restore everything in one file — profiles, automation sequences, settings, themes, saved hosts and query history. Credentials (SFTP / DB passwords) are never included.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportBackup}
+                  className="gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Export everything
+                </Button>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    onChange={handleImportBackup}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                    aria-label="Import backup file"
+                  />
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Upload className="w-4 h-4" />
+                    Import backup
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <InstallRegistryPanel />
+
           {/* Connection */}
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
             <h4 className="text-sm font-semibold flex items-center gap-2">
@@ -428,6 +503,11 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
         </div>
       </DialogContent>
       <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
+      <BackupRestoreDialog
+        backup={pendingBackup}
+        onOpenChange={(o) => { if (!o) setPendingBackup(null) }}
+        onRestored={handleBackupRestored}
+      />
     </Dialog>
   )
 }

@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ScrollArea } from './ui/scroll-area'
 import { Wifi, WifiOff, Power, Activity, ArrowLeftRight } from 'lucide-react'
 import { formatTime } from '@/lib/utils'
+import { publishStatus, clearStatus } from '@/lib/workspace-status'
 
 interface AdamTabProps {
   host: string
@@ -39,6 +40,21 @@ export function AdamTab({ host, setHost }: AdamTabProps) {
       logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [log])
+
+  useEffect(() => {
+    if (isConnected) {
+      publishStatus('adam', {
+        status: 'connected',
+        host: host || undefined,
+        port: parseInt(port, 10) || 502,
+        label: 'ADAM',
+      })
+    } else {
+      clearStatus('adam')
+    }
+  }, [isConnected, host, port])
+
+  useEffect(() => () => clearStatus('adam'), [])
 
   useEffect(() => {
     if (!window.electronAPI) return

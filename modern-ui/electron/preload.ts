@@ -280,6 +280,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),
   safeStoreDelete: (key: string) => ipcRenderer.invoke('safe-store-delete', key),
 
+  installRegistryGetStatus: () => ipcRenderer.invoke('install-registry-get-status'),
+  installRegistrySetEnabled: (enabled: boolean) => ipcRenderer.invoke('install-registry-set-enabled', enabled),
+  installRegistrySendNow: () => ipcRenderer.invoke('install-registry-send-now'),
+
   // Admin Shell (multi-tab: sessionId required)
   shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),
   shellWrite: (sessionId: string, data: string) => ipcRenderer.send('shell-write', sessionId, data),

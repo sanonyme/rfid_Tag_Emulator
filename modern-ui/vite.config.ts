@@ -3,9 +3,13 @@ import react from '@vitejs/plugin-react'
 import electron from 'vite-plugin-electron/simple'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import dotenv from 'dotenv'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+
+/** Optional `.env` for build-time or future main-process values. */
+dotenv.config({ path: path.join(__dirname, '.env') })
 
 export default defineConfig({
   plugins: [

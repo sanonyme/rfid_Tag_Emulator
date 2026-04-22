@@ -1,3 +1,29 @@
+export type InstallRegistryPayload = {
+  machineId: string
+  macAddress: string | null
+  version: string
+  os: string
+  arch: string
+}
+
+export type InstallRegistryStatus = {
+  enabled: boolean
+  endpoint: string | null
+  lastSentAt: number | null
+  sendNowAfterMs: number
+  lastSentStatus: 'success' | 'error' | 'disabled' | 'skipped' | null
+  lastSentError: string | null
+  hasToken: boolean
+  nextPayload: InstallRegistryPayload
+}
+
+export type InstallRegistrySendResult = {
+  status: 'success' | 'error' | 'disabled' | 'skipped'
+  error?: string
+  sendNowAfterMs?: number
+  payload?: InstallRegistryPayload
+}
+
 export type NetScanStartPayload =
   | { mode: 'cidr'; cidr: string; concurrency?: number }
   | { mode: 'range'; start: string; end: string; concurrency?: number }
@@ -193,6 +219,10 @@ export interface ElectronAPI {
   safeStoreSet: (key: string, value: string) => Promise<boolean>
   safeStoreGet: (key: string) => Promise<string | null>
   safeStoreDelete: (key: string) => Promise<void>
+
+  installRegistryGetStatus: () => Promise<InstallRegistryStatus>
+  installRegistrySetEnabled: (enabled: boolean) => Promise<boolean>
+  installRegistrySendNow: () => Promise<InstallRegistrySendResult>
 
   // SFTP (Electron main / ssh2)
   sftpConnect: (

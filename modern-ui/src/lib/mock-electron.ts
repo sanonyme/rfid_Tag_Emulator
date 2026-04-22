@@ -424,6 +424,31 @@ class MockElectronAPI implements ElectronAPI {
     return undefined
   }
 
+  async installRegistryGetStatus() {
+    return {
+      enabled: false,
+      endpoint: null,
+      lastSentAt: null,
+      sendNowAfterMs: 0,
+      lastSentStatus: null,
+      lastSentError: null,
+      hasToken: false,
+      nextPayload: {
+        machineId: '',
+        macAddress: null,
+        version: '0.0.0',
+        os: 'web',
+        arch: 'unknown',
+      },
+    }
+  }
+  async installRegistrySetEnabled(_enabled: boolean) {
+    return false
+  }
+  async installRegistrySendNow() {
+    return { status: 'disabled' as const, error: 'Not available in browser' }
+  }
+
   private sftpUnavailable() {
     return { ok: false as const, error: 'SFTP is only available in the desktop app.' }
   }

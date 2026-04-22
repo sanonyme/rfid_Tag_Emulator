@@ -10,6 +10,7 @@ import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download } f
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
 import { formatTime } from '@/lib/utils'
+import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
 
 export interface HandheldSlot {
   id: string
@@ -124,6 +125,7 @@ export function HandheldTab({
         next.delete(slot.port)
         return next
       })
+      clearStatus(handheldKey(slot.port))
     }
     setSlots(slots.filter(s => s.id !== id))
   }
@@ -134,11 +136,16 @@ export function HandheldTab({
 
   const handleStartServer = async (port: number) => {
     const client = getClient(port)
+    publishStatus(handheldKey(port), { status: 'connecting', port, label: `HH :${port}` })
     client.start(
       (msg) => addLog(msg, port),
-      (err) => addLog(`Error: ${err}`, port)
+      (err) => {
+        addLog(`Error: ${err}`, port)
+        publishStatus(handheldKey(port), { status: 'error', port, error: err })
+      },
     )
     setRunningPorts(prev => new Set([...prev, port]))
+    publishStatus(handheldKey(port), { status: 'connected', port, label: `HH :${port}` })
   }
 
   const handleStopServer = (port: number) => {
@@ -150,6 +157,7 @@ export function HandheldTab({
       return next
     })
     addLog(`Server stopped on port ${port}`, port)
+    clearStatus(handheldKey(port))
   }
 
   const handleSendToSlot = async (slot: HandheldSlot) => {
@@ -168,6 +176,11 @@ export function HandheldTab({
 
     addLog(`Sending ${tags.length} EPC(s) to handheld on port ${slot.port}...`, slot.port)
     setSendingPorts(prev => new Set([...prev, slot.port]))
+    publishStatus(handheldKey(slot.port), {
+      status: 'sending',
+      port: slot.port,
+      detail: `sending ${tags.length} tag${tags.length === 1 ? '' : 's'}`,
+    })
 
     const tagCount = tags.length
     await client.sendEpcs(
@@ -181,6 +194,11 @@ export function HandheldTab({
           const next = new Set(prev)
           next.delete(slot.port)
           return next
+        })
+        publishStatus(handheldKey(slot.port), {
+          status: 'connected',
+          port: slot.port,
+          detail: undefined,
         })
       }
     )

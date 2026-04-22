@@ -42,6 +42,7 @@ import {
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
+import { publishStatus, clearStatus } from '@/lib/workspace-status'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { sql, MySQL } from '@codemirror/lang-sql'
@@ -164,7 +165,15 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
 
   useEffect(() => {
     tourIx?.setDbMysqlConnected(dbConnected)
-  }, [dbConnected, tourIx])
+    publishStatus('db', {
+      status: dbConnected ? 'connected' : 'idle',
+      host: dbConnected && host ? host : undefined,
+      port: dbConnected ? 3306 : undefined,
+      label: 'DB',
+    })
+  }, [dbConnected, host, tourIx])
+
+  useEffect(() => () => clearStatus('db'), [])
 
   const [selectedDb, setSelectedDb] = useState('')
   const [selectedTable, setSelectedTable] = useState('')

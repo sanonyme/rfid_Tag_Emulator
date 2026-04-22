@@ -48,6 +48,7 @@ import {
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
+import { publishStatus, clearStatus } from '@/lib/workspace-status'
 
 const SFTP_CREDS_KEY = 'sftp-creds'
 const DB_CREDS_KEY = 'db-credentials'
@@ -157,6 +158,24 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
+
+  useEffect(() => {
+    if (connected) {
+      publishStatus('sftp', {
+        status: 'connected',
+        host: host || undefined,
+        port: parseInt(sftpPort, 10) || 22,
+        label: 'SFTP',
+      })
+    } else if (connecting) {
+      publishStatus('sftp', { status: 'connecting', host: host || undefined, label: 'SFTP' })
+    } else {
+      clearStatus('sftp')
+    }
+    return () => { /* keep status across re-renders */ }
+  }, [connected, connecting, host, sftpPort])
+
+  useEffect(() => () => clearStatus('sftp'), [])
   const [connError, setConnError] = useState('')
 
   const [tree, setTree] = useState<SftpFileNode[]>([])

@@ -28,6 +28,7 @@ import { IS_MOBILE } from './lib/platform'
 import AppMobile from './AppMobile'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
+import { publishStatus } from './lib/workspace-status'
 import { TabNavBar } from './components/TabNavBar'
 import { TabSidebar } from './components/TabSidebar'
 import { CommandPalette } from './components/CommandPalette'
@@ -37,7 +38,6 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster, toast } from 'sonner'
 import { AppTour } from './components/AppTour'
 import { TourInteractionProvider } from './contexts/TourInteractionContext'
-
 const TAB_VALUES_FULL = [
   'fixed',
   'handheld',
@@ -102,6 +102,16 @@ function App() {
     if (IS_MOBILE && defaultTab === 'adam') return 'fixed'
     return defaultTab
   })
+
+  /**
+   * Tabs that have ever been visited this session. We lazy-mount each tab
+   * on first activation and then keep it mounted across switches so that
+   * connections, logs and in-flight transfers survive tab changes.
+   */
+  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set([activeTab]))
+  React.useEffect(() => {
+    setMountedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])))
+  }, [activeTab])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -212,6 +222,16 @@ function App() {
     window.addEventListener(THEME_CHANGE_EVENT, handleThemeChange)
     return () => window.removeEventListener(THEME_CHANGE_EVENT, handleThemeChange)
   }, [])
+
+  // Publish fixed-reader status to the Workspace Bar
+  React.useEffect(() => {
+    publishStatus('fixed', {
+      status: connected ? 'connected' : 'idle',
+      host: host || undefined,
+      port: connected ? Number(port) || 12352 : undefined,
+      label: 'Fixed',
+    })
+  }, [connected, host, port])
 
   // Toast when update is available (Electron only)
   React.useEffect(() => {
@@ -378,7 +398,7 @@ function App() {
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">
-            <TabsContent value="fixed" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="fixed" forceMount={mountedTabs.has('fixed') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <FixedTab 
                 emulator={emulator} 
                 host={host}
@@ -408,7 +428,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="handheld" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="handheld" forceMount={mountedTabs.has('handheld') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
@@ -417,7 +437,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="ocr" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="ocr" forceMount={mountedTabs.has('ocr') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <OCRTab 
                 host={host} 
                 connected={connected} 
@@ -427,7 +447,7 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="custom" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="custom" forceMount={mountedTabs.has('custom') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <CustomTab 
                 host={host} 
                 message={customMessage}
@@ -438,7 +458,7 @@ function App() {
             </TabsContent>
 
             {!IS_MOBILE && (
-            <TabsContent value="adam" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="adam" forceMount={mountedTabs.has('adam') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <AdamTab 
                 host={adamHost} 
                 setHost={setAdamHost}
@@ -446,15 +466,15 @@ function App() {
             </TabsContent>
             )}
 
-            <TabsContent value="api" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="api" forceMount={mountedTabs.has('api') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
             </TabsContent>
 
-            <TabsContent value="decoder" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="decoder" forceMount={mountedTabs.has('decoder') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <DecoderTab />
             </TabsContent>
 
-            <TabsContent value="automation" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+            <TabsContent value="automation" forceMount={mountedTabs.has('automation') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
@@ -468,31 +488,31 @@ function App() {
               />
             </TabsContent>
 
-            <TabsContent value="generator" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+            <TabsContent value="generator" forceMount={mountedTabs.has('generator') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <BarcodeGenerator />
             </TabsContent>
 
-            <TabsContent value="database" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+            <TabsContent value="database" forceMount={mountedTabs.has('database') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
               <DatabaseTab host={host} connected={connected} />
             </TabsContent>
 
-            <TabsContent value="sftp" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+            <TabsContent value="sftp" forceMount={mountedTabs.has('sftp') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
               <SftpTab host={host} setHost={setHost} />
             </TabsContent>
 
-            <TabsContent value="netscan" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+            <TabsContent value="netscan" forceMount={mountedTabs.has('netscan') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
               <NetScanTab host={host} setHost={setHost} />
             </TabsContent>
 
             {isAdmin && (
               <>
-                <TabsContent value="link2uid" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+                <TabsContent value="link2uid" forceMount={mountedTabs.has('link2uid') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
                   <LinkToUidTab />
                 </TabsContent>
-                <TabsContent value="terminal" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden">
+                <TabsContent value="terminal" forceMount={mountedTabs.has('terminal') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
                   <AdminTerminalTab active={activeTab === 'terminal'} />
                 </TabsContent>
-                <TabsContent value="logs" className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto">
+                <TabsContent value="logs" forceMount={mountedTabs.has('logs') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
                   <SystemLogAnalyzerTab />
                 </TabsContent>
               </>

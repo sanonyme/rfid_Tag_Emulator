@@ -54,6 +54,12 @@ import {
   cancelReaderDiscovery,
   type ReaderDiscoveryPayload,
 } from './reader-discovery-handler.js'
+import {
+  getInstallRegistryStatus,
+  getInstallRegistryEnabled,
+  setInstallRegistryEnabled,
+  sendInstallRegistry,
+} from './install-registry.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -207,6 +213,17 @@ app.whenReady().then(() => {
     // Initialize TCP handlers
     tcpHandler = new TCPEmulatorHandler(window)
   }
+
+  ipcMain.handle('install-registry-get-status', () => getInstallRegistryStatus())
+  ipcMain.handle('install-registry-set-enabled', (_e, enabled: boolean) => {
+    setInstallRegistryEnabled(Boolean(enabled))
+    return getInstallRegistryEnabled()
+  })
+  ipcMain.handle('install-registry-send-now', async () => sendInstallRegistry({ force: true }))
+
+  setTimeout(() => {
+    sendInstallRegistry().catch((err) => console.warn('[install-registry]', err))
+  }, 5000)
 
   // Window control IPC handlers
   ipcMain.on('window-minimize', () => {
@@ -668,26 +685,10 @@ app.whenReady().then(() => {
       console.log('Skipping update check in dev mode')
       mainWindow?.webContents.send('update-not-available')
     } else {
-      // This will check for updates but NOT download them automatically
+      // User-initiated only (no background update polling).
       autoUpdater.checkForUpdates()
     }
   })
-
-  // Check for updates every hour
-  setInterval(() => {
-    if (!isDev) {
-      console.log('Running hourly update check...')
-      autoUpdater.checkForUpdates()
-    }
-  }, 60 * 60 * 1000)
-
-  // Initial check on app start
-  setTimeout(() => {
-    if (!isDev) {
-      console.log('Running initial update check...')
-      autoUpdater.checkForUpdates()
-    }
-  }, 3000)
 
   ipcMain.on('start-download', () => {
     console.log('User requested download...')

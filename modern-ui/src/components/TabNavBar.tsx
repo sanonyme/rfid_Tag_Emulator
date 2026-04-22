@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion, LayoutGroup } from 'framer-motion'
 import { TabsList, TabsTrigger } from './ui/tabs'
 import {
@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
+import { useWorkspaceStatus, type ServiceStatus } from '@/lib/workspace-status'
 
 const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'fixed', label: 'Fixed', icon: Radio },
@@ -46,6 +47,18 @@ interface TabNavBarProps {
   isAdmin?: boolean
 }
 
+/**
+ * Worst-case aggregate status for a given tab.
+ * Priority: error > sending > connected > connecting > idle.
+ */
+function aggregateStatus(statuses: ServiceStatus[]): ServiceStatus {
+  if (statuses.includes('error')) return 'error'
+  if (statuses.includes('sending')) return 'sending'
+  if (statuses.includes('connected')) return 'connected'
+  if (statuses.includes('connecting')) return 'connecting'
+  return 'idle'
+}
+
 export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
   const TAB_ITEMS_ALL = [...TAB_ITEMS_BASE, ...(isAdmin ? TAB_ITEMS_ADMIN : [])]
   const TAB_ITEMS = IS_MOBILE
@@ -62,6 +75,34 @@ export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const statusMap = useWorkspaceStatus()
+
+  /**
+   * Map tab value → aggregated connection status (derived from the workspace-status store).
+   * Handheld aggregates every `hh:<port>` entry.
+   */
+  const tabStatus = useMemo<Record<string, ServiceStatus>>(() => {
+    const out: Record<string, ServiceStatus> = {}
+
+    const pickOne = (tab: string, key: string) => {
+      const s = statusMap[key]?.status
+      if (s && s !== 'idle') out[tab] = s
+    }
+    pickOne('fixed', 'fixed')
+    pickOne('ocr', 'ocr')
+    pickOne('adam', 'adam')
+    pickOne('database', 'db')
+    pickOne('sftp', 'sftp')
+
+    const hhStatuses = Object.entries(statusMap)
+      .filter(([k]) => k.startsWith('hh:'))
+      .map(([, v]) => v.status)
+      .filter((s) => s !== 'idle')
+    if (hhStatuses.length > 0) out['handheld'] = aggregateStatus(hhStatuses)
+
+    return out
+  }, [statusMap])
+
   return (
     <LayoutGroup id="tab-nav-bar">
       <div className={cn('flex justify-center overflow-x-auto', className)}>
@@ -72,6 +113,7 @@ export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
           {TAB_ITEMS.map((item) => {
           const Icon = item.icon
           const isActive = value === item.value
+          const status = tabStatus[item.value]
 
           return (
             <TabsTrigger
@@ -93,6 +135,7 @@ export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
                   {item.label}
                 </span>
               )}
+              <StatusDot status={status} />
               {isActive && (
                 <motion.div
                   layoutId="tab-nav-indicator"
@@ -116,5 +159,62 @@ export function TabNavBar({ value, className, isAdmin }: TabNavBarProps) {
         </TabsList>
       </div>
     </LayoutGroup>
+  )
+}
+
+/**
+ * Modern glowing connection indicator rendered as an absolute-positioned
+ * overlay so it never affects the trigger's own width/height. Sits in the
+ * top-right corner of the tab like a notification badge.
+ */
+function StatusDot({ status }: { status: ServiceStatus | undefined }) {
+  if (!status || status === 'idle') return null
+
+  const { dot, glow, ping } = (() => {
+    switch (status) {
+      case 'connected':
+        return {
+          dot: 'bg-emerald-500',
+          glow: 'bg-emerald-500/50',
+          ping: 'bg-emerald-400/70',
+        }
+      case 'sending':
+        return {
+          dot: 'bg-sky-500',
+          glow: 'bg-sky-500/50',
+          ping: 'bg-sky-400/70',
+        }
+      case 'connecting':
+        return {
+          dot: 'bg-amber-500',
+          glow: 'bg-amber-500/50',
+          ping: 'bg-amber-400/70',
+        }
+      case 'error':
+        return {
+          dot: 'bg-red-500',
+          glow: 'bg-red-500/50',
+          ping: 'bg-red-400/70',
+        }
+      default:
+        return { dot: '', glow: '', ping: '' }
+    }
+  })()
+
+  const showPing = status === 'connecting' || status === 'sending'
+
+  return (
+    <span className="absolute top-1 right-1.5 flex items-center justify-center pointer-events-none z-10">
+      <span className={cn('absolute w-3 h-3 rounded-full blur-[3px]', glow)} />
+      {showPing && (
+        <span className={cn('absolute w-2 h-2 rounded-full animate-ping', ping)} />
+      )}
+      <span
+        className={cn(
+          'relative w-1.5 h-1.5 rounded-full ring-1 ring-background/90',
+          dot,
+        )}
+      />
+    </span>
   )
 }
