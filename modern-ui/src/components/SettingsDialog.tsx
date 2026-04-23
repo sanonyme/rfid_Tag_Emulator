@@ -23,7 +23,6 @@ import {
   SelectValue,
 } from './ui/select'
 import { Switch } from './ui/switch'
-import { OnboardingDialog } from './OnboardingDialog'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { downloadBackup, readBackupFile, type BackupFile } from '@/lib/backup'
 import { InstallRegistryPanel } from './InstallRegistryPanel'
@@ -103,7 +102,6 @@ const TAB_OPTIONS = IS_MOBILE
 export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteractiveTour }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
   const { settings, setSettings } = useSettings()
-  const [onboardingOpen, setOnboardingOpen] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
@@ -276,7 +274,7 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
             </div>
           </div>
 
-          {/* Onboarding */}
+          {/* Help: Quick overview / slide deck removed (former "what's new" entry point). Interactive tour remains. */}
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
             <h4 className="text-sm font-semibold flex items-center gap-2">
               <BookOpen className="w-4 h-4 text-primary" />
@@ -284,20 +282,11 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
             </h4>
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Quick overview</strong> — short slides inside this dialog.
-                <br />
-                <strong className="text-foreground">Interactive tour</strong> — spotlights real tabs and panels (desktop main window).
+                <strong className="text-foreground">Interactive tour</strong> — spotlights real tabs and panels
+                (desktop main window). Press <kbd className="px-1 rounded border border-border bg-muted text-[11px]">?</kbd>{' '}
+                anytime.
               </p>
               <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setOnboardingOpen(true)}
-                  className="gap-2"
-                >
-                  <BookOpen className="w-4 h-4" />
-                  Quick overview
-                </Button>
                 {onStartInteractiveTour && (
                   <Button
                     variant="default"
@@ -502,7 +491,6 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
         </div>
         </div>
       </DialogContent>
-      <OnboardingDialog open={onboardingOpen} onOpenChange={setOnboardingOpen} />
       <BackupRestoreDialog
         backup={pendingBackup}
         onOpenChange={(o) => { if (!o) setPendingBackup(null) }}

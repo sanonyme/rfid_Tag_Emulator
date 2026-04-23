@@ -32,11 +32,15 @@ type RegistryState = {
 }
 
 function getRegistryUrl(): string {
-  return (process.env['INSTALL_REGISTRY_URL'] || '').trim()
+  const fromEnv = (process.env['INSTALL_REGISTRY_URL'] || '').trim()
+  if (fromEnv) return fromEnv
+  return (typeof __ZEUS_EMBED_INSTALL_REGISTRY_URL__ !== 'undefined' ? __ZEUS_EMBED_INSTALL_REGISTRY_URL__ : '').trim()
 }
 
 function getRegistryToken(): string {
-  return (process.env['REGISTRY_TOKEN'] || '').trim()
+  const fromEnv = (process.env['REGISTRY_TOKEN'] || '').trim()
+  if (fromEnv) return fromEnv
+  return (typeof __ZEUS_EMBED_REGISTRY_TOKEN__ !== 'undefined' ? __ZEUS_EMBED_REGISTRY_TOKEN__ : '').trim()
 }
 
 function statePath(): string {

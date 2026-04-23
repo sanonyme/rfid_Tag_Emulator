@@ -11,6 +11,10 @@ const __dirname = path.dirname(__filename)
 /** Optional `.env` for build-time or future main-process values. */
 dotenv.config({ path: path.join(__dirname, '.env') })
 
+/** Baked into the Electron main bundle so packaged installs work without `.env` beside the .exe. */
+const embedInstallRegistryUrl = (process.env.INSTALL_REGISTRY_URL ?? '').trim()
+const embedRegistryToken = (process.env.REGISTRY_TOKEN ?? '').trim()
+
 export default defineConfig({
   plugins: [
     react(),
@@ -18,6 +22,10 @@ export default defineConfig({
       main: {
         entry: 'electron/main.ts',
         vite: {
+          define: {
+            __ZEUS_EMBED_INSTALL_REGISTRY_URL__: JSON.stringify(embedInstallRegistryUrl),
+            __ZEUS_EMBED_REGISTRY_TOKEN__: JSON.stringify(embedRegistryToken),
+          },
           build: {
             outDir: 'dist-electron',
             rollupOptions: {
