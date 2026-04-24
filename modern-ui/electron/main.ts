@@ -100,6 +100,51 @@ const isDev = process.env.VITE_DEV_SERVER_URL !== undefined || !app.isPackaged
 
 let mainWindow: BrowserWindow | null = null
 
+type GithubFeed = {
+  provider: 'github'
+  owner: string
+  repo: string
+  releaseType: 'release'
+}
+
+function resolveFeed(owner: string, repo: string): GithubFeed | null {
+  const feedOwner = owner.trim()
+  const feedRepo = repo.trim()
+  if (!feedOwner || !feedRepo) return null
+  return {
+    provider: 'github',
+    owner: feedOwner,
+    repo: feedRepo,
+    releaseType: 'release',
+  }
+}
+
+const primaryFeed =
+  resolveFeed(__ZEUS_EMBED_RELEASE_OWNER__, __ZEUS_EMBED_RELEASE_REPO__) ??
+  resolveFeed(process.env.ZEUS_RELEASE_OWNER ?? '', process.env.ZEUS_RELEASE_REPO ?? '')
+
+const secondaryFeed =
+  resolveFeed(__ZEUS_EMBED_SECOND_RELEASE_OWNER__, __ZEUS_EMBED_SECOND_RELEASE_REPO__) ??
+  resolveFeed(process.env.ZEUS_SECOND_RELEASE_OWNER ?? '', process.env.ZEUS_SECOND_RELEASE_REPO ?? '')
+
+const updateCheckState = {
+  inProgress: false,
+  usedFallback: false,
+}
+
+function applyUpdateFeed(feed: GithubFeed | null, label: string): boolean {
+  if (!feed) return false
+  try {
+    // `setFeedURL` accepts provider-specific options; github feed is used here.
+    autoUpdater.setFeedURL(feed as any)
+    console.log(`Auto-updater feed set to ${label}: ${feed.owner}/${feed.repo}`)
+    return true
+  } catch (error) {
+    console.warn(`Failed to apply ${label} feed`, error)
+    return false
+  }
+}
+
 function createWindow() {
   // Prevent creating duplicate windows
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -675,19 +720,36 @@ app.whenReady().then(() => {
     }
   })
 
-  // Auto Updater IPC handlers
-  ipcMain.on('check-for-update', () => {
-    console.log('Checking for updates...')
-    // Auto-download is enabled by default. We want to disable it to let the user choose.
+  function runUpdateCheck(trigger: 'manual' | 'startup') {
+    console.log(`Checking for updates (${trigger})...`)
+    // Keep manual control over when downloads start.
     autoUpdater.autoDownload = false
 
     if (isDev) {
       console.log('Skipping update check in dev mode')
       mainWindow?.webContents.send('update-not-available')
-    } else {
-      // User-initiated only (no background update polling).
-      autoUpdater.checkForUpdates()
+      return
     }
+
+    if (updateCheckState.inProgress) {
+      console.log('Update check already in progress, skipping duplicate request')
+      return
+    }
+
+    updateCheckState.inProgress = true
+    updateCheckState.usedFallback = false
+    if (!applyUpdateFeed(primaryFeed, 'primary')) {
+      console.warn('Primary update feed not configured; using default app-update.yml feed')
+    }
+
+    void autoUpdater.checkForUpdates().catch((err: any) => {
+      console.error('Update check failed to start:', err)
+    })
+  }
+
+  // Auto Updater IPC handlers
+  ipcMain.on('check-for-update', () => {
+    runUpdateCheck('manual')
   })
 
   ipcMain.on('start-download', () => {
@@ -707,19 +769,39 @@ app.whenReady().then(() => {
   })
 
   autoUpdater.on('update-available', (info) => {
+    updateCheckState.inProgress = false
     console.log('Update available:', info)
     mainWindow?.webContents.send('update-available', info)
   })
 
   autoUpdater.on('update-not-available', (info) => {
+    updateCheckState.inProgress = false
     console.log('Update not available:', info)
     mainWindow?.webContents.send('update-not-available', info)
   })
 
   autoUpdater.on('error', (err) => {
+    if (updateCheckState.inProgress && !updateCheckState.usedFallback && secondaryFeed) {
+      updateCheckState.usedFallback = true
+      console.warn('Primary update feed failed, retrying with secondary feed...', err)
+      const applied = applyUpdateFeed(secondaryFeed, 'secondary')
+      if (applied) {
+        void autoUpdater.checkForUpdates().catch((retryErr: any) => {
+          updateCheckState.inProgress = false
+          console.error('Secondary update check failed to start:', retryErr)
+          mainWindow?.webContents.send('update-error', retryErr?.message ?? 'Secondary update check failed')
+        })
+        return
+      }
+    }
+
+    updateCheckState.inProgress = false
     console.error('Update error:', err)
     mainWindow?.webContents.send('update-error', err.message)
   })
+
+  // Auto-check once after launch in production, keep manual button available.
+  setTimeout(() => runUpdateCheck('startup'), 4000)
 
   // API config path (persisted in userData)
   const getApiConfigPath = () => path.join(app.getPath('userData'), 'api-config.json')

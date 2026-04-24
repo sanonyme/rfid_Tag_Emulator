@@ -1,0 +1,12 @@
+{
+  "name": "zeus-install-registry-tooling",
+  "private": true,
+  "description": "Supabase CLI for deploy (login, link, functions deploy). Not part of the Electron app.",
+  "scripts": {
+    "supabase": "supabase",
+    "deploy:register-install": "supabase functions deploy register-install --no-verify-jwt"
+  },
+  "devDependencies": {
+    "supabase": "^2.93.0"
+  }
+}

@@ -1,0 +1,5 @@
+# Minimal config. Run `supabase link` to attach your project, then `supabase functions deploy register-install`.
+# Or deploy from Supabase dashboard → Edge Functions (paste function code from supabase/functions/register-install/).
+
+[functions.register-install]
+verify_jwt = false
