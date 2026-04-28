@@ -67,7 +67,8 @@
   },
   "overrides": {
     "serialize-javascript": "^7.0.3",
-    "node-gyp": "^12.2.0"
+    "node-gyp": "^12.2.0",
+    "uuid": "^14.0.0"
   },
   "devDependencies": {
     "@capacitor/android": "^8.2.0",
