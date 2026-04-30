@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
-import { DropTextarea } from './DropTextarea'
+import { ExpandableTagField } from './ExpandableTagField'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
@@ -185,7 +185,7 @@ export function HandheldTab({
     const tagCount = tags.length
     await client.sendEpcs(
       tags,
-      parseInt(delay) || 100,
+      parseInt(delay, 10),
       (progress) => addLog(progress, slot.port),
       (complete) => {
         addLog(complete, slot.port)
@@ -285,7 +285,6 @@ export function HandheldTab({
             <HandheldSlotCard
               key={slot.id}
               slot={slot}
-              delay={delay}
               isRunning={runningPorts.has(slot.port)}
               isSending={sendingPorts.has(slot.port)}
               onUpdate={(updates) => updateSlot(slot.id, updates)}
@@ -337,7 +336,6 @@ export function HandheldTab({
 
 interface HandheldSlotCardProps {
   slot: HandheldSlot
-  delay: string
   isRunning: boolean
   isSending: boolean
   onUpdate: (updates: Partial<Omit<HandheldSlot, 'id'>>) => void
@@ -359,7 +357,7 @@ function HandheldSlotCard({
   onStop,
   onSend,
   onCancelSend,
-  canRemove
+  canRemove,
 }: HandheldSlotCardProps) {
   const fileInputUpcRef = useRef<HTMLInputElement>(null)
   const fileInputEpcRef = useRef<HTMLInputElement>(null)
@@ -476,12 +474,16 @@ function HandheldSlotCard({
                 </Button>
               </div>
             </div>
-            <DropTextarea
+            <ExpandableTagField
+              dialogTitle={`UPC → EPC — port ${slot.port}`}
+              dialogDescription="UPC,Count,TID (one per line)"
               value={slot.upcList}
               onChange={(e) => onUpdate({ upcList: e.target.value })}
-              onFileImport={(content) => onUpdate({ upcList: slot.upcList ? slot.upcList + '\n' + content : content })}
+              onFileImport={(content) =>
+                onUpdate({ upcList: slot.upcList ? slot.upcList + '\n' + content : content })
+              }
               placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
-              className="font-mono text-xs min-h-[110px] resize-y"
+              compactClassName="font-mono text-xs min-h-[110px] resize-y"
             />
             <div className="flex items-center gap-2 mt-2">
               <label htmlFor={`start-serial-${slot.id}`} className="text-xs text-muted-foreground shrink-0">
@@ -515,12 +517,16 @@ function HandheldSlotCard({
                 </Button>
               </div>
             </div>
-            <DropTextarea
+            <ExpandableTagField
+              dialogTitle={`Direct EPC — port ${slot.port}`}
+              dialogDescription="EPC or EPC,TID (one per line)"
               value={slot.epcList}
               onChange={(e) => onUpdate({ epcList: e.target.value })}
-              onFileImport={(content) => onUpdate({ epcList: slot.epcList ? slot.epcList + '\n' + content : content })}
+              onFileImport={(content) =>
+                onUpdate({ epcList: slot.epcList ? slot.epcList + '\n' + content : content })
+              }
               placeholder={'3034...\n3035...,CustomTID'}
-              className="font-mono text-xs min-h-[110px] resize-y"
+              compactClassName="font-mono text-xs min-h-[110px] resize-y"
             />
           </TabsContent>
         </Tabs>

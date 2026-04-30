@@ -737,7 +737,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
             await new Promise(resolve => setTimeout(resolve, 500))
         }
 
-        await handheldServer.sendEpcs(allHhTags, 0,
+        await handheldServer.sendEpcs(allHhTags, parseInt(delay, 10) || 20,
           (msg) => addLog(`HH: ${msg}`),
           (msg) => addLog(`HH Complete: ${msg}`)
         )

@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
-import { DropTextarea } from '../DropTextarea'
+import { ExpandableTagField } from '../ExpandableTagField'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
@@ -524,12 +524,14 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           <CardTitle className="text-base">UPC → EPC</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <DropTextarea
+          <ExpandableTagField
+            dialogTitle="UPC → EPC"
+            dialogDescription="Format: UPC,Count,TID (optional)"
             value={upcList}
             onChange={(e) => setUpcList(e.target.value)}
             onFileImport={(c) => setUpcList(upcList ? upcList + '\n' + c : c)}
             placeholder="00000000000001,5"
-            className="font-mono text-sm min-h-[80px]"
+            compactClassName="font-mono text-sm min-h-[80px]"
           />
           <div className="space-y-2">
             <Label>Start Serial</Label>
@@ -543,12 +545,14 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           <CardTitle className="text-base">Direct EPC</CardTitle>
         </CardHeader>
         <CardContent>
-          <DropTextarea
+          <ExpandableTagField
+            dialogTitle="Direct EPC"
+            dialogDescription="EPC or EPC,TID (one per line)"
             value={epcList}
             onChange={(e) => setEpcList(e.target.value)}
             onFileImport={(c) => setEpcList(epcList ? epcList + '\n' + c : c)}
             placeholder="EPC or EPC,TID"
-            className="font-mono text-sm min-h-[80px]"
+            compactClassName="font-mono text-sm min-h-[80px]"
           />
         </CardContent>
       </Card>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
-import { DropTextarea } from '../DropTextarea'
+import { ExpandableTagField } from '../ExpandableTagField'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp } from 'lucide-react'
@@ -101,7 +101,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
     setSendingPorts((p) => new Set([...p, slot.port]))
     await getClient(slot.port).sendEpcs(
       tags,
-      parseInt(delay) || 100,
+      parseInt(delay, 10),
       (p) => addLog(p),
       (c) => {
         addLog(c)
@@ -175,12 +175,14 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
               <TabsTrigger value="epc">Direct EPC</TabsTrigger>
             </TabsList>
             <TabsContent value="upc" className="mt-3 space-y-2">
-              <DropTextarea
+              <ExpandableTagField
+                dialogTitle={`UPC → EPC — port ${slot.port}`}
+                dialogDescription="One line per UPC,Count,TID"
                 value={slot.upcList}
                 onChange={(e) => updateSlot({ upcList: e.target.value })}
                 onFileImport={(c) => updateSlot({ upcList: slot.upcList ? slot.upcList + '\n' + c : c })}
                 placeholder="00000000000001,5"
-                className="font-mono text-sm min-h-[100px]"
+                compactClassName="font-mono text-sm min-h-[100px]"
               />
               <div className="flex items-center gap-2">
                 <label htmlFor={`m-start-serial-${slot.id}`} className="text-xs text-muted-foreground shrink-0">
@@ -198,12 +200,14 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
               </div>
             </TabsContent>
             <TabsContent value="epc" className="mt-3">
-              <DropTextarea
+              <ExpandableTagField
+                dialogTitle={`Direct EPC — port ${slot.port}`}
+                dialogDescription="EPC or EPC,TID (one per line)"
                 value={slot.epcList}
                 onChange={(e) => updateSlot({ epcList: e.target.value })}
                 onFileImport={(c) => updateSlot({ epcList: slot.epcList ? slot.epcList + '\n' + c : c })}
                 placeholder="EPC or EPC,TID"
-                className="font-mono text-sm min-h-[100px]"
+                compactClassName="font-mono text-sm min-h-[100px]"
               />
             </TabsContent>
           </Tabs>

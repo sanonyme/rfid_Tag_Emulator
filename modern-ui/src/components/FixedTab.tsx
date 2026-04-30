@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { DropTextarea } from './DropTextarea'
+import { ExpandableTagField } from './ExpandableTagField'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
@@ -626,12 +626,14 @@ export function FixedTab({
               <CardDescription>Format: UPC,Count,TID (optional TID)</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <DropTextarea
+              <ExpandableTagField
+                dialogTitle="UPC → EPC generation"
+                dialogDescription="Format: UPC,Count,TID (optional TID per line)"
                 value={upcList}
                 onChange={(e) => setUpcList(e.target.value)}
                 onFileImport={(content) => setUpcList(upcList ? upcList + '\n' + content : content)}
                 placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
-                className="font-mono text-sm min-h-[120px]"
+                compactClassName="font-mono text-sm min-h-[120px]"
               />
               <div className="space-y-2">
                 <Label htmlFor="startSerial">Starting Serial</Label>
@@ -653,12 +655,14 @@ export function FixedTab({
               <CardDescription>Format: EPC or EPC,TID (one per line, TID optional)</CardDescription>
             </CardHeader>
             <CardContent>
-              <DropTextarea
+              <ExpandableTagField
+                dialogTitle="Direct EPC input"
+                dialogDescription="Format: EPC or EPC,TID (one per line, TID optional)"
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
                 onFileImport={(content) => setEpcList(epcList ? epcList + '\n' + content : content)}
                 placeholder="3034...&#10;3035...,CustomTID"
-                className="font-mono text-sm min-h-[120px]"
+                compactClassName="font-mono text-sm min-h-[120px]"
               />
             </CardContent>
           </Card>

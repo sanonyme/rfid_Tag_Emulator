@@ -131,7 +131,6 @@ export class HandheldServerHandler {
   private serverSocket: Server | null = null
   private connectedClients: Socket[] = []
   private cancelRequested: boolean = false
-  private epcQueue: {epc: string, tid?: string}[] = []
 
   constructor(private window: BrowserWindow, private port: number) {}
 
@@ -192,49 +191,26 @@ export class HandheldServerHandler {
     }
 
     const total = tags.length
-    let enqueued = 0
     let sentTotal = 0
-    
+
     this.cancelRequested = false
-    this.epcQueue = [] // We'll store objects here, need to update epcQueue type definition
 
-    // Java: for (String epc : epcs) { if (cancelRequested) { ... } epcQueue.offer(epc); enqueued++; ... }
-    for (const tag of tags) {
+    // One EPC per write, with delay between tags (matches fixed-reader sendTags behavior)
+    for (let i = 0; i < tags.length; i++) {
       if (this.cancelRequested) {
         this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
         return
       }
 
-      this.epcQueue.push(tag)
-      enqueued++
-      this.sendToRenderer('handheld-progress', `Queued (${enqueued}/${total}): ${tag.epc}`)
+      const tag = tags[i]
+      sentTotal += this.broadcastBatch([tag])
+      this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc}`)
 
-      // Java: if (epcQueue.size() >= 200) { ... broadcast batch ... }
-      if (this.epcQueue.length >= 200) {
-        const batch = this.epcQueue.splice(0, 200)
-        const sent = this.broadcastBatch(batch)
-        sentTotal += sent
-        this.sendToRenderer('handheld-progress', `Broadcast batch of ${batch.length} EPC(s)`)
-        
-        if (delayMs > 0) {
-          await new Promise(resolve => setTimeout(resolve, delayMs))
-        }
+      if (delayMs > 0 && i < tags.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayMs))
       }
     }
 
-    // Java: Flush any remaining EPCs
-    if (this.epcQueue.length > 0) {
-      if (this.cancelRequested) {
-        this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
-        return
-      }
-      const remainder = this.epcQueue.splice(0)
-      const sent = this.broadcastBatch(remainder)
-      sentTotal += sent
-      this.sendToRenderer('handheld-progress', `Broadcast final batch of ${remainder.length} EPC(s)`)
-    }
-
-    // Java: onComplete.accept("Broadcasted " + sentTotal + " EPC(s) to handheld clients");
     this.sendToRenderer('handheld-complete', `Broadcasted ${sentTotal} EPC(s) to handheld clients`)
   }
 
