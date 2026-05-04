@@ -13,6 +13,7 @@ import { Download, Copy, RefreshCw, Plus, Trash2, ArrowUp, ArrowDown, Upload, Fi
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { QrCodeGenerator } from './QrCodeGenerator'
+import { ZplViewerTab } from './ZplViewerTab'
 import JSZip from 'jszip'
 
 const BATCH_FORMATS = ['CODE128', 'EAN13', 'EAN8', 'UPC', 'CODE39', 'ITF14', 'MSI', 'pharmacode', 'codabar'] as const
@@ -318,12 +319,15 @@ export function BarcodeGenerator() {
     <div className="h-full">
       <Tabs defaultValue="barcode" className="h-full flex flex-col">
         <div className="mb-4 px-2">
-          <TabsList className="mx-auto grid w-full max-w-2xl grid-cols-3 gap-1 p-1" data-tour="tour-gen-modes">
+          <TabsList className="mx-auto grid w-full max-w-3xl grid-cols-2 sm:grid-cols-4 gap-1 p-1" data-tour="tour-gen-modes">
             <TabsTrigger value="barcode" className="w-full px-2 sm:px-3">
               Barcodes
             </TabsTrigger>
             <TabsTrigger value="qrcode" className="w-full px-2 sm:px-3">
               QR Codes
+            </TabsTrigger>
+            <TabsTrigger value="zpl" className="w-full px-2 sm:px-3">
+              ZPL
             </TabsTrigger>
             <TabsTrigger value="batch" className="w-full px-2 sm:px-3" data-tour="tour-gen-batch-tab">
               Batch Export
@@ -619,6 +623,10 @@ export function BarcodeGenerator() {
 
         <TabsContent value="qrcode" className="flex-1 mt-0">
           <QrCodeGenerator />
+        </TabsContent>
+
+        <TabsContent value="zpl" className="flex-1 mt-0 min-h-0">
+          <ZplViewerTab />
         </TabsContent>
 
         <TabsContent value="batch" className="flex-1 mt-0">

@@ -71,7 +71,9 @@ export interface ElectronAPI {
   tcpSendTags: (tags: any[], driverCode: string, delayMs: number) => void
   tcpCancelSend: () => void
   tcpIsConnected: () => Promise<boolean>
-  
+  /** PNG as base64 from Labelary (main-process fetch; avoids renderer CORS on file://). */
+  labelaryRender: (zpl: string, dpmm: number, widthIn: number, heightIn: number) => Promise<string>
+
   // TCP Events
   onTcpConnected: (callback: (message: string) => void) => void
   onTcpDisconnected: (callback: (message: string) => void) => void

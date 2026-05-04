@@ -144,6 +144,39 @@ class MockElectronAPI implements ElectronAPI {
     return this._tcpConnected;
   }
 
+  async labelaryRender(zpl: string, dpmm: number, widthIn: number, heightIn: number) {
+    const body = (zpl || '').trim();
+    if (!body) throw new Error('ZPL is empty');
+    const w = Number(widthIn);
+    const h = Number(heightIn);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+      throw new Error('Invalid label dimensions');
+    }
+    const d = [6, 8, 12, 24].includes(Number(dpmm)) ? Number(dpmm) : 8;
+    const path = `v1/printers/${d}dpmm/labels/${w}x${h}/0/`;
+    const base = import.meta.env.DEV ? `/labelary/` : `http://api.labelary.com/`;
+    const res = await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: {
+        Accept: 'image/png',
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body,
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error((t || `HTTP ${res.status}`).slice(0, 900));
+    }
+    const buf = await res.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, Math.min(i + chunk, bytes.length)));
+    }
+    return btoa(binary);
+  }
+
   // TCP Events
   onTcpConnected(callback: (message: string) => void) { this._tcpCallbacks.connect.push(callback); }
   onTcpDisconnected(callback: (message: string) => void) { this._tcpCallbacks.disconnect.push(callback); }

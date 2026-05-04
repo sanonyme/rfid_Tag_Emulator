@@ -854,7 +854,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   (Impinj, Zebra, Alien, ThingMagic, CAEN, Nordic&nbsp;ID, Honeywell, SICK, FEIG,
                   Kathrein, CSL, Invengo, Nedap, Turck, Balluff, SEUIC, Siemens, Chainway, Chafon,
                   Datalogic, …). White-label / OEM readers with LLRP open are still reported as
-                  generic RFID readers.
+                  generic RFID readers. (i got those info from ai... so i dont know if the other readers info is correct... sorry for that...)
                 </p>
               </div>
             </div>

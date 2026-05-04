@@ -63,7 +63,8 @@
     "sonner": "^2.0.7",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "zpl-renderer-js": "^3.4.0"
   },
   "overrides": {
     "serialize-javascript": "^7.0.3",

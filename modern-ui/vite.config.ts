@@ -66,6 +66,13 @@ export default defineConfig({
     port: 5173,
     host: true,
     strictPort: true,
+    proxy: {
+      '/labelary': {
+        target: 'http://api.labelary.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/labelary/, ''),
+      },
+    },
     fs: {
       deny: ['**/android/**', '**/ios/**'],
     },

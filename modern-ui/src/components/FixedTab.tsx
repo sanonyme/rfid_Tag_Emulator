@@ -515,7 +515,7 @@ export function FixedTab({
                             onChange={(e) => setAlePort(e.target.value)}
                             placeholder="80"
                             className="h-7 w-16 text-xs font-mono"
-                            title="Port for ALE API. Some Edge servers use 80, 8080, or 8081."
+                            title="Port for ALE API. Some Edge servers use 80, 8080."
                         />
                     </div>
                 </div>

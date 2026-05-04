@@ -328,6 +328,35 @@ app.whenReady().then(() => {
     return tcpHandler?.getConnectionStatus() || false
   })
 
+  ipcMain.handle(
+    'labelary-render',
+    async (_event, zpl: string, dpmm: number, widthIn: number, heightIn: number) => {
+      const body = typeof zpl === 'string' ? zpl.trim() : ''
+      if (!body) throw new Error('ZPL is empty')
+      const w = Number(widthIn)
+      const h = Number(heightIn)
+      if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+        throw new Error('Invalid label dimensions')
+      }
+      const d = [6, 8, 12, 24].includes(Number(dpmm)) ? Number(dpmm) : 8
+      const url = `http://api.labelary.com/v1/printers/${d}dpmm/labels/${w}x${h}/0/`
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'image/png',
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body,
+      })
+      if (!res.ok) {
+        const t = await res.text()
+        throw new Error((t || `HTTP ${res.status}`).slice(0, 900))
+      }
+      const buf = Buffer.from(await res.arrayBuffer())
+      return buf.toString('base64')
+    },
+  )
+
   // Handheld Server IPC handlers (multi-port support)
   ipcMain.on('handheld-start', (_event, port: number) => {
     const p = typeof port === 'number' ? port : 10472

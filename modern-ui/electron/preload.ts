@@ -15,7 +15,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.send('tcp-send-tags', tags, driverCode, delayMs),
   tcpCancelSend: () => ipcRenderer.send('tcp-cancel-send'),
   tcpIsConnected: () => ipcRenderer.invoke('tcp-is-connected'),
-  
+  labelaryRender: (zpl: string, dpmm: number, widthIn: number, heightIn: number) =>
+    ipcRenderer.invoke('labelary-render', zpl, dpmm, widthIn, heightIn),
+
   // TCP Event listeners
   onTcpConnected: (callback: (message: string) => void) => 
     ipcRenderer.on('tcp-connected', (_event, message) => callback(message)),
