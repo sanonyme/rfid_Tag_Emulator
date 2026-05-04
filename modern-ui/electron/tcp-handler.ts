@@ -86,7 +86,7 @@ export class TCPEmulatorHandler {
         })
 
         count++
-        this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc}`)
+        this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc} @rssi=${tag.rssi}`)
 
         if (delayMs > 0 && count < total) {
           await new Promise(resolve => setTimeout(resolve, delayMs))
@@ -180,7 +180,7 @@ export class HandheldServerHandler {
     return this.serverRunning
   }
 
-  async sendEpcs(tags: {epc: string, tid?: string}[], delayMs: number): Promise<void> {
+  async sendEpcs(tags: { epc: string; tid?: string; rssi?: string }[], delayMs: number): Promise<void> {
     // Java: if (!running || connectedClients.isEmpty()) { onComplete.accept("No handheld connected..."); return; }
     console.log(`Handheld: sendEpcs called - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`)
     if (!this.serverRunning || this.connectedClients.length === 0) {
@@ -204,7 +204,8 @@ export class HandheldServerHandler {
 
       const tag = tags[i]
       sentTotal += this.broadcastBatch([tag])
-      this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc}`)
+      const rssiVal = this.handheldJsonRssi(tag)
+      this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
 
       if (delayMs > 0 && i < tags.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs))
@@ -215,7 +216,7 @@ export class HandheldServerHandler {
   }
 
   // Java: private int broadcastBatch(List<String> epcs)
-  private broadcastBatch(tags: {epc: string, tid?: string}[]): number {
+  private broadcastBatch(tags: { epc: string; tid?: string; rssi?: string }[]): number {
     if (tags.length === 0) return 0
 
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }
@@ -226,7 +227,7 @@ export class HandheldServerHandler {
         epc: tag.epc,
         tid: tag.tid || tag.epc, // User requested: defaults to EPC if not provided
         date: this.nowString(),
-        rssi: 70.0
+        rssi: this.handheldJsonRssi(tag),
       })
       payload += json + '\r\n'
     }
@@ -250,6 +251,14 @@ export class HandheldServerHandler {
     }
 
     return tags.length
+  }
+
+  private handheldJsonRssi(tag: { rssi?: string }): number {
+    if (tag.rssi != null && tag.rssi !== '') {
+      const n = parseFloat(tag.rssi)
+      if (Number.isFinite(n)) return n
+    }
+    return 70.0
   }
 
   // Java: private static String nowString()

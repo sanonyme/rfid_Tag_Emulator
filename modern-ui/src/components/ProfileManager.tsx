@@ -41,8 +41,10 @@ export interface Profile {
   customMessage?: string
   // ADAM Tab State
   adamHost?: string
-  // Shared
+  /** Delay (ms) between tags for the fixed reader TCP emulator */
   delay: string
+  /** Delay (ms) between tags for handheld broadcast (independent of `delay`) */
+  handheldDelay?: string
   /** @deprecated Use automationSequences. Migrated on load. */
   automationSteps?: any[]
   automationSequences?: AutomationSequence[]

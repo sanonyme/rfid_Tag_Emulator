@@ -17,8 +17,8 @@ function getClient(port: number) {
   return clientCache.get(port)!
 }
 
-function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] {
-  const all: { epc: string; tid?: string }[] = []
+function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid?: string; rssi: string }[] {
+  const all: { epc: string; tid?: string; rssi: string }[] = []
   if (slot.upcList.trim()) {
     let serial = Math.max(1, parseInt(slot.startSerial || '1') || 1)
     for (const line of slot.upcList.trim().split('\n')) {
@@ -29,7 +29,7 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
       if (count > 0 && upc) {
         const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
         serial += count
-        all.push(...epcs.map((epc) => ({ epc, tid: customTid?.trim() || epc })))
+        all.push(...epcs.map((epc) => ({ epc, tid: customTid?.trim() || epc, rssi })))
       }
     }
   }
@@ -38,7 +38,7 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
       const t = line.trim()
       if (!t) continue
       const [epc, tid] = t.split(',')
-      if (epc?.trim()) all.push({ epc: epc.trim(), tid: tid?.trim() || epc.trim() })
+      if (epc?.trim()) all.push({ epc: epc.trim(), tid: tid?.trim() || epc.trim(), rssi })
     }
   }
   return all
@@ -47,11 +47,12 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
 interface MobileHandheldTabProps {
   slots: HandheldSlot[]
   setSlots: (slots: HandheldSlot[]) => void
-  delay: string
-  setDelay: (d: string) => void
+  handheldDelay: string
+  setHandheldDelay: (d: string) => void
+  rssi: string
 }
 
-export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabProps) {
+export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldDelay, rssi }: MobileHandheldTabProps) {
   const [log, setLog] = useState<string[]>([])
   const [sendingPorts, setSendingPorts] = useState<Set<number>>(new Set())
   const [runningPorts, setRunningPorts] = useState<Set<number>>(new Set())
@@ -73,7 +74,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
 
   const isRunning = runningPorts.has(slot.port)
   const isSending = sendingPorts.has(slot.port)
-  const tags = parseTagsFromSlot(slot)
+  const tags = parseTagsFromSlot(slot, rssi)
 
   const handleStart = () => {
     getClient(slot.port).start((m) => addLog(m), (e) => addLog(`Error: ${e}`))
@@ -101,7 +102,7 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
     setSendingPorts((p) => new Set([...p, slot.port]))
     await getClient(slot.port).sendEpcs(
       tags,
-      parseInt(delay, 10),
+      parseInt(handheldDelay, 10) || 0,
       (p) => addLog(p),
       (c) => {
         addLog(c)
@@ -134,8 +135,22 @@ export function MobileHandheldTab({ slots, setSlots, delay }: MobileHandheldTabP
   return (
     <div className="flex flex-col gap-4 pb-4">
       <p className="text-sm text-muted-foreground">
-        Connect VSBL Debug to <strong>YOUR_PC_IP:{slot.port}</strong>
+        Connect VSBL Debug to <strong>YOUR_PC_IP:{slot.port}</strong>. RSSI uses the same value as the Fixed tab ({rssi} dBm).
       </p>
+
+      <div className="flex items-center gap-2">
+        <label htmlFor="m-handheld-delay" className="text-xs text-muted-foreground shrink-0">
+          Handheld delay (ms)
+        </label>
+        <Input
+          id="m-handheld-delay"
+          type="number"
+          min={0}
+          className="h-10 w-28 font-mono text-sm"
+          value={handheldDelay}
+          onChange={(e) => setHandheldDelay(e.target.value)}
+        />
+      </div>
 
       <Card className="border-border/50">
         <CardHeader className="pb-2">

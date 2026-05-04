@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
+import { Label } from './ui/label'
 import { ExpandableTagField } from './ExpandableTagField'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
@@ -24,14 +25,17 @@ export interface HandheldSlot {
 interface HandheldTabProps {
   slots: HandheldSlot[]
   setSlots: (slots: HandheldSlot[]) => void
-  delay: string
-  setDelay: (_delay: string) => void
+  /** Milliseconds between handheld tag broadcasts (separate from fixed reader delay). */
+  handheldDelay: string
+  setHandheldDelay: (value: string) => void
+  /** RSSI string applied to each emitted handheld tag (matches Fixed tab signal strength). */
+  rssi: string
 }
 
 const DEFAULT_PORT = 10472
 
-function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] {
-  const allTags: { epc: string; tid?: string }[] = []
+function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid?: string; rssi: string }[] {
+  const allTags: { epc: string; tid?: string; rssi: string }[] = []
 
   if (slot.upcList.trim()) {
     const lines = slot.upcList.trim().split('\n')
@@ -46,7 +50,8 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
         serial += count
         allTags.push(...epcs.map(epc => ({
           epc,
-          tid: customTid?.trim() || epc
+          tid: customTid?.trim() || epc,
+          rssi
         })))
       }
     }
@@ -63,7 +68,8 @@ function parseTagsFromSlot(slot: HandheldSlot): { epc: string; tid?: string }[] 
       if (epc) {
         allTags.push({
           epc,
-          tid: customTid || epc
+          tid: customTid || epc,
+          rssi
         })
       }
     }
@@ -84,8 +90,9 @@ function getClient(port: number): HandheldServerClient {
 export function HandheldTab({
   slots,
   setSlots,
-  delay,
-  setDelay: _setDelay
+  handheldDelay,
+  setHandheldDelay,
+  rssi
 }: HandheldTabProps) {
   const [log, setLog] = useState<string[]>([])
   const [sendingPorts, setSendingPorts] = useState<Set<number>>(new Set())
@@ -161,7 +168,7 @@ export function HandheldTab({
   }
 
   const handleSendToSlot = async (slot: HandheldSlot) => {
-    const tags = parseTagsFromSlot(slot)
+    const tags = parseTagsFromSlot(slot, rssi)
     if (tags.length === 0) {
       addLog('Error: No EPCs generated', slot.port)
       return
@@ -185,7 +192,7 @@ export function HandheldTab({
     const tagCount = tags.length
     await client.sendEpcs(
       tags,
-      parseInt(delay, 10),
+      parseInt(handheldDelay, 10) || 0,
       (progress) => addLog(progress, slot.port),
       (complete) => {
         addLog(complete, slot.port)
@@ -205,7 +212,7 @@ export function HandheldTab({
   }
 
   const handleSendAll = async () => {
-    const slotsWithTags = slots.filter(s => parseTagsFromSlot(s).length > 0)
+    const slotsWithTags = slots.filter(s => parseTagsFromSlot(s, rssi).length > 0)
     if (slotsWithTags.length === 0) {
       addLog('Error: No slots have tags to send')
       return
@@ -252,7 +259,20 @@ export function HandheldTab({
         <p className="text-sm text-muted-foreground">
           Configure VSBL Debug on each device to connect to <strong className="text-foreground">YOUR_PC_IP:PORT</strong>.
         </p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="handheld-inter-tag-delay" className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+              Handheld delay (ms)
+            </Label>
+            <Input
+              id="handheld-inter-tag-delay"
+              type="number"
+              min={0}
+              className="w-[4.5rem] h-9 font-mono text-sm"
+              value={handheldDelay}
+              onChange={(e) => setHandheldDelay(e.target.value)}
+            />
+          </div>
           <Button variant="outline" size="sm" onClick={addSlot} className="gap-1.5">
             <Plus className="w-4 h-4" />
             Add Handheld
@@ -266,7 +286,7 @@ export function HandheldTab({
           <Button
             size="sm"
             onClick={handleSendAll}
-            disabled={sendingPorts.size > 0 || slots.every(s => parseTagsFromSlot(s).length === 0)}
+            disabled={sendingPorts.size > 0 || slots.every(s => parseTagsFromSlot(s, rssi).length === 0)}
             className="gap-1.5"
           >
             <Zap className={`w-4 h-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />

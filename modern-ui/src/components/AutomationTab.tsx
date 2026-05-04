@@ -63,9 +63,50 @@ interface AutomationTabProps {
   host: string
   alePort: string
   customPort: string
+  /** Inter-tag delay for fixed reader sends */
   delay: string
+  /** Inter-tag delay for handheld broadcasts (separate from `delay`) */
+  handheldDelay: string
   sequences: AutomationSequence[]
   setSequences: React.Dispatch<React.SetStateAction<AutomationSequence[]>>
+}
+
+function makeRssiPicker(params: AutomationStep['params']): () => string {
+  const baseRssiStr = params.rssi || '-45.0'
+  const baseRssiNumber = (() => {
+    const n = parseFloat(baseRssiStr)
+    return Number.isFinite(n) ? n : -45.0
+  })()
+  const defaultRandomMin = -90
+  const defaultRandomMax = -20
+  const rssiRandomize = params.rssiRandomize === true
+
+  const parseMaybeNumber = (s?: string) => {
+    if (!s || !s.trim()) return null
+    const n = parseFloat(s)
+    return Number.isFinite(n) ? n : null
+  }
+
+  let effectiveMin = baseRssiNumber
+  let effectiveMax = baseRssiNumber
+  if (rssiRandomize) {
+    const minN = parseMaybeNumber(params.rssiRandMin)
+    const maxN = parseMaybeNumber(params.rssiRandMax)
+    effectiveMin = minN ?? defaultRandomMin
+    effectiveMax = maxN ?? defaultRandomMax
+    if (effectiveMin > effectiveMax) {
+      ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+    }
+  }
+
+  return () => {
+    if (!rssiRandomize) return baseRssiStr
+    const val =
+      effectiveMin === effectiveMax
+        ? effectiveMin
+        : effectiveMin + Math.random() * (effectiveMax - effectiveMin)
+    return val.toFixed(1)
+  }
 }
 
 const NODE_WIDTH = 200
@@ -228,7 +269,7 @@ function WorkflowConnectionLine({
   )
 }
 
-export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePort, customPort, delay, sequences, setSequences }: AutomationTabProps) {
+export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePort, customPort, delay, handheldDelay, sequences, setSequences }: AutomationTabProps) {
   const customClient = useMemo(() => new CustomClient(), [])
   const sortedSeqs = useMemo(() => [...sequences].sort((a, b) => a.order - b.order), [sequences])
   const [selectedSequenceId, setSelectedSequenceId] = useState<string | null>(sortedSeqs[0]?.id ?? null)
@@ -555,44 +596,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
         const selectedUids = (step.params.uid || '').split(',').filter(Boolean)
         const targetUids = selectedUids.length > 0 ? selectedUids : ['']
 
-        const baseRssiStr = step.params.rssi || '-45.0'
-        const baseRssiNumber = (() => {
-          const n = parseFloat(baseRssiStr)
-          return Number.isFinite(n) ? n : -45.0
-        })()
-        const defaultRandomMin = -90
-        const defaultRandomMax = -20
-
-        const rssiRandomize = step.params.rssiRandomize === true
-
-        const parseMaybeNumber = (s?: string) => {
-          if (!s || !s.trim()) return null
-          const n = parseFloat(s)
-          return Number.isFinite(n) ? n : null
-        }
-
-        let effectiveMin = baseRssiNumber
-        let effectiveMax = baseRssiNumber
-        if (rssiRandomize) {
-          const minN = parseMaybeNumber(step.params.rssiRandMin)
-          const maxN = parseMaybeNumber(step.params.rssiRandMax)
-          effectiveMin = minN ?? defaultRandomMin
-          effectiveMax = maxN ?? defaultRandomMax
-          if (effectiveMin > effectiveMax) {
-            ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
-          }
-        }
-
-        const getTagRssi = () => {
-          if (!rssiRandomize) return baseRssiStr
-          const val =
-            effectiveMin === effectiveMax
-              ? effectiveMin
-              : effectiveMin + Math.random() * (effectiveMax - effectiveMin)
-          return val.toFixed(1)
-        }
-
-        // Parse UPC List
+        const getTagRssi = makeRssiPicker(step.params)
         if (step.params.upcList) {
             const lines = step.params.upcList.split('\n')
             let currentSerial = step.params.startSerial || 1
@@ -693,7 +697,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
 
       case 'HANDHELD_TAG':
         addLog(`Emulating Handheld Tags...`)
-        const allHhTags: {epc: string, tid?: string}[] = []
+        const getHhTagRssi = makeRssiPicker(step.params)
+        const allHhTags: { epc: string; tid?: string; rssi?: string }[] = []
 
         // Parse UPC List
         if (step.params.upcList) {
@@ -705,7 +710,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                     const generated = EPCGenerator.generateFromUpc(upc.trim(), count)
                     allHhTags.push(...generated.map(epc => ({
                         epc,
-                        tid: customTid?.trim() || step.params.tid || epc // Use line TID, step TID, or EPC
+                        tid: customTid?.trim() || step.params.tid || epc, // Use line TID, step TID, or EPC
+                        rssi: getHhTagRssi()
                     })))
                 }
             }
@@ -721,7 +727,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                 if (epc) {
                     allHhTags.push({
                         epc,
-                        tid: customTid || step.params.tid || epc
+                        tid: customTid || step.params.tid || epc,
+                        rssi: getHhTagRssi()
                     })
                 }
             }
@@ -737,7 +744,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
             await new Promise(resolve => setTimeout(resolve, 500))
         }
 
-        await handheldServer.sendEpcs(allHhTags, parseInt(delay, 10) || 20,
+        await handheldServer.sendEpcs(allHhTags, parseInt(handheldDelay, 10) || 20,
           (msg) => addLog(`HH: ${msg}`),
           (msg) => addLog(`HH Complete: ${msg}`)
         )

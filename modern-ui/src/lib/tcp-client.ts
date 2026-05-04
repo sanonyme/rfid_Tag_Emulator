@@ -155,7 +155,7 @@ export class HandheldServerClient {
   }
 
   async sendEpcs(
-    tags: {epc: string, tid?: string}[],
+    tags: { epc: string; tid?: string; rssi?: string }[],
     delay: number,
     onProgress: (message: string) => void,
     onComplete: (message: string) => void

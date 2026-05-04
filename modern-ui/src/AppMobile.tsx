@@ -26,6 +26,7 @@ function AppMobile() {
   const [host, setHost] = useState('')
   const [connected, setConnected] = useState(false)
   const [delay, setDelay] = useState('20')
+  const [handheldDelay, setHandheldDelay] = useState('20')
 
   const [port, setPort] = useState('12352')
   const [alePort, setAlePort] = useState('80')
@@ -97,6 +98,7 @@ function AppMobile() {
     if (profile.customPort) setCustomPort(profile.customPort)
     if (profile.customMessage) setCustomMessage(profile.customMessage)
     setDelay(profile.delay)
+    setHandheldDelay(profile.handheldDelay ?? profile.delay)
     if (profile.automationSequences?.length) {
       setAutomationSequences(profile.automationSequences)
     } else if (profile.automationSteps?.length) {
@@ -121,6 +123,7 @@ function AppMobile() {
     customMessage,
     adamHost: '',
     delay,
+    handheldDelay,
     automationSequences,
   }
 
@@ -185,8 +188,9 @@ function AppMobile() {
             <MobileHandheldTab
               slots={handheldSlots}
               setSlots={setHandheldSlots}
-              delay={delay}
-              setDelay={setDelay}
+              handheldDelay={handheldDelay}
+              setHandheldDelay={setHandheldDelay}
+              rssi={rssi}
             />
           </div>
         )

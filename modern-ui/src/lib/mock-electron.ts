@@ -174,7 +174,10 @@ class MockElectronAPI implements ElectronAPI {
     const interval = setInterval(() => {
       const currentTag = tags[count];
       count++;
-      this._triggerHandheld(this._handheldCallbacks.progress, port, `Sent EPC ${count}/${tags.length} to 1 client(s): ${currentTag.epc}`);
+      const rssiRaw = currentTag?.rssi;
+      const rssiNum = rssiRaw != null && rssiRaw !== '' ? parseFloat(rssiRaw) : NaN;
+      const rssiVal = Number.isFinite(rssiNum) ? rssiNum : 70;
+      this._triggerHandheld(this._handheldCallbacks.progress, port, `Sent (${count}/${tags.length}): ${currentTag.epc} @rssi=${rssiVal}`);
       console.log(`Mock: Sent EPC ${count}/${tags.length}:`, currentTag);
       
       if (count >= tags.length) {

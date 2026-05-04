@@ -64,7 +64,8 @@ function App() {
   // Shared state across tabs (like Java EmulatorUI fields - lines 11-24)
   const [host, setHost] = useState('')
   const [connected, setConnected] = useState(false)
-  const [delay, setDelay] = useState('20') // Shared delay like delaySpinner in Java
+  const [delay, setDelay] = useState('20') // Fixed reader inter-tag delay (ms)
+  const [handheldDelay, setHandheldDelay] = useState('20')
 
   // Fixed Tab persistent state
   const [port, setPort] = useState('12352')
@@ -168,6 +169,7 @@ function App() {
     if (profile.customMessage) setCustomMessage(profile.customMessage)
     if (profile.adamHost) setAdamHost(profile.adamHost)
     setDelay(profile.delay)
+    setHandheldDelay(profile.handheldDelay ?? profile.delay)
     if (profile.automationSequences?.length) {
       setAutomationSequences(profile.automationSequences)
     } else if (profile.automationSteps?.length) {
@@ -192,6 +194,7 @@ function App() {
     customMessage,
     adamHost,
     delay,
+    handheldDelay,
     automationSequences
   }
 
@@ -432,8 +435,9 @@ function App() {
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
-                delay={delay}
-                setDelay={setDelay}
+                handheldDelay={handheldDelay}
+                setHandheldDelay={setHandheldDelay}
+                rssi={rssi}
               />
             </TabsContent>
 
@@ -483,6 +487,7 @@ function App() {
                 alePort={alePort}
                 customPort={customPort}
                 delay={delay}
+                handheldDelay={handheldDelay}
                 sequences={automationSequences}
                 setSequences={setAutomationSequences}
               />
