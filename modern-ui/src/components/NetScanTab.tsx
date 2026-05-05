@@ -614,16 +614,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3" data-tour="tour-netscan-root">
       <Tabs value={lanMode} onValueChange={(v) => setLanMode(v as typeof lanMode)} className="flex h-full min-h-0 flex-col">
-        <TabsList className="grid w-full max-w-2xl grid-cols-3 h-auto p-1 shrink-0">
-          <TabsTrigger value="udpDiscovery" className="text-xs gap-1.5">
+        <TabsList className="grid h-auto w-full max-w-2xl shrink-0 grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
+          <TabsTrigger value="udpDiscovery" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
             <Radio className="w-3.5 h-3.5" />
             Edge Discovery (UDP)
           </TabsTrigger>
-          <TabsTrigger value="readerDiscovery" className="text-xs gap-1.5">
+          <TabsTrigger value="readerDiscovery" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
             <Search className="w-3.5 h-3.5" />
             RFID Readers
           </TabsTrigger>
-          <TabsTrigger value="pingScan" className="text-xs gap-1.5">
+          <TabsTrigger value="pingScan" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
             <Radar className="w-3.5 h-3.5" />
             Ping Scan
           </TabsTrigger>
@@ -645,7 +645,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-end gap-3 shrink-0">
+          <div className="flex shrink-0 flex-wrap items-end gap-3 rounded-xl border border-border/40 bg-muted/15 p-3 ring-1 ring-border/20">
             <div className="space-y-1.5 w-28">
               <Label className="text-xs text-muted-foreground">Local port</Label>
               <Input
@@ -698,7 +698,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           </div>
 
           {/* Send probe */}
-          <div className="flex flex-wrap items-end gap-3 shrink-0 rounded-lg border border-border/40 bg-muted/20 p-3">
+          <div className="flex shrink-0 flex-wrap items-end gap-3 rounded-xl border border-border/40 bg-muted/20 p-3 ring-1 ring-border/25">
             <div className="space-y-1.5 flex-1 min-w-[140px] max-w-[200px]">
               <Label className="text-xs text-muted-foreground">Target IP (or broadcast)</Label>
               <Input
@@ -861,10 +861,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           </div>
 
           <Tabs value={readers.mode} onValueChange={(v) => readers.setMode(v as ReaderMode)} className="w-full shrink-0">
-            <TabsList className="grid w-full max-w-xl grid-cols-3 h-auto p-1">
-              <TabsTrigger value="cidr" className="text-xs">CIDR</TabsTrigger>
-              <TabsTrigger value="range" className="text-xs">IP range</TabsTrigger>
-              <TabsTrigger value="allSubnets" className="text-xs">All subnets</TabsTrigger>
+            <TabsList className="grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
+              <TabsTrigger value="cidr" className="rounded-lg text-xs data-[state=active]:shadow-sm">
+                CIDR
+              </TabsTrigger>
+              <TabsTrigger value="range" className="rounded-lg text-xs data-[state=active]:shadow-sm">
+                IP range
+              </TabsTrigger>
+              <TabsTrigger value="allSubnets" className="rounded-lg text-xs data-[state=active]:shadow-sm">
+                All subnets
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="cidr" className="mt-3 space-y-1.5">
               <Label className="text-xs text-muted-foreground">Network (CIDR)</Label>
@@ -1078,14 +1084,14 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
         onValueChange={(v) => setScanMode(v as ScanMode)}
         className="w-full shrink-0"
       >
-        <TabsList className="grid w-full max-w-xl grid-cols-3 h-auto p-1">
-          <TabsTrigger value="cidr" className="text-xs">
+        <TabsList className="grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
+          <TabsTrigger value="cidr" className="rounded-lg text-xs data-[state=active]:shadow-sm">
             CIDR
           </TabsTrigger>
-          <TabsTrigger value="range" className="text-xs">
+          <TabsTrigger value="range" className="rounded-lg text-xs data-[state=active]:shadow-sm">
             IP range
           </TabsTrigger>
-          <TabsTrigger value="allSubnets" className="text-xs">
+          <TabsTrigger value="allSubnets" className="rounded-lg text-xs data-[state=active]:shadow-sm">
             All subnets
           </TabsTrigger>
         </TabsList>

@@ -24,6 +24,9 @@ const SHORTCUTS = [
     { label: 'Command palette', keys: 'Ctrl+K' },
     { label: 'Interactive UI tour', keys: '?' },
   ]},
+  { group: 'Fixed tab', items: [
+    { label: 'Send tags (works in tag fields too)', keys: 'Ctrl+Enter' },
+  ]},
   { group: 'Window', items: [
     { label: 'Toggle fullscreen', keys: 'F11' },
     { label: 'Reload app', keys: 'Ctrl+R' },

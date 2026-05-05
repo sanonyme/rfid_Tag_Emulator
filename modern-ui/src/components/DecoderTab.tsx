@@ -1,19 +1,25 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
+import { Badge } from './ui/badge'
+import { Switch } from './ui/switch'
 import { EPCDecoder, EPCEncoder, uidToEpcSerial } from '../lib/decoder'
 import { ArrowDown, ArrowUp, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./ui/select"
+} from './ui/select'
+
+const SECTION_CARD =
+  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
 const PARTITION_TABLE = [
   { companyBits: 40, itemBits: 4 },
@@ -26,16 +32,24 @@ const PARTITION_TABLE = [
 ]
 
 const BIT_SEGMENTS = [
-  { label: 'Header', bits: 8, color: 'bg-blue-500', text: 'text-blue-200' },
-  { label: 'Filter', bits: 3, color: 'bg-emerald-500', text: 'text-emerald-200' },
-  { label: 'Partition', bits: 3, color: 'bg-amber-500', text: 'text-amber-200' },
-  { label: 'Company', bits: 0, color: 'bg-violet-500', text: 'text-violet-200' },
-  { label: 'Item Ref', bits: 0, color: 'bg-rose-500', text: 'text-rose-200' },
-  { label: 'Serial', bits: 38, color: 'bg-cyan-500', text: 'text-cyan-200' },
+  { label: 'Header', bits: 8, color: 'bg-blue-500/90 dark:bg-blue-600/90', text: 'text-white' },
+  { label: 'Filter', bits: 3, color: 'bg-emerald-500/90 dark:bg-emerald-600/90', text: 'text-white' },
+  { label: 'Partition', bits: 3, color: 'bg-amber-500/90 dark:bg-amber-600/90', text: 'text-white' },
+  { label: 'Company', bits: 0, color: 'bg-violet-500/90 dark:bg-violet-600/90', text: 'text-white' },
+  { label: 'Item Ref', bits: 0, color: 'bg-rose-500/90 dark:bg-rose-600/90', text: 'text-white' },
+  { label: 'Serial', bits: 38, color: 'bg-cyan-500/90 dark:bg-cyan-600/90', text: 'text-white' },
 ]
 
-function EpcBitVisualizer({ decoded }: {
-  decoded: { filter?: number; partition?: number; companyPrefix?: string; itemReference?: string; serial?: string }
+function EpcBitVisualizer({
+  decoded,
+}: {
+  decoded: {
+    filter?: number
+    partition?: number
+    companyPrefix?: string
+    itemReference?: string
+    serial?: string
+  }
 }) {
   const partition = decoded.partition ?? 0
   const rule = PARTITION_TABLE[partition] || PARTITION_TABLE[0]
@@ -43,9 +57,13 @@ function EpcBitVisualizer({ decoded }: {
   const segments = BIT_SEGMENTS.map((seg, i) => {
     let bits = seg.bits
     let value = ''
-    if (i === 3) { bits = rule.companyBits; value = decoded.companyPrefix || '' }
-    else if (i === 4) { bits = rule.itemBits; value = decoded.itemReference || '' }
-    else if (i === 0) value = '0x30'
+    if (i === 3) {
+      bits = rule.companyBits
+      value = decoded.companyPrefix || ''
+    } else if (i === 4) {
+      bits = rule.itemBits
+      value = decoded.itemReference || ''
+    } else if (i === 0) value = '0x30'
     else if (i === 1) value = String(decoded.filter ?? '')
     else if (i === 2) value = String(decoded.partition ?? '')
     else if (i === 5) value = decoded.serial || ''
@@ -55,45 +73,67 @@ function EpcBitVisualizer({ decoded }: {
   const totalBits = 96
 
   return (
-    <div className="mt-4 space-y-2">
-      <p className="text-xs font-medium text-muted-foreground">SGTIN-96 Bit Structure</p>
-      <div className="flex rounded-lg overflow-hidden h-10 border border-border/50">
+    <div className="mt-1 space-y-3 rounded-xl border border-border/35 bg-muted/10 p-4 ring-1 ring-border/15">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs font-medium text-muted-foreground">SGTIN-96 bit layout</p>
+        <Badge variant="outline" className="text-[10px] font-normal tabular-nums text-muted-foreground">
+          96 bits
+        </Badge>
+      </div>
+      <div className="flex h-10 overflow-hidden rounded-lg ring-1 ring-border/35">
         {segments.map((seg, i) => (
           <div
             key={i}
-            className={`${seg.color} relative flex items-center justify-center overflow-hidden transition-all group`}
+            className={cn(
+              'relative flex items-center justify-center overflow-hidden transition-colors',
+              seg.color,
+              seg.bits < 8 && 'min-w-[2px]'
+            )}
             style={{ width: `${(seg.bits / totalBits) * 100}%` }}
             title={`${seg.label}: ${seg.bits} bits — ${seg.value}`}
           >
             {seg.bits >= 8 && (
-              <span className="text-[10px] font-bold text-white truncate px-1 drop-shadow-sm">
+              <span className={cn('truncate px-1 text-[10px] font-semibold drop-shadow-sm', seg.text)}>
                 {seg.label}
               </span>
             )}
           </div>
         ))}
       </div>
-      <div className="flex rounded-lg overflow-hidden h-7 border border-border/50 bg-muted/30">
+      <div className="flex h-8 overflow-hidden rounded-lg border border-border/40 bg-background/70 ring-1 ring-border/15">
         {segments.map((seg, i) => (
           <div
             key={i}
-            className="flex items-center justify-center overflow-hidden border-r border-border/20 last:border-0"
+            className="flex items-center justify-center overflow-hidden border-r border-border/30 last:border-0"
             style={{ width: `${(seg.bits / totalBits) * 100}%` }}
           >
-            <span className="text-[9px] font-mono truncate px-0.5 text-muted-foreground">
+            <span className="truncate px-1 text-[10px] font-mono tabular-nums text-muted-foreground">
               {seg.value}
             </span>
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
+      <div className="flex flex-wrap gap-x-4 gap-y-2 pt-1">
         {segments.map((seg, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <div className={`w-2.5 h-2.5 rounded-sm ${seg.color}`} />
-            <span className="text-[10px] text-muted-foreground">{seg.label} ({seg.bits}b)</span>
+          <div key={i} className="flex items-center gap-2">
+            <div className={cn('h-2.5 w-2.5 shrink-0 rounded-sm ring-1 ring-black/10 dark:ring-white/10', seg.color)} />
+            <span className="text-[11px] tabular-nums text-muted-foreground">
+              {seg.label} ({seg.bits}b)
+            </span>
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function ResultRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5 rounded-lg border border-border/30 bg-background/50 px-3 py-2 sm:flex-row sm:items-center sm:gap-3">
+      <span className="w-32 shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </span>
+      <span className="min-w-0 flex-1 text-sm">{children}</span>
     </div>
   )
 }
@@ -186,204 +226,266 @@ export function DecoderTab() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const gtinDigits = gtinInput.replace(/[^0-9]/g, '')
+  const gtinHint = (() => {
+    if (gtinDigits.length === 13) {
+      const check = EPCDecoder.calculateCheckDigit(gtinDigits)
+      return (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Calculated check digit{' '}
+          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary ring-1 ring-primary/15">
+            {check}
+          </span>
+        </p>
+      )
+    }
+    if (gtinDigits.length === 14) {
+      const payload = gtinDigits.slice(0, 13)
+      const providedCheck = gtinDigits.slice(-1)
+      const calcCheck = EPCDecoder.calculateCheckDigit(payload)
+      const isValid = providedCheck === calcCheck
+      return (
+        <div
+          className={cn(
+            'rounded-lg border px-3 py-2 text-[11px] leading-snug ring-1',
+            isValid
+              ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-800 ring-emerald-500/15 dark:text-emerald-300'
+              : 'border-destructive/40 bg-destructive/[0.06] text-destructive ring-destructive/10'
+          )}
+        >
+          {isValid ? 'Check digit is valid.' : `Check digit mismatch (expected ${calcCheck}).`}
+        </div>
+      )
+    }
+    return null
+  })()
+
   return (
-    <div className="min-h-full flex flex-col gap-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 flex-1 min-h-0">
+    <div className="flex min-h-full flex-col gap-5">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 md:grid-cols-2">
         {/* Decoder Section */}
-        <Card className="flex flex-col h-full border-border/50 bg-card" data-tour="tour-decoder-decode">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowDown className="w-5 h-5 text-primary" />
-              EPC Decoder
-            </CardTitle>
-            <CardDescription>
-              Convert Hex EPC to GTIN + Serial
-            </CardDescription>
+        <Card className={cn('flex h-full flex-col', SECTION_CARD)} data-tour="tour-decoder-decode">
+          <CardHeader className="px-5 pb-3 pt-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-400">
+                <ArrowDown className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-base font-semibold tracking-tight">EPC decoder</CardTitle>
+                  <Badge variant="secondary" className="font-normal text-muted-foreground">
+                    SGTIN-96
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs leading-relaxed">
+                  Hex EPC → GTIN-14, serial, and partition fields
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4">
+          <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
             <div className="space-y-2">
-              <Label>EPC (Hex)</Label>
-              <Textarea 
-                placeholder="e.g. 3034257BF400B40000000123" 
+              <Label htmlFor="decoder-epc" className="text-sm font-medium">
+                EPC (hex)
+              </Label>
+              <Textarea
+                id="decoder-epc"
+                placeholder="e.g. 3034257BF400B40000000123"
                 value={epcInput}
                 onChange={(e) => setEpcInput(e.target.value)}
-                className="font-mono"
+                className="min-h-[5.5rem] resize-y rounded-lg border-border/50 bg-background/80 font-mono text-sm"
                 rows={3}
               />
-              <Button onClick={handleDecode} className="w-full">Decode</Button>
+              <Button onClick={handleDecode} className="h-10 w-full rounded-lg font-medium">
+                Decode
+              </Button>
             </div>
 
             {decodedResult && (
-              <div className={`mt-4 p-4 rounded-lg border ${decodedResult.error ? 'bg-destructive/10 border-destructive/50' : 'bg-secondary/50 border-secondary'}`}>
+              <div
+                className={cn(
+                  'space-y-3 rounded-xl border p-4 ring-1',
+                  decodedResult.error
+                    ? 'border-destructive/40 bg-destructive/[0.06] ring-destructive/10'
+                    : 'border-border/35 bg-muted/15 ring-border/15'
+                )}
+              >
                 {decodedResult.error ? (
-                  <p className="text-destructive font-medium">{decodedResult.error}</p>
+                  <p className="text-sm font-medium text-destructive">{decodedResult.error}</p>
                 ) : (
-                  <div className="space-y-3 text-sm">
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">GTIN-14:</span>
-                      <span className="col-span-2 font-mono font-medium">{decodedResult.gtin}</span>
+                  <div className="space-y-2">
+                    <div className="mb-1 flex items-center gap-2">
+                      <Badge variant="outline" className="text-[11px] font-normal">
+                        Parsed
+                      </Badge>
+                      <span className="text-[11px] text-muted-foreground">GS1 extraction</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Check Digit:</span>
-                      <span className="col-span-2 font-mono text-primary font-bold">{decodedResult.gtin?.slice(-1)}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Serial:</span>
-                      <span className="col-span-2 font-mono font-medium">{decodedResult.serial}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Filter:</span>
-                      <span className="col-span-2 font-mono">{decodedResult.filter}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Partition:</span>
-                      <span className="col-span-2 font-mono">{decodedResult.partition}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Company:</span>
-                      <span className="col-span-2 font-mono">{decodedResult.companyPrefix}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <span className="text-muted-foreground">Item Ref:</span>
-                      <span className="col-span-2 font-mono">{decodedResult.itemReference}</span>
-                    </div>
+                    <ResultRow label="GTIN-14">
+                      <span className="font-mono text-sm font-medium tabular-nums">{decodedResult.gtin}</span>
+                    </ResultRow>
+                    <ResultRow label="Check digit">
+                      <span className="font-mono text-sm font-semibold tabular-nums text-primary">
+                        {decodedResult.gtin?.slice(-1)}
+                      </span>
+                    </ResultRow>
+                    <ResultRow label="Serial">
+                      <span className="break-all font-mono text-sm font-medium">{decodedResult.serial}</span>
+                    </ResultRow>
+                    <ResultRow label="Filter">{decodedResult.filter}</ResultRow>
+                    <ResultRow label="Partition">{decodedResult.partition}</ResultRow>
+                    <ResultRow label="Company">
+                      <span className="font-mono text-sm">{decodedResult.companyPrefix}</span>
+                    </ResultRow>
+                    <ResultRow label="Item ref">
+                      <span className="font-mono text-sm">{decodedResult.itemReference}</span>
+                    </ResultRow>
                   </div>
                 )}
               </div>
             )}
 
-            {decodedResult && !decodedResult.error && (
-              <EpcBitVisualizer decoded={decodedResult} />
-            )}
+            {decodedResult && !decodedResult.error && <EpcBitVisualizer decoded={decodedResult} />}
           </CardContent>
         </Card>
 
         {/* Encoder Section */}
-        <Card className="flex flex-col h-full border-border/50 bg-card" data-tour="tour-decoder-encode">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ArrowUp className="w-5 h-5 text-primary" />
-              EPC Encoder
-            </CardTitle>
-            <CardDescription>
-              Convert GTIN + Serial to Hex EPC
-            </CardDescription>
+        <Card className={cn('flex h-full flex-col', SECTION_CARD)} data-tour="tour-decoder-encode">
+          <CardHeader className="px-5 pb-3 pt-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/25 dark:text-amber-400">
+                <ArrowUp className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <CardTitle className="text-base font-semibold tracking-tight">EPC encoder</CardTitle>
+                  <Badge variant="secondary" className="font-normal text-muted-foreground">
+                    SGTIN-96
+                  </Badge>
+                </div>
+                <CardDescription className="text-xs leading-relaxed">
+                  GTIN + serial → 96-bit hex EPC (filter &amp; prefix length configurable)
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="flex-1 flex flex-col gap-4">
+          <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
             <div className="space-y-2">
-              <Label>GTIN / UPC</Label>
-              <Input 
-                placeholder="e.g. 1234567890123" 
+              <Label htmlFor="encoder-gtin" className="text-sm font-medium">
+                GTIN / UPC
+              </Label>
+              <Input
+                id="encoder-gtin"
+                placeholder="e.g. 1234567890123"
                 value={gtinInput}
                 onChange={(e) => setGtinInput(e.target.value)}
-                className="font-mono"
+                className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
               />
-              {(() => {
-                const digits = gtinInput.replace(/[^0-9]/g, '')
-                if (digits.length === 13) {
-                  const check = EPCDecoder.calculateCheckDigit(digits)
-                  return (
-                    <p className="text-xs text-muted-foreground">
-                      Calculated Check Digit: <span className="text-primary font-bold">{check}</span>
-                    </p>
-                  )
-                }
-                if (digits.length === 14) {
-                  const payload = digits.slice(0, 13)
-                  const providedCheck = digits.slice(-1)
-                  const calcCheck = EPCDecoder.calculateCheckDigit(payload)
-                  const isValid = providedCheck === calcCheck
-                  return (
-                    <p className={`text-xs ${isValid ? 'text-primary' : 'text-destructive'}`}>
-                      Check Digit: {isValid ? 'Valid' : `Invalid (Expected ${calcCheck})`}
-                    </p>
-                  )
-                }
-                return null
-              })()}
+              {gtinHint}
             </div>
-            
-            <div className="space-y-2">
-              <Label>Serial Number</Label>
-              <Input 
-                placeholder={serialIsUid ? "e.g. E0167801034E89FC" : "e.g. 12345"} 
+
+            <div className="space-y-3">
+              <Label htmlFor="encoder-serial" className="text-sm font-medium">
+                Serial number
+              </Label>
+              <Input
+                id="encoder-serial"
+                placeholder={serialIsUid ? 'e.g. E0167801034E89FC' : 'e.g. 12345'}
                 value={serialInput}
                 onChange={(e) => setSerialInput(e.target.value)}
-                className="font-mono"
+                className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
               />
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="serial-is-uid"
-                  checked={serialIsUid}
-                  onChange={(e) => setSerialIsUid(e.target.checked)}
-                  className="rounded border-border"
-                />
-                <Label htmlFor="serial-is-uid" className="text-xs font-normal cursor-pointer">
-                  Input is UID (E016 + 12 hex)
-                </Label>
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-border/35 bg-muted/20 px-3 py-2.5 ring-1 ring-border/15">
+                <div className="space-y-0.5">
+                  <Label htmlFor="serial-is-uid" className="text-sm font-medium leading-snug">
+                    UID input
+                  </Label>
+                  <p className="text-[11px] leading-relaxed text-muted-foreground">E016 + 12 hex → EPC serial</p>
+                </div>
+                <Switch id="serial-is-uid" checked={serialIsUid} onCheckedChange={setSerialIsUid} />
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Company Prefix Length</Label>
+                <Label className="text-sm font-medium">Company prefix length</Label>
                 <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
                     <SelectValue placeholder="Length" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="6">6 Digits</SelectItem>
-                    <SelectItem value="7">7 Digits</SelectItem>
-                    <SelectItem value="8">8 Digits</SelectItem>
-                    <SelectItem value="9">9 Digits</SelectItem>
-                    <SelectItem value="10">10 Digits</SelectItem>
-                    <SelectItem value="11">11 Digits</SelectItem>
-                    <SelectItem value="12">12 Digits</SelectItem>
+                    <SelectItem value="6">6 digits</SelectItem>
+                    <SelectItem value="7">7 digits</SelectItem>
+                    <SelectItem value="8">8 digits</SelectItem>
+                    <SelectItem value="9">9 digits</SelectItem>
+                    <SelectItem value="10">10 digits</SelectItem>
+                    <SelectItem value="11">11 digits</SelectItem>
+                    <SelectItem value="12">12 digits</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="space-y-2">
-                <Label>Filter Value</Label>
+                <Label className="text-sm font-medium">Filter value</Label>
                 <Select value={filterValue} onValueChange={setFilterValue}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
                     <SelectValue placeholder="Filter" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="0">0 - All Others (Retail)</SelectItem>
-                    <SelectItem value="1">1 - POS Trade Item</SelectItem>
-                    <SelectItem value="2">2 - Full Case Transport</SelectItem>
-                    <SelectItem value="3">3 - Reserved</SelectItem>
-                    <SelectItem value="4">4 - Inner Pack</SelectItem>
-                    <SelectItem value="5">5 - Reserved</SelectItem>
-                    <SelectItem value="6">6 - Unit Load</SelectItem>
-                    <SelectItem value="7">7 - Component</SelectItem>
+                    <SelectItem value="0">0 — All others (retail)</SelectItem>
+                    <SelectItem value="1">1 — POS trade item</SelectItem>
+                    <SelectItem value="2">2 — Full case transport</SelectItem>
+                    <SelectItem value="3">3 — Reserved</SelectItem>
+                    <SelectItem value="4">4 — Inner pack</SelectItem>
+                    <SelectItem value="5">5 — Reserved</SelectItem>
+                    <SelectItem value="6">6 — Unit load</SelectItem>
+                    <SelectItem value="7">7 — Component</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <Button onClick={handleEncode} variant="secondary" className="w-full mt-2">Encode</Button>
+            <Button
+              onClick={handleEncode}
+              variant="outline"
+              className="mt-auto h-10 w-full rounded-lg border-primary/35 bg-primary/[0.04] font-medium text-primary hover:bg-primary/[0.08] hover:text-primary"
+            >
+              Encode
+            </Button>
 
             {encodedResult && (
-              <div className={`mt-4 p-4 rounded-lg border ${encodedResult.error ? 'bg-destructive/10 border-destructive/50' : 'bg-primary/10 border-primary/20'}`}>
+              <div
+                className={cn(
+                  'space-y-3 rounded-xl border p-4 ring-1',
+                  encodedResult.error
+                    ? 'border-destructive/40 bg-destructive/[0.06] ring-destructive/10'
+                    : 'border-primary/25 bg-primary/[0.06] ring-primary/10'
+                )}
+              >
                 {encodedResult.error ? (
-                  <p className="text-destructive font-medium">{encodedResult.error}</p>
+                  <p className="text-sm font-medium text-destructive">{encodedResult.error}</p>
                 ) : (
                   <div className="space-y-2">
-                    <Label className="text-muted-foreground">Generated EPC (Hex)</Label>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 block p-2 rounded bg-background/50 border font-mono text-sm break-all">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                        Generated EPC (hex)
+                      </Label>
+                      <Badge variant="outline" className="font-mono text-[10px] font-normal">
+                        24 hex chars
+                      </Badge>
+                    </div>
+                    <div className="flex items-stretch gap-2">
+                      <code className="block min-h-[2.75rem] flex-1 break-all rounded-lg border border-border/40 bg-background/80 p-3 font-mono text-xs leading-relaxed ring-1 ring-border/15 sm:text-sm">
                         {encodedResult.epc}
                       </code>
-                      <Button 
-                        size="icon" 
-                        variant="ghost" 
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        className="h-auto shrink-0 rounded-lg border-border/50"
                         onClick={() => encodedResult.epc && copyToClipboard(encodedResult.epc)}
                         title="Copy to clipboard"
                       >
-                        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                        {copied ? <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /> : <Copy className="h-4 w-4" />}
                       </Button>
                     </div>
                   </div>

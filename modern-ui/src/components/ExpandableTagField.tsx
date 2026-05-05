@@ -95,6 +95,7 @@ export function ExpandableTagField({
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
+          data-tag-expand-dialog
           className={cn(
             'flex max-h-[90vh] w-[min(96vw,56rem)] max-w-none flex-col gap-0 overflow-hidden p-0',
             'sm:max-h-[88vh]',

@@ -428,6 +428,7 @@ function App() {
                 setEpcList={setFixedEpcList}
                 delay={delay}
                 setDelay={setDelay}
+                fixedTabActive={activeTab === 'fixed'}
               />
             </TabsContent>
 

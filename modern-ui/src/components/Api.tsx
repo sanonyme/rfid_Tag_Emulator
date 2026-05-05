@@ -14,7 +14,11 @@ import {
   DialogTitle,
   DialogDescription,
 } from './ui/dialog'
-import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2, FileSpreadsheet, Eye, PlayCircle, Square, Trash2, Download, ChevronDown, ChevronRight, Package } from 'lucide-react'
+import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2, FileSpreadsheet, Eye, PlayCircle, Square, Trash2, Download, ChevronDown, ChevronRight, Package, Activity } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const SECTION_CARD =
+  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
 /** Normalize pipe-table row label for lookup (trim, collapse spaces, lowercase). */
 function normalizeTableLabel(label: string): string {
@@ -971,57 +975,72 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   }
 
   return (
-    <div className="flex flex-col gap-4 min-h-full max-w-5xl mx-auto relative">
-      {/* Request Card - Bruno style */}
-      <Card className="tab-card" data-tour="tour-api-request">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="w-5 h-5 text-primary" />
-            Inditex RFID Box Readings API
-          </CardTitle>
-          <CardDescription>
-            POST JSON to the Inditex API. Configure the auth header below; it is saved locally.
-          </CardDescription>
+    <div className="relative mx-auto flex min-h-full max-w-5xl flex-col gap-4">
+      {/* Request Card */}
+      <Card className={SECTION_CARD} data-tour="tour-api-request">
+        <CardHeader className="space-y-3 pb-3 pt-5 px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                <Globe className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="text-base font-semibold tracking-tight">Inditex RFID box readings</CardTitle>
+                <CardDescription className="text-xs leading-relaxed">
+                  POST JSON through the desktop bridge. Header name and key are saved locally.
+                </CardDescription>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+              POST
+            </Badge>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-5 pb-5 pt-0">
           {/* URL + Method row */}
-          <div className="flex gap-2 items-center">
+          <div className="flex items-center gap-2">
             <Select value={method} disabled>
-              <SelectTrigger className="w-28 shrink-0 h-10">
+              <SelectTrigger className="h-10 w-28 shrink-0 rounded-lg border-border/60 shadow-none">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="POST">POST</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex-1 min-w-0">
-              <Label htmlFor="api-url" className="sr-only">URL</Label>
+            <div className="min-w-0 flex-1">
+              <Label htmlFor="api-url" className="sr-only">
+                URL
+              </Label>
               <Input
                 id="api-url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://api.product.inditex.com/..."
                 disabled={sending}
-                className="font-mono text-sm"
+                className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
               />
             </div>
           </div>
 
           {/* Auth header config */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="api-header">Header name</Label>
+              <Label htmlFor="api-header" className="text-sm font-medium">
+                Header name
+              </Label>
               <Input
                 id="api-header"
                 value={headerName}
                 onChange={(e) => setHeaderName(e.target.value)}
                 placeholder="itx-apiKey"
                 disabled={sending}
-                className="font-mono"
+                className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="api-key">API key</Label>
+              <Label htmlFor="api-key" className="text-sm font-medium">
+                API key
+              </Label>
               <div className="flex gap-2">
                 <Input
                   id="api-key"
@@ -1030,7 +1049,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="Enter your API key"
                   disabled={sending}
-                  className="font-mono"
+                  className="h-10 flex-1 rounded-lg border-border/50 font-mono text-sm shadow-none"
                 />
                 <Button
                   variant="outline"
@@ -1038,23 +1057,24 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                   onClick={handleSaveConfig}
                   disabled={sending}
                   title="Save (persists across restarts)"
+                  className="h-10 w-10 shrink-0 rounded-lg border-border/60 bg-muted/20 shadow-none hover:bg-muted/40"
                 >
-                  {saved ? <Check className="w-4 h-4 text-green-500" /> : <Save className="w-4 h-4" />}
+                  {saved ? <Check className="h-4 w-4 text-green-600 dark:text-green-400" /> : <Save className="h-4 w-4" />}
                 </Button>
               </div>
             </div>
           </div>
 
           {/* Substitution table → {{TOKEN}} */}
-          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-            <div className="flex items-start justify-between gap-2 flex-wrap">
+          <div className="space-y-2 rounded-xl border border-border/40 bg-muted/15 p-3.5 ring-1 ring-border/20">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <Label htmlFor="api-subst-table" className="flex items-center gap-2">
-                  <Table2 className="w-4 h-4 text-muted-foreground" />
+                <Label htmlFor="api-subst-table" className="flex items-center gap-2 text-sm font-medium">
+                  <Table2 className="h-4 w-4 text-muted-foreground" />
                   Placeholder table
                 </Label>
-                <p className="text-xs text-muted-foreground mt-1 max-w-prose">
-                  PASTE HERE YOUR SUBSTITUTION TABLE
+                <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
+                  Pipe rows or label/value blocks → replaces <code className="font-mono text-[10px]">{'{{TOKEN}}'}</code> in the body.
                 </p>
               </div>
               <Button
@@ -1063,9 +1083,9 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                 size="sm"
                 onClick={handleApplySubstitutionTable}
                 disabled={sending}
-                className="shrink-0"
+                className="shrink-0 rounded-lg shadow-none"
               >
-                <Table2 className="w-3.5 h-3.5 mr-1.5" />
+                <Table2 className="mr-1.5 h-3.5 w-3.5" />
                 Apply to body
               </Button>
             </div>
@@ -1080,28 +1100,30 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                 'Device Model\n\nTT-Buttons\n\nDevice Serial No\n\nU675EU...\n\n— or —\n\n| Device Model | TT-Buttons |'
               }
               disabled={sending}
-              className="font-mono text-sm min-h-[100px] resize-y"
+              className="min-h-[100px] resize-y rounded-lg border-border/50 bg-background/60 font-mono text-sm shadow-none"
             />
             {substitutionMessage && (
-              <p className="text-xs text-muted-foreground">{substitutionMessage}</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{substitutionMessage}</p>
             )}
           </div>
 
           {/* Body */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="api-body">Request Body (JSON)</Label>
-              <div className="flex items-center gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="api-body" className="text-sm font-medium">
+                Request body (JSON)
+              </Label>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={() => onBase64OpenChange?.(true)}
                   disabled={sending}
-                  className="h-7 px-2 text-xs"
+                  className="h-8 rounded-md px-2.5 text-xs"
                   title="Base64 Decode / Encode"
                 >
-                  <Braces className="w-3.5 h-3.5 mr-1" />
+                  <Braces className="mr-1 h-3.5 w-3.5" />
                   Base64
                 </Button>
                 <Button
@@ -1109,9 +1131,9 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                   size="sm"
                   onClick={handlePrettifyBody}
                   disabled={sending}
-                  className="h-7 px-2 text-xs"
+                  className="h-8 rounded-md px-2.5 text-xs"
                 >
-                  <Braces className="w-3.5 h-3.5 mr-1" />
+                  <Braces className="mr-1 h-3.5 w-3.5" />
                   Prettify
                 </Button>
               </div>
@@ -1122,7 +1144,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
               onChange={(e) => setBody(e.target.value)}
               placeholder='{"test": "test value"}'
               disabled={sending}
-              className="font-mono text-sm min-h-[180px] resize-y"
+              className="min-h-[180px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-sm shadow-none"
             />
           </div>
 
@@ -1130,37 +1152,40 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
             onClick={handleSend}
             disabled={sending}
             size="lg"
-            className="w-full"
+            className="w-full rounded-xl shadow-md shadow-primary/25"
           >
             {sending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-              <Send className="w-4 h-4 mr-2" />
+              <Send className="mr-2 h-4 w-4" />
             )}
-            {sending ? 'Sending...' : 'Send Request'}
+            {sending ? 'Sending…' : 'Send request'}
           </Button>
         </CardContent>
       </Card>
 
       {/* Response Card */}
-      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col" data-tour="tour-api-response">
-        <CardHeader className="py-2 border-b border-border/50 shrink-0">
-          <div className="flex justify-between items-center flex-wrap gap-2">
-            <CardTitle className="text-sm flex items-center gap-2">
+      <Card className={cn(SECTION_CARD, 'flex min-h-[200px] flex-1 flex-col')} data-tour="tour-api-response">
+        <CardHeader className="shrink-0 border-b border-border/40 bg-muted/10 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
+                <Activity className="h-3.5 w-3.5 text-primary" />
+              </span>
               Response
               {response && (
                 <>
                   {response.ok ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
+                    <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                   ) : (
-                    <XCircle className="w-4 h-4 text-destructive" />
+                    <XCircle className="h-4 w-4 text-destructive" />
                   )}
-                  <Badge variant={response.ok ? 'default' : 'destructive'}>
+                  <Badge variant={response.ok ? 'default' : 'destructive'} className="font-mono tabular-nums">
                     {response.status} {response.statusText}
                   </Badge>
                   {response.durationMs != null && (
-                    <span className="flex items-center gap-1 text-muted-foreground font-normal">
-                      <Clock className="w-3 h-3" />
+                    <span className="flex items-center gap-1 font-normal text-muted-foreground">
+                      <Clock className="h-3 w-3" />
                       {response.durationMs}ms
                     </span>
                   )}
@@ -1168,27 +1193,20 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
               )}
             </CardTitle>
             {response && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleCopyResponse}
-                className="h-8 px-2"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Copy className="w-4 h-4" />
-                )}
-                <span className="ml-1.5">{copied ? 'Copied!' : 'Copy'}</span>
-              </Button>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+                <Button variant="ghost" size="sm" onClick={handleCopyResponse} className="h-8 gap-1.5 rounded-md px-2.5 text-xs">
+                  {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                  <span>{copied ? 'Copied' : 'Copy'}</span>
+                </Button>
+              </div>
             )}
           </div>
         </CardHeader>
-        <CardContent className="flex-1 min-h-0 p-0">
-          <ScrollArea className="h-full">
-            <pre className="p-4 font-mono text-sm whitespace-pre-wrap break-all">
+        <CardContent className="min-h-0 flex-1 bg-muted/10 p-0">
+          <ScrollArea className="h-full min-h-[180px]">
+            <pre className="whitespace-pre-wrap break-all p-4 font-mono text-xs sm:text-sm">
               {!response ? (
-                <span className="text-muted-foreground italic">Send a request to see the response...</span>
+                <span className="italic text-muted-foreground">Send a request to see the response here.</span>
               ) : response.error ? (
                 <span className="text-destructive">{response.error}</span>
               ) : (
@@ -1200,66 +1218,69 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
       </Card>
 
       {/* Bulk CSV / TSV Base64 Decoder */}
-      <Card className="tab-card">
+      <Card className={SECTION_CARD}>
         <CardHeader
-          className="cursor-pointer select-none"
+          className="cursor-pointer select-none rounded-t-xl border-b border-border/40 bg-muted/10 px-4 py-3 transition-colors hover:bg-muted/20"
           onClick={() => setBulkOpen((v) => !v)}
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               {bulkOpen ? (
-                <ChevronDown className="w-4 h-4 text-muted-foreground" />
+                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
               ) : (
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
               )}
-              <CardTitle className="flex items-center gap-2 text-base">
-                <FileSpreadsheet className="w-4 h-4 text-primary" />
-                Bulk CSV / TSV Base64 Decoder
-              </CardTitle>
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                <FileSpreadsheet className="h-4 w-4" />
+              </div>
+              <CardTitle className="text-base font-semibold tracking-tight">Bulk CSV / TSV decoder</CardTitle>
               {bulkRows.length > 0 && (
-                <Badge variant="secondary" className="ml-1">
+                <Badge variant="secondary" className="ml-1 font-normal tabular-nums">
                   {bulkRows.length} row{bulkRows.length === 1 ? '' : 's'}
                 </Badge>
               )}
             </div>
-            <CardDescription className="hidden sm:block text-right">
-              Paste rows with <code className="font-mono text-[11px]">id</code> / <code className="font-mono text-[11px]">body</code> columns.
+            <CardDescription className="hidden text-right sm:block max-w-[280px] text-xs leading-relaxed">
+              Columns <code className="font-mono text-[10px]">id</code> &amp;{' '}
+              <code className="font-mono text-[10px]">body</code> (base64 JSON).
             </CardDescription>
           </div>
         </CardHeader>
         {bulkOpen && (
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 px-5 pb-5 pt-0">
             <div className="space-y-2">
-              <Label htmlFor="bulk-csv-input" className="text-xs text-muted-foreground">
-                CSV / TSV (supports quoted fields with escaped <code className="font-mono">""</code>)
+              <Label htmlFor="bulk-csv-input" className="text-xs font-medium text-muted-foreground">
+                CSV / TSV (quoted fields, escaped <code className="font-mono">""</code>)
               </Label>
               <Textarea
                 id="bulk-csv-input"
                 value={bulkInput}
                 onChange={(e) => setBulkInput(e.target.value)}
                 placeholder={'"id"\t"body"\t"retry_count"\t"ignore_flag"\n"4759"\t"eyJib3giOn..."\t"10"\t"1"'}
-                className="font-mono text-xs min-h-[140px] resize-y"
+                className="min-h-[140px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs shadow-none"
                 disabled={bulkSendingAll}
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/25 p-2 ring-1 ring-border/25">
               <Button
                 type="button"
                 onClick={handleBulkParse}
                 disabled={bulkSendingAll}
                 variant="secondary"
+                className="rounded-lg shadow-none"
               >
-                <FileSpreadsheet className="w-4 h-4 mr-2" />
-                Parse & Decode
+                <FileSpreadsheet className="mr-2 h-4 w-4" />
+                Parse & decode
               </Button>
               <Button
                 type="button"
                 onClick={handleBulkClear}
                 variant="ghost"
                 disabled={bulkSendingAll}
+                className="rounded-lg"
               >
-                <Trash2 className="w-4 h-4 mr-2" />
+                <Trash2 className="mr-2 h-4 w-4" />
                 Clear
               </Button>
               {bulkRows.length > 0 && (
@@ -1275,8 +1296,9 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                         ? 'Substitute {{TOKENS}} in every row using the placeholder table above'
                         : 'Paste a placeholder table at the top first'
                     }
+                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
                   >
-                    <Table2 className="w-3.5 h-3.5 mr-1.5" />
+                    <Table2 className="mr-1.5 h-3.5 w-3.5" />
                     Apply table to all
                   </Button>
                   <Button
@@ -1286,8 +1308,9 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                     size="sm"
                     disabled={bulkSendingAll}
                     title="Check boxQrs on every row. If it has a split-object bug (},{ in the middle), the two objects are merged into one."
+                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
                   >
-                    <Package className="w-3.5 h-3.5 mr-1.5" />
+                    <Package className="mr-1.5 h-3.5 w-3.5" />
                     Check boxQrs (all)
                   </Button>
                   <Button
@@ -1295,33 +1318,40 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                     onClick={handleBulkExportJson}
                     variant="outline"
                     size="sm"
+                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
                   >
                     {bulkCopiedIdx === -1 ? (
-                      <Check className="w-3.5 h-3.5 mr-1.5 text-green-500" />
+                      <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
                     ) : (
-                      <Download className="w-3.5 h-3.5 mr-1.5" />
+                      <Download className="mr-1.5 h-3.5 w-3.5" />
                     )}
-                    {bulkCopiedIdx === -1 ? 'Copied!' : 'Copy all as JSON'}
+                    {bulkCopiedIdx === -1 ? 'Copied' : 'Copy all as JSON'}
                   </Button>
-                  <div className="flex items-center gap-2 ml-auto">
-                    <Label htmlFor="bulk-delay" className="text-xs text-muted-foreground">
-                      Delay (ms)
+                  <div className="ml-auto flex items-center gap-2 rounded-lg border border-border/40 bg-muted/20 px-2 py-1">
+                    <Label htmlFor="bulk-delay" className="text-xs text-muted-foreground whitespace-nowrap">
+                      Delay
                     </Label>
-                    <Input
-                      id="bulk-delay"
-                      type="number"
-                      min={0}
-                      step={50}
-                      value={bulkDelayMs}
-                      onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
-                      disabled={bulkSendingAll}
-                      className="h-8 w-20 text-xs"
-                    />
+                    <div className="relative">
+                      <Input
+                        id="bulk-delay"
+                        type="number"
+                        min={0}
+                        step={50}
+                        value={bulkDelayMs}
+                        onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
+                        disabled={bulkSendingAll}
+                        className="h-8 w-[4.25rem] rounded-md border-border/50 pe-7 text-center text-xs font-mono shadow-none"
+                      />
+                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                        ms
+                      </span>
+                    </div>
                     <Button
                       type="button"
                       onClick={handleBulkSendAll}
                       variant={bulkSendingAll ? 'destructive' : 'default'}
                       size="sm"
+                      className="rounded-lg shadow-sm"
                     >
                       {bulkSendingAll ? (
                         <>
@@ -1345,8 +1375,8 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
             )}
 
             {bulkRows.length > 0 && (
-              <div className="rounded-lg border border-border/60 overflow-hidden">
-                <div className="grid grid-cols-[90px_1fr_180px_200px] items-center gap-2 px-3 py-2 bg-muted/40 border-b border-border/60 text-xs font-medium text-muted-foreground">
+              <div className="overflow-hidden rounded-xl border border-border/40 ring-1 ring-border/20">
+                <div className="grid grid-cols-[90px_1fr_180px_200px] items-center gap-2 border-b border-border/40 bg-muted/30 px-3 py-2.5 text-xs font-medium text-muted-foreground">
                   <div>ID</div>
                   <div>Decoded preview</div>
                   <div>Status</div>
@@ -1555,39 +1585,41 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
       {/* Base64 decoder dialog - opened via the "Base64" button next to Prettify */}
       <Dialog open={base64Open} onOpenChange={onBase64OpenChange}>
         <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Braces className="w-5 h-5 text-primary" />
-              Base64 Decoder / Encoder
+          <DialogHeader className="space-y-2">
+            <DialogTitle className="flex items-center gap-3 text-base">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+                <Braces className="h-4 w-4" />
+              </span>
+              Base64 decoder / encoder
             </DialogTitle>
-            <DialogDescription>
-              Decode Base64 to text or encode text to Base64.
-            </DialogDescription>
+            <DialogDescription>Decode Base64 to UTF-8 text or encode text to Base64.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
               <Button
-                variant={base64Mode === 'decode' ? 'default' : 'outline'}
+                variant={base64Mode === 'decode' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => {
                   setBase64Mode('decode')
                   setBase64Output('')
                   setBase64Error(null)
                 }}
+                className={cn('rounded-lg', base64Mode !== 'decode' && 'shadow-none')}
               >
-                <ArrowDown className="w-3.5 h-3.5 mr-1.5" />
+                <ArrowDown className="mr-1.5 h-3.5 w-3.5" />
                 Decode
               </Button>
               <Button
-                variant={base64Mode === 'encode' ? 'default' : 'outline'}
+                variant={base64Mode === 'encode' ? 'default' : 'ghost'}
                 size="sm"
                 onClick={() => {
                   setBase64Mode('encode')
                   setBase64Output('')
                   setBase64Error(null)
                 }}
+                className={cn('rounded-lg', base64Mode !== 'encode' && 'shadow-none')}
               >
-                <ArrowUp className="w-3.5 h-3.5 mr-1.5" />
+                <ArrowUp className="mr-1.5 h-3.5 w-3.5" />
                 Encode
               </Button>
             </div>
@@ -1608,26 +1640,28 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                     ? 'Paste Base64 (e.g. SGVsbG8gV29ybGQ=)'
                     : 'Enter text to encode'
                 }
-                className="font-mono text-sm min-h-[140px] resize-y"
+                className="min-h-[140px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-sm shadow-none"
               />
             </div>
 
-            <Button onClick={handleBase64Convert} variant="secondary" className="w-full">
+            <Button onClick={handleBase64Convert} variant="secondary" className="w-full rounded-xl shadow-none">
               {base64Mode === 'decode' ? 'Decode Base64' : 'Encode to Base64'}
             </Button>
 
             {base64Output && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label className="text-muted-foreground text-xs">
+                  <Label className="text-xs text-muted-foreground">
                     {base64Mode === 'decode' ? 'Decoded text' : 'Base64 output'}
                   </Label>
-                  <Button variant="ghost" size="sm" onClick={handleBase64Copy} className="h-7 px-2 text-xs">
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                    <span className="ml-1">{copied ? 'Copied!' : 'Copy'}</span>
-                  </Button>
+                  <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+                    <Button variant="ghost" size="sm" onClick={handleBase64Copy} className="h-8 gap-1.5 rounded-md px-2.5 text-xs">
+                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                      <span>{copied ? 'Copied' : 'Copy'}</span>
+                    </Button>
+                  </div>
                 </div>
-                <pre className="p-3 rounded-lg bg-muted/50 border font-mono text-sm whitespace-pre-wrap break-all max-h-48 overflow-auto">
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded-xl border border-border/40 bg-muted/20 p-3 font-mono text-sm ring-1 ring-border/20">
                   {base64Output}
                 </pre>
               </div>

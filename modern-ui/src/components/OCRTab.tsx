@@ -4,11 +4,15 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, ScanLine, Copy, Download } from 'lucide-react'
+import { Send, ScanLine, Copy, Download, Activity } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, cn } from '@/lib/utils'
+import { Badge } from './ui/badge'
+
+const SECTION_CARD =
+  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
 interface OCRTabProps {
   host: string
@@ -118,21 +122,35 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full max-w-4xl mx-auto">
+    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4">
       {/* OCR Input Card */}
-      <Card className="border-border/50 bg-card" data-tour="tour-ocr-main">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ScanLine className="w-5 h-5 text-primary" />
-            OCR Message Sender
-          </CardTitle>
-          <CardDescription>
-            Send OCR messages to {host || 'host'}:10482
-          </CardDescription>
+      <Card className={SECTION_CARD} data-tour="tour-ocr-main">
+        <CardHeader className="space-y-3 pb-3 pt-5 px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                <ScanLine className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 space-y-1">
+                <CardTitle className="text-base font-semibold tracking-tight">OCR message sender</CardTitle>
+                <CardDescription className="text-xs leading-relaxed">
+                  Delivers payloads to the Edge OCR channel on the fixed reader host.
+                </CardDescription>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+              :10482
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Target: <span className="font-mono text-foreground/90">{host || '—'}</span>
+          </p>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4 px-5 pb-5 pt-0">
           <div className="space-y-2">
-            <Label htmlFor="ocrMessage">Message</Label>
+            <Label htmlFor="ocrMessage" className="text-sm font-medium">
+              Message
+            </Label>
             <Input
               id="ocrMessage"
               value={message}
@@ -140,18 +158,18 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
               onKeyPress={handleKeyPress}
               placeholder="Enter message to send"
               disabled={sending}
-              className="text-base"
+              className="h-10 rounded-lg border-border/50 text-base shadow-none"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Button
               onClick={handleSend}
               disabled={sending || !message.trim()}
               size="lg"
-              className="w-full"
+              className="w-full rounded-xl shadow-md shadow-primary/25"
             >
-              <Send className={`w-4 h-4 mr-2 ${sending ? 'animate-spin' : ''}`} />
-              {sending ? 'Sending...' : 'Send Message'}
+              <Send className={`mr-2 h-4 w-4 ${sending ? 'animate-spin' : ''}`} />
+              {sending ? 'Sending…' : 'Send message'}
             </Button>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -160,9 +178,9 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
                   disabled={sending}
                   variant="outline"
                   size="lg"
-                  className="w-full"
+                  className="w-full rounded-xl border-border/60 bg-muted/20 shadow-none hover:bg-muted/40"
                 >
-                  Inditex Code
+                  Inditex sample
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -174,43 +192,84 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
       </Card>
 
       {/* Log Area */}
-      <Card className="flex-1 min-h-[200px] border-border/50 bg-card flex flex-col" data-tour="tour-ocr-log">
-        <CardHeader className="py-2 border-b border-border/50 shrink-0">
-          <div className="flex justify-between items-center">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <span>OCR Log</span>
+      <Card className={cn(SECTION_CARD, 'flex min-h-[200px] flex-1 flex-col')} data-tour="tour-ocr-log">
+        <CardHeader className="shrink-0 border-b border-border/40 bg-muted/10 px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
+                <Activity className="h-3.5 w-3.5 text-primary" />
+              </span>
+              OCR log
               {sending && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
                 </span>
               )}
             </CardTitle>
-            <div className="flex items-center gap-0.5">
+            <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
               {log.length > 0 && (
                 <>
-                  <Button onClick={() => { navigator.clipboard.writeText(log.join('\n')); toast.success('Log copied') }} variant="ghost" size="sm" className="h-7 px-2" title="Copy log">
-                    <Copy className="w-3.5 h-3.5" />
+                  <Button
+                    onClick={() => {
+                      navigator.clipboard.writeText(log.join('\n'))
+                      toast.success('Log copied')
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
+                    title="Copy log"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Copy</span>
                   </Button>
-                  <Button onClick={() => { const blob = new Blob([log.join('\n')], { type: 'text/plain' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `ocr-log-${formatTime().replace(/[:/]/g, '-')}.txt`; a.click(); URL.revokeObjectURL(a.href); toast.success('Log exported') }} variant="ghost" size="sm" className="h-7 px-2" title="Export">
-                    <Download className="w-3.5 h-3.5" />
+                  <Button
+                    onClick={() => {
+                      const blob = new Blob([log.join('\n')], { type: 'text/plain' })
+                      const a = document.createElement('a')
+                      a.href = URL.createObjectURL(blob)
+                      a.download = `ocr-log-${formatTime().replace(/[:/]/g, '-')}.txt`
+                      a.click()
+                      URL.revokeObjectURL(a.href)
+                      toast.success('Log exported')
+                    }}
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
+                    title="Export"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Export</span>
                   </Button>
+                  <div className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
                 </>
               )}
-              <Button onClick={() => setLog([])} variant="ghost" size="sm" className="h-7 px-2">Clear</Button>
+              <Button onClick={() => setLog([])} variant="ghost" size="sm" className="h-8 rounded-md px-2.5 text-xs">
+                Clear
+              </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 min-h-0 bg-muted/20">
-          <ScrollArea className="h-full">
-            <div className="font-mono text-sm space-y-1 p-2">
+        <CardContent className="min-h-0 flex-1 bg-muted/15 p-0">
+          <ScrollArea className="h-full min-h-[160px]">
+            <div className="space-y-0.5 p-3 font-mono text-xs sm:text-sm">
               {log.length === 0 && (
-                <div className="text-muted-foreground text-center py-8">
-                  No messages sent yet.
+                <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                    <ScanLine className="h-5 w-5" />
+                  </div>
+                  <p className="text-sm font-medium text-foreground">No OCR traffic yet</p>
+                  <p className="max-w-xs text-xs leading-relaxed">Send a message to see responses and errors here.</p>
                 </div>
               )}
               {log.map((line, i) => (
-                <div key={i} className={`text-muted-foreground hover:text-foreground transition-colors duration-150 py-0.5 px-2 rounded hover:bg-accent/30 ${i === log.length - 1 ? 'animate-log-new' : ''}`}>
+                <div
+                  key={i}
+                  className={cn(
+                    'rounded-md px-2 py-1.5 text-muted-foreground transition-colors duration-150 hover:bg-accent/35 hover:text-foreground',
+                    i === log.length - 1 && 'animate-log-new',
+                  )}
+                >
                   {line}
                 </div>
               ))}

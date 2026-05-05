@@ -98,6 +98,9 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   const [looping, setLooping] = useState(false)
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+  const rssiSliderWheelRef = useRef<HTMLDivElement>(null)
+  const rssiRef = useRef(rssi)
+  rssiRef.current = rssi
   const [logExpanded, setLogExpanded] = useState(true)
 
   const [rssiRandomize, setRssiRandomize] = useState(false)
@@ -116,6 +119,22 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
+
+  useEffect(() => {
+    const el = rssiSliderWheelRef.current
+    if (!el) return
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const step = e.shiftKey ? 2 : 0.5
+      const delta = e.deltaY > 0 ? -step : step
+      const base = parseFloat(rssiRef.current)
+      const b = Number.isFinite(base) ? base : -45
+      const next = Math.min(0, Math.max(-80, Math.round((b + delta) * 2) / 2))
+      setRssi(next.toFixed(1))
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [setRssi])
 
   useEffect(() => {
     const syncConnectionState = async () => {
@@ -349,13 +368,19 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
               <Label>RSSI</Label>
               <span className="text-xs text-muted-foreground">{rssi} dBm</span>
             </div>
-            <Slider
-              value={[parseFloat(rssi) || -45]}
-              onValueChange={([v]) => setRssi(v.toFixed(1))}
-              min={-80}
-              max={0}
-              step={0.5}
-            />
+            <div
+              ref={rssiSliderWheelRef}
+              className="rounded-lg px-0.5 py-1.5"
+              title="Drag or scroll to adjust. Shift + scroll: ±2 dBm."
+            >
+              <Slider
+                value={[parseFloat(rssi) || -45]}
+                onValueChange={([v]) => setRssi(v.toFixed(1))}
+                min={-80}
+                max={0}
+                step={0.5}
+              />
+            </div>
 
             <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between gap-3">

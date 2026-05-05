@@ -267,7 +267,11 @@ export function CommandPalette({
   let globalIdx = 0
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]" onClick={() => onOpenChange(false)}>
+    <div
+      data-command-palette
+      className="fixed inset-0 z-[100] flex items-start justify-center pt-[15vh]"
+      onClick={() => onOpenChange(false)}
+    >
       <div className="fixed inset-0 bg-background/60 backdrop-blur-sm" />
       <div
         className="relative w-full max-w-lg bg-popover border border-border rounded-xl shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-95 duration-150"

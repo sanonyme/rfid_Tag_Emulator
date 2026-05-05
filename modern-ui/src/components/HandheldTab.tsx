@@ -10,8 +10,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
-import { formatTime } from '@/lib/utils'
+import { formatTime, cn } from '@/lib/utils'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
+
+const SECTION_CARD =
+  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
 export interface HandheldSlot {
   id: string
@@ -253,50 +256,80 @@ export function HandheldTab({
   }
 
   return (
-    <div className="flex flex-col gap-4 h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Toolbar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0" data-tour="tour-handheld-toolbar">
-        <p className="text-sm text-muted-foreground">
-          Configure VSBL Debug on each device to connect to <strong className="text-foreground">YOUR_PC_IP:PORT</strong>.
-        </p>
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="handheld-inter-tag-delay" className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
-              Handheld delay (ms)
-            </Label>
-            <Input
-              id="handheld-inter-tag-delay"
-              type="number"
-              min={0}
-              className="w-[4.5rem] h-9 font-mono text-sm"
-              value={handheldDelay}
-              onChange={(e) => setHandheldDelay(e.target.value)}
-            />
+      <div className={cn(SECTION_CARD, 'shrink-0 px-4 py-3.5 sm:px-5 sm:py-4')} data-tour="tour-handheld-toolbar">
+        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
+          <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Point VSBL Debug at <strong className="font-mono text-foreground">YOUR_PC_IP:PORT</strong> for each slot below.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-2 sm:px-4">
+              <Label
+                htmlFor="handheld-inter-tag-delay"
+                className="shrink-0 text-xs font-medium text-muted-foreground sm:text-[13px]"
+              >
+                Inter-tag delay
+              </Label>
+              <div className="flex items-center gap-1.5">
+                <Input
+                  id="handheld-inter-tag-delay"
+                  type="number"
+                  min={0}
+                  value={handheldDelay}
+                  onChange={(e) => setHandheldDelay(e.target.value)}
+                  className="h-9 w-[4.35rem] shrink-0 rounded-md border-border/50 bg-background/90 px-2.5 font-mono text-sm shadow-none tabular-nums sm:w-[4.75rem]"
+                />
+                <span className="shrink-0 select-none text-xs tabular-nums text-muted-foreground">ms</span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-muted/35 p-1 ring-1 ring-border/25">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={addSlot}
+                className="gap-1.5 rounded-lg border-transparent bg-background/90 shadow-none hover:bg-background"
+              >
+                <Plus className="h-4 w-4" />
+                Add handheld
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStartAll}
+                className="rounded-lg border-transparent bg-background/90 shadow-none hover:bg-background"
+              >
+                Start all
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStopAll}
+                className="rounded-lg border-transparent bg-background/90 shadow-none hover:bg-background"
+              >
+                Stop all
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleSendAll}
+                disabled={
+                  sendingPorts.size > 0 || slots.every((s) => parseTagsFromSlot(s, rssi).length === 0)
+                }
+                className="gap-1.5 rounded-lg shadow-sm shadow-primary/25"
+              >
+                <Zap className={`h-4 w-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />
+                Send all
+              </Button>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={addSlot} className="gap-1.5">
-            <Plus className="w-4 h-4" />
-            Add Handheld
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleStartAll}>
-            Start All
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleStopAll}>
-            Stop All
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSendAll}
-            disabled={sendingPorts.size > 0 || slots.every(s => parseTagsFromSlot(s, rssi).length === 0)}
-            className="gap-1.5"
-          >
-            <Zap className={`w-4 h-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />
-            Send All
-          </Button>
         </div>
       </div>
 
       {/* Handheld slots - scrollable grid when many */}
-      <ScrollArea className="flex-1 min-h-[200px] rounded-lg border border-border/30" data-tour="tour-handheld-slots">
+      <ScrollArea
+        className="min-h-[200px] flex-1 rounded-xl border border-border/40 bg-muted/10 ring-1 ring-border/20"
+        data-tour="tour-handheld-slots"
+      >
         <div
           className="grid gap-4 p-1"
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
@@ -320,28 +353,36 @@ export function HandheldTab({
       </ScrollArea>
 
       {/* Log Area */}
-      <Card className="shrink-0 min-h-[140px] max-h-[200px] border-border/50 bg-card" data-tour="tour-handheld-log">
-        <CardHeader className="py-2 px-4 border-b border-border/50">
-          <div className="flex justify-between items-center">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              Activity Log
+      <Card className={cn(SECTION_CARD, 'max-h-[200px] min-h-[140px] shrink-0')} data-tour="tour-handheld-log">
+        <CardHeader className="border-b border-border/40 bg-muted/10 px-4 py-3">
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
+                <Zap className="h-3.5 w-3.5 text-primary" />
+              </span>
+              Activity log
               {sendingPorts.size > 0 && (
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
                 </span>
               )}
             </CardTitle>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setLog([])}>
-              Clear
-            </Button>
+            <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+              <Button variant="ghost" size="sm" className="h-8 rounded-md px-2.5 text-xs" onClick={() => setLog([])}>
+                Clear
+              </Button>
+            </div>
           </div>
         </CardHeader>
-        <CardContent className="p-2 bg-muted/20">
+        <CardContent className="bg-muted/15 p-2">
           <ScrollArea className="h-[120px]">
-            <div className="font-mono text-xs space-y-0.5 px-2 py-1">
+            <div className="space-y-0.5 px-1 py-0.5 font-mono text-xs">
               {log.map((line, i) => (
-                <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">
+                <div
+                  key={i}
+                  className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent/35 hover:text-foreground"
+                >
                   {line}
                 </div>
               ))}
@@ -427,40 +468,45 @@ function HandheldSlotCard({
   }
 
   return (
-    <Card className="border-border/50 bg-card overflow-hidden flex flex-col min-h-0">
-      <CardHeader className="pb-3 pt-4 px-4 shrink-0">
+    <Card className={cn(SECTION_CARD, 'flex min-h-0 flex-col overflow-hidden')}>
+      <CardHeader className="shrink-0 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <Smartphone className="w-4 h-4 text-primary shrink-0" />
-            <CardTitle className="text-base font-semibold truncate">
-              Port {slot.port}
-            </CardTitle>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+              <Smartphone className="h-4 w-4" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="truncate text-base font-semibold tracking-tight">Port {slot.port}</CardTitle>
+            </div>
             {isRunning && (
-              <Badge variant="outline" className="text-xs py-0 px-2 gap-1.5 bg-green-500/15 border-green-500/40 text-green-600 dark:text-green-400 shrink-0 inline-flex items-center">
-                <span className="w-1.5 h-1.5 rounded-full bg-current shrink-0" />
+              <Badge
+                variant="outline"
+                className="inline-flex shrink-0 items-center gap-1.5 border-emerald-500/40 bg-emerald-500/10 py-0 px-2 text-xs text-emerald-600 dark:text-emerald-400"
+              >
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current shadow-[0_0_6px_rgba(34,197,94,0.85)]" />
                 Running
               </Badge>
             )}
           </div>
           {canRemove && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onRemove}>
-              <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive" />
+            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-lg" onClick={onRemove}>
+              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
             </Button>
           )}
         </div>
-        <CardDescription className="text-xs mt-1">
-          Connect VSBL Debug to this PC:{slot.port}
+        <CardDescription className="mt-1.5 text-xs leading-relaxed">
+          VSBL Debug → this machine on port <span className="font-mono text-foreground/90">{slot.port}</span>
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-3 pb-4 px-4 flex-1 min-h-0">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
         {/* Port + Server row */}
-        <div className="flex gap-2 shrink-0">
+        <div className="flex shrink-0 gap-2">
           <Input
             type="number"
             value={slot.port}
             onChange={(e) => onUpdate({ port: parseInt(e.target.value) || DEFAULT_PORT })}
-            className="w-20 font-mono"
+            className="h-9 w-[4.5rem] rounded-lg border-border/50 font-mono text-sm shadow-none"
             min={1024}
             max={65535}
           />
@@ -468,29 +514,38 @@ function HandheldSlotCard({
             onClick={isRunning ? onStop : onStart}
             size="sm"
             variant={isRunning ? 'outline' : 'default'}
-            className="flex-1 gap-1.5"
+            className={cn('flex-1 gap-1.5 rounded-lg', !isRunning && 'shadow-sm shadow-primary/20')}
           >
-            <Server className="w-3.5 h-3.5" />
-            {isRunning ? 'Stop Server' : 'Start Server'}
+            <Server className="h-3.5 w-3.5" />
+            {isRunning ? 'Stop server' : 'Start server'}
           </Button>
         </div>
 
         {/* UPC / EPC tabs - full width textareas */}
         <Tabs defaultValue="upc" className="w-full" data-tour="tour-handheld-input-modes">
-          <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="upc" className="text-xs">UPC → EPC</TabsTrigger>
-            <TabsTrigger value="epc" className="text-xs">Direct EPC</TabsTrigger>
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg bg-muted/40 p-1 ring-1 ring-border/30">
+            <TabsTrigger value="upc" className="rounded-md text-xs data-[state=active]:shadow-sm">
+              UPC → EPC
+            </TabsTrigger>
+            <TabsTrigger value="epc" className="rounded-md text-xs data-[state=active]:shadow-sm">
+              Direct EPC
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="upc" className="mt-3">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-xs text-muted-foreground">UPC,Count,TID (one per line)</span>
-              <div className="flex gap-1 shrink-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">UPC,Count,TID · one per line</span>
+              <div className="flex shrink-0 gap-1">
                 <input type="file" ref={fileInputUpcRef} onChange={handleImportUpc} className="hidden" accept=".txt,.csv" />
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => fileInputUpcRef.current?.click()}>
-                  <Upload className="w-3 h-3" /> Import
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 rounded-md text-xs"
+                  onClick={() => fileInputUpcRef.current?.click()}
+                >
+                  <Upload className="h-3 w-3" /> Import
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleExportUpc}>
-                  <Download className="w-3 h-3" /> Export
+                <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportUpc}>
+                  <Download className="h-3 w-3" /> Export
                 </Button>
               </div>
             </div>
@@ -503,11 +558,11 @@ function HandheldSlotCard({
                 onUpdate({ upcList: slot.upcList ? slot.upcList + '\n' + content : content })
               }
               placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
-              compactClassName="font-mono text-xs min-h-[110px] resize-y"
+              compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
             />
-            <div className="flex items-center gap-2 mt-2">
-              <label htmlFor={`start-serial-${slot.id}`} className="text-xs text-muted-foreground shrink-0">
-                Start Serial
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label htmlFor={`start-serial-${slot.id}`} className="shrink-0 text-xs text-muted-foreground">
+                Start serial
               </label>
               <Input
                 id={`start-serial-${slot.id}`}
@@ -516,24 +571,29 @@ function HandheldSlotCard({
                 max={999999999}
                 value={slot.startSerial ?? '1'}
                 onChange={(e) => onUpdate({ startSerial: e.target.value })}
-                className="h-8 w-28 font-mono text-xs"
+                className="h-8 w-28 rounded-lg font-mono text-xs shadow-none"
                 title="Starting SGTIN-96 serial number for the UPC list; increments across lines"
               />
-              <span className="text-[10px] text-muted-foreground/80 truncate">
-                Used by SGTIN-96 encoding; continues across lines
+              <span className="truncate text-[10px] text-muted-foreground/80">
+                SGTIN-96 serial; continues across lines
               </span>
             </div>
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-xs text-muted-foreground">EPC or EPC,TID (one per line)</span>
-              <div className="flex gap-1 shrink-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">EPC or EPC,TID · one per line</span>
+              <div className="flex shrink-0 gap-1">
                 <input type="file" ref={fileInputEpcRef} onChange={handleImportEpc} className="hidden" accept=".txt,.csv" />
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={() => fileInputEpcRef.current?.click()}>
-                  <Upload className="w-3 h-3" /> Import
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 rounded-md text-xs"
+                  onClick={() => fileInputEpcRef.current?.click()}
+                >
+                  <Upload className="h-3 w-3" /> Import
                 </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" onClick={handleExportEpc}>
-                  <Download className="w-3 h-3" /> Export
+                <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportEpc}>
+                  <Download className="h-3 w-3" /> Export
                 </Button>
               </div>
             </div>
@@ -546,30 +606,34 @@ function HandheldSlotCard({
                 onUpdate({ epcList: slot.epcList ? slot.epcList + '\n' + content : content })
               }
               placeholder={'3034...\n3035...,CustomTID'}
-              compactClassName="font-mono text-xs min-h-[110px] resize-y"
+              compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
             />
           </TabsContent>
         </Tabs>
 
         {/* Send row */}
-        <div className="flex gap-2 shrink-0 pt-1">
+        <div className="flex shrink-0 gap-2 pt-1">
           <Button
             onClick={onSend}
             disabled={isSending || !isRunning}
             size="sm"
-            className="flex-1 gap-1.5"
+            className={cn(
+              'flex-1 gap-1.5 rounded-lg',
+              !isSending && isRunning && 'shadow-sm shadow-primary/20',
+            )}
           >
-            <Zap className={`w-3.5 h-3.5 ${isSending ? 'animate-spin' : ''}`} />
-            Send to Port {slot.port}
+            <Zap className={`h-3.5 w-3.5 ${isSending ? 'animate-spin' : ''}`} />
+            Send to port {slot.port}
           </Button>
           <Button
             onClick={onCancelSend}
             disabled={!isSending}
             variant="outline"
-            size="sm"
+            size="icon"
             title="Stop send"
+            className="h-9 w-9 shrink-0 rounded-lg"
           >
-            <StopCircle className="w-4 h-4" />
+            <StopCircle className="h-4 w-4" />
           </Button>
         </div>
       </CardContent>
