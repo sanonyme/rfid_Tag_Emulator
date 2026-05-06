@@ -226,14 +226,16 @@ function buildSteps(isAdmin: boolean): Step[] {
       target: '[data-tour="tour-handheld-toolbar"]',
       placement: 'bottom',
       title: 'Handheld — toolbar',
-      content: 'Add ports, start/stop all servers, or send tags to every running handheld slot. Make sure to configure VSBL Debug on each device to connect to YOUR_PC_IP:PORT.',
+      content:
+        'Inter-tag delay between tags in one send. Add ports, start/stop all servers, or use Send all for a one-shot send on every running slot.',
       data: { tab: 'handheld' } satisfies TourStepData,
     },
     {
       target: '[data-tour="tour-handheld-slots"]',
       placement: 'top',
       title: 'Handheld — slots',
-      content: 'Each card is one port VSBL Debug can connect to. Start the server, then send tags to subscribed clients.',
+      content:
+        'Each card is one port VSBL Debug can connect to. Start the server, then use Send for one pass or Loop Send (like the Fixed tab) to repeat until you stop.',
       data: { tab: 'handheld' } satisfies TourStepData,
     },
     {
@@ -247,7 +249,8 @@ function buildSteps(isAdmin: boolean): Step[] {
       target: '[data-tour="tour-handheld-log"]',
       placement: 'top',
       title: 'Handheld — activity log',
-      content: 'Per-handheld messages aggregate here for quick debugging.',
+      content:
+        'Timestamped messages. Turn off Full activity log for connection counts and errors only; turn on for sends, per-tag lines, and everything else.',
       data: { tab: 'handheld' } satisfies TourStepData,
     },
     {

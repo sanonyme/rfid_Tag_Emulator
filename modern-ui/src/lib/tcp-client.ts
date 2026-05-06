@@ -104,7 +104,37 @@ export class TCPEmulatorClient {
   }
 }
 
+
 export class HandheldServerClient {
+  private static clientsByPort = new Map<number, HandheldServerClient>()
+  private static ipcMultiplexBound = false
+
+  private static ensureIpcMultiplex(): void {
+    if (HandheldServerClient.ipcMultiplexBound || !window.electronAPI) return
+    HandheldServerClient.ipcMultiplexBound = true
+    const api = window.electronAPI
+    api.onHandheldStarted((eventPort: number, message: string) => {
+      const c = HandheldServerClient.clientsByPort.get(eventPort)
+      if (c?.startCallback) c.startCallback(message)
+    })
+    api.onHandheldStopped((eventPort: number, message: string) => {
+      const c = HandheldServerClient.clientsByPort.get(eventPort)
+      if (c?.stopCallback) c.stopCallback(message)
+    })
+    api.onHandheldError((eventPort: number, message: string) => {
+      const c = HandheldServerClient.clientsByPort.get(eventPort)
+      if (c?.errorCallback) c.errorCallback(message)
+    })
+    api.onHandheldProgress((eventPort: number, message: string) => {
+      const c = HandheldServerClient.clientsByPort.get(eventPort)
+      if (c?.progressCallback) c.progressCallback(message)
+    })
+    api.onHandheldComplete((eventPort: number, message: string) => {
+      const c = HandheldServerClient.clientsByPort.get(eventPort)
+      if (c?.completeCallback) c.completeCallback(message)
+    })
+  }
+
   private startCallback: ((message: string) => void) | null = null
   private stopCallback: ((message: string) => void) | null = null
   private errorCallback: ((message: string) => void) | null = null
@@ -112,24 +142,8 @@ export class HandheldServerClient {
   private completeCallback: ((message: string) => void) | null = null
 
   constructor(private port: number = 10472) {
-    // Set up event listeners - filter by port so this client only receives events for its port
-    if (window.electronAPI) {
-      window.electronAPI.onHandheldStarted((eventPort: number, message: string) => {
-        if (eventPort === this.port && this.startCallback) this.startCallback(message)
-      })
-      window.electronAPI.onHandheldStopped((eventPort: number, message: string) => {
-        if (eventPort === this.port && this.stopCallback) this.stopCallback(message)
-      })
-      window.electronAPI.onHandheldError((eventPort: number, message: string) => {
-        if (eventPort === this.port && this.errorCallback) this.errorCallback(message)
-      })
-      window.electronAPI.onHandheldProgress((eventPort: number, message: string) => {
-        if (eventPort === this.port && this.progressCallback) this.progressCallback(message)
-      })
-      window.electronAPI.onHandheldComplete((eventPort: number, message: string) => {
-        if (eventPort === this.port && this.completeCallback) this.completeCallback(message)
-      })
-    }
+    HandheldServerClient.clientsByPort.set(this.port, this)
+    HandheldServerClient.ensureIpcMultiplex()
   }
 
   getPort(): number {
@@ -158,7 +172,8 @@ export class HandheldServerClient {
     tags: { epc: string; tid?: string; rssi?: string }[],
     delay: number,
     onProgress: (message: string) => void,
-    onComplete: (message: string) => void
+    onComplete: (message: string) => void,
+    verboseProgress: boolean = true
   ): Promise<void> {
     if (!window.electronAPI) {
       onProgress('Error: Electron API not available')
@@ -169,7 +184,7 @@ export class HandheldServerClient {
     this.progressCallback = onProgress
     this.completeCallback = onComplete
 
-    window.electronAPI.handheldSendEpcs(this.port, tags, delay)
+    window.electronAPI.handheldSendEpcs(this.port, tags, delay, verboseProgress)
   }
 
   cancelSend(): void {

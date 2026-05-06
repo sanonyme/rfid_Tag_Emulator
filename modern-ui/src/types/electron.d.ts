@@ -84,7 +84,7 @@ export interface ElectronAPI {
   // Handheld Server (multi-port)
   handheldStart: (port: number) => void
   handheldStop: (port: number) => void
-  handheldSendEpcs: (port: number, tags: any[], delayMs: number) => void
+  handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) => void
   handheldIsRunning: (port: number) => Promise<boolean>
   handheldCancelSend: (port: number) => void
   

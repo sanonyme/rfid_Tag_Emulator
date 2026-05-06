@@ -4,6 +4,19 @@
 import { Socket, Server, createServer } from 'net'
 import { BrowserWindow } from 'electron'
 
+function socketWrite(sock: Socket, data: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (sock.destroyed || !sock.writable) {
+      reject(new Error('Socket not writable'))
+      return
+    }
+    sock.write(data, (err) => {
+      if (err) reject(err)
+      else resolve()
+    })
+  })
+}
+
 export interface TagData {
   epc: string
   tid: string
@@ -23,6 +36,12 @@ export class TCPEmulatorHandler {
     if (this.socket && this.isConnected) {
       this.sendToRenderer('tcp-error', 'Already connected')
       return
+    }
+
+    if (this.socket) {
+      this.socket.removeAllListeners()
+      this.socket.destroy()
+      this.socket = null
     }
 
     this.socket = new Socket()
@@ -131,6 +150,8 @@ export class HandheldServerHandler {
   private serverSocket: Server | null = null
   private connectedClients: Socket[] = []
   private cancelRequested: boolean = false
+  /** One send at a time per port avoids overlapping broadcasts and callback races. */
+  private sendSerial: Promise<void> = Promise.resolve()
 
   constructor(private window: BrowserWindow, private port: number) {}
 
@@ -180,7 +201,22 @@ export class HandheldServerHandler {
     return this.serverRunning
   }
 
-  async sendEpcs(tags: { epc: string; tid?: string; rssi?: string }[], delayMs: number): Promise<void> {
+  async sendEpcs(
+    tags: { epc: string; tid?: string; rssi?: string }[],
+    delayMs: number,
+    verboseProgress: boolean = true
+  ): Promise<void> {
+    const run = () => this.runSendEpcs(tags, delayMs, verboseProgress)
+    const next = this.sendSerial.then(run, run)
+    this.sendSerial = next.catch(() => {})
+    return next
+  }
+
+  private async runSendEpcs(
+    tags: { epc: string; tid?: string; rssi?: string }[],
+    delayMs: number,
+    verboseProgress: boolean
+  ): Promise<void> {
     // Java: if (!running || connectedClients.isEmpty()) { onComplete.accept("No handheld connected..."); return; }
     console.log(`Handheld: sendEpcs called - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`)
     if (!this.serverRunning || this.connectedClients.length === 0) {
@@ -203,9 +239,11 @@ export class HandheldServerHandler {
       }
 
       const tag = tags[i]
-      sentTotal += this.broadcastBatch([tag])
-      const rssiVal = this.handheldJsonRssi(tag)
-      this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
+      sentTotal += await this.broadcastBatch([tag])
+      if (verboseProgress) {
+        const rssiVal = this.handheldJsonRssi(tag)
+        this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
+      }
 
       if (delayMs > 0 && i < tags.length - 1) {
         await new Promise(resolve => setTimeout(resolve, delayMs))
@@ -216,7 +254,7 @@ export class HandheldServerHandler {
   }
 
   // Java: private int broadcastBatch(List<String> epcs)
-  private broadcastBatch(tags: { epc: string; tid?: string; rssi?: string }[]): number {
+  private async broadcastBatch(tags: { epc: string; tid?: string; rssi?: string }[]): Promise<number> {
     if (tags.length === 0) return 0
 
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }
@@ -232,21 +270,26 @@ export class HandheldServerHandler {
       payload += json + '\r\n'
     }
 
-    // Java: synchronized (connectedClients) { for (Socket client : connectedClients) { ... os.write(payload); os.flush(); } }
+    // Snapshot so connect/disconnect handlers can't mutate the array mid-iteration
+    const snapshot = [...this.connectedClients]
     const toRemove: Socket[] = []
-    for (const client of this.connectedClients) {
+    for (const client of snapshot) {
       try {
-        client.write(payload)
-      } catch (err) {
+        await socketWrite(client, payload)
+      } catch {
         toRemove.push(client)
       }
     }
 
-    // Remove disconnected clients
     for (const client of toRemove) {
       const index = this.connectedClients.indexOf(client)
       if (index > -1) {
         this.connectedClients.splice(index, 1)
+      }
+      try {
+        client.destroy()
+      } catch {
+        // ignore
       }
     }
 

@@ -52,6 +52,7 @@ import {
 import { TCPEmulatorClient, HandheldServerClient, OCRClient, CustomClient, type TagData, EPCGenerator } from '@/lib/tcp-client'
 import { toast } from 'sonner'
 import { formatTime } from '@/lib/utils'
+import { getHandheldFullActivityLog } from '@/lib/handheld-log-settings'
 import type { AutomationStep, AutomationSequence, ActionType } from '@/lib/automation-types'
 import { normalizeSequences, migrateStepsToSequences } from '@/lib/automation-types'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -744,9 +745,15 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
             await new Promise(resolve => setTimeout(resolve, 500))
         }
 
-        await handheldServer.sendEpcs(allHhTags, parseInt(handheldDelay, 10) || 20,
-          (msg) => addLog(`HH: ${msg}`),
-          (msg) => addLog(`HH Complete: ${msg}`)
+        const hhVerbose = getHandheldFullActivityLog()
+        await handheldServer.sendEpcs(
+          allHhTags,
+          parseInt(handheldDelay, 10) || 20,
+          (msg) => {
+            if (hhVerbose) addLog(`HH: ${msg}`)
+          },
+          (msg) => addLog(`HH Complete: ${msg}`),
+          hhVerbose
         )
         break
     }

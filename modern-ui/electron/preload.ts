@@ -33,8 +33,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Handheld Server (multi-port: pass port to all methods, events include port)
   handheldStart: (port: number) => ipcRenderer.send('handheld-start', port),
   handheldStop: (port: number) => ipcRenderer.send('handheld-stop', port),
-  handheldSendEpcs: (port: number, tags: any[], delayMs: number) => 
-    ipcRenderer.send('handheld-send-epcs', port, tags, delayMs),
+  handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) =>
+    ipcRenderer.send('handheld-send-epcs', port, tags, delayMs, verboseProgress !== false),
   handheldCancelSend: (port: number) => ipcRenderer.send('handheld-cancel-send', port),
   handheldIsRunning: (port: number) => ipcRenderer.invoke('handheld-is-running', port),
   

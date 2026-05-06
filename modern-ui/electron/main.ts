@@ -380,16 +380,20 @@ app.whenReady().then(() => {
     }
   })
 
-  ipcMain.on('handheld-send-epcs', async (_event, port: number, tags: any[], delayMs: number) => {
-    const p = typeof port === 'number' ? port : 10472
-    console.log(`Sending ${tags.length} EPCs to handheld on port ${p}`)
-    const handler = handheldHandlers.get(p)
-    if (handler) {
-      await handler.sendEpcs(tags, delayMs)
-    } else {
-      mainWindow?.webContents.send('handheld-complete', p, 'No server running on port ' + p)
+  ipcMain.on(
+    'handheld-send-epcs',
+    async (_event, port: number, tags: any[], delayMs: number, verboseProgress?: boolean) => {
+      const p = typeof port === 'number' ? port : 10472
+      const verbose = verboseProgress !== false
+      console.log(`Sending ${tags.length} EPCs to handheld on port ${p}`)
+      const handler = handheldHandlers.get(p)
+      if (handler) {
+        await handler.sendEpcs(tags, delayMs, verbose)
+      } else {
+        mainWindow?.webContents.send('handheld-complete', p, 'No server running on port ' + p)
+      }
     }
-  })
+  )
 
   ipcMain.handle('handheld-is-running', (_event, port: number) => {
     const p = typeof port === 'number' ? port : 10472

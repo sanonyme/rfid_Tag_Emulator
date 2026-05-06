@@ -7,11 +7,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download, Activity } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
+import { Switch } from '@/components/ui/switch'
+import {
+  getHandheldFullActivityLog,
+  setHandheldFullActivityLog,
+  shouldAppendHandheldLogLine,
+} from '@/lib/handheld-log-settings'
+
+const MAX_HANDHELD_LOG_LINES = 500
 
 const SECTION_CARD =
   'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
@@ -100,11 +108,24 @@ export function HandheldTab({
   const [log, setLog] = useState<string[]>([])
   const [sendingPorts, setSendingPorts] = useState<Set<number>>(new Set())
   const [runningPorts, setRunningPorts] = useState<Set<number>>(new Set())
+  const [fullActivityLog, setFullActivityLog] = useState(() => getHandheldFullActivityLog())
   const logEndRef = useRef<HTMLDivElement>(null)
+  const loopCancelRef = useRef<Set<number>>(new Set())
+  const slotsRef = useRef(slots)
+  slotsRef.current = slots
+  const rssiRef = useRef(rssi)
+  rssiRef.current = rssi
+  const fullActivityLogRef = useRef(fullActivityLog)
+  fullActivityLogRef.current = fullActivityLog
+  const handheldDelayRef = useRef(handheldDelay)
+  handheldDelayRef.current = handheldDelay
 
   const addLog = (message: string, port?: number) => {
+    if (!shouldAppendHandheldLogLine(message, fullActivityLogRef.current)) return
     const prefix = port !== undefined ? `[${port}] ` : ''
-    setLog(prev => [...prev, `[${formatTime()}] ${prefix}${message}`])
+    setLog((prev) =>
+      [...prev, `[${formatTime()}] ${prefix}${message}`].slice(-MAX_HANDHELD_LOG_LINES)
+    )
   }
 
   useEffect(() => {
@@ -170,48 +191,132 @@ export function HandheldTab({
     clearStatus(handheldKey(port))
   }
 
-  const handleSendToSlot = async (slot: HandheldSlot) => {
-    const tags = parseTagsFromSlot(slot, rssi)
-    if (tags.length === 0) {
-      addLog('Error: No EPCs generated', slot.port)
-      return
-    }
+  const runSendWorkflow = async (
+    slotId: string,
+    opts?: { suppressSuccessToast?: boolean; loop?: boolean }
+  ) => {
+    const slot = slotsRef.current.find((s) => s.id === slotId)
+    if (!slot) return
+    const port = slot.port
+    loopCancelRef.current.delete(port)
 
-    const client = getClient(slot.port)
+    const client = getClient(port)
     const running = await client.isRunning()
     if (!running) {
-      addLog('Error: Handheld server is not running. Click Start Server first.', slot.port)
+      addLog('Error: Handheld server is not running. Click Start Server first.', port)
       return
     }
 
-    addLog(`Sending ${tags.length} EPC(s) to handheld on port ${slot.port}...`, slot.port)
-    setSendingPorts(prev => new Set([...prev, slot.port]))
-    publishStatus(handheldKey(slot.port), {
+    const startedRepeat = opts?.loop === true
+    let firstTags = parseTagsFromSlot(slot, rssiRef.current)
+    if (firstTags.length === 0) {
+      addLog('Error: No EPCs generated', port)
+      return
+    }
+
+    if (startedRepeat) {
+      addLog(`Loop send started on port ${port}. Use Stop send to end.`, port)
+    } else {
+      addLog(`Sending ${firstTags.length} EPC(s) to handheld on port ${port}...`, port)
+    }
+
+    setSendingPorts((prev) => new Set([...prev, port]))
+    publishStatus(handheldKey(port), {
       status: 'sending',
-      port: slot.port,
-      detail: `sending ${tags.length} tag${tags.length === 1 ? '' : 's'}`,
+      port,
+      detail: startedRepeat ? 'loop send' : `sending ${firstTags.length} tag${firstTags.length === 1 ? '' : 's'}`,
     })
 
-    const tagCount = tags.length
-    await client.sendEpcs(
-      tags,
-      parseInt(handheldDelay, 10) || 0,
-      (progress) => addLog(progress, slot.port),
-      (complete) => {
-        addLog(complete, slot.port)
-        toast.success(`${tagCount} EPC(s) sent successfully`)
-        setSendingPorts(prev => {
-          const next = new Set(prev)
-          next.delete(slot.port)
-          return next
-        })
-        publishStatus(handheldKey(slot.port), {
-          status: 'connected',
-          port: slot.port,
-          detail: undefined,
-        })
+    const fatalFinish = (msg: string) =>
+      loopCancelRef.current.has(port) ||
+      /no handheld connected|cancelled by user|^stopped:/i.test(msg)
+
+    let round = 0
+    const firstCount = firstTags.length
+
+    while (true) {
+      if (loopCancelRef.current.has(port)) break
+
+      const cur = slotsRef.current.find((s) => s.id === slotId)
+      if (!cur) {
+        addLog('Slot removed; stopping send.', port)
+        break
       }
-    )
+
+      const roundTags = parseTagsFromSlot(cur, rssiRef.current)
+      if (roundTags.length === 0) {
+        addLog('Error: No EPCs (list empty); stopping.', port)
+        break
+      }
+
+      if (!(await client.isRunning())) {
+        addLog('Handheld server stopped; ending send.', port)
+        break
+      }
+
+      round++
+      if (startedRepeat) {
+        addLog(`— Round ${round} (${roundTags.length} tag(s)) —`, port)
+      }
+
+      let completeMsg = ''
+      await new Promise<void>((resolve) => {
+        let settled = false
+        const finish = () => {
+          if (!settled) {
+            settled = true
+            resolve()
+          }
+        }
+        client.sendEpcs(
+          roundTags,
+          parseInt(handheldDelayRef.current, 10) || 0,
+          (progress) => {
+            if (fullActivityLogRef.current) addLog(progress, port)
+          },
+          (complete) => {
+            completeMsg = complete
+            addLog(complete, port)
+            finish()
+          },
+          fullActivityLogRef.current
+        )
+      })
+
+      if (fatalFinish(completeMsg)) break
+      if (!startedRepeat) break
+    }
+
+    if (startedRepeat && round > 0) {
+      addLog(
+        loopCancelRef.current.has(port) ? 'Loop send stopped.' : 'Loop send ended (no handheld / error).',
+        port
+      )
+    }
+
+    const userCancelled = loopCancelRef.current.has(port)
+    loopCancelRef.current.delete(port)
+    setSendingPorts((prev) => {
+      const next = new Set(prev)
+      next.delete(port)
+      return next
+    })
+    publishStatus(handheldKey(port), { status: 'connected', port, detail: undefined })
+
+    if (!opts?.suppressSuccessToast) {
+      if (!startedRepeat) {
+        toast.success(`${firstCount} EPC(s) sent successfully`)
+      } else if (userCancelled) {
+        toast.info('Loop send stopped')
+      }
+    }
+  }
+
+  const handleSendToSlot = async (
+    slot: HandheldSlot,
+    sendOpts?: { suppressSuccessToast?: boolean; loop?: boolean }
+  ) => {
+    await runSendWorkflow(slot.id, sendOpts)
   }
 
   const handleSendAll = async () => {
@@ -228,18 +333,15 @@ export function HandheldTab({
     }
 
     addLog(`Sending to ${slotsWithTags.length} handheld(s) in parallel...`)
-    await Promise.all(slotsWithTags.map(slot => handleSendToSlot(slot)))
+    await Promise.all(slotsWithTags.map((slot) => handleSendToSlot(slot, { suppressSuccessToast: true })))
+    const epcTotal = slotsWithTags.reduce((n, s) => n + parseTagsFromSlot(s, rssi).length, 0)
+    toast.success(`${slotsWithTags.length} handheld(s), ${epcTotal} EPC(s) sent`)
   }
 
   const handleStopSend = (port: number) => {
-    const client = getClient(port)
-    client.cancelSend()
+    loopCancelRef.current.add(port)
+    getClient(port).cancelSend()
     addLog('Stop requested.', port)
-    setSendingPorts(prev => {
-      const next = new Set(prev)
-      next.delete(port)
-      return next
-    })
   }
 
   const handleStartAll = async () => {
@@ -258,16 +360,17 @@ export function HandheldTab({
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Toolbar */}
-      <div className={cn(SECTION_CARD, 'shrink-0 px-4 py-3.5 sm:px-5 sm:py-4')} data-tour="tour-handheld-toolbar">
-        <div className="flex flex-col gap-3.5 lg:flex-row lg:items-center lg:justify-between">
-          <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Point VSBL Debug at <strong className="font-mono text-foreground">YOUR_PC_IP:PORT</strong> for each slot below.
+      <div className={cn(SECTION_CARD, 'shrink-0 px-4 py-3 sm:px-5 sm:py-3.5')} data-tour="tour-handheld-toolbar">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 lg:flex-nowrap lg:justify-between lg:gap-4">
+          <p className="min-w-0 flex-[1_1_220px] text-sm leading-snug text-muted-foreground lg:flex-1">
+            Point VSBL Debug at <strong className="font-mono text-foreground">YOUR_PC_IP:PORT</strong> for each slot
+            below.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/25 px-3.5 py-2 sm:px-4">
+          <div className="flex min-w-0 flex-[1_1_auto] flex-wrap items-center gap-2 sm:gap-3 lg:flex-nowrap lg:justify-end">
+            <div className="flex items-center gap-2.5 rounded-lg border border-border/50 bg-muted/25 px-3 py-1.5 sm:gap-3 sm:px-3.5 sm:py-2">
               <Label
                 htmlFor="handheld-inter-tag-delay"
-                className="shrink-0 text-xs font-medium text-muted-foreground sm:text-[13px]"
+                className="shrink-0 whitespace-nowrap text-xs font-medium text-muted-foreground sm:text-[13px]"
               >
                 Inter-tag delay
               </Label>
@@ -312,9 +415,7 @@ export function HandheldTab({
               <Button
                 size="sm"
                 onClick={handleSendAll}
-                disabled={
-                  sendingPorts.size > 0 || slots.every((s) => parseTagsFromSlot(s, rssi).length === 0)
-                }
+                disabled={sendingPorts.size > 0 || slots.every((s) => parseTagsFromSlot(s, rssi).length === 0)}
                 className="gap-1.5 rounded-lg shadow-sm shadow-primary/25"
               >
                 <Zap className={`h-4 w-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />
@@ -338,14 +439,16 @@ export function HandheldTab({
             <HandheldSlotCard
               key={slot.id}
               slot={slot}
+              hasTags={parseTagsFromSlot(slot, rssi).length > 0}
               isRunning={runningPorts.has(slot.port)}
               isSending={sendingPorts.has(slot.port)}
               onUpdate={(updates) => updateSlot(slot.id, updates)}
               onRemove={() => removeSlot(slot.id)}
               onStart={() => handleStartServer(slot.port)}
               onStop={() => handleStopServer(slot.port)}
-              onSend={() => handleSendToSlot(slot)}
-              onCancelSend={() => handleStopSend(slot.port)}
+              onSendOnce={() => handleSendToSlot(slot, { loop: false })}
+              onLoopSend={() => handleSendToSlot(slot, { loop: true })}
+              onStopSend={() => handleStopSend(slot.port)}
               canRemove={slots.length > 1}
             />
           ))}
@@ -355,7 +458,7 @@ export function HandheldTab({
       {/* Log Area */}
       <Card className={cn(SECTION_CARD, 'max-h-[200px] min-h-[140px] shrink-0')} data-tour="tour-handheld-log">
         <CardHeader className="border-b border-border/40 bg-muted/10 px-4 py-3">
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
               <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
                 <Zap className="h-3.5 w-3.5 text-primary" />
@@ -368,10 +471,29 @@ export function HandheldTab({
                 </span>
               )}
             </CardTitle>
-            <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
-              <Button variant="ghost" size="sm" className="h-8 rounded-md px-2.5 text-xs" onClick={() => setLog([])}>
-                Clear
-              </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2 py-1 sm:px-2.5">
+                <Switch
+                  id="handheld-detail-logs"
+                  checked={fullActivityLog}
+                  onCheckedChange={(v) => {
+                    setFullActivityLog(v)
+                    setHandheldFullActivityLog(v)
+                  }}
+                />
+                <Label
+                  htmlFor="handheld-detail-logs"
+                  className="cursor-pointer whitespace-nowrap text-xs font-medium text-muted-foreground"
+                  title="Off: only VSBL client connect/disconnect counts and errors. On: all send activity."
+                >
+                  Full activity log
+                </Label>
+              </div>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+                <Button variant="ghost" size="sm" className="h-8 rounded-md px-2.5 text-xs" onClick={() => setLog([])}>
+                  Clear
+                </Button>
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -397,27 +519,31 @@ export function HandheldTab({
 
 interface HandheldSlotCardProps {
   slot: HandheldSlot
+  hasTags: boolean
   isRunning: boolean
   isSending: boolean
   onUpdate: (updates: Partial<Omit<HandheldSlot, 'id'>>) => void
   onRemove: () => void
   onStart: () => void
   onStop: () => void
-  onSend: () => void
-  onCancelSend: () => void
+  onSendOnce: () => void
+  onLoopSend: () => void
+  onStopSend: () => void
   canRemove: boolean
 }
 
 function HandheldSlotCard({
   slot,
+  hasTags,
   isRunning,
   isSending,
   onUpdate,
   onRemove,
   onStart,
   onStop,
-  onSend,
-  onCancelSend,
+  onSendOnce,
+  onLoopSend,
+  onStopSend,
   canRemove,
 }: HandheldSlotCardProps) {
   const fileInputUpcRef = useRef<HTMLInputElement>(null)
@@ -611,29 +737,42 @@ function HandheldSlotCard({
           </TabsContent>
         </Tabs>
 
-        {/* Send row */}
-        <div className="flex shrink-0 gap-2 pt-1">
+        {/* Send row — mirrors Fixed tab: Send once + Loop Send / Stop */}
+        <div className="flex shrink-0 flex-col gap-2 pt-1 sm:flex-row sm:items-stretch">
           <Button
-            onClick={onSend}
+            onClick={onSendOnce}
             disabled={isSending || !isRunning}
             size="sm"
             className={cn(
-              'flex-1 gap-1.5 rounded-lg',
+              'flex-1 gap-1.5 rounded-lg sm:min-h-10',
               !isSending && isRunning && 'shadow-sm shadow-primary/20',
             )}
           >
-            <Zap className={`h-3.5 w-3.5 ${isSending ? 'animate-spin' : ''}`} />
-            Send to port {slot.port}
+            <Zap className="h-3.5 w-3.5 shrink-0" />
+            Send
           </Button>
           <Button
-            onClick={onCancelSend}
-            disabled={!isSending}
-            variant="outline"
-            size="icon"
-            title="Stop send"
-            className="h-9 w-9 shrink-0 rounded-lg"
+            onClick={isSending ? onStopSend : onLoopSend}
+            disabled={!isRunning || (!isSending && !hasTags)}
+            variant={isSending ? 'destructive' : 'outline'}
+            size="sm"
+            className={cn(
+              'gap-1.5 rounded-lg sm:min-h-10 sm:min-w-[7.5rem]',
+              !isSending && 'bg-background/90',
+            )}
+            title={isSending ? 'Stop current send or loop' : 'Repeat full tag list until stopped'}
           >
-            <StopCircle className="h-4 w-4" />
+            {isSending ? (
+              <>
+                <StopCircle className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                Stop
+              </>
+            ) : (
+              <>
+                <Activity className="h-3.5 w-3.5 shrink-0" />
+                Loop Send
+              </>
+            )}
           </Button>
         </div>
       </CardContent>

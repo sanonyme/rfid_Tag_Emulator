@@ -201,7 +201,7 @@ class MockElectronAPI implements ElectronAPI {
     }, 500);
   }
 
-  handheldSendEpcs(port: number, tags: any[], delayMs: number) {
+  handheldSendEpcs(port: number, tags: any[], delayMs: number, verboseProgress: boolean = true) {
     console.log(`Mock: Sending ${tags.length} EPCs to handheld on port ${port} with delay ${delayMs}`);
     let count = 0;
     const interval = setInterval(() => {
@@ -210,9 +210,11 @@ class MockElectronAPI implements ElectronAPI {
       const rssiRaw = currentTag?.rssi;
       const rssiNum = rssiRaw != null && rssiRaw !== '' ? parseFloat(rssiRaw) : NaN;
       const rssiVal = Number.isFinite(rssiNum) ? rssiNum : 70;
-      this._triggerHandheld(this._handheldCallbacks.progress, port, `Sent (${count}/${tags.length}): ${currentTag.epc} @rssi=${rssiVal}`);
+      if (verboseProgress) {
+        this._triggerHandheld(this._handheldCallbacks.progress, port, `Sent (${count}/${tags.length}): ${currentTag.epc} @rssi=${rssiVal}`);
+      }
       console.log(`Mock: Sent EPC ${count}/${tags.length}:`, currentTag);
-      
+
       if (count >= tags.length) {
         clearInterval(interval);
         this._triggerHandheld(this._handheldCallbacks.complete, port, 'All EPCs sent successfully');
