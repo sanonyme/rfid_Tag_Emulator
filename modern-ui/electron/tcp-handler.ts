@@ -4,6 +4,22 @@
 import { Socket, Server, createServer } from 'net'
 import { BrowserWindow } from 'electron'
 
+/** Yields to the event loop and honours cancel; avoids long sleeps before stop takes effect. */
+async function delayCancellable(
+  ms: number,
+  isCancelled: () => boolean
+): Promise<void> {
+  if (ms <= 0) return
+  const chunk = Math.min(50, ms)
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    if (isCancelled()) return
+    const left = end - Date.now()
+    if (left <= 0) break
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(chunk, left)))
+  }
+}
+
 function socketWrite(sock: Socket, data: string): Promise<void> {
   return new Promise((resolve, reject) => {
     if (sock.destroyed || !sock.writable) {
@@ -29,6 +45,7 @@ export class TCPEmulatorHandler {
   private socket: Socket | null = null
   private isConnected: boolean = false
   private cancelRequested: boolean = false
+  private lastFixedProgressAt = 0
 
   constructor(private window: BrowserWindow) {}
 
@@ -80,6 +97,7 @@ export class TCPEmulatorHandler {
     }
 
     this.cancelRequested = false
+    this.lastFixedProgressAt = 0
     const total = tags.length
     let count = 0
 
@@ -105,10 +123,18 @@ export class TCPEmulatorHandler {
         })
 
         count++
-        this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc} @rssi=${tag.rssi}`)
+        const now = Date.now()
+        if (
+          count === 1 ||
+          count === total ||
+          now - this.lastFixedProgressAt >= 120
+        ) {
+          this.lastFixedProgressAt = now
+          this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc} @rssi=${tag.rssi}`)
+        }
 
         if (delayMs > 0 && count < total) {
-          await new Promise(resolve => setTimeout(resolve, delayMs))
+          await delayCancellable(delayMs, () => this.cancelRequested)
         }
       } catch (error: any) {
         this.isConnected = false
@@ -150,6 +176,7 @@ export class HandheldServerHandler {
   private serverSocket: Server | null = null
   private connectedClients: Socket[] = []
   private cancelRequested: boolean = false
+  private lastHandheldProgressAt = 0
   /** One send at a time per port avoids overlapping broadcasts and callback races. */
   private sendSerial: Promise<void> = Promise.resolve()
 
@@ -230,6 +257,7 @@ export class HandheldServerHandler {
     let sentTotal = 0
 
     this.cancelRequested = false
+    this.lastHandheldProgressAt = 0
 
     // One EPC per write, with delay between tags (matches fixed-reader sendTags behavior)
     for (let i = 0; i < tags.length; i++) {
@@ -239,14 +267,29 @@ export class HandheldServerHandler {
       }
 
       const tag = tags[i]
-      sentTotal += await this.broadcastBatch([tag])
+      const batchResult = await this.broadcastBatch([tag])
+      if (batchResult < 0) {
+        this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
+        return
+      }
+      sentTotal += batchResult
+
       if (verboseProgress) {
-        const rssiVal = this.handheldJsonRssi(tag)
-        this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
+        const now = Date.now()
+        if (
+          i === 0 ||
+          i === total - 1 ||
+          now - this.lastHandheldProgressAt >= 120 ||
+          (i + 1) % 50 === 0
+        ) {
+          this.lastHandheldProgressAt = now
+          const rssiVal = this.handheldJsonRssi(tag)
+          this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
+        }
       }
 
       if (delayMs > 0 && i < tags.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayMs))
+        await delayCancellable(delayMs, () => this.cancelRequested)
       }
     }
 
@@ -254,6 +297,7 @@ export class HandheldServerHandler {
   }
 
   // Java: private int broadcastBatch(List<String> epcs)
+  /** Returns tags.length on success, 0 if empty, -1 if cancelled before finishing all clients. */
   private async broadcastBatch(tags: { epc: string; tid?: string; rssi?: string }[]): Promise<number> {
     if (tags.length === 0) return 0
 
@@ -274,6 +318,9 @@ export class HandheldServerHandler {
     const snapshot = [...this.connectedClients]
     const toRemove: Socket[] = []
     for (const client of snapshot) {
+      if (this.cancelRequested) {
+        return -1
+      }
       try {
         await socketWrite(client, payload)
       } catch {

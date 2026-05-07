@@ -52,6 +52,10 @@ function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid
   return all
 }
 
+function handheldSlotParseKey(s: HandheldSlot, rssi: string): string {
+  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${rssi}`
+}
+
 interface MobileHandheldTabProps {
   slots: HandheldSlot[]
   setSlots: (slots: HandheldSlot[]) => void
@@ -140,6 +144,8 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
 
     let round = 0
     const firstCount = parseTagsFromSlot(curSlot, rssiRef.current).length
+    let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
+    let cachedParseKey = ''
 
     while (true) {
       if (loopCancelRef.current.has(port)) break
@@ -153,7 +159,12 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
         break
       }
 
-      const roundTags = parseTagsFromSlot(s, rssiRef.current)
+      const parseKey = handheldSlotParseKey(s, rssiRef.current)
+      if (parseKey !== cachedParseKey) {
+        cachedRoundTags = parseTagsFromSlot(s, rssiRef.current)
+        cachedParseKey = parseKey
+      }
+      const roundTags = cachedRoundTags!
       if (!roundTags.length) {
         addLog('Error: No tags; stopping.')
         break

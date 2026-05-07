@@ -89,6 +89,11 @@ function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid
   return allTags
 }
 
+/** Stable key so loop mode can reuse parsed tags instead of regenerating thousands of EPCs every round. */
+function handheldSlotParseKey(s: HandheldSlot, rssi: string): string {
+  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${rssi}`
+}
+
 // Cache HandheldServerClient per port to avoid duplicate event listeners
 const clientCache = new Map<number, HandheldServerClient>()
 function getClient(port: number): HandheldServerClient {
@@ -233,6 +238,8 @@ export function HandheldTab({
 
     let round = 0
     const firstCount = firstTags.length
+    let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
+    let cachedParseKey = ''
 
     while (true) {
       if (loopCancelRef.current.has(port)) break
@@ -243,7 +250,12 @@ export function HandheldTab({
         break
       }
 
-      const roundTags = parseTagsFromSlot(cur, rssiRef.current)
+      const parseKey = handheldSlotParseKey(cur, rssiRef.current)
+      if (parseKey !== cachedParseKey) {
+        cachedRoundTags = parseTagsFromSlot(cur, rssiRef.current)
+        cachedParseKey = parseKey
+      }
+      const roundTags = cachedRoundTags!
       if (roundTags.length === 0) {
         addLog('Error: No EPCs (list empty); stopping.', port)
         break
