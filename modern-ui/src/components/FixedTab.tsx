@@ -84,6 +84,8 @@ const VENDOR_DRIVERS = [
   { code: 'seuic', name: 'SEUIC' },
 ]
 
+const FIXED_FULL_ACTIVITY_LOG_KEY = 'rfid-emulator-fixed-detail-logs'
+
 export function FixedTab({ 
   emulator, 
   host, 
@@ -134,6 +136,15 @@ export function FixedTab({
   const { settings } = useSettings()
   const maxLogLinesRef = useRef(settings.maxLogLines)
   maxLogLinesRef.current = settings.maxLogLines
+  const [fullActivityLog, setFullActivityLog] = useState(() => {
+    try {
+      return localStorage.getItem(FIXED_FULL_ACTIVITY_LOG_KEY) !== '0'
+    } catch {
+      return true
+    }
+  })
+  const fullActivityLogRef = useRef(fullActivityLog)
+  fullActivityLogRef.current = fullActivityLog
 
   const addLog = (message: string) => {
     setLog(prev => {
@@ -328,7 +339,8 @@ export function FixedTab({
     // Parse UPC,Count,TID and generate EPCs
     if (upcList.trim()) {
       const lines = upcList.trim().split('\n')
-      let serial = parseInt(startSerial)
+      let serial = parseInt(startSerial) //add this again when you want to continue from the last serial
+      //const baseSerial = Math.max(1, parseInt(startSerial) || 1)
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
@@ -352,7 +364,7 @@ export function FixedTab({
                 }
               }
           }
-          serial += count
+          serial += count         
         }
       }
     }
@@ -367,7 +379,7 @@ export function FixedTab({
     }
     
     if (selectedUids.length === 0) {
-        addLog('Warning: No logical devices selected. Sending without UID.')
+        addLog('Warning: No logical devices selected. Sending without UID (use this to check for serials idk).')
     } else {
         addLog(`Sending to ${selectedUids.length} device(s)`)
     }
@@ -382,7 +394,9 @@ export function FixedTab({
       tags,
       driver,
       parseInt(delay),
-      (progress) => addLog(progress),
+      (progress) => {
+        if (fullActivityLogRef.current) addLog(progress)
+      },
       (complete) => {
         addLog(complete)
         if (isLooping && loopingRef.current) {
@@ -926,7 +940,29 @@ export function FixedTab({
                   </span>
                 )}
               </CardTitle>
-              <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+              <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2 py-1 sm:px-2.5">
+                  <Switch
+                    id="fixed-detail-logs"
+                    checked={fullActivityLog}
+                    onCheckedChange={(v) => {
+                      setFullActivityLog(v)
+                      try {
+                        localStorage.setItem(FIXED_FULL_ACTIVITY_LOG_KEY, v ? '1' : '0')
+                      } catch {
+                        /* ignore */
+                      }
+                    }}
+                  />
+                  <Label
+                    htmlFor="fixed-detail-logs"
+                    className="cursor-pointer whitespace-nowrap text-xs font-medium text-muted-foreground"
+                    title="Off: summary lines only. On: include every per-tag send line."
+                  >
+                    Full activity log
+                  </Label>
+                </div>
+                <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
                 {log.length > 0 && (
                   <>
                     <Button
@@ -961,6 +997,7 @@ export function FixedTab({
                 >
                   Clear
                 </Button>
+                </div>
               </div>
             </div>
           </CardHeader>

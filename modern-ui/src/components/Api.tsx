@@ -1595,7 +1595,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
             <DialogDescription>Decode Base64 to UTF-8 text or encode text to Base64.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            <div className="flex flex-wrap gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
+            <div className="inline-flex flex-wrap gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
               <Button
                 variant={base64Mode === 'decode' ? 'default' : 'ghost'}
                 size="sm"

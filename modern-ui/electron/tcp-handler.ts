@@ -45,7 +45,6 @@ export class TCPEmulatorHandler {
   private socket: Socket | null = null
   private isConnected: boolean = false
   private cancelRequested: boolean = false
-  private lastFixedProgressAt = 0
 
   constructor(private window: BrowserWindow) {}
 
@@ -97,7 +96,6 @@ export class TCPEmulatorHandler {
     }
 
     this.cancelRequested = false
-    this.lastFixedProgressAt = 0
     const total = tags.length
     let count = 0
 
@@ -123,15 +121,7 @@ export class TCPEmulatorHandler {
         })
 
         count++
-        const now = Date.now()
-        if (
-          count === 1 ||
-          count === total ||
-          now - this.lastFixedProgressAt >= 120
-        ) {
-          this.lastFixedProgressAt = now
-          this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc} @rssi=${tag.rssi}`)
-        }
+        this.sendToRenderer('tcp-progress', `Sent (${count}/${total}): ${tag.epc} @rssi=${tag.rssi}`)
 
         if (delayMs > 0 && count < total) {
           await delayCancellable(delayMs, () => this.cancelRequested)

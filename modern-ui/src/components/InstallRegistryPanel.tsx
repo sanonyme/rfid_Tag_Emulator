@@ -120,11 +120,7 @@ export function InstallRegistryPanel() {
         Install registry
       </h4>
       <p className="text-xs text-muted-foreground leading-relaxed">
-        When enabled, the app POSTs to <code className="text-[11px] font-mono">INSTALL_REGISTRY_URL</code>{' '}
-        (your Supabase Edge Function; see <code className="text-[11px]">supabase/README.md</code>).
-        Set the same value in a <code className="text-[11px] font-mono">.env</code> next to the app if
-        needed. Automatic sends at most once per 24 hours. <strong>Send now</strong> is limited to
-        once per minute. Payload: machine ID, primary MAC, app version, OS, arch.
+        Register this install? Skip if you're not sure.
       </p>
 
       <div className="flex items-center justify-between gap-4">
