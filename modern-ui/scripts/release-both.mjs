@@ -1,7 +1,8 @@
-import { spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import dotenv from 'dotenv'
+import { electronBuilderPublishArgs } from './electron-builder-publish-args.mjs'
+import { runCommand } from './run-command.mjs'
 
 const cwd = process.cwd()
 const envPath = path.join(cwd, '.env')
@@ -23,34 +24,24 @@ if (missing.length > 0) {
   process.exit(1)
 }
 
-function run(command, args, env) {
-  const result = spawnSync(command, args, {
-    cwd,
-    stdio: 'inherit',
-    shell: true,
-    env,
-  })
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1)
-  }
-}
+const primaryOwner = process.env.ZEUS_RELEASE_OWNER.trim()
+const primaryRepo = process.env.ZEUS_RELEASE_REPO.trim()
+const secondOwner = process.env.ZEUS_SECOND_RELEASE_OWNER.trim()
+const secondRepo = process.env.ZEUS_SECOND_RELEASE_REPO.trim()
 
 console.log('Building app once...')
-run('vite', ['build'], process.env)
+runCommand('vite', ['build'], process.env, cwd)
 
-console.log(`Publishing release to ${process.env.ZEUS_RELEASE_OWNER}/${process.env.ZEUS_RELEASE_REPO}...`)
-run('electron-builder', ['--publish', 'always'], process.env)
+console.log(`Publishing release to ${primaryOwner}/${primaryRepo}...`)
+runCommand('electron-builder', electronBuilderPublishArgs(), process.env, cwd)
 
 const secondEnv = {
   ...process.env,
-  ZEUS_RELEASE_OWNER: process.env.ZEUS_SECOND_RELEASE_OWNER,
-  ZEUS_RELEASE_REPO: process.env.ZEUS_SECOND_RELEASE_REPO,
+  ZEUS_RELEASE_OWNER: secondOwner,
+  ZEUS_RELEASE_REPO: secondRepo,
 }
 
-console.log(
-  `Publishing release to ${secondEnv.ZEUS_RELEASE_OWNER}/${secondEnv.ZEUS_RELEASE_REPO}...`
-)
-run('electron-builder', ['--publish', 'always'], secondEnv)
+console.log(`Publishing release to ${secondOwner}/${secondRepo}...`)
+runCommand('electron-builder', electronBuilderPublishArgs(), secondEnv, cwd)
 
 console.log('Done: published to both repositories.')

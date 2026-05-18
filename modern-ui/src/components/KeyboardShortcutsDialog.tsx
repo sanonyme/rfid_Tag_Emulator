@@ -24,8 +24,18 @@ const SHORTCUTS = [
     { label: 'Command palette', keys: 'Ctrl+K' },
     { label: 'Interactive UI tour', keys: '?' },
   ]},
-  { group: 'Fixed tab', items: [
-    { label: 'Send tags (works in tag fields too)', keys: 'Ctrl+Enter' },
+  { group: 'Send', items: [
+    { label: 'Send tags once (Fixed: anywhere; Handheld: from tag fields)', keys: 'Ctrl+Enter' },
+    { label: 'Start / stop loop send', keys: 'Ctrl+Shift+Enter' },
+  ]},
+  { group: 'Tag list textareas', items: [
+    { label: 'Save current list as preset', keys: 'Ctrl+S' },
+    { label: 'Open preset menu', keys: 'Ctrl+L' },
+    { label: 'Show invalid-line popover', keys: 'click → N EPCs · M errors' },
+  ]},
+  { group: 'Recording', items: [
+    { label: 'Start / stop tag recording', keys: 'click ● Record' },
+    { label: 'Save recording to .zeusrec.json', keys: 'click ⤓' },
   ]},
   { group: 'Window', items: [
     { label: 'Toggle fullscreen', keys: 'F11' },

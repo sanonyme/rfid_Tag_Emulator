@@ -12,6 +12,8 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { cn } from '@/lib/utils'
 
+import type { TagListKind } from '@/lib/csv-import'
+
 export interface ExpandableTagFieldProps {
   dialogTitle: string
   dialogDescription?: string
@@ -20,6 +22,10 @@ export interface ExpandableTagFieldProps {
   onFileImport: (content: string) => void
   placeholder?: string
   compactClassName?: string
+  /** Drives smart CSV column reordering on dropped files. */
+  kind?: TagListKind
+  /** Forwarded to the underlying textareas so callers can install keyboard shortcuts. */
+  onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
 }
 
 export function ExpandableTagField({
@@ -30,6 +36,8 @@ export function ExpandableTagField({
   onFileImport,
   placeholder,
   compactClassName,
+  kind,
+  onKeyDown,
 }: ExpandableTagFieldProps) {
   const [open, setOpen] = useState(false)
 
@@ -46,7 +54,9 @@ export function ExpandableTagField({
           value={value}
           onChange={onChange}
           onFileImport={onFileImport}
+          kind={kind}
           placeholder={placeholder}
+          onKeyDown={onKeyDown}
           className={cn(
             compactClassName,
             'pr-11',
@@ -116,7 +126,9 @@ export function ExpandableTagField({
               value={value}
               onChange={onChange}
               onFileImport={onFileImport}
+              kind={kind}
               placeholder={placeholder}
+              onKeyDown={onKeyDown}
               className={cn(
                 'font-mono text-sm',
                 'min-h-[min(58vh,560px)] w-full resize-y rounded-lg',

@@ -9,10 +9,12 @@ import packageJson from '../../package.json'
  */
 const BACKUP_KEYS = [
   'rfid-emulator-profiles',       // ProfileManager
+  'rfid-emulator-tag-presets',    // TagPresetMenu (UPC/EPC list snippets)
   'rfid-emulator-settings',       // AppSettings
   'app-theme',                    // Theme name
   'theme',                        // light | dark | system
   'recent-hosts',                 // ConnectionStatus recent hosts
+  'pinned-hosts',                 // ConnectionStatus pinned (★) hosts
   'db-query-history',             // DatabaseTab saved queries
   'db-read-only',                 // DatabaseTab toggle
   'admin-sidebar-expanded',       // TabSidebar
@@ -143,7 +145,7 @@ export function applyBackup(backup: BackupFile, mode: RestoreMode = 'replace'): 
     // merge mode
     if (incoming === null || incoming === undefined) continue
 
-    if (key === 'rfid-emulator-profiles') {
+    if (key === 'rfid-emulator-profiles' || key === 'rfid-emulator-tag-presets') {
       try {
         const existing = JSON.parse(localStorage.getItem(key) || '[]')
         const incomingArr = JSON.parse(incoming)

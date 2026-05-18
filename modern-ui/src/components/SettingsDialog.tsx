@@ -106,6 +106,7 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
   const [pendingBackup, setPendingBackup] = useState<BackupFile | null>(null)
+  const [autoUpdateEnabled, setAutoUpdateEnabledState] = useState(true)
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
@@ -126,6 +127,11 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
       window.electronAPI.onUpdateDownloaded(() => setUpdateStatus('downloaded'))
     }
   }, [])
+
+  useEffect(() => {
+    if (!open || !window.electronAPI?.getAutoUpdateEnabled) return
+    void window.electronAPI.getAutoUpdateEnabled().then(setAutoUpdateEnabledState)
+  }, [open])
 
   const handleThemeChange = (value: string) => {
     setCurrentTheme(value)
@@ -152,6 +158,22 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
   const quitAndInstall = () => {
     if (window.electronAPI) {
       window.electronAPI.quitAndInstall()
+    }
+  }
+
+  const handleAutoUpdateChange = async (enabled: boolean) => {
+    setAutoUpdateEnabledState(enabled)
+    if (window.electronAPI?.setAutoUpdateEnabled) {
+      try {
+        await window.electronAPI.setAutoUpdateEnabled(enabled)
+        toast.success(enabled ? 'Automatic updates enabled' : 'Manual updates only', {
+          description: enabled
+            ? 'New versions download automatically when found (checks on startup and every 4 hours).'
+            : 'You will be notified when an update exists; download and restart here.',
+        })
+      } catch {
+        toast.error('Could not save update preference')
+      }
     }
   }
 
@@ -415,9 +437,28 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
             </div>
           </div>
 
-          {/* Updates */}
+          {/* Updates — desktop Electron only (mock in dev browser) */}
+          {window.electronAPI?.checkForUpdate && (
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
             <h4 className="text-sm font-semibold">Updates</h4>
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
+                <div className="min-w-0">
+                  <Label htmlFor="auto-update-download" className="text-sm cursor-pointer">
+                    Automatically download updates
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    When on, new versions download in the background after a check finds them (on startup, every 4 hours,
+                    or when you click Check). Restart from here when ready. When off, you only get a notification—download
+                    manually below.
+                  </p>
+                </div>
+                <Switch
+                  id="auto-update-download"
+                  checked={autoUpdateEnabled}
+                  onCheckedChange={(v) => void handleAutoUpdateChange(v)}
+                  className="shrink-0"
+                />
+              </div>
             <div className="flex flex-col gap-2">
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -440,7 +481,7 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
                   )}
                 </Button>
 
-                {updateStatus === 'available' && (
+                {updateStatus === 'available' && !autoUpdateEnabled && (
                   <Button size="sm" onClick={startDownload} className="flex-1 min-w-[140px]">
                     <Download className="mr-2 h-4 w-4" />
                     Download
@@ -463,7 +504,8 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
 
               {updateStatus === 'available' && (
                 <span className="text-xs text-blue-500 flex items-center gap-1">
-                  <Download className="h-3 w-3" /> Update available
+                  <Download className="h-3 w-3" />{' '}
+                  {autoUpdateEnabled ? 'Update found — downloading…' : 'Update available'}
                 </span>
               )}
 
@@ -488,6 +530,8 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
               )}
             </div>
           </div>
+          )}
+
         </div>
         </div>
       </DialogContent>

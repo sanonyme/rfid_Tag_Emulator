@@ -12,20 +12,23 @@
   "scripts": {
     "dev": "vite",
     "dev:mobile": "vite --config vite.config.mobile.ts",
-    "build": "tsc && vite build && electron-builder --win --linux --publish never",
+    "build": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --win --linux --publish never",
     "build:mobile": "tsc && vite build --config vite.config.mobile.ts",
     "cap:sync": "npm run build:mobile && npx cap sync",
     "cap:ios": "npm run cap:sync && npx cap open ios",
     "cap:android": "npm run cap:sync && npx cap open android",
-    "build:win": "tsc && vite build && electron-builder --win --publish never",
-    "build:linux": "tsc && vite build && electron-builder --linux --publish never",
+    "build:win": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --win --publish never",
+    "build:linux": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --linux --publish never",
     "preview": "vite preview",
     "preview:mobile": "npm run build:mobile && vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env OPEN_DEVTOOLS=true electron .\"",
     "electron:clean": "concurrently \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "electron:build": "vite build && electron-builder --publish never",
-    "release": "vite build && dotenv -e .env -- electron-builder --publish always",
-    "release:both": "node scripts/release-both.mjs"
+    "electron:build": "vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --publish never",
+    "release": "vite build && node scripts/release.mjs",
+    "release:both": "node scripts/release-both.mjs",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@codemirror/lang-sql": "^6.10.0",
@@ -77,6 +80,8 @@
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20.11.5",
     "@types/react": "^18.2.48",
     "@types/react-dom": "^18.2.18",
@@ -89,6 +94,7 @@
     "dotenv-cli": "^11.0.0",
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
+    "jsdom": "^29.1.1",
     "jsmodbus": "^4.0.4",
     "postcss": "^8.4.33",
     "sharp": "^0.34.5",
@@ -98,6 +104,7 @@
     "vite-plugin-electron": "^0.28.2",
     "vite-plugin-electron-renderer": "^0.14.5",
     "vite-plugin-pwa": "^0.19.8",
+    "vitest": "^4.1.6",
     "wait-on": "^7.2.0"
   },
   "build": {
@@ -158,8 +165,9 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "sanonyme",
-        "repo": "rfid_Tag_Emulator"
+        "owner": "${env.ZEUS_RELEASE_OWNER}",
+        "repo": "${env.ZEUS_RELEASE_REPO}",
+        "releaseType": "draft"
       }
     ]
   }

@@ -13,6 +13,7 @@ dist-electron
 release
 *.local
 .env
+.electron-builder-publish-override.yml
 
 # Editor directories and files
 .vscode/*

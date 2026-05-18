@@ -11,6 +11,13 @@ import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download, Ac
 import { toast } from 'sonner'
 import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
+import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
+import { RecorderToolbar } from './RecorderToolbar'
+import { recordSendEvent } from '@/lib/recorder'
+import { TagSchemeGenerator } from './TagSchemeGenerator'
+import { TagListSummary } from './TagListSummary'
+import { handheldAccent } from '@/lib/handheld-colors'
+import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -271,6 +278,17 @@ export function HandheldTab({
         addLog(`— Round ${round} (${roundTags.length} tag(s)) —`, port)
       }
 
+      recordSendEvent({
+        source: 'handheld',
+        sourceLabel: `port ${port}`,
+        port,
+        tags: roundTags.map((t) => ({
+          epc: t.epc,
+          tid: t.tid,
+          rssi: t.rssi,
+        })),
+      })
+
       let completeMsg = ''
       await new Promise<void>((resolve) => {
         let settled = false
@@ -398,6 +416,7 @@ export function HandheldTab({
                 <span className="shrink-0 select-none text-xs tabular-nums text-muted-foreground">ms</span>
               </div>
             </div>
+            <RecorderToolbar label="" />
             <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-muted/35 p-1 ring-1 ring-border/25">
               <Button
                 variant="outline"
@@ -560,6 +579,26 @@ function HandheldSlotCard({
 }: HandheldSlotCardProps) {
   const fileInputUpcRef = useRef<HTMLInputElement>(null)
   const fileInputEpcRef = useRef<HTMLInputElement>(null)
+  const upcPresetRef = useRef<TagPresetMenuHandle>(null)
+  const epcPresetRef = useRef<TagPresetMenuHandle>(null)
+  const accent = handheldAccent(slot.port || slot.id)
+
+  // Send / loop guards mirror the button-disabled rules below so the keyboard
+  // path can't fire when the slot isn't ready.
+  const canSend = !isSending && isRunning && hasTags
+  const canLoop = isRunning && hasTags
+  const upcShortcuts = useTagListShortcuts({
+    onSavePreset: () => upcPresetRef.current?.openSave(),
+    onLoadPreset: () => upcPresetRef.current?.open(),
+    onSend: canSend ? onSendOnce : undefined,
+    onLoop: canLoop ? (isSending ? onStopSend : onLoopSend) : undefined,
+  })
+  const epcShortcuts = useTagListShortcuts({
+    onSavePreset: () => epcPresetRef.current?.openSave(),
+    onLoadPreset: () => epcPresetRef.current?.open(),
+    onSend: canSend ? onSendOnce : undefined,
+    onLoop: canLoop ? (isSending ? onStopSend : onLoopSend) : undefined,
+  })
 
   const handleImportUpc = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -606,11 +645,17 @@ function HandheldSlotCard({
   }
 
   return (
-    <Card className={cn(SECTION_CARD, 'flex min-h-0 flex-col overflow-hidden')}>
+    <Card
+      className={cn(SECTION_CARD, 'relative flex min-h-0 flex-col overflow-hidden')}
+      style={{ borderTopColor: accent.color, borderTopWidth: 2 }}
+    >
       <CardHeader className="shrink-0 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+            <div
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+              style={{ backgroundColor: accent.tint, color: accent.color, boxShadow: `inset 0 0 0 1px ${accent.ring}` }}
+            >
               <Smartphone className="h-4 w-4" />
             </div>
             <div className="min-w-0">
@@ -644,7 +689,7 @@ function HandheldSlotCard({
             type="number"
             value={slot.port}
             onChange={(e) => onUpdate({ port: parseInt(e.target.value) || DEFAULT_PORT })}
-            className="h-9 w-[4.5rem] rounded-lg border-border/50 font-mono text-sm shadow-none"
+            className="h-9 w-[6rem] rounded-lg border-border/50 font-mono text-sm shadow-none"
             min={1024}
             max={65535}
           />
@@ -661,18 +706,36 @@ function HandheldSlotCard({
 
         {/* UPC / EPC tabs - full width textareas */}
         <Tabs defaultValue="upc" className="w-full" data-tour="tour-handheld-input-modes">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg bg-muted/40 p-1 ring-1 ring-border/30">
-            <TabsTrigger value="upc" className="rounded-md text-xs data-[state=active]:shadow-sm">
+          <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg bg-muted/50 p-1 ring-1 ring-border/40">
+            <TabsTrigger
+              value="upc"
+              className="rounded-md text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow data-[state=active]:ring-1 data-[state=active]:ring-border/50"
+            >
               UPC → EPC
             </TabsTrigger>
-            <TabsTrigger value="epc" className="rounded-md text-xs data-[state=active]:shadow-sm">
+            <TabsTrigger
+              value="epc"
+              className="rounded-md text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow data-[state=active]:ring-1 data-[state=active]:ring-border/50"
+            >
               Direct EPC
             </TabsTrigger>
           </TabsList>
           <TabsContent value="upc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">UPC,Count,TID · one per line</span>
-              <div className="flex shrink-0 gap-1">
+              <div className="flex shrink-0 items-center gap-1">
+                <TagListSummary value={slot.upcList} kind="upc" variant="compact" />
+                <TagPresetMenu
+                  ref={upcPresetRef}
+                  kind="upc"
+                  variant="compact"
+                  currentValue={slot.upcList}
+                  onLoad={(content, mode) =>
+                    onUpdate({
+                      upcList: mode === 'append' && slot.upcList ? slot.upcList + '\n' + content : content,
+                    })
+                  }
+                />
                 <input type="file" ref={fileInputUpcRef} onChange={handleImportUpc} className="hidden" accept=".txt,.csv" />
                 <Button
                   variant="ghost"
@@ -689,12 +752,14 @@ function HandheldSlotCard({
             </div>
             <ExpandableTagField
               dialogTitle={`UPC → EPC — port ${slot.port}`}
-              dialogDescription="UPC,Count,TID (one per line)"
+              dialogDescription="UPC,Count,TID (one per line) — CSV columns auto-detected on drop"
               value={slot.upcList}
               onChange={(e) => onUpdate({ upcList: e.target.value })}
               onFileImport={(content) =>
                 onUpdate({ upcList: slot.upcList ? slot.upcList + '\n' + content : content })
               }
+              kind="upc"
+              onKeyDown={upcShortcuts}
               placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
               compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
             />
@@ -720,7 +785,27 @@ function HandheldSlotCard({
           <TabsContent value="epc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">EPC or EPC,TID · one per line</span>
-              <div className="flex shrink-0 gap-1">
+              <div className="flex shrink-0 items-center gap-1">
+                <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
+                <TagSchemeGenerator
+                  variant="compact"
+                  onGenerated={(epcs) =>
+                    onUpdate({
+                      epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
+                    })
+                  }
+                />
+                <TagPresetMenu
+                  ref={epcPresetRef}
+                  kind="epc"
+                  variant="compact"
+                  currentValue={slot.epcList}
+                  onLoad={(content, mode) =>
+                    onUpdate({
+                      epcList: mode === 'append' && slot.epcList ? slot.epcList + '\n' + content : content,
+                    })
+                  }
+                />
                 <input type="file" ref={fileInputEpcRef} onChange={handleImportEpc} className="hidden" accept=".txt,.csv" />
                 <Button
                   variant="ghost"
@@ -737,12 +822,14 @@ function HandheldSlotCard({
             </div>
             <ExpandableTagField
               dialogTitle={`Direct EPC — port ${slot.port}`}
-              dialogDescription="EPC or EPC,TID (one per line)"
+              dialogDescription="EPC or EPC,TID (one per line) — CSV columns auto-detected on drop"
               value={slot.epcList}
               onChange={(e) => onUpdate({ epcList: e.target.value })}
               onFileImport={(content) =>
                 onUpdate({ epcList: slot.epcList ? slot.epcList + '\n' + content : content })
               }
+              kind="epc"
+              onKeyDown={epcShortcuts}
               placeholder={'3034...\n3035...,CustomTID'}
               compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
             />

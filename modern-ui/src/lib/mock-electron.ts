@@ -323,6 +323,8 @@ class MockElectronAPI implements ElectronAPI {
   checkForUpdate() { console.log('Mock: checkForUpdate'); }
   startDownload() { console.log('Mock: startDownload'); }
   quitAndInstall() { console.log('Mock: quitAndInstall'); }
+  async getAutoUpdateEnabled() { return true }
+  async setAutoUpdateEnabled(_enabled: boolean) { return true }
   onCheckingForUpdate(_callback: () => void) { console.log('Mock: onCheckingForUpdate registered'); }
   onUpdateAvailable(_callback: (info: any) => void) { console.log('Mock: onUpdateAvailable registered'); }
   onUpdateNotAvailable(_callback: (info: any) => void) { console.log('Mock: onUpdateNotAvailable registered'); }

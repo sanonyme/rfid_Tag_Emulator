@@ -238,14 +238,28 @@ function App() {
 
   // Toast when update is available (Electron only)
   React.useEffect(() => {
-    if (!window.electronAPI) return
-    window.electronAPI.onUpdateAvailable(() => {
-      toast.info('Update available', {
-        description: 'A new version is ready. Open Settings to download.',
-        duration: 8000,
-      })
+    const api = window.electronAPI
+    if (!api) return
+    api.onUpdateAvailable(async () => {
+      let autoDownload = true
+      try {
+        autoDownload = await api.getAutoUpdateEnabled()
+      } catch {
+        autoDownload = true
+      }
+      if (autoDownload) {
+        toast.info('Update found', {
+          description: 'Downloading in the background. Restart from Settings when it is ready.',
+          duration: 8000,
+        })
+      } else {
+        toast.info('Update available', {
+          description: 'Open Settings → Updates to download and install.',
+          duration: 8000,
+        })
+      }
     })
-    window.electronAPI.onUpdateDownloaded(() => {
+    api.onUpdateDownloaded(() => {
       toast.success('Update ready', {
         description: 'Restart the app to install the update.',
         duration: 10000,

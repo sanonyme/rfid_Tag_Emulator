@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
-import { Wifi, WifiOff, X, Clock } from 'lucide-react'
+import { Wifi, WifiOff, X, Clock, Star } from 'lucide-react'
 import { TCPEmulatorClient } from '@/lib/tcp-client'
 import { cn } from '@/lib/utils'
 import { playConnect, playDisconnect } from '@/lib/sounds'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 
 const RECENT_HOSTS_KEY = 'recent-hosts'
+const PINNED_HOSTS_KEY = 'pinned-hosts'
 const MAX_RECENT = 8
 
 function loadRecentHosts(): string[] {
@@ -19,6 +20,16 @@ function loadRecentHosts(): string[] {
 
 function saveRecentHosts(hosts: string[]) {
   localStorage.setItem(RECENT_HOSTS_KEY, JSON.stringify(hosts))
+}
+
+function loadPinnedHosts(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(PINNED_HOSTS_KEY) || '[]')
+  } catch { return [] }
+}
+
+function savePinnedHosts(hosts: string[]) {
+  localStorage.setItem(PINNED_HOSTS_KEY, JSON.stringify(hosts))
 }
 
 function pushRecentHost(host: string): string[] {
@@ -48,8 +59,20 @@ export function ConnectionStatus({
   const [isOpen, setIsOpen] = useState(false)
   const [localHost, setLocalHost] = useState(host)
   const [recentHosts, setRecentHosts] = useState<string[]>(loadRecentHosts)
+  const [pinnedHosts, setPinnedHosts] = useState<string[]>(loadPinnedHosts)
   const timeoutRef = useRef<NodeJS.Timeout>()
   const FIXED_PORT = 12352
+
+  const isPinned = (h: string) => pinnedHosts.includes(h)
+
+  const togglePin = (h: string) => {
+    const next = isPinned(h) ? pinnedHosts.filter((x) => x !== h) : [...pinnedHosts, h]
+    savePinnedHosts(next)
+    setPinnedHosts(next)
+  }
+
+  // Hide pinned entries from the recent list so they don't appear twice.
+  const recentVisible = recentHosts.filter((h) => !pinnedHosts.includes(h))
 
   useEffect(() => {
     setLocalHost(host)
@@ -153,17 +176,54 @@ export function ConnectionStatus({
                         )}
                     </div>
 
-                    {recentHosts.length > 0 && (
+                    {pinnedHosts.length > 0 && (
+                        <div className="space-y-1.5 pt-1 border-t border-border">
+                            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                                <Star className="w-3 h-3 fill-current" /> Pinned
+                            </p>
+                            <div className="max-h-[140px] overflow-y-auto space-y-0.5">
+                                {pinnedHosts.map((h) => (
+                                    <div
+                                        key={h}
+                                        className="group flex items-center gap-2 px-2 py-1 rounded-md hover:bg-accent cursor-pointer transition-colors"
+                                    >
+                                        <button
+                                            className="text-amber-500 hover:text-amber-600"
+                                            onClick={(e) => { e.stopPropagation(); togglePin(h) }}
+                                            title="Unpin"
+                                        >
+                                            <Star className="w-3 h-3 fill-current" />
+                                        </button>
+                                        <button
+                                            className="flex-1 text-left text-xs font-mono text-foreground truncate"
+                                            onClick={() => connectTo(h)}
+                                        >
+                                            {h}
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {recentVisible.length > 0 && (
                         <div className="space-y-1.5 pt-1 border-t border-border">
                             <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                                 <Clock className="w-3 h-3" /> Recent
                             </p>
                             <div className="max-h-[140px] overflow-y-auto space-y-0.5">
-                                {recentHosts.map((h) => (
+                                {recentVisible.map((h) => (
                                     <div
                                         key={h}
                                         className="group flex items-center gap-2 px-2 py-1 rounded-md hover:bg-accent cursor-pointer transition-colors"
                                     >
+                                        <button
+                                            className="opacity-40 hover:opacity-100 hover:text-amber-500 transition-colors"
+                                            onClick={(e) => { e.stopPropagation(); togglePin(h) }}
+                                            title="Pin to keep at top"
+                                        >
+                                            <Star className="w-3 h-3" />
+                                        </button>
                                         <button
                                             className="flex-1 text-left text-xs font-mono text-foreground truncate"
                                             onClick={() => connectTo(h)}

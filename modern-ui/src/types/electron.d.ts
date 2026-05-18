@@ -121,6 +121,9 @@ export interface ElectronAPI {
   checkForUpdate: () => void
   startDownload: () => void
   quitAndInstall: () => void
+  /** Default true. When true, updates download automatically after a check finds one. */
+  getAutoUpdateEnabled: () => Promise<boolean>
+  setAutoUpdateEnabled: (enabled: boolean) => Promise<boolean>
   onCheckingForUpdate: (callback: () => void) => void
   onUpdateAvailable: (callback: (info: any) => void) => void
   onUpdateNotAvailable: (callback: (info: any) => void) => void

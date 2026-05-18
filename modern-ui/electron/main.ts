@@ -60,6 +60,11 @@ import {
   setInstallRegistryEnabled,
   sendInstallRegistry,
 } from './install-registry.js'
+import {
+  getAppPreferences,
+  setAutoUpdateEnabled,
+  AUTO_UPDATE_CHECK_INTERVAL_MS,
+} from './app-preferences.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -131,6 +136,8 @@ const updateCheckState = {
   inProgress: false,
   usedFallback: false,
 }
+
+let periodicUpdateInterval: ReturnType<typeof setInterval> | null = null
 
 function applyUpdateFeed(feed: GithubFeed | null, label: string): boolean {
   if (!feed) return false
@@ -753,9 +760,10 @@ app.whenReady().then(() => {
     }
   })
 
-  function runUpdateCheck(trigger: 'manual' | 'startup') {
+  function runUpdateCheck(trigger: 'manual' | 'startup' | 'periodic') {
     console.log(`Checking for updates (${trigger})...`)
-    // Keep manual control over when downloads start.
+    // When auto-update is off, downloads only start from Settings (start-download).
+    // When on, update-available triggers downloadUpdate().
     autoUpdater.autoDownload = false
 
     if (isDev) {
@@ -779,6 +787,26 @@ app.whenReady().then(() => {
       console.error('Update check failed to start:', err)
     })
   }
+
+  function schedulePeriodicUpdateChecks() {
+    if (periodicUpdateInterval) {
+      clearInterval(periodicUpdateInterval)
+      periodicUpdateInterval = null
+    }
+    if (isDev || !app.isPackaged) return
+    periodicUpdateInterval = setInterval(() => {
+      runUpdateCheck('periodic')
+    }, AUTO_UPDATE_CHECK_INTERVAL_MS)
+    console.log(
+      `[auto-update] Background checks every ${AUTO_UPDATE_CHECK_INTERVAL_MS / 3600000}h (packaged app)`
+    )
+  }
+
+  ipcMain.handle('get-auto-update-enabled', () => getAppPreferences().autoUpdateEnabled)
+  ipcMain.handle('set-auto-update-enabled', (_event, enabled: boolean) => {
+    setAutoUpdateEnabled(Boolean(enabled))
+    return getAppPreferences().autoUpdateEnabled
+  })
 
   // Auto Updater IPC handlers
   ipcMain.on('check-for-update', () => {
@@ -805,6 +833,13 @@ app.whenReady().then(() => {
     updateCheckState.inProgress = false
     console.log('Update available:', info)
     mainWindow?.webContents.send('update-available', info)
+    const prefs = getAppPreferences()
+    if (!isDev && app.isPackaged && prefs.autoUpdateEnabled) {
+      console.log('[auto-update] Auto-download enabled — starting download')
+      void autoUpdater.downloadUpdate().catch((e) => {
+        console.error('[auto-update] Automatic download failed:', e)
+      })
+    }
   })
 
   autoUpdater.on('update-not-available', (info) => {
@@ -833,8 +868,9 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send('update-error', err.message)
   })
 
-  // Auto-check once after launch in production, keep manual button available.
+  // Auto-check once after launch in production; then repeat on an interval.
   setTimeout(() => runUpdateCheck('startup'), 4000)
+  schedulePeriodicUpdateChecks()
 
   // API config path (persisted in userData)
   const getApiConfigPath = () => path.join(app.getPath('userData'), 'api-config.json')
@@ -1010,6 +1046,10 @@ app.on('activate', () => {
 })
 
 app.on('window-all-closed', () => {
+  if (periodicUpdateInterval) {
+    clearInterval(periodicUpdateInterval)
+    periodicUpdateInterval = null
+  }
   // Clean up TCP handlers
   tcpHandler?.shutdown()
   Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())

@@ -25,6 +25,12 @@ import {
 import { toast } from 'sonner'
 import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
+import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
+import { RecorderToolbar } from './RecorderToolbar'
+import { recordSendEvent } from '@/lib/recorder'
+import { TagSchemeGenerator } from './TagSchemeGenerator'
+import { TagListSummary } from './TagListSummary'
+import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
   Dialog,
@@ -120,6 +126,9 @@ export function FixedTab({
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
   const sendTagsHotkeyRef = useRef<(isLooping?: boolean) => Promise<void>>(async () => {})
+  const loopHotkeyRef = useRef<() => void>(() => {})
+  const upcPresetRef = useRef<TagPresetMenuHandle>(null)
+  const epcPresetRef = useRef<TagPresetMenuHandle>(null)
   const rssiSliderWheelRef = useRef<HTMLDivElement>(null)
   const rssiRef = useRef(rssi)
   rssiRef.current = rssi
@@ -390,6 +399,19 @@ export function FixedTab({
       setSending(true)
     }
 
+    recordSendEvent({
+      source: 'fixed',
+      sourceLabel: host || undefined,
+      driver,
+      tags: tags.map((t) => ({
+        epc: t.epc,
+        tid: t.tid,
+        rssi: t.rssi,
+        antenna: t.antenna,
+        uid: t.uid,
+      })),
+    })
+
     await emulator.sendTags(
       tags,
       driver,
@@ -433,24 +455,41 @@ export function FixedTab({
   }
 
   sendTagsHotkeyRef.current = handleSendTags
+  loopHotkeyRef.current = handleToggleLoop
 
   useEffect(() => {
     if (!fixedTabActive) return
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || e.key !== 'Enter') return
       if (e.repeat) return
-      if (e.shiftKey || e.altKey) return
+      if (e.altKey) return
       const target = e.target as HTMLElement | null
       if (!target) return
       if (target.closest('[data-command-palette]')) return
       const dialogEl = target.closest('[role="dialog"]')
       if (dialogEl && !dialogEl.hasAttribute('data-tag-expand-dialog')) return
       e.preventDefault()
-      void sendTagsHotkeyRef.current(false)
+      if (e.shiftKey) {
+        loopHotkeyRef.current()
+      } else {
+        void sendTagsHotkeyRef.current(false)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [fixedTabActive])
+
+  // Per-textarea shortcut handlers (Ctrl+S save preset, Ctrl+L load preset).
+  // Send / Loop are handled by the global listener above so they fire even
+  // when the cursor is outside the tag fields.
+  const upcShortcuts = useTagListShortcuts({
+    onSavePreset: () => upcPresetRef.current?.openSave(),
+    onLoadPreset: () => upcPresetRef.current?.open(),
+  })
+  const epcShortcuts = useTagListShortcuts({
+    onSavePreset: () => epcPresetRef.current?.openSave(),
+    onLoadPreset: () => epcPresetRef.current?.open(),
+  })
 
   const sectionCard =
     'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
@@ -784,18 +823,32 @@ export function FixedTab({
                     </CardDescription>
                   </div>
                 </div>
-                <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                  UPC,Count,TID
-                </Badge>
+                <div className="flex shrink-0 items-center gap-1">
+                  <TagListSummary value={upcList} kind="upc" />
+                  <TagPresetMenu
+                    ref={upcPresetRef}
+                    kind="upc"
+                    variant="compact"
+                    currentValue={upcList}
+                    onLoad={(content, mode) =>
+                      setUpcList(mode === 'append' && upcList ? upcList + '\n' + content : content)
+                    }
+                  />
+                  <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+                    UPC,Count,TID
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 px-5 pb-5 pt-0">
               <ExpandableTagField
                 dialogTitle="UPC → EPC generation"
-                dialogDescription="Format: UPC,Count,TID (optional TID per line)"
+                dialogDescription="Format: UPC,Count,TID (optional TID per line) — CSV columns auto-detected on drop"
                 value={upcList}
                 onChange={(e) => setUpcList(e.target.value)}
                 onFileImport={(content) => setUpcList(upcList ? upcList + '\n' + content : content)}
+                kind="upc"
+                onKeyDown={upcShortcuts}
                 placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
@@ -830,18 +883,36 @@ export function FixedTab({
                     </CardDescription>
                   </div>
                 </div>
-                <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                  EPC[,TID]
-                </Badge>
+                <div className="flex shrink-0 items-center gap-1">
+                  <TagListSummary value={epcList} kind="epc" />
+                  <TagSchemeGenerator
+                    variant="compact"
+                    onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}
+                  />
+                  <TagPresetMenu
+                    ref={epcPresetRef}
+                    kind="epc"
+                    variant="compact"
+                    currentValue={epcList}
+                    onLoad={(content, mode) =>
+                      setEpcList(mode === 'append' && epcList ? epcList + '\n' + content : content)
+                    }
+                  />
+                  <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+                    EPC[,TID]
+                  </Badge>
+                </div>
               </div>
             </CardHeader>
-            <CardContent className="px-5 pb-5 pt-0">
+            <CardContent className="space-y-3 px-5 pb-5 pt-0">
               <ExpandableTagField
                 dialogTitle="Direct EPC input"
-                dialogDescription="Format: EPC or EPC,TID (one per line, TID optional)"
+                dialogDescription="Format: EPC or EPC,TID (one per line, TID optional) — CSV columns auto-detected on drop"
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
                 onFileImport={(content) => setEpcList(epcList ? epcList + '\n' + content : content)}
+                kind="epc"
+                onKeyDown={epcShortcuts}
                 placeholder="3034...&#10;3035...,CustomTID"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
@@ -867,6 +938,7 @@ export function FixedTab({
                       Connect from the bar first
                     </Badge>
                   )}
+                  <RecorderToolbar label="" />
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   <span className="font-medium text-foreground">{totalInputRows}</span> input line

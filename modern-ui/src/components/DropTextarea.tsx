@@ -2,9 +2,17 @@ import { useState, useRef, useCallback } from 'react'
 import { Textarea, type TextareaProps } from './ui/textarea'
 import { Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { smartImport, type TagListKind } from '@/lib/csv-import'
 
 interface DropTextareaProps extends TextareaProps {
   onFileImport: (content: string) => void
+  /**
+   * When provided, dropped files are run through {@link smartImport} so the
+   * caller receives canonical `UPC,Count,TID` or `EPC,TID` rows regardless
+   * of column order in the source file. Falls back to a naïve header
+   * detector if omitted.
+   */
+  kind?: TagListKind
 }
 
 function looksLikeHeader(line: string): boolean {
@@ -13,15 +21,22 @@ function looksLikeHeader(line: string): boolean {
     || lower.includes(',') && /[a-z]{3,}/i.test(lower.split(',')[0]) && !/^\d/.test(lower)
 }
 
-function parseFileContent(raw: string): string {
+function naiveParse(raw: string): string {
   const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
   if (lines.length === 0) return ''
-
   const start = looksLikeHeader(lines[0]) ? 1 : 0
   return lines.slice(start).join('\n')
 }
 
-export function DropTextarea({ onFileImport, className, ...props }: DropTextareaProps) {
+function parseFileContent(raw: string, kind?: TagListKind): string {
+  if (kind) {
+    const result = smartImport(raw, kind)
+    return result.text
+  }
+  return naiveParse(raw)
+}
+
+export function DropTextarea({ onFileImport, className, kind, ...props }: DropTextareaProps) {
   const [dragging, setDragging] = useState(false)
   const dragCounter = useRef(0)
 
@@ -64,12 +79,12 @@ export function DropTextarea({ onFileImport, className, ...props }: DropTextarea
     valid.forEach((file) => {
       const reader = new FileReader()
       reader.onload = () => {
-        const parsed = parseFileContent(reader.result as string)
+        const parsed = parseFileContent(reader.result as string, kind)
         if (parsed) onFileImport(parsed)
       }
       reader.readAsText(file)
     })
-  }, [onFileImport])
+  }, [onFileImport, kind])
 
   return (
     <div
