@@ -1,7 +1,7 @@
 // GS1 Tag Data Translation (TDT) wrapper for the Decoder app.
 //
-// Loads the canonical `/TDTtranslator.js` from sanonyme/TDT (which expects a
-// global JSZip and fetches `/TDT_JSON_artefacts.zip` + `/gcpprefixformatlist.json`)
+// Loads `TDTtranslator.js` next to the app HTML (public/ → dist/), from sanonyme/TDT:
+// expects global JSZip and fetches `./TDT_JSON_artefacts.zip` + `./gcpprefixformatlist.json`
 // and exposes a clean, typed API mirroring the upstream demo's usage pattern:
 //
 //   let detected = myTDTencoder.autodetect(input);
@@ -90,6 +90,12 @@ function ensureGlobals() {
   }
 }
 
+/** Same folder as the app HTML — required when `vite.config` uses `base: './'` / `file:` (Electron). */
+function tdtTranslatorScriptUrl(): string {
+  if (typeof document === 'undefined') return './TDTtranslator.js'
+  return new URL('TDTtranslator.js', document.baseURI).href
+}
+
 function loadScriptOnce(src: string): Promise<void> {
   if (scriptPromise) return scriptPromise
   scriptPromise = new Promise<void>((resolve, reject) => {
@@ -116,7 +122,7 @@ export async function getTdtTranslator(): Promise<TDTtranslatorInstance> {
   if (translatorPromise) return translatorPromise
   translatorPromise = (async () => {
     ensureGlobals()
-    await loadScriptOnce('/TDTtranslator.js')
+    await loadScriptOnce(tdtTranslatorScriptUrl())
     if (!window.TDTtranslator) throw new Error('TDTtranslator did not register on window')
     const t = new window.TDTtranslator()
     await t.initialized
