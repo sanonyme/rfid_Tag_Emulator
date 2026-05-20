@@ -33,10 +33,6 @@ const SHORTCUTS = [
     { label: 'Open preset menu', keys: 'Ctrl+L' },
     { label: 'Show invalid-line popover', keys: 'click → N EPCs · M errors' },
   ]},
-  { group: 'Recording', items: [
-    { label: 'Start / stop tag recording', keys: 'click ● Record' },
-    { label: 'Save recording to .zeusrec.json', keys: 'click ⤓' },
-  ]},
   { group: 'Window', items: [
     { label: 'Toggle fullscreen', keys: 'F11' },
     { label: 'Reload app', keys: 'Ctrl+R' },

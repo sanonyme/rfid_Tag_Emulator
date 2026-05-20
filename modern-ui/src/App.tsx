@@ -23,6 +23,7 @@ import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
+import { useSettings } from './lib/settings-context'
 import { cn } from './lib/utils'
 import { IS_MOBILE } from './lib/platform'
 import AppMobile from './AppMobile'
@@ -57,6 +58,7 @@ const TAB_VALUES = (IS_MOBILE
   : TAB_VALUES_FULL) as readonly string[]
 
 function App() {
+  const { settings, setSettings } = useSettings()
   const [emulator] = useState(() => new TCPEmulatorClient())
   const [handheldServer] = useState(() => new HandheldServerClient(10472))
   const [ocrClient] = useState(() => new OCRClient())
@@ -157,6 +159,24 @@ function App() {
     setAntenna(profile.antenna)
     setRssi(profile.rssi)
     setStartSerial(profile.startSerial)
+    if (
+      profile.fixedSerialContinuesAcrossUpcLines !== undefined ||
+      profile.handheldSerialContinuesAcrossUpcLines !== undefined
+    ) {
+      setSettings({
+        ...(profile.fixedSerialContinuesAcrossUpcLines !== undefined && {
+          fixedSerialContinuesAcrossUpcLines: profile.fixedSerialContinuesAcrossUpcLines,
+        }),
+        ...(profile.handheldSerialContinuesAcrossUpcLines !== undefined && {
+          handheldSerialContinuesAcrossUpcLines: profile.handheldSerialContinuesAcrossUpcLines,
+        }),
+      })
+    } else if (profile.serialContinuesAcrossUpcLines !== undefined) {
+      setSettings({
+        fixedSerialContinuesAcrossUpcLines: profile.serialContinuesAcrossUpcLines,
+        handheldSerialContinuesAcrossUpcLines: profile.serialContinuesAcrossUpcLines,
+      })
+    }
     setFixedUpcList(profile.fixedUpcList)
     setFixedEpcList(profile.fixedEpcList)
     if (profile.handheldSlots?.length) {
@@ -186,6 +206,8 @@ function App() {
     antenna,
     rssi,
     startSerial,
+    fixedSerialContinuesAcrossUpcLines: settings.fixedSerialContinuesAcrossUpcLines,
+    handheldSerialContinuesAcrossUpcLines: settings.handheldSerialContinuesAcrossUpcLines,
     fixedUpcList,
     fixedEpcList,
     handheldSlots,

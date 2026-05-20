@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
-import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
+import { TCPEmulatorClient, expandUpcListToEpcs, type TagData } from '@/lib/tcp-client'
+import { useSettings } from '@/lib/settings-context'
 import { formatTime } from '@/lib/utils'
 import {
   Select,
@@ -89,6 +90,9 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     alePort,
     setAlePort,
   } = props
+
+  const { settings } = useSettings()
+  const serialContinuesAcrossUpcLines = settings.fixedSerialContinuesAcrossUpcLines
 
   const [log, setLog] = useState<string[]>([])
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
@@ -252,23 +256,18 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     }
 
     if (upcList.trim()) {
-      const lines = upcList.trim().split('\n')
-      let serial = parseInt(startSerial)
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        const [upc, countStr, customTid] = trimmed.split(',')
-        const count = parseInt(countStr?.trim() || '0')
-        if (count > 0 && upc) {
-          const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
-          for (const targetUid of targetUids) {
-            for (const epc of epcs) {
-              for (const ant of selectedAntennas) {
-                  tags.push({ epc, tid: customTid?.trim() || epc, uid: targetUid, antenna: ant, rssi: getTagRssi() })
-              }
-            }
+      const expanded = expandUpcListToEpcs(upcList, startSerial, serialContinuesAcrossUpcLines)
+      for (const { epc, customTid } of expanded) {
+        for (const targetUid of targetUids) {
+          for (const ant of selectedAntennas) {
+            tags.push({
+              epc,
+              tid: customTid || epc,
+              uid: targetUid,
+              antenna: ant,
+              rssi: getTagRssi(),
+            })
           }
-          serial += count
         }
       }
     }
@@ -558,9 +557,11 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
             placeholder="00000000000001,5"
             compactClassName="font-mono text-sm min-h-[80px]"
           />
-          <div className="space-y-2">
-            <Label>Start Serial</Label>
-            <Input type="number" min="1" value={startSerial} onChange={(e) => setStartSerial(e.target.value)} className="h-12" />
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label>Start Serial</Label>
+              <Input type="number" min="1" value={startSerial} onChange={(e) => setStartSerial(e.target.value)} className="h-12" />
+            </div>
           </div>
         </CardContent>
       </Card>

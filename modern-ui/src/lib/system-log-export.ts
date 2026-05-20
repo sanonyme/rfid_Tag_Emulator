@@ -53,6 +53,15 @@ export interface ExportOptions {
   memWindow?: ChartWindow
 }
 
+/** Cap rows on the "Data" sheet so large logs do not OOM the renderer during export. */
+export const MAX_DATA_SHEET_ROWS = 15_000
+
+export interface ExportResult {
+  totalRows: number
+  dataSheetRows: number
+  dataSheetTruncated: boolean
+}
+
 // ---------------------------------------------------------------------------
 // Cell ref helpers
 // ---------------------------------------------------------------------------
@@ -100,36 +109,6 @@ function sanitizeHex(color: string): string {
   return (m ? m[1] : '64748B').toUpperCase()
 }
 
-function numToCache(n: number): string {
-  if (!Number.isFinite(n)) return ''
-  if (Number.isInteger(n)) return String(n)
-  return String(Number(n.toFixed(6)))
-}
-
-function buildNumCache(
-  values: (number | null)[],
-  formatCode: string,
-  ptCount: number,
-): string {
-  let pts = ''
-  for (let i = 0; i < values.length; i++) {
-    const v = values[i]
-    if (v === null || v === undefined || !Number.isFinite(v)) continue
-    pts += `<c:pt idx="${i}"><c:v>${numToCache(v)}</c:v></c:pt>`
-  }
-  return `<c:numCache><c:formatCode>${escapeXml(formatCode)}</c:formatCode><c:ptCount val="${ptCount}"/>${pts}</c:numCache>`
-}
-
-function buildStrCache(labels: string[], ptCount: number): string {
-  let pts = ''
-  for (let i = 0; i < labels.length; i++) {
-    const s = labels[i]
-    if (!s) continue
-    pts += `<c:pt idx="${i}"><c:v>${escapeXml(s)}</c:v></c:pt>`
-  }
-  return `<c:strCache><c:ptCount val="${ptCount}"/>${pts}</c:strCache>`
-}
-
 // ---------------------------------------------------------------------------
 // Chart XML — single shared Y axis, no smoothing (matches in-app SVG chart)
 // ---------------------------------------------------------------------------
@@ -139,7 +118,6 @@ interface ChartSeriesRef {
   /** 1-based column index on the referenced data sheet. */
   valuesCol: number
   color: string
-  values: (number | null)[]
 }
 
 interface ChartXmlOptions {
@@ -149,8 +127,6 @@ interface ChartXmlOptions {
   firstDataRow: number
   lastDataRow: number
   series: ChartSeriesRef[]
-  /** Pre-formatted label per row (e.g. "4/7/2026 14:05"). */
-  categoryLabels: string[]
   valNumFmt?: string
   /** Base axis-id — must differ between charts in the same workbook. */
   axisIdBase?: number
@@ -164,7 +140,6 @@ function buildChartXml(opts: ChartXmlOptions): string {
     firstDataRow,
     lastDataRow,
     series,
-    categoryLabels,
     valNumFmt = 'General',
     axisIdBase = 100,
   } = opts
@@ -172,7 +147,6 @@ function buildChartXml(opts: ChartXmlOptions): string {
   const sheet = quoteSheet(dataSheet)
   const catRangeRef = `${sheet}!${absRangeRef(categoryCol, firstDataRow, lastDataRow)}`
   const ptCount = lastDataRow - firstDataRow + 1
-  const catCacheXml = buildStrCache(categoryLabels, ptCount)
 
   // Show ~10-12 x-axis labels regardless of sample count (matches the
   // in-app chart's auto-tick behavior).
@@ -186,7 +160,6 @@ function buildChartXml(opts: ChartXmlOptions): string {
       const nameRef = `${sheet}!${absCellRef(s.valuesCol, 1)}`
       const valRef = `${sheet}!${absRangeRef(s.valuesCol, firstDataRow, lastDataRow)}`
       const color = sanitizeHex(s.color)
-      const valCacheXml = buildNumCache(s.values, valNumFmt, ptCount)
       return `
         <c:ser>
           <c:idx val="${i}"/>
@@ -205,8 +178,8 @@ function buildChartXml(opts: ChartXmlOptions): string {
             <a:effectLst/>
           </c:spPr>
           <c:marker><c:symbol val="none"/></c:marker>
-          <c:cat><c:strRef><c:f>${escapeXml(catRangeRef)}</c:f>${catCacheXml}</c:strRef></c:cat>
-          <c:val><c:numRef><c:f>${escapeXml(valRef)}</c:f>${valCacheXml}</c:numRef></c:val>
+          <c:cat><c:strRef><c:f>${escapeXml(catRangeRef)}</c:f></c:strRef></c:cat>
+          <c:val><c:numRef><c:f>${escapeXml(valRef)}</c:f></c:numRef></c:val>
           <c:smooth val="0"/>
         </c:ser>`
     })
@@ -539,9 +512,29 @@ function writeChartDataSheet(
 // Main export
 // ---------------------------------------------------------------------------
 
-export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
+function rowToSheetValues(
+  row: SystemLogRow,
+  headers: string[],
+  logTimeHeader: string | undefined,
+): (number | string | Date)[] {
+  return headers.map((h) => {
+    if (h === logTimeHeader && Number.isFinite(row.log_time_ms)) {
+      return new Date(row.log_time_ms)
+    }
+    const v = row[h]
+    return typeof v === 'number' && Number.isFinite(v) ? v : (v ?? '')
+  })
+}
+
+export async function exportSystemLogXlsx(opts: ExportOptions): Promise<ExportResult> {
   const { fileName, headers, rows } = opts
   if (rows.length === 0) throw new Error('No data to export')
+
+  const totalRows = rows.length
+  const dataSheetTruncated = totalRows > MAX_DATA_SHEET_ROWS
+  /** Large logs: charts-only workbook to avoid renderer OOM (full data stays in the loaded CSV). */
+  const includeDataSheet = !dataSheetTruncated
+  const dataRows = includeDataSheet ? rows : []
 
   const logTimeHeader = headers.find((h) => h.toLowerCase() === 'log_time')
   const timeHeader = headers.find((h) => h.toLowerCase() === 'time')
@@ -552,47 +545,42 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
   wb.creator = 'Zeus RFID Emulator — Log Analyzer'
   wb.created = new Date()
 
-  // ---------------- Data sheet (full data, every row) -------------------
-  const dataSheet = wb.addWorksheet('Data', {
-    views: [{ state: 'frozen', ySplit: 1 }],
-  })
-  dataSheet.columns = headers.map((h) => ({
-    header: h,
-    key: h,
-    width: Math.max(12, Math.min(28, h.length + 6)),
-  }))
-  dataSheet.getRow(1).font = { bold: true, color: { argb: 'FF1E293B' } }
-  dataSheet.getRow(1).fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFF1F5F9' },
-  }
-
-  for (const row of rows) {
-    const values = headers.map((h) => {
-      if (h === logTimeHeader && Number.isFinite(row.log_time_ms)) {
-        return new Date(row.log_time_ms)
-      }
-      const v = row[h]
-      return typeof v === 'number' && Number.isFinite(v) ? v : (v ?? '')
+  // ---------------- Data sheet (omitted when the log is very large) ------
+  if (includeDataSheet) {
+    const dataSheet = wb.addWorksheet('Data', {
+      views: [{ state: 'frozen', ySplit: 1 }],
     })
-    dataSheet.addRow(values)
-  }
+    dataSheet.columns = headers.map((h) => ({
+      header: h,
+      key: h,
+      width: Math.max(12, Math.min(28, h.length + 6)),
+    }))
+    dataSheet.getRow(1).font = { bold: true, color: { argb: 'FF1E293B' } }
+    dataSheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFF1F5F9' },
+    }
 
-  if (logTimeColIdx > 0) {
-    const col = dataSheet.getColumn(logTimeColIdx)
-    col.numFmt = 'm/d/yyyy h:mm:ss'
-    col.width = 22
-  }
-  if (timeColIdx > 0) {
-    const col = dataSheet.getColumn(timeColIdx)
-    col.numFmt = '0'
-    col.width = 14
-  }
+    for (const row of dataRows) {
+      dataSheet.addRow(rowToSheetValues(row, headers, logTimeHeader))
+    }
 
-  dataSheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: headers.length },
+    if (logTimeColIdx > 0) {
+      const col = dataSheet.getColumn(logTimeColIdx)
+      col.numFmt = 'm/d/yyyy h:mm:ss'
+      col.width = 22
+    }
+    if (timeColIdx > 0) {
+      const col = dataSheet.getColumn(timeColIdx)
+      col.numFmt = '0'
+      col.width = 14
+    }
+
+    dataSheet.autoFilter = {
+      from: { row: 1, column: 1 },
+      to: { row: 1, column: headers.length },
+    }
   }
 
   // ---------------- Per-chart hidden data sheets ------------------------
@@ -614,16 +602,16 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
   const cpuCount = cpuBundle?.chartRows.length ?? 0
   const memCount = memBundle?.chartRows.length ?? 0
   chartsSheet.getCell('B3').value =
-    `Source: ${fileName}  \u00b7  ${rows.length.toLocaleString()} rows` +
+    `Source: ${fileName}  \u00b7  ${totalRows.toLocaleString()} rows` +
+    (dataSheetTruncated
+      ? '  \u00b7  Charts-only export (Data sheet omitted — use your CSV for full rows)'
+      : '') +
     `  \u00b7  CPU samples: ${cpuCount.toLocaleString()}` +
     `  \u00b7  Memory samples: ${memCount.toLocaleString()}`
   chartsSheet.getCell('B3').font = { size: 10, color: { argb: 'FF64748B' } }
   chartsSheet.getColumn(1).width = 2
 
   // ---------------- Write, then inject native charts -------------------
-  const buffer = await wb.xlsx.writeBuffer()
-  const zip = await JSZip.loadAsync(buffer)
-
   const chartXmls: string[] = []
   const anchors: Omit<ChartAnchor, 'rId'>[] = []
 
@@ -631,14 +619,10 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
   if (cpuBundle) {
     const firstDataRow = 2
     const lastDataRow = cpuBundle.chartRows.length + 1
-    const categoryLabels = cpuBundle.timestamps.map((t) =>
-      Number.isFinite(t) ? formatLogTime(t) : '',
-    )
     const series: ChartSeriesRef[] = cpuKeys.map((k, i) => ({
       key: k,
       valuesCol: i + 2, // log_time is col 1
       color: SERIES_COLORS[k] ?? '#64748b',
-      values: cpuBundle.valuesByKey[k],
     }))
     chartXmls.push(
       buildChartXml({
@@ -648,7 +632,6 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
         firstDataRow,
         lastDataRow,
         series,
-        categoryLabels,
         valNumFmt: 'General',
         axisIdBase: 100,
       }),
@@ -666,14 +649,10 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
   if (memBundle) {
     const firstDataRow = 2
     const lastDataRow = memBundle.chartRows.length + 1
-    const categoryLabels = memBundle.timestamps.map((t) =>
-      Number.isFinite(t) ? formatLogTime(t) : '',
-    )
     const series: ChartSeriesRef[] = memKeys.map((k, i) => ({
       key: k,
       valuesCol: i + 2,
       color: SERIES_COLORS[k] ?? '#64748b',
-      values: memBundle.valuesByKey[k],
     }))
     chartXmls.push(
       buildChartXml({
@@ -683,7 +662,6 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
         firstDataRow,
         lastDataRow,
         series,
-        categoryLabels,
         valNumFmt: '#,##0',
         axisIdBase: 200,
       }),
@@ -697,16 +675,26 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
     })
   }
 
+  const buffer = await wb.xlsx.writeBuffer()
+  const zip = await JSZip.loadAsync(buffer)
+
   if (chartXmls.length > 0) {
     await injectNativeCharts(zip, 'Charts', chartXmls, anchors)
   }
 
   // ---------------- Save ------------------------------------------------
-  const finalBytes = await zip.generateAsync({ type: 'uint8array' })
-  const finalBlob = new Blob(
-    [finalBytes.buffer.slice(finalBytes.byteOffset, finalBytes.byteOffset + finalBytes.byteLength) as ArrayBuffer],
-    { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' },
-  )
+  const finalBytes = await zip.generateAsync({
+    type: 'uint8array',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  })
+  const blobPart = finalBytes.buffer.slice(
+    finalBytes.byteOffset,
+    finalBytes.byteOffset + finalBytes.byteLength,
+  ) as ArrayBuffer
+  const finalBlob = new Blob([blobPart], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  })
   const url = URL.createObjectURL(finalBlob)
   const a = document.createElement('a')
   a.href = url
@@ -716,4 +704,10 @@ export async function exportSystemLogXlsx(opts: ExportOptions): Promise<void> {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+
+  return {
+    totalRows,
+    dataSheetRows: includeDataSheet ? dataRows.length : 0,
+    dataSheetTruncated,
+  }
 }

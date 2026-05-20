@@ -49,7 +49,15 @@ import {
   Upload,
   Download,
 } from 'lucide-react'
-import { TCPEmulatorClient, HandheldServerClient, OCRClient, CustomClient, type TagData, EPCGenerator } from '@/lib/tcp-client'
+import {
+  TCPEmulatorClient,
+  HandheldServerClient,
+  OCRClient,
+  CustomClient,
+  type TagData,
+  EPCGenerator,
+  expandUpcListToEpcs,
+} from '@/lib/tcp-client'
 import { toast } from 'sonner'
 import { formatTime } from '@/lib/utils'
 import { getHandheldFullActivityLog } from '@/lib/handheld-log-settings'
@@ -599,33 +607,23 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
 
         const getTagRssi = makeRssiPicker(step.params)
         if (step.params.upcList) {
-            const lines = step.params.upcList.split('\n')
-            let currentSerial = step.params.startSerial || 1
-            for (const line of lines) {
-                const [upc, countStr, customTid] = line.split(',')
-                const count = parseInt(countStr?.trim() || '1')
-                if (upc && count > 0) {
-                    const epcs = EPCGenerator.generateFromUpc(
-                        upc.trim(), 
-                        count, 
-                        currentSerial
-                    )
-                    currentSerial += count
-                    
-                    for (const targetUid of targetUids) {
-                      for (const epc of epcs) {
-                        for (const ant of stepAntennas) {
-                          fixedTags.push({
-                              epc,
-                              tid: customTid?.trim() || step.params.tid || epc,
-                              uid: targetUid,
-                              antenna: ant,
-                              rssi: getTagRssi()
-                          })
-                        }
-                      }
-                    }
+            const expanded = expandUpcListToEpcs(
+              step.params.upcList,
+              step.params.startSerial ?? 1,
+              step.params.serialContinuesAcrossUpcLines === true,
+            )
+            for (const { epc, customTid } of expanded) {
+              for (const targetUid of targetUids) {
+                for (const ant of stepAntennas) {
+                  fixedTags.push({
+                    epc,
+                    tid: customTid || step.params.tid || epc,
+                    uid: targetUid,
+                    antenna: ant,
+                    rssi: getTagRssi(),
+                  })
                 }
+              }
             }
         }
 
@@ -703,19 +701,18 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
 
         // Parse UPC List
         if (step.params.upcList) {
-            const lines = step.params.upcList.split('\n')
-            for (const line of lines) {
-                const [upc, countStr, customTid] = line.split(',')
-                const count = parseInt(countStr?.trim() || '1')
-                if (upc && count > 0) {
-                    const generated = EPCGenerator.generateFromUpc(upc.trim(), count)
-                    allHhTags.push(...generated.map(epc => ({
-                        epc,
-                        tid: customTid?.trim() || step.params.tid || epc, // Use line TID, step TID, or EPC
-                        rssi: getHhTagRssi()
-                    })))
-                }
-            }
+            const expanded = expandUpcListToEpcs(
+              step.params.upcList,
+              step.params.startSerial ?? 1,
+              step.params.serialContinuesAcrossUpcLines === true,
+            )
+            allHhTags.push(
+              ...expanded.map(({ epc, customTid }) => ({
+                epc,
+                tid: customTid || step.params.tid || epc,
+                rssi: getHhTagRssi(),
+              })),
+            )
         }
 
         // Add Direct EPCs (EPC or EPC,TID - one per line, TID optional)

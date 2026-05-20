@@ -12,6 +12,7 @@ import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
+import { useSettings } from './lib/settings-context'
 import { MobileHeader } from './components/mobile/MobileHeader'
 import { MobileBottomNav } from './components/mobile/MobileBottomNav'
 import { MobileMoreMenu } from './components/mobile/MobileMoreMenu'
@@ -21,6 +22,7 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
 
 function AppMobile() {
+  const { settings, setSettings } = useSettings()
   const [emulator] = useState(() => new TCPEmulatorClient())
 
   const [host, setHost] = useState('')
@@ -79,6 +81,24 @@ function AppMobile() {
     setAntenna(profile.antenna)
     setRssi(profile.rssi)
     setStartSerial(profile.startSerial)
+    if (
+      profile.fixedSerialContinuesAcrossUpcLines !== undefined ||
+      profile.handheldSerialContinuesAcrossUpcLines !== undefined
+    ) {
+      setSettings({
+        ...(profile.fixedSerialContinuesAcrossUpcLines !== undefined && {
+          fixedSerialContinuesAcrossUpcLines: profile.fixedSerialContinuesAcrossUpcLines,
+        }),
+        ...(profile.handheldSerialContinuesAcrossUpcLines !== undefined && {
+          handheldSerialContinuesAcrossUpcLines: profile.handheldSerialContinuesAcrossUpcLines,
+        }),
+      })
+    } else if (profile.serialContinuesAcrossUpcLines !== undefined) {
+      setSettings({
+        fixedSerialContinuesAcrossUpcLines: profile.serialContinuesAcrossUpcLines,
+        handheldSerialContinuesAcrossUpcLines: profile.serialContinuesAcrossUpcLines,
+      })
+    }
     setFixedUpcList(profile.fixedUpcList)
     setFixedEpcList(profile.fixedEpcList)
     if (profile.handheldSlots?.length) {
@@ -115,6 +135,8 @@ function AppMobile() {
     antenna,
     rssi,
     startSerial,
+    fixedSerialContinuesAcrossUpcLines: settings.fixedSerialContinuesAcrossUpcLines,
+    handheldSerialContinuesAcrossUpcLines: settings.handheldSerialContinuesAcrossUpcLines,
     fixedUpcList,
     fixedEpcList,
     handheldSlots,

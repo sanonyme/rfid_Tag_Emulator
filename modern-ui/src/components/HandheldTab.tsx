@@ -9,11 +9,10 @@ import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download, Activity } from 'lucide-react'
 import { toast } from 'sonner'
-import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
+import { HandheldServerClient, expandUpcListToEpcs } from '@/lib/tcp-client'
+import { useSettings } from '@/lib/settings-context'
 import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
-import { RecorderToolbar } from './RecorderToolbar'
-import { recordSendEvent } from '@/lib/recorder'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { handheldAccent } from '@/lib/handheld-colors'
@@ -36,7 +35,7 @@ export interface HandheldSlot {
   port: number
   upcList: string
   epcList: string
-  /** Starting serial value used by SGTIN-96 encoding of the UPC list. Defaults to "1". */
+  /** Starting SGTIN-96 serial for each UPC line (serials still increment within a line by count). Defaults to "1". */
   startSerial?: string
 }
 
@@ -52,27 +51,26 @@ interface HandheldTabProps {
 
 const DEFAULT_PORT = 10472
 
-function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid?: string; rssi: string }[] {
+function parseTagsFromSlot(
+  slot: HandheldSlot,
+  rssi: string,
+  serialContinuesAcrossUpcLines: boolean,
+): { epc: string; tid?: string; rssi: string }[] {
   const allTags: { epc: string; tid?: string; rssi: string }[] = []
 
   if (slot.upcList.trim()) {
-    const lines = slot.upcList.trim().split('\n')
-    let serial = Math.max(1, parseInt(slot.startSerial || '1') || 1)
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const [upc, countStr, customTid] = trimmed.split(',')
-      const count = parseInt(countStr?.trim() || '0')
-      if (count > 0 && upc) {
-        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
-        serial += count
-        allTags.push(...epcs.map(epc => ({
-          epc,
-          tid: customTid?.trim() || epc,
-          rssi
-        })))
-      }
-    }
+    const expanded = expandUpcListToEpcs(
+      slot.upcList,
+      slot.startSerial ?? '1',
+      serialContinuesAcrossUpcLines,
+    )
+    allTags.push(
+      ...expanded.map(({ epc, customTid }) => ({
+        epc,
+        tid: customTid || epc,
+        rssi,
+      })),
+    )
   }
 
   if (slot.epcList.trim()) {
@@ -97,8 +95,8 @@ function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid
 }
 
 /** Stable key so loop mode can reuse parsed tags instead of regenerating thousands of EPCs every round. */
-function handheldSlotParseKey(s: HandheldSlot, rssi: string): string {
-  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${rssi}`
+function handheldSlotParseKey(s: HandheldSlot, rssi: string, serialContinuesAcrossUpcLines: boolean): string {
+  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${serialContinuesAcrossUpcLines ? '1' : '0'}\0${rssi}`
 }
 
 // Cache HandheldServerClient per port to avoid duplicate event listeners
@@ -115,8 +113,10 @@ export function HandheldTab({
   setSlots,
   handheldDelay,
   setHandheldDelay,
-  rssi
+  rssi,
 }: HandheldTabProps) {
+  const { settings } = useSettings()
+  const serialContinuesAcrossUpcLines = settings.handheldSerialContinuesAcrossUpcLines
   const [log, setLog] = useState<string[]>([])
   const [sendingPorts, setSendingPorts] = useState<Set<number>>(new Set())
   const [runningPorts, setRunningPorts] = useState<Set<number>>(new Set())
@@ -131,6 +131,8 @@ export function HandheldTab({
   fullActivityLogRef.current = fullActivityLog
   const handheldDelayRef = useRef(handheldDelay)
   handheldDelayRef.current = handheldDelay
+  const serialContinuesRef = useRef(serialContinuesAcrossUpcLines)
+  serialContinuesRef.current = serialContinuesAcrossUpcLines
 
   const addLog = (message: string, port?: number) => {
     if (!shouldAppendHandheldLogLine(message, fullActivityLogRef.current)) return
@@ -220,7 +222,7 @@ export function HandheldTab({
     }
 
     const startedRepeat = opts?.loop === true
-    let firstTags = parseTagsFromSlot(slot, rssiRef.current)
+    let firstTags = parseTagsFromSlot(slot, rssiRef.current, serialContinuesRef.current)
     if (firstTags.length === 0) {
       addLog('Error: No EPCs generated', port)
       return
@@ -257,9 +259,9 @@ export function HandheldTab({
         break
       }
 
-      const parseKey = handheldSlotParseKey(cur, rssiRef.current)
+      const parseKey = handheldSlotParseKey(cur, rssiRef.current, serialContinuesRef.current)
       if (parseKey !== cachedParseKey) {
-        cachedRoundTags = parseTagsFromSlot(cur, rssiRef.current)
+        cachedRoundTags = parseTagsFromSlot(cur, rssiRef.current, serialContinuesRef.current)
         cachedParseKey = parseKey
       }
       const roundTags = cachedRoundTags!
@@ -277,17 +279,6 @@ export function HandheldTab({
       if (startedRepeat) {
         addLog(`— Round ${round} (${roundTags.length} tag(s)) —`, port)
       }
-
-      recordSendEvent({
-        source: 'handheld',
-        sourceLabel: `port ${port}`,
-        port,
-        tags: roundTags.map((t) => ({
-          epc: t.epc,
-          tid: t.tid,
-          rssi: t.rssi,
-        })),
-      })
 
       let completeMsg = ''
       await new Promise<void>((resolve) => {
@@ -350,7 +341,9 @@ export function HandheldTab({
   }
 
   const handleSendAll = async () => {
-    const slotsWithTags = slots.filter(s => parseTagsFromSlot(s, rssi).length > 0)
+    const slotsWithTags = slots.filter(
+      (s) => parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length > 0,
+    )
     if (slotsWithTags.length === 0) {
       addLog('Error: No slots have tags to send')
       return
@@ -364,7 +357,10 @@ export function HandheldTab({
 
     addLog(`Sending to ${slotsWithTags.length} handheld(s) in parallel...`)
     await Promise.all(slotsWithTags.map((slot) => handleSendToSlot(slot, { suppressSuccessToast: true })))
-    const epcTotal = slotsWithTags.reduce((n, s) => n + parseTagsFromSlot(s, rssi).length, 0)
+    const epcTotal = slotsWithTags.reduce(
+      (n, s) => n + parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length,
+      0,
+    )
     toast.success(`${slotsWithTags.length} handheld(s), ${epcTotal} EPC(s) sent`)
   }
 
@@ -416,7 +412,6 @@ export function HandheldTab({
                 <span className="shrink-0 select-none text-xs tabular-nums text-muted-foreground">ms</span>
               </div>
             </div>
-            <RecorderToolbar label="" />
             <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-muted/35 p-1 ring-1 ring-border/25">
               <Button
                 variant="outline"
@@ -446,7 +441,10 @@ export function HandheldTab({
               <Button
                 size="sm"
                 onClick={handleSendAll}
-                disabled={sendingPorts.size > 0 || slots.every((s) => parseTagsFromSlot(s, rssi).length === 0)}
+                disabled={
+                  sendingPorts.size > 0 ||
+                  slots.every((s) => parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length === 0)
+                }
                 className="gap-1.5 rounded-lg shadow-sm shadow-primary/25"
               >
                 <Zap className={`h-4 w-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />
@@ -470,7 +468,7 @@ export function HandheldTab({
             <HandheldSlotCard
               key={slot.id}
               slot={slot}
-              hasTags={parseTagsFromSlot(slot, rssi).length > 0}
+              hasTags={parseTagsFromSlot(slot, rssi, serialContinuesAcrossUpcLines).length > 0}
               isRunning={runningPorts.has(slot.port)}
               isSending={sendingPorts.has(slot.port)}
               onUpdate={(updates) => updateSlot(slot.id, updates)}
@@ -775,11 +773,8 @@ function HandheldSlotCard({
                 value={slot.startSerial ?? '1'}
                 onChange={(e) => onUpdate({ startSerial: e.target.value })}
                 className="h-8 w-28 rounded-lg font-mono text-xs shadow-none"
-                title="Starting SGTIN-96 serial number for the UPC list; increments across lines"
+                title="Starting SGTIN-96 serial; combined with serial mode in the toolbar"
               />
-              <span className="truncate text-[10px] text-muted-foreground/80">
-                SGTIN-96 serial; continues across lines
-              </span>
             </div>
           </TabsContent>
           <TabsContent value="epc" className="mt-3">

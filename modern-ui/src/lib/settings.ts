@@ -24,6 +24,10 @@ export interface AppSettings {
   connectionTimeoutMs: number
   soundEnabled: boolean
   card3dEnabled: boolean
+  /** Fixed tab: when true, SGTIN serial continues across UPC lines; when false, each line resets to starting serial. */
+  fixedSerialContinuesAcrossUpcLines: boolean
+  /** Handheld tab: same as fixed, independent setting. */
+  handheldSerialContinuesAcrossUpcLines: boolean
 }
 
 const DEFAULTS: AppSettings = {
@@ -33,13 +37,37 @@ const DEFAULTS: AppSettings = {
   connectionTimeoutMs: 10000,
   soundEnabled: false,
   card3dEnabled: false,
+  fixedSerialContinuesAcrossUpcLines: false,
+  handheldSerialContinuesAcrossUpcLines: false,
+}
+
+const LEGACY_SERIAL_CONTINUES_KEY = 'rfid-emulator-serial-continues-across-upc'
+
+function withSerialMigration(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  if (
+    parsed.fixedSerialContinuesAcrossUpcLines !== undefined &&
+    parsed.handheldSerialContinuesAcrossUpcLines !== undefined
+  ) {
+    return parsed
+  }
+  let legacy = false
+  try {
+    legacy = localStorage.getItem(LEGACY_SERIAL_CONTINUES_KEY) === '1'
+  } catch {
+    /* ignore */
+  }
+  return {
+    ...parsed,
+    fixedSerialContinuesAcrossUpcLines: parsed.fixedSerialContinuesAcrossUpcLines ?? legacy,
+    handheldSerialContinuesAcrossUpcLines: parsed.handheldSerialContinuesAcrossUpcLines ?? legacy,
+  }
 }
 
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    const parsed = withSerialMigration(JSON.parse(raw) as Partial<AppSettings>)
     return { ...DEFAULTS, ...parsed }
   } catch {
     return { ...DEFAULTS }

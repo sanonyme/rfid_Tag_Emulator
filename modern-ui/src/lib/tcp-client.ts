@@ -301,3 +301,63 @@ export class EPCGenerator {
   }
 }
 
+export const SERIAL_CONTINUES_ACROSS_UPC_LINES_KEY = 'rfid-emulator-serial-continues-across-upc'
+
+export function loadSerialContinuesAcrossUpcLines(): boolean {
+  try {
+    return localStorage.getItem(SERIAL_CONTINUES_ACROSS_UPC_LINES_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function saveSerialContinuesAcrossUpcLines(value: boolean): void {
+  try {
+    localStorage.setItem(SERIAL_CONTINUES_ACROSS_UPC_LINES_KEY, value ? '1' : '0')
+  } catch {
+    /* ignore */
+  }
+}
+
+export function parseStartSerial(input: string | number | undefined): number {
+  const n = typeof input === 'number' ? input : parseInt(String(input ?? '1'), 10)
+  return Math.max(1, Number.isFinite(n) ? n : 1)
+}
+
+export interface ExpandedUpcTag {
+  epc: string
+  customTid?: string
+}
+
+/** Expand UPC,Count,TID lines to EPC hex strings using the chosen serial mode. */
+export function expandUpcListToEpcs(
+  upcList: string,
+  startSerial: string | number | undefined,
+  continuesAcrossLines: boolean,
+): ExpandedUpcTag[] {
+  const trimmedList = upcList.trim()
+  if (!trimmedList) return []
+
+  const baseSerial = parseStartSerial(startSerial)
+  let serial = baseSerial
+  const out: ExpandedUpcTag[] = []
+
+  for (const line of trimmedList.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const [upc, countStr, customTid] = trimmed.split(',')
+    const count = parseInt(countStr?.trim() || '0', 10)
+    if (count <= 0 || !upc) continue
+
+    const start = continuesAcrossLines ? serial : baseSerial
+    const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, start)
+    const tid = customTid?.trim()
+    for (const epc of epcs) {
+      out.push({ epc, customTid: tid || undefined })
+    }
+    if (continuesAcrossLines) serial += count
+  }
+
+  return out
+}
+

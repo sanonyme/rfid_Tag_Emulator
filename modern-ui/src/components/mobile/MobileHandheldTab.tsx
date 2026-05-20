@@ -6,7 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp, Activity } from 'lucide-react'
 import { toast } from 'sonner'
-import { HandheldServerClient, EPCGenerator } from '@/lib/tcp-client'
+import { HandheldServerClient, expandUpcListToEpcs } from '@/lib/tcp-client'
+import { useSettings } from '@/lib/settings-context'
 import { formatTime, cn } from '@/lib/utils'
 import type { HandheldSlot } from '../HandheldTab'
 import { Switch } from '../ui/switch'
@@ -25,21 +26,19 @@ function getClient(port: number) {
   return clientCache.get(port)!
 }
 
-function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid?: string; rssi: string }[] {
+function parseTagsFromSlot(
+  slot: HandheldSlot,
+  rssi: string,
+  serialContinuesAcrossUpcLines: boolean,
+): { epc: string; tid?: string; rssi: string }[] {
   const all: { epc: string; tid?: string; rssi: string }[] = []
   if (slot.upcList.trim()) {
-    let serial = Math.max(1, parseInt(slot.startSerial || '1') || 1)
-    for (const line of slot.upcList.trim().split('\n')) {
-      const t = line.trim()
-      if (!t) continue
-      const [upc, countStr, customTid] = t.split(',')
-      const count = parseInt(countStr?.trim() || '0')
-      if (count > 0 && upc) {
-        const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
-        serial += count
-        all.push(...epcs.map((epc) => ({ epc, tid: customTid?.trim() || epc, rssi })))
-      }
-    }
+    const expanded = expandUpcListToEpcs(
+      slot.upcList,
+      slot.startSerial ?? '1',
+      serialContinuesAcrossUpcLines,
+    )
+    all.push(...expanded.map(({ epc, customTid }) => ({ epc, tid: customTid || epc, rssi })))
   }
   if (slot.epcList.trim()) {
     for (const line of slot.epcList.trim().split('\n')) {
@@ -52,8 +51,12 @@ function parseTagsFromSlot(slot: HandheldSlot, rssi: string): { epc: string; tid
   return all
 }
 
-function handheldSlotParseKey(s: HandheldSlot, rssi: string): string {
-  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${rssi}`
+function handheldSlotParseKey(
+  s: HandheldSlot,
+  rssi: string,
+  serialContinuesAcrossUpcLines: boolean,
+): string {
+  return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${serialContinuesAcrossUpcLines ? '1' : '0'}\0${rssi}`
 }
 
 interface MobileHandheldTabProps {
@@ -64,7 +67,15 @@ interface MobileHandheldTabProps {
   rssi: string
 }
 
-export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldDelay, rssi }: MobileHandheldTabProps) {
+export function MobileHandheldTab({
+  slots,
+  setSlots,
+  handheldDelay,
+  setHandheldDelay,
+  rssi,
+}: MobileHandheldTabProps) {
+  const { settings } = useSettings()
+  const serialContinuesAcrossUpcLines = settings.handheldSerialContinuesAcrossUpcLines
   const [log, setLog] = useState<string[]>([])
   const [fullActivityLog, setFullActivityLog] = useState(() => getHandheldFullActivityLog())
   const [sendingPorts, setSendingPorts] = useState<Set<number>>(new Set())
@@ -80,6 +91,8 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
   fullActivityLogRef.current = fullActivityLog
   const handheldDelayRef = useRef(handheldDelay)
   handheldDelayRef.current = handheldDelay
+  const serialContinuesRef = useRef(serialContinuesAcrossUpcLines)
+  serialContinuesRef.current = serialContinuesAcrossUpcLines
 
   const addLog = (msg: string) => {
     if (!shouldAppendHandheldLogLine(msg, fullActivityLogRef.current)) return
@@ -99,7 +112,7 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
 
   const isRunning = runningPorts.has(slot.port)
   const isSending = sendingPorts.has(slot.port)
-  const tags = parseTagsFromSlot(slot, rssi)
+  const tags = parseTagsFromSlot(slot, rssi, serialContinuesAcrossUpcLines)
 
   const handleStart = () => {
     getClient(slot.port).start((m) => addLog(m), (e) => addLog(`Error: ${e}`))
@@ -119,7 +132,7 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
     const port = curSlot.port
     const slotId = curSlot.id
 
-    if (!parseTagsFromSlot(curSlot, rssiRef.current).length) {
+    if (!parseTagsFromSlot(curSlot, rssiRef.current, serialContinuesRef.current).length) {
       addLog('Error: No tags')
       return
     }
@@ -143,7 +156,7 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
       /no handheld connected|cancelled by user|^stopped:/i.test(msg)
 
     let round = 0
-    const firstCount = parseTagsFromSlot(curSlot, rssiRef.current).length
+    const firstCount = parseTagsFromSlot(curSlot, rssiRef.current, serialContinuesRef.current).length
     let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
     let cachedParseKey = ''
 
@@ -159,9 +172,9 @@ export function MobileHandheldTab({ slots, setSlots, handheldDelay, setHandheldD
         break
       }
 
-      const parseKey = handheldSlotParseKey(s, rssiRef.current)
+      const parseKey = handheldSlotParseKey(s, rssiRef.current, serialContinuesRef.current)
       if (parseKey !== cachedParseKey) {
-        cachedRoundTags = parseTagsFromSlot(s, rssiRef.current)
+        cachedRoundTags = parseTagsFromSlot(s, rssiRef.current, serialContinuesRef.current)
         cachedParseKey = parseKey
       }
       const roundTags = cachedRoundTags!

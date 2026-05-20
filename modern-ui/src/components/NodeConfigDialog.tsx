@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from './ui/select'
 import { Switch } from './ui/switch'
+import { UpcSerialModeToggle } from './UpcSerialModeToggle'
 import type { AutomationStep, ActionType } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
@@ -214,6 +215,13 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     className="h-9"
                   />
                 </div>
+                <UpcSerialModeToggle
+                  idPrefix={`automation-${step.id}-serial`}
+                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
+                  onContinuesAcrossLinesChange={(v) =>
+                    onSaveParams(step.id, { serialContinuesAcrossUpcLines: v })
+                  }
+                />
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label>Direct EPC List</Label>
@@ -427,6 +435,23 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   onChange={(e) => onSaveParams(step.id, { upcList: e.target.value })}
                   rows={5}
                   className="font-mono text-sm"
+                />
+                <div className="space-y-2">
+                  <Label className="text-xs">Start Serial</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={step.params.startSerial ?? 1}
+                    onChange={(e) => onSaveParams(step.id, { startSerial: parseInt(e.target.value) })}
+                    className="h-9"
+                  />
+                </div>
+                <UpcSerialModeToggle
+                  idPrefix={`automation-hh-${step.id}-serial`}
+                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
+                  onContinuesAcrossLinesChange={(v) =>
+                    onSaveParams(step.id, { serialContinuesAcrossUpcLines: v })
+                  }
                 />
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">

@@ -23,11 +23,9 @@ import {
   FileCode2,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { TCPEmulatorClient, EPCGenerator, type TagData } from '@/lib/tcp-client'
+import { TCPEmulatorClient, expandUpcListToEpcs, type TagData } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
-import { RecorderToolbar } from './RecorderToolbar'
-import { recordSendEvent } from '@/lib/recorder'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
@@ -143,6 +141,7 @@ export function FixedTab({
   const [apiClient] = useState(() => new AleApiClient())
 
   const { settings } = useSettings()
+  const serialContinuesAcrossUpcLines = settings.fixedSerialContinuesAcrossUpcLines
   const maxLogLinesRef = useRef(settings.maxLogLines)
   maxLogLinesRef.current = settings.maxLogLines
   const [fullActivityLog, setFullActivityLog] = useState(() => {
@@ -347,33 +346,19 @@ export function FixedTab({
 
     // Parse UPC,Count,TID and generate EPCs
     if (upcList.trim()) {
-      const lines = upcList.trim().split('\n')
-      let serial = parseInt(startSerial) //add this again when you want to continue from the last serial
-      //const baseSerial = Math.max(1, parseInt(startSerial) || 1)
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        const [upc, countStr, customTid] = trimmed.split(',')
-        const count = parseInt(countStr?.trim() || '0')
-        if (count > 0 && upc) {
-          const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, serial)
-          
-          const targetUids = selectedUids.length > 0 ? selectedUids : ['']
-
-          for (const targetUid of targetUids) {
-              for (const epc of epcs) {
-                for (const ant of selectedAntennas) {
-                  tags.push({
-                    epc,
-                    tid: customTid?.trim() || epc,
-                    uid: targetUid,
-                    antenna: ant,
-                    rssi: getTagRssi(),
-                  })
-                }
-              }
+      const expanded = expandUpcListToEpcs(upcList, startSerial, serialContinuesAcrossUpcLines)
+      const targetUids = selectedUids.length > 0 ? selectedUids : ['']
+      for (const { epc, customTid } of expanded) {
+        for (const targetUid of targetUids) {
+          for (const ant of selectedAntennas) {
+            tags.push({
+              epc,
+              tid: customTid || epc,
+              uid: targetUid,
+              antenna: ant,
+              rssi: getTagRssi(),
+            })
           }
-          serial += count         
         }
       }
     }
@@ -398,19 +383,6 @@ export function FixedTab({
     if (!isLooping) {
       setSending(true)
     }
-
-    recordSendEvent({
-      source: 'fixed',
-      sourceLabel: host || undefined,
-      driver,
-      tags: tags.map((t) => ({
-        epc: t.epc,
-        tid: t.tid,
-        rssi: t.rssi,
-        antenna: t.antenna,
-        uid: t.uid,
-      })),
-    })
 
     await emulator.sendTags(
       tags,
@@ -493,6 +465,14 @@ export function FixedTab({
 
   const sectionCard =
     'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
+
+  /** Segmented control shell shared by toolbars and primary actions */
+  const actionGroup =
+    'flex items-stretch gap-1 rounded-xl bg-muted/35 p-1 ring-1 ring-border/25'
+  const actionBtnMuted =
+    'h-10 rounded-lg border-transparent bg-background/90 shadow-none transition-colors hover:bg-background'
+  const actionBtnPrimary =
+    'h-10 gap-2 rounded-lg font-semibold shadow-sm shadow-primary/25 ring-1 ring-primary/20 transition-all hover:bg-primary/90 hover:shadow-md hover:shadow-primary/35 active:scale-[0.98]'
 
   const sendTagsShortcutLabel =
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)
@@ -674,12 +654,15 @@ export function FixedTab({
                   />
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className={cn(actionGroup, 'gap-1.5 p-1.5')}>
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button
                       variant="outline"
-                      className="h-10 flex-1 justify-between rounded-lg border-border/60 bg-muted/20 px-3 font-normal shadow-none hover:bg-muted/40"
+                      className={cn(
+                        actionBtnMuted,
+                        'h-10 flex-1 justify-between px-3 font-normal text-foreground',
+                      )}
                     >
                       <span className="truncate text-left text-sm">
                         {selectedUids.length === 0
@@ -698,16 +681,21 @@ export function FixedTab({
                                     Select the devices to send tags to.
                                 </DialogDescription>
                             </DialogHeader>
-                            <div className="flex gap-2 mb-2 shrink-0">
+                            <div className={cn(actionGroup, 'mb-2 shrink-0')}>
                                 <Button
                                   size="sm"
-                                  variant="secondary"
+                                  variant="outline"
                                   onClick={selectAll}
-                                  className="flex-1 rounded-lg shadow-none"
+                                  className={cn(actionBtnMuted, 'h-9 flex-1')}
                                 >
                                   Select all
                                 </Button>
-                                <Button size="sm" variant="outline" onClick={deselectAll} className="flex-1 rounded-lg shadow-none">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={deselectAll}
+                                  className={cn(actionBtnMuted, 'h-9 flex-1')}
+                                >
                                   Clear
                                 </Button>
                             </div>
@@ -756,7 +744,7 @@ export function FixedTab({
                       onClick={fetchLogicalDevices}
                       disabled={isLoadingDevices || !host}
                       title="Refresh logical devices"
-                      className="h-10 w-10 shrink-0 rounded-lg border-border/60 bg-muted/20 shadow-none hover:bg-muted/45"
+                      className={cn(actionBtnMuted, 'h-10 w-10 shrink-0')}
                     >
                       <RefreshCw className={`h-4 w-4 ${isLoadingDevices ? 'animate-spin' : ''}`} />
                     </Button>
@@ -808,36 +796,36 @@ export function FixedTab({
       {/* Right Side - Tag Management & Log */}
       <div className="flex flex-col gap-4 min-h-0">
         {/* Tag Input */}
-        <div className="grid grid-cols-2 gap-4" data-tour="tour-fixed-tags">
+        <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2" data-tour="tour-fixed-tags">
           <Card className={sectionCard}>
             <CardHeader className="space-y-3 pb-3 pt-5 px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 ring-1 ring-violet-500/20 dark:text-violet-400">
-                    <Hash className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-500/10 text-violet-600 ring-1 ring-violet-500/20 dark:text-violet-400">
+                      <Hash className="h-4 w-4" />
+                    </div>
                     <CardTitle className="text-base font-semibold tracking-tight">UPC → EPC</CardTitle>
-                    <CardDescription className="mt-1 text-xs leading-relaxed">
-                      Generate SGTIN-style EPCs from product lines
-                    </CardDescription>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                    <TagListSummary value={upcList} kind="upc" />
+                    <TagPresetMenu
+                      ref={upcPresetRef}
+                      kind="upc"
+                      variant="compact"
+                      currentValue={upcList}
+                      onLoad={(content, mode) =>
+                        setUpcList(mode === 'append' && upcList ? upcList + '\n' + content : content)
+                      }
+                    />
+                    <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+                      UPC,Count,TID
+                    </Badge>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <TagListSummary value={upcList} kind="upc" />
-                  <TagPresetMenu
-                    ref={upcPresetRef}
-                    kind="upc"
-                    variant="compact"
-                    currentValue={upcList}
-                    onLoad={(content, mode) =>
-                      setUpcList(mode === 'append' && upcList ? upcList + '\n' + content : content)
-                    }
-                  />
-                  <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                    UPC,Count,TID
-                  </Badge>
-                </div>
+                <CardDescription className="text-xs leading-relaxed text-pretty">
+                  Generate SGTIN-style EPCs from product lines
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 px-5 pb-5 pt-0">
@@ -852,56 +840,58 @@ export function FixedTab({
                 placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
-              <div className="space-y-2">
-                <Label htmlFor="startSerial" className="text-sm font-medium">
-                  Starting serial
-                </Label>
-                <Input
-                  id="startSerial"
-                  type="number"
-                  min="1"
-                  max="999999999"
-                  value={startSerial}
-                  onChange={(e) => setStartSerial(e.target.value)}
-                  className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
-                />
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="startSerial" className="text-sm font-medium">
+                    Starting serial
+                  </Label>
+                  <Input
+                    id="startSerial"
+                    type="number"
+                    min="1"
+                    max="999999999"
+                    value={startSerial}
+                    onChange={(e) => setStartSerial(e.target.value)}
+                    className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
+                  />
+                </div>
               </div>
             </CardContent>
           </Card>
 
           <Card className={sectionCard}>
             <CardHeader className="space-y-3 pb-3 pt-5 px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-400">
-                    <FileCode2 className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
+              <div className="space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-400">
+                      <FileCode2 className="h-4 w-4" />
+                    </div>
                     <CardTitle className="text-base font-semibold tracking-tight">Direct EPC</CardTitle>
-                    <CardDescription className="mt-1 text-xs leading-relaxed">
-                      Paste raw hex EPCs with optional TID per line
-                    </CardDescription>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
+                    <TagListSummary value={epcList} kind="epc" />
+                    <TagSchemeGenerator
+                      variant="compact"
+                      onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}
+                    />
+                    <TagPresetMenu
+                      ref={epcPresetRef}
+                      kind="epc"
+                      variant="compact"
+                      currentValue={epcList}
+                      onLoad={(content, mode) =>
+                        setEpcList(mode === 'append' && epcList ? epcList + '\n' + content : content)
+                      }
+                    />
+                    <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
+                      EPC[,TID]
+                    </Badge>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <TagListSummary value={epcList} kind="epc" />
-                  <TagSchemeGenerator
-                    variant="compact"
-                    onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}
-                  />
-                  <TagPresetMenu
-                    ref={epcPresetRef}
-                    kind="epc"
-                    variant="compact"
-                    currentValue={epcList}
-                    onLoad={(content, mode) =>
-                      setEpcList(mode === 'append' && epcList ? epcList + '\n' + content : content)
-                    }
-                  />
-                  <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                    EPC[,TID]
-                  </Badge>
-                </div>
+                <CardDescription className="text-xs leading-relaxed text-pretty">
+                  Paste raw hex EPCs with optional TID per line
+                </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 px-5 pb-5 pt-0">
@@ -938,25 +928,27 @@ export function FixedTab({
                       Connect from the bar first
                     </Badge>
                   )}
-                  <RecorderToolbar label="" />
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   <span className="font-medium text-foreground">{totalInputRows}</span> input line
                   {totalInputRows === 1 ? '' : 's'} · driver <span className="font-mono text-foreground/90">{driver}</span>
                 </p>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
+              <div className={cn(actionGroup, 'w-full gap-1.5 p-1.5 sm:w-auto')}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <span className="inline-flex w-full sm:w-auto sm:min-h-11">
+                    <span className="flex min-w-0 flex-1">
                       <Button
                         onClick={() => handleSendTags(false)}
                         disabled={!connected || sending || looping}
                         size="lg"
-                        className="h-auto min-h-11 w-full min-w-0 flex-wrap justify-center gap-x-2 gap-y-1 rounded-xl bg-primary px-4 py-2.5 shadow-md shadow-primary/25 transition-shadow hover:shadow-lg hover:shadow-primary/30 sm:min-w-[10.5rem]"
+                        className={cn(
+                          actionBtnPrimary,
+                          'h-11 min-h-11 w-full min-w-0 flex-wrap justify-center gap-x-2 gap-y-1 px-4 py-2.5 sm:min-w-[10.75rem]',
+                        )}
                       >
                         <Zap className="h-4 w-4 shrink-0" />
-                        <span className="font-semibold">Send Tags</span>
+                        <span>Send Tags</span>
                         <kbd className="pointer-events-none inline-flex items-center rounded-md border border-primary-foreground/25 bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-primary-foreground/95">
                           {sendTagsShortcutLabel}
                         </kbd>
@@ -975,18 +967,20 @@ export function FixedTab({
                   variant={sending || looping ? 'destructive' : 'outline'}
                   size="lg"
                   className={cn(
-                    'min-h-11 min-w-[9.5rem] rounded-xl border-border/70 shadow-none',
-                    !sending && !looping && 'bg-background/80 hover:bg-muted/50',
+                    'h-11 min-h-11 gap-2 px-4 font-medium sm:min-w-[9.75rem]',
+                    sending || looping
+                      ? 'rounded-lg shadow-sm ring-1 ring-destructive/25'
+                      : cn(actionBtnMuted, 'border-0'),
                   )}
                 >
                   {sending || looping ? (
                     <>
-                      <StopCircle className="mr-2 h-4 w-4 animate-spin" />
+                      <StopCircle className="h-4 w-4 shrink-0" />
                       Stop
                     </>
                   ) : (
                     <>
-                      <Activity className="mr-2 h-4 w-4" />
+                      <Activity className="h-4 w-4 shrink-0" />
                       Loop Send
                     </>
                   )}
@@ -1034,14 +1028,14 @@ export function FixedTab({
                     Full activity log
                   </Label>
                 </div>
-                <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+                <div className={actionGroup}>
                 {log.length > 0 && (
                   <>
                     <Button
                       onClick={handleCopyLog}
                       variant="ghost"
                       size="sm"
-                      className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
+                      className={cn(actionBtnMuted, 'h-8 gap-1.5 px-2.5 text-xs')}
                       title="Copy log"
                     >
                       <Copy className="h-3.5 w-3.5" />
@@ -1051,20 +1045,24 @@ export function FixedTab({
                       onClick={handleExportLog}
                       variant="ghost"
                       size="sm"
-                      className="h-8 gap-1.5 rounded-md px-2.5 text-xs"
+                      className={cn(actionBtnMuted, 'h-8 gap-1.5 px-2.5 text-xs')}
                       title="Export to file"
                     >
                       <Download className="h-3.5 w-3.5" />
                       <span className="hidden sm:inline">Export</span>
                     </Button>
-                    <div className="mx-0.5 hidden h-4 w-px bg-border sm:block" />
+                    <div className="mx-0.5 hidden h-4 w-px self-center bg-border/80 sm:block" />
                   </>
                 )}
                 <Button
                   onClick={() => setLog([])}
                   variant="ghost"
                   size="sm"
-                  className="h-8 rounded-md px-2.5 text-xs"
+                  className={cn(
+                    actionBtnMuted,
+                    'h-8 px-2.5 text-xs',
+                    log.length > 0 && 'hover:bg-destructive/10 hover:text-destructive',
+                  )}
                   title="Clear log"
                 >
                   Clear

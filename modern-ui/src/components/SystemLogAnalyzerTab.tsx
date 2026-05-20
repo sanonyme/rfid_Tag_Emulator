@@ -575,7 +575,7 @@ export function SystemLogAnalyzerTab() {
       const cpuKeys = CPU_SERIES.filter((k) => cpuSel[k])
       const memKeys = MEM_SERIES.filter((k) => memSel[k])
 
-      await exportSystemLogXlsx({
+      const exportResult = await exportSystemLogXlsx({
         fileName: fileName ?? 'system_info_all.csv',
         headers: result.headers,
         rows: result.rows,
@@ -585,7 +585,9 @@ export function SystemLogAnalyzerTab() {
         memWindow: memWindow ?? undefined,
       })
       toast.success('Cleaned XLSX exported', {
-        description: 'Open the "Charts" sheet — both graphs are native, editable Excel charts.',
+        description: exportResult.dataSheetTruncated
+          ? `Charts match your preview (${exportResult.totalRows.toLocaleString()} rows in memory). The Data sheet was omitted to avoid a crash — keep your CSV for the full table.`
+          : 'Open the "Charts" sheet — both graphs are native, editable Excel charts.',
       })
     } catch (err) {
       console.error(err)

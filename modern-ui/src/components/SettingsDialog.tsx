@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from './ui/button'
 import {
@@ -291,6 +291,39 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
                 <Switch
                   checked={settings.card3dEnabled}
                   onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Hash className="w-4 h-4 text-primary" />
+              UPC serial numbering
+            </h4>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label>Fixed tab — continue across lines</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When off, each UPC line starts from the starting serial. When on, serial increments across all lines.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.fixedSerialContinuesAcrossUpcLines}
+                  onCheckedChange={(v: boolean) => setSettings({ fixedSerialContinuesAcrossUpcLines: v })}
+                />
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <Label>Handheld tab — continue across lines</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Same as Fixed, but only affects the Handheld tab.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.handheldSerialContinuesAcrossUpcLines}
+                  onCheckedChange={(v: boolean) => setSettings({ handheldSerialContinuesAcrossUpcLines: v })}
                 />
               </div>
             </div>

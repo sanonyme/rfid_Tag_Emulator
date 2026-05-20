@@ -28,6 +28,12 @@ export interface Profile {
   antenna: string
   rssi: string
   startSerial: string
+  /** Fixed tab: continue SGTIN serial across UPC lines (Settings). */
+  fixedSerialContinuesAcrossUpcLines?: boolean
+  /** Handheld tab: continue SGTIN serial across UPC lines (Settings). */
+  handheldSerialContinuesAcrossUpcLines?: boolean
+  /** @deprecated Use fixedSerialContinuesAcrossUpcLines / handheldSerialContinuesAcrossUpcLines. */
+  serialContinuesAcrossUpcLines?: boolean
   fixedUpcList: string
   fixedEpcList: string
   // Handheld Tab State (multi-port slots)

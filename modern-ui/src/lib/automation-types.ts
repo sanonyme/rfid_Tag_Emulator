@@ -13,6 +13,8 @@ export interface AutomationStep {
     upc?: string
     count?: number
     startSerial?: number
+    /** When true, SGTIN serial continues across UPC lines in upcList. */
+    serialContinuesAcrossUpcLines?: boolean
     tid?: string
     uid?: string
     antenna?: string
