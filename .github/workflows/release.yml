@@ -17,10 +17,6 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-defaults:
-  run:
-    working-directory: modern-ui
-
 jobs:
   validate-tag:
     runs-on: ubuntu-latest
@@ -45,7 +41,7 @@ jobs:
           fi
 
           VERSION="${TAG#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_VERSION=$(node -p "require('./modern-ui/package.json').version")
 
           if [ "$VERSION" != "$PKG_VERSION" ]; then
             echo "Tag version ($VERSION) does not match package.json ($PKG_VERSION)"
@@ -54,7 +50,6 @@ jobs:
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-        working-directory: modern-ui
 
   build:
     needs: validate-tag
@@ -69,6 +64,9 @@ jobs:
             build: build:linux
             artifact: linux
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: modern-ui
     steps:
       - uses: actions/checkout@v4
 
@@ -112,7 +110,6 @@ jobs:
           merge-multiple: true
 
       - name: List release files
-        working-directory: ${{ github.workspace }}
         run: |
           echo "Release assets:"
           find release-assets -type f -exec ls -lh {} \;
