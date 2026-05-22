@@ -104,45 +104,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-assets
+          pattern: dist-*
+          merge-multiple: true
 
-      - name: Check GitHub API rate limit
-        run: |
-          RATE_LIMIT=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            https://api.github.com/rate_limit | jq '.rate_limit.remaining')
-          
-          echo "Current API rate limit remaining: $RATE_LIMIT"
-          
-          if [ "$RATE_LIMIT" -lt 200 ]; then
-            echo "⚠️  Warning: Rate limit is low ($RATE_LIMIT remaining). Upload may be delayed."
-            # Wait before proceeding to allow rate limit to reset
-            sleep 30
-          fi
-
-      - name: Prepare artifacts for upload
+      - name: List release files
         working-directory: ${{ github.workspace }}
         run: |
-          cd artifacts
-          
-          # Create a single archive to reduce number of individual file uploads
-          mkdir -p release-assets
-          
-          # Copy and organize files
-          if [ -d "dist-windows" ]; then
-            cp -r dist-windows/* release-assets/ 2>/dev/null || true
-          fi
-          if [ -d "dist-linux" ]; then
-            cp -r dist-linux/* release-assets/ 2>/dev/null || true
-          fi
-          
-          # List files to be uploaded
-          echo "Files to be uploaded:"
-          find release-assets -type f | wc -l
+          echo "Release assets:"
           find release-assets -type f -exec ls -lh {} \;
 
-      - name: Create draft GitHub Release with retry logic
+      - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.validate-tag.outputs.tag }}
@@ -150,24 +125,7 @@ jobs:
           name: Zeus RFID Emulator ${{ needs.validate-tag.outputs.version }}
           draft: true
           generate_release_notes: true
-          files: |
-            artifacts/dist-windows/**/*
-            artifacts/dist-linux/**/*
-          fail_on_unmatched_files: false
+          files: release-assets/**
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify release creation
-        run: |
-          # Wait a moment for GitHub to process the release
-          sleep 5
-          
-          RELEASE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${{ needs.validate-tag.outputs.tag }}")
-          
-          ASSET_COUNT=$(echo "$RELEASE" | jq '.assets | length')
-          echo "✅ Release created with $ASSET_COUNT assets"
-          
-          if [ "$ASSET_COUNT" -eq 0 ]; then
-            echo "⚠️  Warning: No assets found in release. This may indicate an upload issue."
-          fi
