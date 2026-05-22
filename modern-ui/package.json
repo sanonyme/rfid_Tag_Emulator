@@ -26,6 +26,8 @@
     "electron:build": "vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --publish never",
     "release": "vite build && node scripts/release.mjs",
     "release:both": "node scripts/release-both.mjs",
+    "typecheck": "tsc --noEmit",
+    "ci": "npm run typecheck && npm run test:run && vite build",
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage"
