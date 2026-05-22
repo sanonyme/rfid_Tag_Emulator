@@ -17,6 +17,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+permissions:
+  contents: write
+
 jobs:
   validate-tag:
     runs-on: ubuntu-latest
@@ -133,4 +136,5 @@ jobs:
           files: ${{ github.workspace }}/release-assets/**
           fail_on_unmatched_files: true
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Prefer GH_TOKEN (PAT) if set; falls back to the default Actions token.
+          GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
