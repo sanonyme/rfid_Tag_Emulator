@@ -97,6 +97,10 @@ jobs:
   publish:
     needs: [validate-tag, build]
     runs-on: ubuntu-latest
+    # Override workflow default — artifacts live at repo root, not in modern-ui/
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
     permissions:
       contents: write
     steps:
@@ -105,7 +109,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release-assets
+          path: ${{ github.workspace }}/release-assets
           pattern: dist-*
           merge-multiple: true
 
@@ -113,6 +117,10 @@ jobs:
         run: |
           echo "Release assets:"
           find release-assets -type f -exec ls -lh {} \;
+          if [ "$(find release-assets -type f | wc -l)" -eq 0 ]; then
+            echo "No release files found"
+            exit 1
+          fi
 
       - name: Create draft GitHub Release
         uses: softprops/action-gh-release@v2
@@ -122,7 +130,7 @@ jobs:
           name: Zeus RFID Emulator ${{ needs.validate-tag.outputs.version }}
           draft: true
           generate_release_notes: true
-          files: release-assets/**
+          files: ${{ github.workspace }}/release-assets/**
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
