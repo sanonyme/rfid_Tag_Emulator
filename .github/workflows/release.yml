@@ -135,6 +135,7 @@ jobs:
           generate_release_notes: true
           files: ${{ github.workspace }}/release-assets/**
           fail_on_unmatched_files: true
+          overwrite: true
         env:
           # Prefer GH_TOKEN (PAT) if set; falls back to the default Actions token.
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
