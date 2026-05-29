@@ -16,6 +16,7 @@ import {
   Link2,
   Radar,
   LineChart,
+  Layers,
   PanelLeftClose,
   PanelLeftOpen,
   Shield,
@@ -65,6 +66,7 @@ const ADMIN_GROUP: TabGroup = {
     { value: 'link2uid', label: 'Link → UID', icon: Link2 },
     { value: 'terminal', label: 'Terminal', icon: Terminal },
     { value: 'logs', label: 'Log Analyzer', icon: LineChart, badge: 'BETA' },
+    { value: 'logagg', label: 'Log Aggregator', icon: Layers },
   ],
 }
 

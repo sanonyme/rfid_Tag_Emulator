@@ -304,5 +304,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('shell-exit', handler)
     return () => ipcRenderer.removeListener('shell-exit', handler)
   },
+
+  logAggregatorPickZip: () => ipcRenderer.invoke('log-aggregator-pick-zip'),
+  logAggregatorPickOutput: () => ipcRenderer.invoke('log-aggregator-pick-output'),
+  logAggregatorRun: (zipPath: string, outputDir: string) =>
+    ipcRenderer.invoke('log-aggregator-run', zipPath, outputDir),
+  logAggregatorShowOutput: (outputDir: string) =>
+    ipcRenderer.invoke('log-aggregator-show-output', outputDir),
+  onLogAggregatorProgress: (
+    callback: (progress: {
+      phase: 'extract' | 'organize' | 'aggregate' | 'done'
+      message: string
+      current?: number
+      total?: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, progress: Parameters<typeof callback>[0]) => callback(progress)
+    ipcRenderer.on('log-aggregator-progress', handler)
+    return () => ipcRenderer.removeListener('log-aggregator-progress', handler)
+  },
 })
 

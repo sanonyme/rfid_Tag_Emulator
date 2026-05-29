@@ -419,6 +419,30 @@ export interface ElectronAPI {
   shellResize?: (sessionId: string, cols: number, rows: number) => void
   onShellData?: (callback: (sessionId: string, data: string) => void) => () => void
   onShellExit?: (callback: (sessionId: string, code: number | null, signal: string | null) => void) => () => void
+
+  logAggregatorPickZip?: () => Promise<
+    | { ok: true; path: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  logAggregatorPickOutput?: () => Promise<
+    | { ok: true; path: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  logAggregatorRun?: (
+    zipPath: string,
+    outputDir: string,
+  ) => Promise<
+    | import('./log-aggregator').LogAggregatorResult
+    | { ok: false; error: string }
+  >
+  logAggregatorShowOutput?: (
+    outputDir: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  onLogAggregatorProgress?: (
+    callback: (progress: import('./log-aggregator').LogAggregatorProgress) => void,
+  ) => () => void
 }
 
 declare global {

@@ -19,6 +19,7 @@
     "cap:android": "npm run cap:sync && npx cap open android",
     "build:win": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --win --publish never",
     "build:linux": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --linux --publish never",
+    "build:deb": "tsc && vite build && cross-env ZEUS_RELEASE_OWNER=sanonyme ZEUS_RELEASE_REPO=rfid_Tag_Emulator electron-builder --linux deb --publish never",
     "preview": "vite preview",
     "preview:mobile": "npm run build:mobile && vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on tcp:5173 && cross-env OPEN_DEVTOOLS=true electron .\"",
@@ -151,10 +152,22 @@
     },
     "linux": {
       "target": [
+        "deb",
         "tar.gz"
       ],
       "category": "Development",
-      "icon": "resources/ZeusIcon.png"
+      "icon": "resources/ZeusIcon.png",
+      "maintainer": "Anexya <samichemaly30@gmail.com>",
+      "synopsis": "RFID tag emulation for Edge testing",
+      "description": "Zeus RFID Emulator simulates fixed readers, handhelds, and OCR devices over TCP for Edge server testing.",
+      "desktop": {
+        "StartupWMClass": "zeus-rfid-emulator"
+      }
+    },
+    "deb": {
+      "artifactName": "zeus-rfid-emulator_${version}_${arch}.${ext}",
+      "priority": "optional",
+      "packageCategory": "devel"
     },
     "mac": {
       "target": [

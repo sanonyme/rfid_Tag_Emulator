@@ -17,6 +17,7 @@ import {
   LogOut,
   Link2,
   Terminal,
+  Layers,
   HelpCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -226,6 +227,13 @@ export function BottomMenu({
               >
                 <Terminal size={18} className="shrink-0" />
                 <span>Go to Terminal</span>
+              </button>
+              <button
+                onClick={() => { onSwitchTab('logagg'); setView('default') }}
+                className={`${sharedHover} flex items-center gap-3 w-full`}
+              >
+                <Layers size={18} className="shrink-0" />
+                <span>Go to Log Aggregator</span>
               </button>
               <button
                 onClick={() => { onAdminLogout?.(); setView('default') }}

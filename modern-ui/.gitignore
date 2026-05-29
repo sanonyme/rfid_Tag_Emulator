@@ -25,3 +25,6 @@ release
 *.njsproj
 *.sln
 *.sw?
+
+# Private Edge OpenAPI spec (local only — do not commit)
+private/openapi.json

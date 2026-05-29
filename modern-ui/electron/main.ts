@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import * as pty from 'node-pty'
@@ -65,6 +65,7 @@ import {
   setAutoUpdateEnabled,
   AUTO_UPDATE_CHECK_INTERVAL_MS,
 } from './app-preferences.js'
+import { runLogAggregator } from './log-aggregator-handler.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -634,6 +635,37 @@ app.whenReady().then(() => {
   ipcMain.handle('local-path-parent', async (_event, root: string, cwd: string) =>
     localParentDir(root, cwd),
   )
+
+  ipcMain.handle('log-aggregator-pick-zip', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
+      properties: ['openFile'],
+      filters: [{ name: 'Zip archives', extensions: ['zip'] }],
+    })
+    if (canceled || !filePaths?.[0]) return { ok: false as const, cancelled: true as const }
+    return { ok: true as const, path: filePaths[0] }
+  })
+
+  ipcMain.handle('log-aggregator-pick-output', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    if (canceled || !filePaths?.[0]) return { ok: false as const, cancelled: true as const }
+    return { ok: true as const, path: filePaths[0] }
+  })
+
+  ipcMain.handle('log-aggregator-run', async (event, zipPath: string, outputDir: string) =>
+    runLogAggregator(zipPath, outputDir, (progress) => {
+      event.sender.send('log-aggregator-progress', progress)
+    }),
+  )
+
+  ipcMain.handle('log-aggregator-show-output', async (_event, outputDir: string) => {
+    const err = await shell.openPath(outputDir)
+    if (err) return { ok: false as const, error: err }
+    return { ok: true as const }
+  })
 
   ipcMain.handle('net-scan-get-interfaces', () => ({ ok: true as const, interfaces: getIpv4Interfaces() }))
   ipcMain.handle('net-scan-start', async (event, payload: NetScanStartPayload) =>

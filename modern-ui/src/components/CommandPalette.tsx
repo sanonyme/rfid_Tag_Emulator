@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Radio, Smartphone, ScanLine, Terminal, Server, Globe,
   Code2, Workflow, QrCode, Database, FolderInput, Link2, Radar, LineChart, Wifi, WifiOff, Moon, Sun,
-  Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces
+  Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces, Layers
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
@@ -62,6 +62,7 @@ const TAB_COMMANDS_BASE = IS_MOBILE
 const TAB_COMMAND_LINK2UID = { value: 'link2uid', label: 'Link→UID', icon: <Link2 className="w-4 h-4" />, num: 10 }
 const TAB_COMMAND_TERMINAL = { value: 'terminal', label: 'Terminal', icon: <Terminal className="w-4 h-4" />, num: 11 }
 const TAB_COMMAND_LOGS = { value: 'logs', label: 'Log Analyzer', icon: <LineChart className="w-4 h-4" />, num: 12 }
+const TAB_COMMAND_LOGAGG = { value: 'logagg', label: 'Log Aggregator', icon: <Layers className="w-4 h-4" />, num: 13 }
 
 export function CommandPalette({
   open,
@@ -85,7 +86,7 @@ export function CommandPalette({
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
-  const tabCommands = isAdmin ? [...TAB_COMMANDS_BASE, TAB_COMMAND_LINK2UID, TAB_COMMAND_TERMINAL, TAB_COMMAND_LOGS] : TAB_COMMANDS_BASE
+  const tabCommands = isAdmin ? [...TAB_COMMANDS_BASE, TAB_COMMAND_LINK2UID, TAB_COMMAND_TERMINAL, TAB_COMMAND_LOGS, TAB_COMMAND_LOGAGG] : TAB_COMMANDS_BASE
   const ADMIN_USER = 'admin'
   const ADMIN_PASS = 'admin'
 

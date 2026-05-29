@@ -16,6 +16,7 @@ import { NetScanTab } from './components/NetScanTab'
 import { LinkToUidTab } from './components/LinkToUidTab'
 import { AdminTerminalTab } from './components/AdminTerminalTab'
 import { SystemLogAnalyzerTab } from './components/SystemLogAnalyzerTab'
+import { LogAggregatorTab } from './components/LogAggregatorTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
@@ -556,6 +557,9 @@ function App() {
                 </TabsContent>
                 <TabsContent value="logs" forceMount={mountedTabs.has('logs') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
                   <SystemLogAnalyzerTab />
+                </TabsContent>
+                <TabsContent value="logagg" forceMount={mountedTabs.has('logagg') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+                  <LogAggregatorTab />
                 </TabsContent>
               </>
             )}

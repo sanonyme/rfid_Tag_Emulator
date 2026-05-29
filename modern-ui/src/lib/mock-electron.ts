@@ -628,6 +628,22 @@ class MockElectronAPI implements ElectronAPI {
   onReaderDiscoveryError(_callback: (payload: { message: string }) => void) {
     return () => {}
   }
+
+  async logAggregatorPickZip() {
+    return { ok: false as const, error: 'Log Aggregator requires the desktop app' }
+  }
+  async logAggregatorPickOutput() {
+    return { ok: false as const, error: 'Log Aggregator requires the desktop app' }
+  }
+  async logAggregatorRun(_zipPath: string, _outputDir: string) {
+    return { ok: false as const, error: 'Log Aggregator requires the desktop app' }
+  }
+  async logAggregatorShowOutput(_outputDir: string) {
+    return { ok: false as const, error: 'Log Aggregator requires the desktop app' }
+  }
+  onLogAggregatorProgress(_callback: (progress: import('../types/log-aggregator').LogAggregatorProgress) => void) {
+    return () => {}
+  }
 }
 
 export function initMockElectron() {

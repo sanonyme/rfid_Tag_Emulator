@@ -694,6 +694,15 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
 
   runQueryRef.current = handleRunQuery
 
+  const clearQueryResults = useCallback(() => {
+    setQueryColumns([])
+    setQueryRows([])
+    setQueryMessage('')
+    setQueryError('')
+    setQueryTime(0)
+    setShowQueryResults(false)
+  }, [])
+
   // -- Export --
   const handleExport = useCallback((format: 'csv' | 'json' | 'sql') => {
     setShowExportMenu(false)
@@ -1183,6 +1192,10 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
       </div>
     )
   }
+
+  const showQueryResultGrid = showQueryResults && queryColumns.length > 0
+  const showQueryResultBanner =
+    showQueryResults && (queryError || (queryMessage && queryColumns.length === 0))
 
   return (
     <div className="flex h-full min-h-0" data-tour="tour-database">
@@ -1700,6 +1713,15 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
                   <Download className="w-3.5 h-3.5" />
                 </button>
               )}
+              {showQueryResults && (
+                <button
+                  onClick={clearQueryResults}
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                  title="Clear results"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
               <Button size="sm" className="h-5 gap-1 px-2 text-[10px]" onClick={() => handleRunQuery()} disabled={queryRunning}>
                 {queryRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                 Run
@@ -1709,42 +1731,62 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
           </div>
 
           <div className="flex-1 min-h-0 flex flex-col">
-            <div ref={editorRef} className={cn('shrink-0 border-b border-border/30 overflow-hidden [&_.cm-editor]:h-full [&_.cm-editor]:outline-none', showQueryResults ? 'h-28' : 'flex-1')} />
-            {showQueryResults && (
+            <div
+              ref={editorRef}
+              className={cn(
+                'overflow-hidden border-b border-border/30 [&_.cm-editor]:h-full [&_.cm-editor]:outline-none',
+                showQueryResultGrid ? 'shrink-0 h-28' : 'flex-1 min-h-0',
+              )}
+            />
+            {showQueryResultBanner &&
+              (queryError ? (
+                <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-destructive text-sm bg-destructive/5 border-t border-destructive/10">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="font-mono text-xs">{queryError}</span>
+                </div>
+              ) : (
+                <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 text-green-600 dark:text-green-400 text-sm bg-green-500/5 border-t border-green-500/10">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span className="font-mono text-xs">{queryMessage}</span>
+                </div>
+              ))}
+            {showQueryResultGrid && (
               <div className="flex-1 min-h-0 flex flex-col">
-                {queryError ? (
-                  <div className="flex items-center gap-2 px-4 py-2.5 text-destructive text-sm bg-destructive/5">
-                    <AlertCircle className="w-4 h-4 shrink-0" /><span className="font-mono text-xs">{queryError}</span>
-                  </div>
-                ) : queryMessage && queryColumns.length === 0 ? (
-                  <div className="flex items-center gap-2 px-4 py-2.5 text-green-600 dark:text-green-400 text-sm bg-green-500/5">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" /><span className="font-mono text-xs">{queryMessage}</span>
-                  </div>
-                ) : queryColumns.length > 0 ? (
-                  <>
-                    <div className="px-4 py-1.5 border-b border-border/30 bg-muted/40 text-xs text-muted-foreground shrink-0">{queryMessage}</div>
-                    <div className="flex-1 overflow-auto">
-                      <table className="w-full text-sm border-collapse">
-                        <thead className="sticky top-0 z-10">
-                          <tr className="bg-muted/80 backdrop-blur-sm">
-                            {queryColumns.map((col) => <th key={col} className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground border-b border-border/50">{col}</th>)}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {queryRows.map((row, i) => (
-                            <tr key={i} className="border-b border-border/30 hover:bg-white/3 dark:hover:bg-white/5 transition-colors">
-                              {queryColumns.map((col) => (
-                                <td key={col} className="px-3 py-1 font-mono text-xs max-w-[300px] truncate">
-                                  <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>{row[col] === null ? 'NULL' : String(row[col])}</span>
-                                </td>
-                              ))}
-                            </tr>
+                <div className="px-4 py-1.5 border-b border-border/30 bg-muted/40 text-xs text-muted-foreground shrink-0">
+                  {queryMessage}
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-muted/80 backdrop-blur-sm">
+                        {queryColumns.map((col) => (
+                          <th
+                            key={col}
+                            className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground border-b border-border/50"
+                          >
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {queryRows.map((row, i) => (
+                        <tr
+                          key={i}
+                          className="border-b border-border/30 hover:bg-white/3 dark:hover:bg-white/5 transition-colors"
+                        >
+                          {queryColumns.map((col) => (
+                            <td key={col} className="px-3 py-1 font-mono text-xs max-w-[300px] truncate">
+                              <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>
+                                {row[col] === null ? 'NULL' : String(row[col])}
+                              </span>
+                            </td>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
-                ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
