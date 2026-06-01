@@ -28,6 +28,8 @@ export interface ExpandableTagFieldProps {
   kind?: TagListKind
   /** Forwarded to the underlying textareas so callers can install keyboard shortcuts. */
   onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
+  /** Extra icon buttons stacked under the expand control (top-right of compact field). */
+  cornerActions?: React.ReactNode
 }
 
 export function ExpandableTagField({
@@ -40,6 +42,7 @@ export function ExpandableTagField({
   compactClassName,
   kind,
   onKeyDown,
+  cornerActions,
 }: ExpandableTagFieldProps) {
   const [open, setOpen] = useState(false)
   const [activeLine, setActiveLine] = useState(1)
@@ -52,9 +55,8 @@ export function ExpandableTagField({
   const handleChange = useCallback(
     (event: React.ChangeEvent<HTMLTextAreaElement>) => {
       onChange(event)
-      syncActiveLine(event.target)
     },
-    [onChange, syncActiveLine],
+    [onChange],
   )
 
   const textareaHandlers = {
@@ -83,7 +85,7 @@ export function ExpandableTagField({
             {...textareaHandlers}
             className={cn(
               compactClassName,
-              'pr-11',
+              cornerActions ? 'pr-[4.75rem]' : 'pr-11',
               'transition-[background-color] duration-200 group-hover/expand:bg-muted/20',
             )}
           />
@@ -91,13 +93,16 @@ export function ExpandableTagField({
         {/* Touch: subtle always-on affordance; mouse: show on hover / keyboard focus inside field */}
         <div
           className={cn(
-            'pointer-events-none absolute right-1.5 top-1.5 z-10 flex',
+            'pointer-events-none absolute right-1.5 top-1.5 z-10 flex flex-row items-start gap-1',
             'opacity-60 sm:opacity-0 sm:scale-95',
             'sm:group-hover/expand:opacity-100 sm:group-hover/expand:scale-100',
             'sm:group-focus-within/expand:opacity-100 sm:group-focus-within/expand:scale-100',
             'transition-all duration-200 ease-out',
           )}
         >
+          {cornerActions ? (
+            <div className="pointer-events-auto shrink-0">{cornerActions}</div>
+          ) : null}
           <Tooltip delayDuration={400}>
             <TooltipTrigger asChild>
               <Button

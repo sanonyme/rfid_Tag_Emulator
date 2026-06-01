@@ -5,6 +5,7 @@ export type UpcCheckDigitStatus =
   | { kind: 'hint13'; calculatedCheck: string }
   | { kind: 'valid14' }
   | { kind: 'invalid14'; expected: string; provided: string }
+  | { kind: 'tooLong'; digitCount: number; checkValid: boolean; expected?: string; provided?: string }
 
 export interface UpcLineCheckDigit {
   lineNumber: number
@@ -20,19 +21,29 @@ export function extractUpcDigitsFromLine(line: string): string {
 
 /**
  * Live GTIN check-digit feedback (matches Decoder tab behaviour).
- * 13 digits → suggest check digit; 14 digits → validate check digit.
+ * 13 digits → suggest check digit; 14 digits → validate check digit;
+ * >14 → warn about length and validate check digit on the rightmost 14 (used for encoding).
  */
 export function analyzeUpcDigits(digits: string): UpcCheckDigitStatus {
   if (digits.length === 13) {
     return { kind: 'hint13', calculatedCheck: EPCDecoder.calculateCheckDigit(digits) }
   }
-  if (digits.length >= 14) {
-    const gtin14 = digits.slice(0, 14)
-    const payload = gtin14.slice(0, 13)
-    const provided = gtin14.slice(-1)
+  if (digits.length === 14) {
+    const payload = digits.slice(0, 13)
+    const provided = digits.slice(-1)
     const expected = EPCDecoder.calculateCheckDigit(payload)
     if (provided === expected) return { kind: 'valid14' }
     return { kind: 'invalid14', expected, provided }
+  }
+  if (digits.length > 14) {
+    const gtin14 = digits.slice(-14)
+    const payload = gtin14.slice(0, 13)
+    const provided = gtin14.slice(-1)
+    const expected = EPCDecoder.calculateCheckDigit(payload)
+    const checkValid = provided === expected
+    return checkValid
+      ? { kind: 'tooLong', digitCount: digits.length, checkValid: true }
+      : { kind: 'tooLong', digitCount: digits.length, checkValid: false, expected, provided }
   }
   return { kind: 'none' }
 }

@@ -6,6 +6,8 @@ import { useSettings } from '@/lib/settings-context'
 
 import { requestOpenSettings } from '@/lib/settings-navigation'
 
+import { useDebouncedValue } from '@/lib/use-debounced-value'
+
 import {
 
   analyzeUpcDigits,
@@ -100,6 +102,44 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
   }
 
+  if (status.kind === 'tooLong') {
+
+    return (
+
+      <div className="space-y-1">
+
+        <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+
+          UPC is {status.digitCount} digits; GTIN-14 encoding uses the rightmost 14 digits.
+
+        </p>
+
+        {status.checkValid ? (
+
+          <p className="text-[11px] leading-snug text-emerald-800 dark:text-emerald-300">
+
+            Check digit is valid on those 14 digits.
+
+          </p>
+
+        ) : (
+
+          <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+
+            Check digit mismatch on rightmost 14 (expected {status.expected}, got {status.provided}). You can
+
+            still send — EPCs use the digits as entered.
+
+          </p>
+
+        )}
+
+      </div>
+
+    )
+
+  }
+
 
 
   return null
@@ -182,6 +222,8 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
 
   const enabled = settings.upcCheckDigitHintsEnabled ?? true
 
+  const debouncedValue = useDebouncedValue(value, 180)
+
 
 
   const activeStatus = useMemo(() => {
@@ -196,15 +238,21 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
 
 
 
-  const otherInvalidLines = useMemo(() => {
+  const otherProblemLines = useMemo(() => {
 
-    return analyzeUpcListCheckDigits(value).filter(
+    return analyzeUpcListCheckDigits(debouncedValue).filter(
 
-      (entry) => entry.lineNumber !== activeLine && entry.status.kind === 'invalid14',
+      (entry) =>
+
+        entry.lineNumber !== activeLine &&
+
+        (entry.status.kind === 'invalid14' ||
+
+          (entry.status.kind === 'tooLong' && !entry.status.checkValid)),
 
     )
 
-  }, [value, activeLine])
+  }, [debouncedValue, activeLine])
 
 
 
@@ -212,17 +260,25 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
 
 
 
-  if (activeStatus.kind === 'none' && otherInvalidLines.length === 0) return null
+  if (activeStatus.kind === 'none' && otherProblemLines.length === 0) return null
 
 
 
   const panelTone =
 
-    activeStatus.kind === 'valid14'
+    activeStatus.kind === 'valid14' || (activeStatus.kind === 'tooLong' && activeStatus.checkValid)
 
-      ? 'valid'
+      ? activeStatus.kind === 'tooLong'
 
-      : activeStatus.kind === 'invalid14' || otherInvalidLines.length > 0
+        ? 'neutral'
+
+        : 'valid'
+
+      : activeStatus.kind === 'invalid14' ||
+
+          (activeStatus.kind === 'tooLong' && !activeStatus.checkValid) ||
+
+          otherProblemLines.length > 0
 
         ? 'invalid'
 
@@ -238,23 +294,43 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
 
         {activeStatus.kind !== 'none' && <StatusBanner status={activeStatus} />}
 
-        {otherInvalidLines.length > 0 && (
+        {otherProblemLines.length > 0 && (
 
           <ul className="space-y-1 text-[11px] leading-snug text-amber-800 dark:text-amber-200">
 
-            {otherInvalidLines.map((entry) => {
+            {otherProblemLines.map((entry) => {
 
-              if (entry.status.kind !== 'invalid14') return null
+              if (entry.status.kind === 'invalid14') {
 
-              return (
+                return (
 
-                <li key={entry.lineNumber}>
+                  <li key={entry.lineNumber}>
 
-                  Line {entry.lineNumber}: check digit mismatch (expected {entry.status.expected}).
+                    Line {entry.lineNumber}: check digit mismatch (expected {entry.status.expected}).
 
-                </li>
+                  </li>
 
-              )
+                )
+
+              }
+
+              if (entry.status.kind === 'tooLong' && !entry.status.checkValid) {
+
+                return (
+
+                  <li key={entry.lineNumber}>
+
+                    Line {entry.lineNumber}: {entry.status.digitCount} digits — check digit mismatch on
+
+                    rightmost 14 (expected {entry.status.expected}).
+
+                  </li>
+
+                )
+
+              }
+
+              return null
 
             })}
 
@@ -269,5 +345,3 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
   )
 
 }
-
-

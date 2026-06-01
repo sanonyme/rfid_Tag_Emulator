@@ -36,6 +36,25 @@ describe('analyzeUpcDigits', () => {
   it('ignores shorter inputs', () => {
     expect(analyzeUpcDigits('12345').kind).toBe('none')
   })
+
+  it('warns when UPC is longer than 14 digits', () => {
+    const status = analyzeUpcDigits('000012345678905')
+    expect(status.kind).toBe('tooLong')
+    if (status.kind === 'tooLong') {
+      expect(status.digitCount).toBe(15)
+      expect(status.checkValid).toBe(true)
+    }
+  })
+
+  it('validates check digit on rightmost 14 when UPC is too long', () => {
+    const status = analyzeUpcDigits('000012345678900')
+    expect(status.kind).toBe('tooLong')
+    if (status.kind === 'tooLong') {
+      expect(status.checkValid).toBe(false)
+      expect(status.expected).toBe('5')
+      expect(status.provided).toBe('0')
+    }
+  })
 })
 
 describe('analyzeUpcListCheckDigits', () => {
@@ -44,6 +63,16 @@ describe('analyzeUpcListCheckDigits', () => {
     expect(rows.map((r) => r.lineNumber)).toEqual([2, 3])
     expect(rows[0]?.status.kind).toBe('valid14')
     expect(rows[1]?.status.kind).toBe('invalid14')
+  })
+
+  it('includes lines with UPCs longer than 14 digits', () => {
+    const rows = analyzeUpcListCheckDigits('000012345678905,1')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.status.kind).toBe('tooLong')
+    if (rows[0]?.status.kind === 'tooLong') {
+      expect(rows[0].status.digitCount).toBe(15)
+      expect(rows[0].status.checkValid).toBe(true)
+    }
   })
 })
 

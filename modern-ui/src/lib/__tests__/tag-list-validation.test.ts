@@ -30,10 +30,11 @@ describe('validateTagList (UPC)', () => {
     if (!result.lines[0].ok) expect(result.lines[0].error).toMatch(/digits only/i)
   })
 
-  it('flags UPC longer than 14 digits', () => {
+  it('accepts UPC longer than 14 digits', () => {
     const result = validateTagList('123456789012345,1', 'upc')
-    expect(result.invalidLines).toBe(1)
-    if (!result.lines[0].ok) expect(result.lines[0].error).toMatch(/15 digits/i)
+    expect(result.invalidLines).toBe(0)
+    expect(result.validLines).toBe(1)
+    expect(result.totalTags).toBe(1)
   })
 
   it('flags missing count', () => {

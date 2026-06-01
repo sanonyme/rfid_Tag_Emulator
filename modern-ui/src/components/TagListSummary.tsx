@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import {
   Tooltip,
   TooltipContent,
@@ -34,7 +35,8 @@ interface TagListSummaryProps {
  */
 export function TagListSummary({ value, kind, variant = 'default', className }: TagListSummaryProps) {
   const [open, setOpen] = useState(false)
-  const result = useMemo(() => validateTagList(value, kind), [value, kind])
+  const debouncedValue = useDebouncedValue(value, 120)
+  const result = useMemo(() => validateTagList(debouncedValue, kind), [debouncedValue, kind])
 
   if (result.lines.length === 0) return null
 

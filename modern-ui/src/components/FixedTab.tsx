@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -28,7 +28,7 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
-import { UpcEpcPreview } from './UpcEpcPreview'
+import { DefinedItemsPicker } from './DefinedItemsPicker'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
@@ -464,6 +464,13 @@ export function FixedTab({
     onLoadPreset: () => epcPresetRef.current?.open(),
   })
 
+  const applyDefinedItems = useCallback(
+    (content: string, mode: 'replace' | 'append') => {
+      setUpcList(mode === 'append' && upcList ? upcList + '\n' + content : content)
+    },
+    [upcList, setUpcList],
+  )
+
   const sectionCard =
     'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
@@ -840,6 +847,14 @@ export function FixedTab({
                 onKeyDown={upcShortcuts}
                 placeholder="00000000000000,5"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
+                cornerActions={
+                  <DefinedItemsPicker
+                    host={host}
+                    connected={connected}
+                    trigger="icon"
+                    onApply={applyDefinedItems}
+                  />
+                }
               />
               <div className="space-y-3">
                 <div className="space-y-2">
@@ -856,11 +871,6 @@ export function FixedTab({
                     className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
                   />
                 </div>
-                <UpcEpcPreview
-                  upcList={upcList}
-                  startSerial={startSerial}
-                  serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
-                />
               </div>
             </CardContent>
           </Card>

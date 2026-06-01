@@ -8,7 +8,7 @@
  *
  * Rules (lenient enough to match the existing parsers):
  *  - UPC mode (`UPC,Count,TID`):
- *      * UPC must be 1..14 digits (we left-pad to GTIN-14 elsewhere)
+ *      * UPC must be digits only (1+ digits; longer values use the rightmost 14 for GTIN-14 encoding)
  *      * Count is required and must be a positive integer
  *      * TID is optional; when present it must be hex (any length)
  *  - EPC mode (`EPC[,TID]`):
@@ -60,9 +60,6 @@ function validateUpcLine(raw: string, lineNumber: number): ValidationLine {
   }
   if (!/^\d+$/.test(upc)) {
     return { ok: false, lineNumber, raw, error: 'UPC must be digits only' }
-  }
-  if (upc.length > 14) {
-    return { ok: false, lineNumber, raw, error: `UPC is ${upc.length} digits; max is 14` }
   }
   if (!countStr) {
     return { ok: false, lineNumber, raw, error: 'Count is required (e.g. "12345,5")' }

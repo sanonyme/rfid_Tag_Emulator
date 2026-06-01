@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
 import { Copy, Eye, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { buildUpcEpcPreview } from '@/lib/upc-epc-preview'
+import { buildUpcEpcPreview, buildUpcEpcPreviewSummary } from '@/lib/upc-epc-preview'
 import { validateTagList } from '@/lib/tag-list-validation'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 import { Button } from './ui/button'
 import {
   Dialog,
@@ -34,13 +35,19 @@ export function UpcEpcPreview({
 }: UpcEpcPreviewProps) {
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const debouncedUpcList = useDebouncedValue(upcList, 120)
 
   const preview = useMemo(
-    () => buildUpcEpcPreview(upcList, startSerial, serialContinuesAcrossUpcLines),
-    [upcList, startSerial, serialContinuesAcrossUpcLines],
+    () => buildUpcEpcPreviewSummary(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines),
+    [debouncedUpcList, startSerial, serialContinuesAcrossUpcLines],
   )
 
-  const validation = useMemo(() => validateTagList(upcList, 'upc'), [upcList])
+  const validation = useMemo(() => validateTagList(debouncedUpcList, 'upc'), [debouncedUpcList])
+
+  const fullPreview = useMemo(() => {
+    if (!open) return null
+    return buildUpcEpcPreview(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines)
+  }, [open, debouncedUpcList, startSerial, serialContinuesAcrossUpcLines])
 
   if (preview.count === 0) return null
 
@@ -50,7 +57,8 @@ export function UpcEpcPreview({
       : 0
 
   const handleCopyAll = async () => {
-    const text = preview.tags.map((t) => t.epc).join('\n')
+    const tags = fullPreview?.tags ?? buildUpcEpcPreview(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines).tags
+    const text = tags.map((t) => t.epc).join('\n')
     try {
       await navigator.clipboard.writeText(text)
       setCopied(true)
@@ -135,7 +143,7 @@ export function UpcEpcPreview({
 
           <ScrollArea className="h-[min(50vh,360px)] rounded-md border bg-muted/10">
             <ol className="divide-y divide-border/40 font-mono text-[11px]">
-              {preview.tags.map((tag, index) => (
+              {(fullPreview?.tags ?? []).map((tag, index) => (
                 <li key={`${index}-${tag.epc}`} className="flex gap-2 px-3 py-2">
                   <span className="w-8 shrink-0 tabular-nums text-muted-foreground">{index + 1}.</span>
                   <span className="min-w-0 break-all text-foreground">{tag.epc}</span>
