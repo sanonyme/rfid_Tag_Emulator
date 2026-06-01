@@ -86,7 +86,7 @@ export function saveSettings(settings: Partial<AppSettings>): AppSettings {
 export function getFontSizeClass(size: FontSize): string {
   switch (size) {
     case 'compact': return 'text-[13px]'
-    case 'large': return 'text-[15px]'
+    case 'large': return 'text-[17px]'
     default: return ''
   }
 }

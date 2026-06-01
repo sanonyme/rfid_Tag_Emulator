@@ -311,22 +311,24 @@ export function SettingsDialog({
               Design & Effects
             </h4>
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <Label>Sound effects</Label>
                   <p className="text-xs text-muted-foreground">Play sounds for connection, success, and errors</p>
                 </div>
                 <Switch
+                  className="mt-0.5"
                   checked={settings.soundEnabled}
                   onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
                 />
               </div>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
                   <Label>3D card hover effect</Label>
                   <p className="text-xs text-muted-foreground">Subtle 3D tilt on cards when hovering</p>
                 </div>
                 <Switch
+                  className="mt-0.5"
                   checked={settings.card3dEnabled}
                   onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
                 />
@@ -343,7 +345,7 @@ export function SettingsDialog({
               <div
                 id={SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints}
                 className={cn(
-                  'flex items-center justify-between gap-4 rounded-lg transition-all duration-300',
+                  'flex items-start justify-between gap-4 rounded-lg transition-all duration-300',
                   highlight === 'upcCheckDigitHints' &&
                     'bg-primary/5 px-2 py-1 -mx-2 ring-2 ring-primary/60 ring-offset-2 ring-offset-background',
                 )}
@@ -355,11 +357,12 @@ export function SettingsDialog({
                   </p>
                 </div>
                 <Switch
+                  className="mt-0.5 shrink-0"
                   checked={settings.upcCheckDigitHintsEnabled ?? true}
                   onCheckedChange={(v: boolean) => setSettings({ upcCheckDigitHintsEnabled: v })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Label>Fixed tab — continue across lines</Label>
                   <p className="text-xs text-muted-foreground">
@@ -367,11 +370,12 @@ export function SettingsDialog({
                   </p>
                 </div>
                 <Switch
+                  className="mt-0.5 shrink-0"
                   checked={settings.fixedSerialContinuesAcrossUpcLines}
                   onCheckedChange={(v: boolean) => setSettings({ fixedSerialContinuesAcrossUpcLines: v })}
                 />
               </div>
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
                   <Label>Handheld tab — continue across lines</Label>
                   <p className="text-xs text-muted-foreground">
@@ -379,6 +383,7 @@ export function SettingsDialog({
                   </p>
                 </div>
                 <Switch
+                  className="mt-0.5 shrink-0"
                   checked={settings.handheldSerialContinuesAcrossUpcLines}
                   onCheckedChange={(v: boolean) => setSettings({ handheldSerialContinuesAcrossUpcLines: v })}
                 />
@@ -531,8 +536,8 @@ export function SettingsDialog({
           {window.electronAPI?.checkForUpdate && (
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
             <h4 className="text-sm font-semibold">Updates</h4>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
-                <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
                   <Label htmlFor="auto-update-download" className="text-sm cursor-pointer">
                     Automatically download updates
                   </Label>
@@ -546,7 +551,7 @@ export function SettingsDialog({
                   id="auto-update-download"
                   checked={autoUpdateEnabled}
                   onCheckedChange={(v) => void handleAutoUpdateChange(v)}
-                  className="shrink-0"
+                  className="mt-0.5 shrink-0"
                 />
               </div>
             <div className="flex flex-col gap-2">

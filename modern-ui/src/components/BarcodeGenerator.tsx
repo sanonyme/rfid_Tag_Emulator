@@ -389,12 +389,12 @@ export function BarcodeGenerator() {
                         />
                         <p className="text-xs text-muted-foreground">Increase width for a bolder scan profile.</p>
                       </div>
-                      <div className="flex items-center justify-between rounded-xl border border-border/40 bg-background/70 p-4">
-                        <div className="space-y-1">
+                      <div className="flex items-start justify-between gap-4 rounded-xl border border-border/40 bg-background/70 p-4">
+                        <div className="min-w-0 flex-1 space-y-1">
                           <Label className="text-sm font-medium">Human readable text</Label>
                           <p className="text-xs text-muted-foreground">Show the encoded value under each barcode.</p>
                         </div>
-                        <Switch checked={displayValue} onCheckedChange={setDisplayValue} aria-label="Toggle barcode text" />
+                        <Switch className="mt-0.5 shrink-0" checked={displayValue} onCheckedChange={setDisplayValue} aria-label="Toggle barcode text" />
                       </div>
                     </div>
                   </div>

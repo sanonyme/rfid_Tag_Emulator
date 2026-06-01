@@ -730,14 +730,14 @@ export function DecoderTab() {
                 onChange={(e) => setSerialInput(e.target.value)}
                 className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
               />
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-border/35 bg-muted/20 px-3 py-2.5 ring-1 ring-border/15">
-                <div className="space-y-0.5">
+              <div className="flex items-start justify-between gap-3 rounded-lg border border-border/35 bg-muted/20 px-3 py-2.5 ring-1 ring-border/15">
+                <div className="min-w-0 flex-1 space-y-0.5">
                   <Label htmlFor="serial-is-uid" className="text-sm font-medium leading-snug">
                     UID input
                   </Label>
                   <p className="text-[11px] leading-relaxed text-muted-foreground">E016 + 12 hex → EPC serial</p>
                 </div>
-                <Switch id="serial-is-uid" checked={serialIsUid} onCheckedChange={setSerialIsUid} />
+                <Switch id="serial-is-uid" className="mt-0.5 shrink-0" checked={serialIsUid} onCheckedChange={setSerialIsUid} />
               </div>
             </div>
 

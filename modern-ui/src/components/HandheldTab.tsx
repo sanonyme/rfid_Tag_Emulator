@@ -479,7 +479,6 @@ export function HandheldTab({
               onLoopSend={() => handleSendToSlot(slot, { loop: true })}
               onStopSend={() => handleStopSend(slot.port)}
               canRemove={slots.length > 1}
-              serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
             />
           ))}
         </div>
@@ -560,7 +559,6 @@ interface HandheldSlotCardProps {
   onLoopSend: () => void
   onStopSend: () => void
   canRemove: boolean
-  serialContinuesAcrossUpcLines: boolean
 }
 
 function HandheldSlotCard({
@@ -576,7 +574,6 @@ function HandheldSlotCard({
   onLoopSend,
   onStopSend,
   canRemove,
-  serialContinuesAcrossUpcLines,
 }: HandheldSlotCardProps) {
   const fileInputUpcRef = useRef<HTMLInputElement>(null)
   const fileInputEpcRef = useRef<HTMLInputElement>(null)

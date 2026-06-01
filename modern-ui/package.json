@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "8.4.0",
+  "version": "8.5.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Anexya",
@@ -161,7 +161,9 @@
       "synopsis": "RFID tag emulation for Edge testing",
       "description": "Zeus RFID Emulator simulates fixed readers, handhelds, and OCR devices over TCP for Edge server testing.",
       "desktop": {
-        "StartupWMClass": "zeus-rfid-emulator"
+        "entry": {
+          "StartupWMClass": "zeus-rfid-emulator"
+        }
       }
     },
     "deb": {

@@ -98,12 +98,15 @@
   body {
     @apply bg-background text-foreground;
   }
-  /* Font size from settings */
+  /* Font size from settings (text only — controls like switches use fixed px sizes) */
   [data-font-size="compact"] {
     font-size: 13px;
   }
+  [data-font-size="normal"] {
+    font-size: 16px;
+  }
   [data-font-size="large"] {
-    font-size: 15px;
+    font-size: 17px;
   }
 }
 
