@@ -168,8 +168,8 @@ function createWindow() {
   const isLinux = process.platform === 'linux'
 
   mainWindow = new BrowserWindow({
-    width: 1250,
-    height: 900,
+    width: 1360,
+    height: 980,
     minWidth: 800,
     minHeight: 600,
     frame: isLinux, // Keep frame on Linux for better compatibility

@@ -28,6 +28,7 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
+import { UpcEpcPreview } from './UpcEpcPreview'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
@@ -837,7 +838,7 @@ export function FixedTab({
                 onFileImport={(content) => setUpcList(upcList ? upcList + '\n' + content : content)}
                 kind="upc"
                 onKeyDown={upcShortcuts}
-                placeholder="00000000000001,5&#10;00000000000002,3,CustomTID"
+                placeholder="00000000000000,5"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
               <div className="space-y-3">
@@ -855,6 +856,11 @@ export function FixedTab({
                     className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
                   />
                 </div>
+                <UpcEpcPreview
+                  upcList={upcList}
+                  startSerial={startSerial}
+                  serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
+                />
               </div>
             </CardContent>
           </Card>
@@ -914,7 +920,7 @@ export function FixedTab({
         <Card
           className={cn(
             sectionCard,
-            'overflow-hidden bg-gradient-to-br from-card via-card to-primary/[0.04]',
+            'shrink-0 overflow-hidden bg-gradient-to-br from-card via-card to-primary/[0.04]',
           )}
           data-tour="tour-fixed-send"
         >

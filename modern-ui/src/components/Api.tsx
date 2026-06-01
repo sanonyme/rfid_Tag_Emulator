@@ -1262,111 +1262,117 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-muted/25 p-2 ring-1 ring-border/25">
-              <Button
-                type="button"
-                onClick={handleBulkParse}
-                disabled={bulkSendingAll}
-                variant="secondary"
-                className="rounded-lg shadow-none"
-              >
-                <FileSpreadsheet className="mr-2 h-4 w-4" />
-                Parse & decode
-              </Button>
-              <Button
-                type="button"
-                onClick={handleBulkClear}
-                variant="ghost"
-                disabled={bulkSendingAll}
-                className="rounded-lg"
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Clear
-              </Button>
-              {bulkRows.length > 0 && (
-                <>
-                  <Button
-                    type="button"
-                    onClick={handleBulkApplyTableAll}
-                    variant="outline"
-                    size="sm"
-                    disabled={bulkSendingAll || !substitutionTable.trim()}
-                    title={
-                      substitutionTable.trim()
-                        ? 'Substitute {{TOKENS}} in every row using the placeholder table above'
-                        : 'Paste a placeholder table at the top first'
-                    }
-                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
-                  >
-                    <Table2 className="mr-1.5 h-3.5 w-3.5" />
-                    Apply table to all
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleBulkCheckBoxQrsAll}
-                    variant="outline"
-                    size="sm"
-                    disabled={bulkSendingAll}
-                    title="Check boxQrs on every row. If it has a split-object bug (},{ in the middle), the two objects are merged into one."
-                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
-                  >
-                    <Package className="mr-1.5 h-3.5 w-3.5" />
-                    Check boxQrs (all)
-                  </Button>
-                  <Button
-                    type="button"
-                    onClick={handleBulkExportJson}
-                    variant="outline"
-                    size="sm"
-                    className="rounded-lg border-border/60 bg-background/80 shadow-none"
-                  >
-                    {bulkCopiedIdx === -1 ? (
-                      <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Download className="mr-1.5 h-3.5 w-3.5" />
-                    )}
-                    {bulkCopiedIdx === -1 ? 'Copied' : 'Copy all as JSON'}
-                  </Button>
-                  <div className="ml-auto flex items-center gap-2 rounded-lg border border-border/40 bg-muted/20 px-2 py-1">
-                    <Label htmlFor="bulk-delay" className="text-xs text-muted-foreground whitespace-nowrap">
-                      Delay
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="bulk-delay"
-                        type="number"
-                        min={0}
-                        step={50}
-                        value={bulkDelayMs}
-                        onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
-                        disabled={bulkSendingAll}
-                        className="h-8 w-[4.25rem] rounded-md border-border/50 pe-7 text-center text-xs font-mono shadow-none"
-                      />
-                      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
-                        ms
-                      </span>
-                    </div>
+            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 rounded-xl bg-muted/25 p-2 ring-1 ring-border/25">
+              <div className="flex flex-wrap items-center gap-2 min-w-0">
+                <Button
+                  type="button"
+                  onClick={handleBulkParse}
+                  disabled={bulkSendingAll}
+                  variant="secondary"
+                  size="sm"
+                  className="rounded-lg shadow-none"
+                >
+                  <FileSpreadsheet className="mr-1.5 h-3.5 w-3.5" />
+                  Parse & decode
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleBulkClear}
+                  variant="ghost"
+                  size="sm"
+                  disabled={bulkSendingAll}
+                  className="rounded-lg"
+                >
+                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                  Clear
+                </Button>
+                {bulkRows.length > 0 && (
+                  <>
                     <Button
                       type="button"
-                      onClick={handleBulkSendAll}
-                      variant={bulkSendingAll ? 'destructive' : 'default'}
+                      onClick={handleBulkApplyTableAll}
+                      variant="outline"
                       size="sm"
-                      className="rounded-lg shadow-sm"
+                      disabled={bulkSendingAll || !substitutionTable.trim()}
+                      title={
+                        substitutionTable.trim()
+                          ? 'Substitute {{TOKENS}} in every row using the placeholder table above'
+                          : 'Paste a placeholder table at the top first'
+                      }
+                      className="rounded-lg border-border/60 bg-background/80 shadow-none"
                     >
-                      {bulkSendingAll ? (
-                        <>
-                          <Square className="w-3.5 h-3.5 mr-1.5" />
-                          Stop
-                        </>
-                      ) : (
-                        <>
-                          <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
-                          Send all
-                        </>
-                      )}
+                      <Table2 className="mr-1.5 h-3.5 w-3.5" />
+                      Apply table to all
                     </Button>
+                    <Button
+                      type="button"
+                      onClick={handleBulkCheckBoxQrsAll}
+                      variant="outline"
+                      size="sm"
+                      disabled={bulkSendingAll}
+                      title="Check boxQrs on every row. If it has a split-object bug (},{ in the middle), the two objects are merged into one."
+                      className="rounded-lg border-border/60 bg-background/80 shadow-none"
+                    >
+                      <Package className="mr-1.5 h-3.5 w-3.5" />
+                      Check boxQrs (all)
+                    </Button>
+                    <Button
+                      type="button"
+                      onClick={handleBulkExportJson}
+                      variant="outline"
+                      size="sm"
+                      className="rounded-lg border-border/60 bg-background/80 shadow-none"
+                    >
+                      {bulkCopiedIdx === -1 ? (
+                        <Check className="mr-1.5 h-3.5 w-3.5 text-emerald-600" />
+                      ) : (
+                        <Download className="mr-1.5 h-3.5 w-3.5" />
+                      )}
+                      {bulkCopiedIdx === -1 ? 'Copied' : 'Copy all as JSON'}
+                    </Button>
+                  </>
+                )}
+              </div>
+              {bulkRows.length > 0 && (
+                <div className="flex shrink-0 items-center gap-2">
+                  <Label htmlFor="bulk-delay" className="text-xs text-muted-foreground whitespace-nowrap">
+                    Delay
+                  </Label>
+                  <div className="relative">
+                    <Input
+                      id="bulk-delay"
+                      type="number"
+                      min={0}
+                      step={50}
+                      value={bulkDelayMs}
+                      onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
+                      disabled={bulkSendingAll}
+                      className="h-8 w-[4.25rem] rounded-md border-border/50 pe-7 text-center text-xs font-mono shadow-none"
+                    />
+                    <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
+                      ms
+                    </span>
                   </div>
-                </>
+                  <Button
+                    type="button"
+                    onClick={handleBulkSendAll}
+                    variant={bulkSendingAll ? 'destructive' : 'default'}
+                    size="sm"
+                    className="rounded-lg shadow-sm"
+                  >
+                    {bulkSendingAll ? (
+                      <>
+                        <Square className="mr-1.5 h-3.5 w-3.5" />
+                        Stop
+                      </>
+                    ) : (
+                      <>
+                        <PlayCircle className="mr-1.5 h-3.5 w-3.5" />
+                        Send all
+                      </>
+                    )}
+                  </Button>
+                </div>
               )}
             </div>
 

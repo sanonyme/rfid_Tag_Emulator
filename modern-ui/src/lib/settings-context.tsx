@@ -10,15 +10,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettingsState] = React.useState(loadSettings)
 
   const setSettings = React.useCallback((partial: Partial<AppSettings>) => {
-    setSettingsState(prev => saveSettings({ ...prev, ...partial }))
+    setSettingsState((prev) => saveSettings({ ...prev, ...partial }))
   }, [])
 
   React.useEffect(() => {
     document.documentElement.dataset.fontSize = settings.fontSize
   }, [settings.fontSize])
 
+  const value = React.useMemo(() => ({ settings, setSettings }), [settings, setSettings])
+
   return (
-    <SettingsContext.Provider value={{ settings, setSettings }}>
+    <SettingsContext.Provider value={value}>
       {children}
     </SettingsContext.Provider>
   )

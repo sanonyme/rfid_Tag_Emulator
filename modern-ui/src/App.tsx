@@ -25,6 +25,10 @@ import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-cl
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
 import { useSettings } from './lib/settings-context'
+import {
+  useSettingsNavigationRequest,
+  type SettingsHighlightTarget,
+} from './lib/settings-navigation'
 import { cn } from './lib/utils'
 import { IS_MOBILE } from './lib/platform'
 import AppMobile from './AppMobile'
@@ -78,12 +82,12 @@ function App() {
   const [antenna, setAntenna] = useState('1')
   const [rssi, setRssi] = useState('-45.0')
   const [startSerial, setStartSerial] = useState('1')
-  const [fixedUpcList, setFixedUpcList] = useState('00000000000001,5')
+  const [fixedUpcList, setFixedUpcList] = useState('00000000000000,5')
   const [fixedEpcList, setFixedEpcList] = useState('')
 
   // Handheld Tab persistent state (multi-port slots)
   const [handheldSlots, setHandheldSlots] = useState<HandheldSlot[]>([
-    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000001,5\n00000000000002,3', epcList: '', startSerial: '1' }
+    { id: crypto.randomUUID(), port: 10472, upcList: '00000000000000,5', epcList: '', startSerial: '1' }
   ])
 
   // OCR Tab persistent state
@@ -119,6 +123,7 @@ function App() {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlightTarget | null>(null)
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [saveProfileOpen, setSaveProfileOpen] = useState(false)
   const [base64Open, setBase64Open] = useState(false)
@@ -150,6 +155,18 @@ function App() {
     setActiveTab('api')
     setBase64Open(true)
   }, [])
+
+  const handleOpenSettings = useCallback((highlight?: SettingsHighlightTarget) => {
+    setSettingsHighlight(highlight ?? null)
+    setSettingsOpen(true)
+  }, [])
+
+  const handleSettingsOpenChange = useCallback((open: boolean) => {
+    setSettingsOpen(open)
+    if (!open) setSettingsHighlight(null)
+  }, [])
+
+  useSettingsNavigationRequest(handleOpenSettings)
 
   const handleLoadProfile = (profile: Profile) => {
     setHost(profile.host)
@@ -354,7 +371,9 @@ function App() {
           host={host} 
           port={port} 
           settingsOpen={settingsOpen}
-          onSettingsOpenChange={setSettingsOpen}
+          onSettingsOpenChange={handleSettingsOpenChange}
+          settingsHighlight={settingsHighlight}
+          onSettingsHighlightClear={() => setSettingsHighlight(null)}
           onStartInteractiveTour={() => {
             setSettingsOpen(false)
             setTourRun(true)
@@ -365,7 +384,7 @@ function App() {
               onSwitchTab={setActiveTab}
               onOpenProfiles={() => setProfilesOpen(true)}
               onOpenSaveCurrent={() => setSaveProfileOpen(true)}
-              onOpenSettings={() => setSettingsOpen(true)}
+              onOpenSettings={() => handleOpenSettings()}
               onOpenShortcuts={() => setShortcutsOpen(true)}
               onStartInteractiveTour={() => {
                 setSettingsOpen(false)
@@ -578,7 +597,7 @@ function App() {
       onDisconnect={handlePaletteDisconnect}
       onToggleTheme={toggleTheme}
       isDark={isDark}
-      onOpenSettings={() => setSettingsOpen(true)}
+      onOpenSettings={() => handleOpenSettings()}
       onOpenProfiles={() => setProfilesOpen(true)}
       onOpenBase64={handleOpenBase64}
       host={host}

@@ -15,6 +15,7 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
+import { UpcEpcPreview } from './UpcEpcPreview'
 import { handheldAccent } from '@/lib/handheld-colors'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
@@ -479,6 +480,7 @@ export function HandheldTab({
               onLoopSend={() => handleSendToSlot(slot, { loop: true })}
               onStopSend={() => handleStopSend(slot.port)}
               canRemove={slots.length > 1}
+              serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
             />
           ))}
         </div>
@@ -559,6 +561,7 @@ interface HandheldSlotCardProps {
   onLoopSend: () => void
   onStopSend: () => void
   canRemove: boolean
+  serialContinuesAcrossUpcLines: boolean
 }
 
 function HandheldSlotCard({
@@ -574,6 +577,7 @@ function HandheldSlotCard({
   onLoopSend,
   onStopSend,
   canRemove,
+  serialContinuesAcrossUpcLines,
 }: HandheldSlotCardProps) {
   const fileInputUpcRef = useRef<HTMLInputElement>(null)
   const fileInputEpcRef = useRef<HTMLInputElement>(null)
@@ -758,7 +762,7 @@ function HandheldSlotCard({
               }
               kind="upc"
               onKeyDown={upcShortcuts}
-              placeholder={'00000000000001,5\n00000000000002,3,CustomTID'}
+              placeholder="00000000000000,5"
               compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
             />
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -776,6 +780,12 @@ function HandheldSlotCard({
                 title="Starting SGTIN-96 serial; combined with serial mode in the toolbar"
               />
             </div>
+            <UpcEpcPreview
+              upcList={slot.upcList}
+              startSerial={slot.startSerial ?? '1'}
+              serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
+              className="mt-2"
+            />
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">

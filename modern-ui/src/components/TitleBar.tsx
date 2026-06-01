@@ -1,5 +1,6 @@
 import { Minimize2, Maximize2, X } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
+import type { SettingsHighlightTarget } from '@/lib/settings-navigation'
 import logoImage from '/ZeusLogoNoBG.png'
 import packageJson from '../../package.json' // Import version from package.json
 
@@ -9,11 +10,20 @@ interface TitleBarProps {
   port?: string
   settingsOpen?: boolean
   onSettingsOpenChange?: (open: boolean) => void
+  settingsHighlight?: SettingsHighlightTarget | null
+  onSettingsHighlightClear?: () => void
   onStartInteractiveTour?: () => void
   actionsMenu?: React.ReactNode
 }
 
-export function TitleBar({ settingsOpen, onSettingsOpenChange, onStartInteractiveTour, actionsMenu }: TitleBarProps) {
+export function TitleBar({
+  settingsOpen,
+  onSettingsOpenChange,
+  settingsHighlight,
+  onSettingsHighlightClear,
+  onStartInteractiveTour,
+  actionsMenu,
+}: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
     if (window.electronAPI?.minimize) {
@@ -77,6 +87,8 @@ export function TitleBar({ settingsOpen, onSettingsOpenChange, onStartInteractiv
           <SettingsDialog
             open={settingsOpen}
             onOpenChange={onSettingsOpenChange}
+            highlight={settingsHighlight}
+            onHighlightClear={onSettingsHighlightClear}
             onStartInteractiveTour={onStartInteractiveTour}
             noTrigger
           />

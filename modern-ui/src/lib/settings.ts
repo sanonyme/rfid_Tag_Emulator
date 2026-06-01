@@ -28,10 +28,12 @@ export interface AppSettings {
   fixedSerialContinuesAcrossUpcLines: boolean
   /** Handheld tab: same as fixed, independent setting. */
   handheldSerialContinuesAcrossUpcLines: boolean
+  /** Fixed / Handheld UPC fields: live GTIN check-digit hints while typing. */
+  upcCheckDigitHintsEnabled: boolean
 }
 
 const DEFAULTS: AppSettings = {
-  fontSize: 'normal',
+  fontSize: 'large',
   defaultTab: 'fixed',
   maxLogLines: 1000,
   connectionTimeoutMs: 10000,
@@ -39,6 +41,7 @@ const DEFAULTS: AppSettings = {
   card3dEnabled: false,
   fixedSerialContinuesAcrossUpcLines: false,
   handheldSerialContinuesAcrossUpcLines: false,
+  upcCheckDigitHintsEnabled: true,
 }
 
 const LEGACY_SERIAL_CONTINUES_KEY = 'rfid-emulator-serial-continues-across-upc'
@@ -75,8 +78,7 @@ export function loadSettings(): AppSettings {
 }
 
 export function saveSettings(settings: Partial<AppSettings>): AppSettings {
-  const current = loadSettings()
-  const next = { ...current, ...settings }
+  const next: AppSettings = { ...DEFAULTS, ...loadSettings(), ...settings }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
   return next
 }

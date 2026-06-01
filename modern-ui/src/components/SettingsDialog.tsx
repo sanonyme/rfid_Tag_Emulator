@@ -26,6 +26,11 @@ import { Switch } from './ui/switch'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { downloadBackup, readBackupFile, type BackupFile } from '@/lib/backup'
 import { InstallRegistryPanel } from './InstallRegistryPanel'
+import { cn } from '@/lib/utils'
+import {
+  SETTINGS_HIGHLIGHT_IDS,
+  type SettingsHighlightTarget,
+} from '@/lib/settings-navigation'
 
 function hslToStyle(hsl: string) {
   return `hsl(${hsl})`
@@ -78,6 +83,9 @@ interface SettingsDialogProps {
   noTrigger?: boolean
   /** Starts the spotlight UI tour (closes Settings first) */
   onStartInteractiveTour?: () => void
+  /** Scroll to and highlight a specific settings row when opened */
+  highlight?: SettingsHighlightTarget | null
+  onHighlightClear?: () => void
 }
 
 const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
@@ -99,7 +107,14 @@ const TAB_OPTIONS = IS_MOBILE
   ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp' && t.value !== 'netscan')
   : TAB_OPTIONS_ALL
 
-export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteractiveTour }: SettingsDialogProps = {}) {
+export function SettingsDialog({
+  open,
+  onOpenChange,
+  noTrigger,
+  onStartInteractiveTour,
+  highlight = null,
+  onHighlightClear,
+}: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
   const { settings, setSettings } = useSettings()
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
@@ -132,6 +147,29 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
     if (!open || !window.electronAPI?.getAutoUpdateEnabled) return
     void window.electronAPI.getAutoUpdateEnabled().then(setAutoUpdateEnabledState)
   }, [open])
+
+  useEffect(() => {
+    if (!open || highlight !== 'upcCheckDigitHints') return
+
+    const scrollTarget = () => {
+      document.getElementById(SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints)?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center',
+      })
+    }
+
+    const scrollTimer = window.setTimeout(scrollTarget, 150)
+    toast.message('Turn off live check-digit hints', {
+      description: 'Use the “Live check-digit hints” switch in the UPC section below.',
+      duration: 7000,
+    })
+
+    const clearTimer = window.setTimeout(() => onHighlightClear?.(), 6000)
+    return () => {
+      window.clearTimeout(scrollTimer)
+      window.clearTimeout(clearTimer)
+    }
+  }, [open, highlight, onHighlightClear])
 
   const handleThemeChange = (value: string) => {
     setCurrentTheme(value)
@@ -299,9 +337,28 @@ export function SettingsDialog({ open, onOpenChange, noTrigger, onStartInteracti
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
             <h4 className="text-sm font-semibold flex items-center gap-2">
               <Hash className="w-4 h-4 text-primary" />
-              UPC serial numbering
+              UPC
             </h4>
             <div className="space-y-4">
+              <div
+                id={SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints}
+                className={cn(
+                  'flex items-center justify-between gap-4 rounded-lg transition-all duration-300',
+                  highlight === 'upcCheckDigitHints' &&
+                    'bg-primary/5 px-2 py-1 -mx-2 ring-2 ring-primary/60 ring-offset-2 ring-offset-background',
+                )}
+              >
+                <div className="min-w-0">
+                  <Label>Live check-digit hints</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Show GTIN check-digit feedback while typing in Fixed and Handheld UPC lists. Sending is never blocked.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.upcCheckDigitHintsEnabled ?? true}
+                  onCheckedChange={(v: boolean) => setSettings({ upcCheckDigitHintsEnabled: v })}
+                />
+              </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <Label>Fixed tab — continue across lines</Label>

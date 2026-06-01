@@ -13,6 +13,10 @@ import { TCPEmulatorClient } from './lib/tcp-client'
 import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
 import { useSettings } from './lib/settings-context'
+import {
+  useSettingsNavigationRequest,
+  type SettingsHighlightTarget,
+} from './lib/settings-navigation'
 import { MobileHeader } from './components/mobile/MobileHeader'
 import { MobileBottomNav } from './components/mobile/MobileBottomNav'
 import { MobileMoreMenu } from './components/mobile/MobileMoreMenu'
@@ -60,6 +64,7 @@ function AppMobile() {
   const [connectionSheetOpen, setConnectionSheetOpen] = useState(false)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsHighlight, setSettingsHighlight] = useState<SettingsHighlightTarget | null>(null)
   const [profilesOpen, setProfilesOpen] = useState(false)
   const [saveProfileOpen, setSaveProfileOpen] = useState(false)
 
@@ -71,6 +76,18 @@ function AppMobile() {
     document.documentElement.classList.toggle('dark', newMode === 'dark')
     applyTheme(getSavedTheme(), newMode === 'dark')
   }, [])
+
+  const handleOpenSettings = useCallback((highlight?: SettingsHighlightTarget) => {
+    setSettingsHighlight(highlight ?? null)
+    setSettingsOpen(true)
+  }, [])
+
+  const handleSettingsOpenChange = useCallback((open: boolean) => {
+    setSettingsOpen(open)
+    if (!open) setSettingsHighlight(null)
+  }, [])
+
+  useSettingsNavigationRequest(handleOpenSettings)
 
   const handleLoadProfile = (profile: Profile) => {
     setHost(profile.host)
@@ -319,7 +336,7 @@ function AppMobile() {
           open={moreMenuOpen}
           onOpenChange={setMoreMenuOpen}
           onSelect={(tab) => setActiveTab(tab)}
-          onSettings={() => setSettingsOpen(true)}
+          onSettings={() => handleOpenSettings()}
           onProfiles={() => setProfilesOpen(true)}
           onSaveProfile={() => setSaveProfileOpen(true)}
           onToggleTheme={toggleTheme}
@@ -336,7 +353,13 @@ function AppMobile() {
           dialogsOnly
         />
 
-        <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} noTrigger />
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={handleSettingsOpenChange}
+          highlight={settingsHighlight}
+          onHighlightClear={() => setSettingsHighlight(null)}
+          noTrigger
+        />
       </div>
       <Toaster richColors position="bottom-center" />
     </TooltipProvider>

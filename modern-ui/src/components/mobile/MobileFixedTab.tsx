@@ -3,6 +3,7 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { ExpandableTagField } from '../ExpandableTagField'
+import { UpcEpcPreview } from '../UpcEpcPreview'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
@@ -562,6 +563,11 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
               <Label>Start Serial</Label>
               <Input type="number" min="1" value={startSerial} onChange={(e) => setStartSerial(e.target.value)} className="h-12" />
             </div>
+            <UpcEpcPreview
+              upcList={upcList}
+              startSerial={startSerial}
+              serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
+            />
           </div>
         </CardContent>
       </Card>

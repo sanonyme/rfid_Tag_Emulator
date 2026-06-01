@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import { Maximize2 } from 'lucide-react'
 import { DropTextarea } from './DropTextarea'
+import { UpcCheckDigitHint } from './UpcCheckDigitHint'
 import { Button } from './ui/button'
+import { getLineIndexAtCursor } from '@/lib/upc-check-digit'
 import {
   Dialog,
   DialogContent,
@@ -40,29 +42,51 @@ export function ExpandableTagField({
   onKeyDown,
 }: ExpandableTagFieldProps) {
   const [open, setOpen] = useState(false)
+  const [activeLine, setActiveLine] = useState(1)
+  const showUpcCheckDigitHints = kind === 'upc'
+
+  const syncActiveLine = useCallback((target: HTMLTextAreaElement) => {
+    setActiveLine(getLineIndexAtCursor(target.value, target.selectionStart))
+  }, [])
+
+  const handleChange = useCallback(
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(event)
+      syncActiveLine(event.target)
+    },
+    [onChange, syncActiveLine],
+  )
+
+  const textareaHandlers = {
+    onChange: handleChange,
+    onSelect: (event: React.SyntheticEvent<HTMLTextAreaElement>) => syncActiveLine(event.currentTarget),
+    onClick: (event: React.MouseEvent<HTMLTextAreaElement>) => syncActiveLine(event.currentTarget),
+    onKeyUp: (event: React.KeyboardEvent<HTMLTextAreaElement>) => syncActiveLine(event.currentTarget),
+  }
 
   return (
     <>
-      <div
-        className={cn(
-          'group/expand relative rounded-md transition-shadow',
-          'ring-1 ring-transparent hover:ring-border/80 focus-within:ring-primary/25',
-          'hover:shadow-sm focus-within:shadow-sm',
-        )}
-      >
-        <DropTextarea
-          value={value}
-          onChange={onChange}
-          onFileImport={onFileImport}
-          kind={kind}
-          placeholder={placeholder}
-          onKeyDown={onKeyDown}
+      <div className="space-y-2">
+        <div
           className={cn(
-            compactClassName,
-            'pr-11',
-            'transition-[background-color] duration-200 group-hover/expand:bg-muted/20',
+            'group/expand relative rounded-md transition-shadow',
+            'ring-1 ring-transparent hover:ring-border/80 focus-within:ring-primary/25',
+            'hover:shadow-sm focus-within:shadow-sm',
           )}
-        />
+        >
+          <DropTextarea
+            value={value}
+            onFileImport={onFileImport}
+            kind={kind}
+            placeholder={placeholder}
+            onKeyDown={onKeyDown}
+            {...textareaHandlers}
+            className={cn(
+              compactClassName,
+              'pr-11',
+              'transition-[background-color] duration-200 group-hover/expand:bg-muted/20',
+            )}
+          />
 
         {/* Touch: subtle always-on affordance; mouse: show on hover / keyboard focus inside field */}
         <div
@@ -101,6 +125,8 @@ export function ExpandableTagField({
             </TooltipContent>
           </Tooltip>
         </div>
+        </div>
+        {showUpcCheckDigitHints && <UpcCheckDigitHint value={value} activeLine={activeLine} />}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -122,20 +148,23 @@ export function ExpandableTagField({
             ) : null}
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
-            <DropTextarea
-              value={value}
-              onChange={onChange}
-              onFileImport={onFileImport}
-              kind={kind}
-              placeholder={placeholder}
-              onKeyDown={onKeyDown}
-              className={cn(
-                'font-mono text-sm',
-                'min-h-[min(58vh,560px)] w-full resize-y rounded-lg',
-                'border border-border bg-background shadow-inner',
-              )}
-              autoFocus
-            />
+            <div className="space-y-2">
+              <DropTextarea
+                value={value}
+                onFileImport={onFileImport}
+                kind={kind}
+                placeholder={placeholder}
+                onKeyDown={onKeyDown}
+                {...textareaHandlers}
+                className={cn(
+                  'font-mono text-sm',
+                  'min-h-[min(58vh,560px)] w-full resize-y rounded-lg',
+                  'border border-border bg-background shadow-inner',
+                )}
+                autoFocus
+              />
+              {showUpcCheckDigitHints && <UpcCheckDigitHint value={value} activeLine={activeLine} />}
+            </div>
             <p className="mt-3 text-[11px] text-muted-foreground sm:text-xs">
               Drop a .txt or .csv file to append lines. Escape or the close control returns to the compact view.
             </p>
