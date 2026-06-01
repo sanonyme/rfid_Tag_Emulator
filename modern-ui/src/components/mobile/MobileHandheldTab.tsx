@@ -2,7 +2,6 @@ import { useState, useRef, useEffect } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { ExpandableTagField } from '../ExpandableTagField'
-import { UpcEpcPreview } from '../UpcEpcPreview'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
 import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp, Activity } from 'lucide-react'
@@ -337,11 +336,6 @@ export function MobileHandheldTab({
                   className="h-10 w-32 font-mono text-sm"
                 />
               </div>
-              <UpcEpcPreview
-                upcList={slot.upcList}
-                startSerial={slot.startSerial ?? '1'}
-                serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
-              />
             </TabsContent>
             <TabsContent value="epc" className="mt-3">
               <ExpandableTagField

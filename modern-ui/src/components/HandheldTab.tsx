@@ -15,7 +15,6 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
-import { UpcEpcPreview } from './UpcEpcPreview'
 import { handheldAccent } from '@/lib/handheld-colors'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
@@ -780,12 +779,6 @@ function HandheldSlotCard({
                 title="Starting SGTIN-96 serial; combined with serial mode in the toolbar"
               />
             </div>
-            <UpcEpcPreview
-              upcList={slot.upcList}
-              startSerial={slot.startSerial ?? '1'}
-              serialContinuesAcrossUpcLines={serialContinuesAcrossUpcLines}
-              className="mt-2"
-            />
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
