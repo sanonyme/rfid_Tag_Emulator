@@ -66,6 +66,12 @@ import {
   AUTO_UPDATE_CHECK_INTERVAL_MS,
 } from './app-preferences.js'
 import { runLogAggregator } from './log-aggregator-handler.js'
+import {
+  configurePopoutWindows,
+  registerPopoutIpc,
+  closeAllPopoutWindows,
+} from './popout-windows.js'
+import { broadcastToAllWindows } from './window-broadcast.js'
 
 // Load environment variables
 import dotenv from 'dotenv'
@@ -264,7 +270,13 @@ app.whenReady().then(() => {
 
   if (window) {
     // Initialize TCP handlers
-    tcpHandler = new TCPEmulatorHandler(window)
+    tcpHandler = new TCPEmulatorHandler()
+    configurePopoutWindows({
+      mainWindow: window,
+      isDev,
+      viteDevServerUrl: process.env.VITE_DEV_SERVER_URL,
+    })
+    registerPopoutIpc()
   }
 
   ipcMain.handle('install-registry-get-status', () => getInstallRegistryStatus())
@@ -369,10 +381,9 @@ app.whenReady().then(() => {
   ipcMain.on('handheld-start', (_event, port: number) => {
     const p = typeof port === 'number' ? port : 10472
     console.log(`Handheld server start request on port ${p}`)
-    if (!mainWindow) return
     let handler = handheldHandlers.get(p)
     if (!handler) {
-      handler = new HandheldServerHandler(mainWindow, p)
+      handler = new HandheldServerHandler(p)
       handheldHandlers.set(p, handler)
     }
     handler.start()
@@ -398,7 +409,7 @@ app.whenReady().then(() => {
       if (handler) {
         await handler.sendEpcs(tags, delayMs, verbose)
       } else {
-        mainWindow?.webContents.send('handheld-complete', p, 'No server running on port ' + p)
+        broadcastToAllWindows('handheld-complete', p, 'No server running on port ' + p)
       }
     }
   )
@@ -418,61 +429,43 @@ app.whenReady().then(() => {
   // OCR IPC handlers
   ipcMain.on('ocr-send', (_event, host: string, message: string) => {
     console.log(`OCR: Received request to send to ${host}: ${message}`)
-    if (mainWindow) {
-      sendOCRMessage(host, message, mainWindow)
-        .then(() => console.log('OCR: Send completed'))
-        .catch((err) => console.error('OCR: Send error:', err))
-    } else {
-      console.error('OCR: No mainWindow available')
-    }
+    sendOCRMessage(host, message)
+      .then(() => console.log('OCR: Send completed'))
+      .catch((err) => console.error('OCR: Send error:', err))
   })
 
   // Custom Message IPC handlers
   ipcMain.on('custom-send', (_event, host: string, port: number, message: string) => {
     console.log(`Custom: Received request to send to ${host}:${port}: ${message}`)
-    if (mainWindow) {
-      sendCustomMessage(host, port, message, mainWindow)
-        .then(() => console.log('Custom: Send completed'))
-        .catch((err) => console.error('Custom: Send error:', err))
-    } else {
-      console.error('Custom: No mainWindow available')
-    }
+    sendCustomMessage(host, port, message)
+      .then(() => console.log('Custom: Send completed'))
+      .catch((err) => console.error('Custom: Send error:', err))
   })
 
   // ADAM IPC handlers
   ipcMain.on('adam-connect', (_event, host: string, port: number) => {
     console.log(`ADAM: Connect request to ${host}:${port}`)
-    if (mainWindow) {
-      connectAdam(host, port, mainWindow)
-    }
+    connectAdam(host, port)
   })
 
   ipcMain.on('adam-disconnect', () => {
     console.log('ADAM: Disconnect request')
-    if (mainWindow) {
-      disconnectAdam(mainWindow)
-    }
+    disconnectAdam()
   })
 
   ipcMain.on('adam-set-do', (_event, coil: number, value: boolean) => {
     console.log(`ADAM: Set DO ${coil} to ${value}`)
-    if (mainWindow) {
-      setAdamDO(coil, value, mainWindow)
-    }
+    setAdamDO(coil, value)
   })
 
   ipcMain.on('adam-read-di', (_event, start: number, count: number) => {
     console.log(`ADAM: Read DI start=${start} count=${count}`)
-    if (mainWindow) {
-      readAdamDIs(start, count, mainWindow)
-    }
+    readAdamDIs(start, count)
   })
 
   ipcMain.on('adam-set-di-invert', (_event, mask: number, registerAddress: number) => {
     console.log(`ADAM: Set DI invert mask=${mask} register=${registerAddress}`)
-    if (mainWindow) {
-      setAdamDIInvertMask(mask, registerAddress, mainWindow)
-    }
+    setAdamDIInvertMask(mask, registerAddress)
   })
 
   // Database IPC handlers
@@ -986,24 +979,18 @@ app.whenReady().then(() => {
     }
   })
 
-  // ALE API Proxy to bypass CORS
-  ipcMain.handle('ale-request', async (_event, url: string, options: any) => {
-    console.log(`ALE Request: ${options?.method || 'GET'} ${url}`)
+  type AleRequestPayload = { url: string; options?: Record<string, unknown> }
 
-    // Inject credentials if this is an auth request with placeholder values
+  const runAleRequest = async (url: string, options: Record<string, unknown> = {}) => {
     if (url.includes('/ALE/api/auth') && options.body) {
       try {
-        const body = JSON.parse(options.body)
+        const body = JSON.parse(String(options.body))
         if (body.username === 'use_env_vars') {
-          console.log('Injecting credentials into auth request')
-          // Strictly use environment variables, no hardcoded fallbacks
           const username = process.env.VITE_ALE_USERNAME
           const password = process.env.VITE_ALE_PASSWORD
-
           if (!username || !password) {
-            throw new Error("Missing ALE credentials in environment variables")
+            throw new Error('Missing ALE credentials in environment variables')
           }
-
           body.username = username
           body.password = password
           options.body = JSON.stringify(body)
@@ -1013,7 +1000,10 @@ app.whenReady().then(() => {
       }
     }
 
-    const ALE_TIMEOUT_MS = 15000
+    const ALE_TIMEOUT_MS =
+      typeof options.timeoutMs === 'number' && options.timeoutMs > 0
+        ? (options.timeoutMs as number)
+        : 8_000
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), ALE_TIMEOUT_MS)
 
@@ -1021,24 +1011,38 @@ app.whenReady().then(() => {
       const response = await fetch(url, { ...options, signal: controller.signal })
       clearTimeout(timeoutId)
       const text = await response.text()
-      // Convert headers to simple object for IPC
       const headers: Record<string, string> = {}
       response.headers.forEach((val, key) => {
         headers[key] = val
       })
+
+      const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] })
+        .getSetCookie
+      if (typeof getSetCookie === 'function') {
+        const cookies = getSetCookie.call(response.headers)
+        if (cookies.length > 0) {
+          headers['set-cookie'] = cookies
+            .map((line: string) => line.split(';')[0]?.trim())
+            .filter(Boolean)
+            .join('; ')
+        }
+      } else if (headers['set-cookie']) {
+        headers['set-cookie'] = headers['set-cookie'].split(';')[0]?.trim() ?? headers['set-cookie']
+      }
 
       return {
         ok: response.ok,
         status: response.status,
         statusText: response.statusText,
         data: text,
-        headers
+        headers,
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId)
-      console.error('ALE Request Error:', error)
-      let msg = error.message || 'Request failed'
-      if (error.name === 'AbortError') {
+      const err = error as { message?: string; name?: string }
+      console.error('ALE Request Error:', err)
+      let msg = err.message || 'Request failed'
+      if (err.name === 'AbortError') {
         msg = `Connection timed out after ${ALE_TIMEOUT_MS / 1000}s. Check that the server is reachable at the given IP and port (try http://IP:port in a browser).`
       } else if (msg.includes('ECONNREFUSED')) {
         msg = 'Connection refused. Server may be down, or the port is wrong (try 80, 8080, or 8081).'
@@ -1050,9 +1054,21 @@ app.whenReady().then(() => {
         status: 0,
         statusText: msg,
         data: null,
-        headers: {}
+        headers: {},
       }
     }
+  }
+
+  // ALE API Proxy to bypass CORS (single request)
+  ipcMain.handle('ale-request', async (_event, url: string, options: Record<string, unknown>) => {
+    return runAleRequest(url, options ?? {})
+  })
+
+  /** Run multiple Edge HTTP calls in the main process with one IPC round-trip (like Bruno in parallel). */
+  ipcMain.handle('ale-request-batch', async (_event, requests: AleRequestPayload[]) => {
+    return Promise.all(
+      requests.map(({ url, options }) => runAleRequest(url, (options ?? {}) as Record<string, unknown>)),
+    )
   })
 
   autoUpdater.on('download-progress', (progressObj) => {
@@ -1088,7 +1104,8 @@ app.on('window-all-closed', () => {
   handheldHandlers.clear()
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
-  if (mainWindow) disconnectAdam(mainWindow)
+  closeAllPopoutWindows()
+  disconnectAdam()
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()
@@ -1106,7 +1123,8 @@ app.on('before-quit', () => {
   handheldHandlers.clear()
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
-  if (mainWindow) disconnectAdam(mainWindow)
+  closeAllPopoutWindows()
+  disconnectAdam()
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()

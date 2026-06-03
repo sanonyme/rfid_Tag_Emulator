@@ -395,6 +395,10 @@ class MockElectronAPI implements ElectronAPI {
     }
   }
 
+  async aleRequestBatch(requests: { url: string; options?: Record<string, unknown> }[]) {
+    return Promise.all(requests.map((r) => this.aleRequest(r.url, r.options ?? {})))
+  }
+
   // Inditex API (requires Electron - mock returns error)
   async getApiConfig() {
     return { headerName: 'itx-apiKey', key: '' };

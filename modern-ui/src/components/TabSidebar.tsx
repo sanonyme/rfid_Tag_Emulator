@@ -17,6 +17,7 @@ import {
   Radar,
   LineChart,
   Layers,
+  Cloud,
   PanelLeftClose,
   PanelLeftOpen,
   Shield,
@@ -24,6 +25,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
+import { PopOutButton } from './PopOutButton'
+import { isPopoutableTab } from '@/lib/popout-tabs'
 
 type TabItem = { value: string; label: string; icon: LucideIcon; badge?: string }
 type TabGroup = { id: string; label: string; items: TabItem[] }
@@ -37,7 +40,7 @@ const GROUPS: TabGroup[] = [
       { value: 'handheld', label: 'Handheld', icon: Smartphone },
       { value: 'ocr', label: 'OCR', icon: ScanLine },
       { value: 'custom', label: 'Custom', icon: Terminal },
-      { value: 'adam', label: 'ADAM', icon: Server },
+      { value: 'edge', label: 'Edge', icon: Cloud },
     ],
   },
   {
@@ -63,6 +66,7 @@ const ADMIN_GROUP: TabGroup = {
   id: 'admin',
   label: 'Admin',
   items: [
+    { value: 'adam', label: 'ADAM', icon: Server },
     { value: 'link2uid', label: 'Link → UID', icon: Link2 },
     { value: 'terminal', label: 'Terminal', icon: Terminal },
     { value: 'logs', label: 'Log Analyzer', icon: LineChart, badge: 'BETA' },
@@ -75,9 +79,11 @@ const STORAGE_KEY = 'admin-sidebar-expanded'
 interface TabSidebarProps {
   value: string
   className?: string
+  poppedOutTabs?: Set<string>
+  onPopOut?: (tabId: string) => void
 }
 
-export function TabSidebar({ value, className }: TabSidebarProps) {
+export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSidebarProps) {
   const [expanded, setExpanded] = useState(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
@@ -192,22 +198,26 @@ export function TabSidebar({ value, className }: TabSidebarProps) {
                 {group.items.map((item) => {
                   const Icon = item.icon
                   const isActive = value === item.value
+                  const canPopOut = Boolean(onPopOut && isPopoutableTab(item.value))
                   return (
-                    <TabsTrigger
+                    <div
                       key={item.value}
+                      className={cn('flex items-center gap-0.5', expanded && canPopOut ? 'w-full' : expanded ? 'w-full' : 'justify-center')}
+                    >
+                    <TabsTrigger
                       value={item.value}
                       title={!expanded ? item.label : undefined}
                       className={cn(
                         'group relative cursor-pointer flex items-center rounded-lg text-sm font-medium',
                         'border-0 bg-transparent shadow-none',
-                        // Inactive palette
+                        'outline-none focus:outline-none focus-visible:outline-none',
+                        'ring-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0',
                         'text-muted-foreground hover:text-foreground',
-                        'focus-visible:ring-0 focus-visible:ring-offset-0',
-                        // Active palette — primary-tinted but readable in BOTH themes
-                        'data-[state=active]:text-primary dark:data-[state=active]:text-white',
+                        'data-[state=active]:bg-transparent data-[state=active]:text-primary dark:data-[state=active]:text-white',
+                        'data-[state=active]:shadow-none',
                         'transition-colors duration-150',
                         expanded
-                          ? 'gap-2.5 px-2.5 py-2 justify-start w-full'
+                          ? cn('gap-2.5 px-2.5 py-2 justify-start', canPopOut ? 'flex-1 min-w-0' : 'w-full')
                           : 'justify-center w-9 h-9 p-0',
                       )}
                     >
@@ -224,7 +234,7 @@ export function TabSidebar({ value, className }: TabSidebarProps) {
                           initial={false}
                           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
                         >
-                          <span className="absolute inset-0 rounded-lg bg-primary/12 dark:bg-white/10 ring-1 ring-primary/25 dark:ring-white/20" />
+                          <span className="absolute inset-0 rounded-lg bg-primary/12 dark:bg-white/10" />
                           <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
                         </motion.div>
                       )}
@@ -262,6 +272,16 @@ export function TabSidebar({ value, className }: TabSidebarProps) {
                         />
                       )}
                     </TabsTrigger>
+                    {expanded && canPopOut && (
+                      <PopOutButton
+                        tabId={item.value}
+                        onPopOut={onPopOut!}
+                        isPoppedOut={poppedOutTabs?.has(item.value)}
+                        compact
+                        className="shrink-0 mr-0.5"
+                      />
+                    )}
+                    </div>
                   )
                 })}
               </div>

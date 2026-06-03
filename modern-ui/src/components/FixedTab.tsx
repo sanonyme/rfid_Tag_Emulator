@@ -79,6 +79,8 @@ interface FixedTabProps {
   setDelay: (delay: string) => void
   /** When true, Fixed tab listens for Send Tags keyboard shortcut (Ctrl+Enter). */
   fixedTabActive?: boolean
+  /** Pop-out window: stacked layout on narrow widths, no page-level log scroll. */
+  isPopout?: boolean
 }
 
 const VENDOR_DRIVERS = [
@@ -118,6 +120,7 @@ export function FixedTab({
   delay, 
   setDelay,
   fixedTabActive = false,
+  isPopout = false,
 }: FixedTabProps) {
   const [log, setLog] = useState<string[]>([])
   const [sending, setSending] = useState(false)
@@ -167,7 +170,20 @@ export function FixedTab({
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const end = logEndRef.current
+    if (!end) return
+    let el: HTMLElement | null = end.parentElement
+    while (el) {
+      const oy = getComputedStyle(el).overflowY
+      if (
+        (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
+        el.scrollHeight > el.clientHeight
+      ) {
+        el.scrollTop = el.scrollHeight
+        return
+      }
+      el = el.parentElement
+    }
   }, [log])
 
   useEffect(() => {
@@ -488,9 +504,21 @@ export function FixedTab({
       : 'Ctrl+Enter'
 
   return (
-    <div className="grid grid-cols-[320px_1fr] xl:grid-cols-[348px_1fr] gap-5 h-full overflow-hidden">
+    <div
+      className={cn(
+        'h-full min-h-0 overflow-hidden gap-4',
+        isPopout
+          ? 'flex flex-col lg:grid lg:grid-cols-[minmax(260px,36%)_1fr] lg:gap-5'
+          : 'grid grid-cols-[320px_1fr] xl:grid-cols-[348px_1fr] gap-5',
+      )}
+    >
       {/* Left Sidebar - Configuration */}
-      <div className="space-y-4 overflow-y-auto pr-1">
+      <div
+        className={cn(
+          'space-y-4 overflow-y-auto pr-1 min-h-0',
+          isPopout && 'max-h-[42vh] shrink-0 lg:max-h-none lg:shrink',
+        )}
+      >
         {/* Tag Defaults */}
         <Card className={sectionCard} data-tour="tour-fixed-tag-defaults">
           <CardHeader className="pb-3 pt-5 px-5">
@@ -802,7 +830,7 @@ export function FixedTab({
       </div>
 
       {/* Right Side - Tag Management & Log */}
-      <div className="flex flex-col gap-4 min-h-0">
+      <div className={cn('flex flex-col gap-4 min-h-0', isPopout && 'flex-1')}>
         {/* Tag Input */}
         <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2" data-tour="tour-fixed-tags">
           <Card className={sectionCard}>

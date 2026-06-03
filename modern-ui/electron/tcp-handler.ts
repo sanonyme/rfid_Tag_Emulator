@@ -2,7 +2,7 @@
 // Handles real TCP connections to Java backend
 
 import { Socket, Server, createServer } from 'net'
-import { BrowserWindow } from 'electron'
+import { broadcastToAllWindows } from './window-broadcast.js'
 
 /** Yields to the event loop and honours cancel; avoids long sleeps before stop takes effect. */
 async function delayCancellable(
@@ -45,8 +45,6 @@ export class TCPEmulatorHandler {
   private socket: Socket | null = null
   private isConnected: boolean = false
   private cancelRequested: boolean = false
-
-  constructor(private window: BrowserWindow) {}
 
   connect(host: string, port: number): void {
     if (this.socket && this.isConnected) {
@@ -149,9 +147,7 @@ export class TCPEmulatorHandler {
   }
 
   private sendToRenderer(channel: string, message: string): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, message)
-    }
+    broadcastToAllWindows(channel, message)
   }
 
   shutdown(): void {
@@ -170,7 +166,7 @@ export class HandheldServerHandler {
   /** One send at a time per port avoids overlapping broadcasts and callback races. */
   private sendSerial: Promise<void> = Promise.resolve()
 
-  constructor(private window: BrowserWindow, private port: number) {}
+  constructor(private port: number) {}
 
   start(): void {
     if (this.serverRunning) {
@@ -385,9 +381,7 @@ export class HandheldServerHandler {
   }
 
   private sendToRenderer(channel: string, message: string): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, this.port, message)
-    }
+    broadcastToAllWindows(channel, this.port, message)
   }
 
   getPort(): number {
@@ -402,38 +396,29 @@ export class HandheldServerHandler {
 
 // OCR Handler - EXACTLY like Java EmulatorUI.java lines 653-687
 // Java does NOT set a timeout, just creates socket, writes, flushes, closes
-export async function sendOCRMessage(host: string, message: string, window: BrowserWindow): Promise<void> {
+export async function sendOCRMessage(host: string, message: string): Promise<void> {
   console.log(`OCR: Sending to ${host}:10482`)
   
   return new Promise<void>((resolve) => {
-    // Use the imported Socket class
     const socket = new Socket()
-    
-    // NO TIMEOUT - Java doesn't set one
-    // socket.setTimeout() is NOT called
     
     socket.on('error', (error: Error) => {
       console.log('OCR: Error -', error.message)
-      window.webContents.send('ocr-error', `Error: ${error.message}`)
+      broadcastToAllWindows('ocr-error', `Error: ${error.message}`)
       socket.destroy()
       resolve()
     })
     
-    // Java: socket = new Socket(host, 10482)
     socket.connect(10482, host, () => {
       console.log('OCR: Connected, sending message')
       
-      // Java: PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)
-      // Java: writer.print(message + "\n")
-      // Java: writer.flush()
-      // Java: socket.close()
       socket.write(message + '\n', 'utf8', (err) => {
         if (err) {
           console.log('OCR: Write error:', err.message)
-          window.webContents.send('ocr-error', `Error: ${err.message}`)
+          broadcastToAllWindows('ocr-error', `Error: ${err.message}`)
         } else {
           console.log('OCR: Message sent successfully')
-          window.webContents.send('ocr-success', `Sent: ${message}`)
+          broadcastToAllWindows('ocr-success', `Sent: ${message}`)
         }
         socket.end()
         resolve()
@@ -443,7 +428,7 @@ export async function sendOCRMessage(host: string, message: string, window: Brow
 }
 
 // Custom Message Handler - Similar to OCR but allows custom port
-export async function sendCustomMessage(host: string, port: number, message: string, window: BrowserWindow): Promise<void> {
+export async function sendCustomMessage(host: string, port: number, message: string): Promise<void> {
   console.log(`Custom: Sending to ${host}:${port}`)
   
   return new Promise<void>((resolve) => {
@@ -453,14 +438,14 @@ export async function sendCustomMessage(host: string, port: number, message: str
     socket.setTimeout(5000)
     socket.on('timeout', () => {
       console.log('Custom: Connection timed out')
-      window.webContents.send('custom-error', `Error: Connection timed out`)
+      broadcastToAllWindows('custom-error', `Error: Connection timed out`)
       socket.destroy()
       resolve()
     })
     
     socket.on('error', (error: Error) => {
       console.log('Custom: Error -', error.message)
-      window.webContents.send('custom-error', `Error: ${error.message}`)
+      broadcastToAllWindows('custom-error', `Error: ${error.message}`)
       socket.destroy()
       resolve()
     })
@@ -472,10 +457,10 @@ export async function sendCustomMessage(host: string, port: number, message: str
       socket.write(message + '\n', 'utf8', (err) => {
         if (err) {
           console.log('Custom: Write error:', err.message)
-          window.webContents.send('custom-error', `Error: ${err.message}`)
+          broadcastToAllWindows('custom-error', `Error: ${err.message}`)
         } else {
           console.log('Custom: Message sent successfully')
-          window.webContents.send('custom-success', `Sent to ${port}: ${message}`)
+          broadcastToAllWindows('custom-success', `Sent to ${port}: ${message}`)
         }
         socket.end()
         resolve()

@@ -1,18 +1,11 @@
 import { Socket } from 'net'
-import { BrowserWindow } from 'electron'
 import Modbus from 'jsmodbus'
+import { broadcastToAllWindows } from './window-broadcast.js'
 
 class AdamHandler {
   private socket: Socket | null = null
   private client: any | null = null
   private isConnected: boolean = false
-  private window: BrowserWindow | null = null
-
-  constructor() {}
-
-  setWindow(window: BrowserWindow) {
-    this.window = window
-  }
 
   connect(host: string, port: number = 502): void {
     if (this.isConnected) {
@@ -79,8 +72,6 @@ class AdamHandler {
       return
     }
     try {
-      // ADAM-6000 series DOs typically start at address 16 (0x10)
-      // The UI sends 0-based index, so we need to add the offset
       const DO_START_ADDRESS = 16
       const targetCoil = coil + DO_START_ADDRESS
       
@@ -92,11 +83,6 @@ class AdamHandler {
     }
   }
 
-  /**
-   * Set DI invert mask on the ADAM device.
-   * Bit N = 1 means invert DI N. Written to holding register.
-   * Register address may vary by model (6050, 6060, etc.) - check your manual.
-   */
   async setDIInvertMask(mask: number, registerAddress: number = 100): Promise<void> {
     if (!this.isConnected || !this.client) {
       this.sendToRenderer('adam-error', 'Not connected')
@@ -115,38 +101,29 @@ class AdamHandler {
     }
   }
 
-  private sendToRenderer(channel: string, data: any): void {
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, data)
-    }
+  private sendToRenderer(channel: string, data: unknown): void {
+    broadcastToAllWindows(channel, data)
   }
 }
 
-// Singleton instance
 const adamHandler = new AdamHandler()
 
-// Exported functions matching main.ts expectations
-export function connectAdam(host: string, port: number, window: BrowserWindow) {
-  adamHandler.setWindow(window)
+export function connectAdam(host: string, port: number) {
   adamHandler.connect(host, port)
 }
 
-export function disconnectAdam(window: BrowserWindow) {
-  adamHandler.setWindow(window)
+export function disconnectAdam() {
   adamHandler.disconnect()
 }
 
-export function setAdamDO(coil: number, value: boolean, window: BrowserWindow) {
-  adamHandler.setWindow(window)
+export function setAdamDO(coil: number, value: boolean) {
   adamHandler.writeDO(coil, value)
 }
 
-export function readAdamDIs(start: number, count: number, window: BrowserWindow) {
-  adamHandler.setWindow(window)
+export function readAdamDIs(start: number, count: number) {
   adamHandler.readDIs(start, count)
 }
 
-export function setAdamDIInvertMask(mask: number, registerAddress: number, window: BrowserWindow) {
-  adamHandler.setWindow(window)
+export function setAdamDIInvertMask(mask: number, registerAddress: number) {
   adamHandler.setDIInvertMask(mask, registerAddress)
 }

@@ -1,4 +1,13 @@
-export type ActionType = 'DELAY' | 'OCR' | 'FIXED_TAG' | 'HANDHELD_TAG' | 'CUSTOM_MESSAGE'
+export type ActionType =
+  | 'DELAY'
+  | 'OCR'
+  | 'FIXED_TAG'
+  | 'HANDHELD_TAG'
+  | 'CUSTOM_MESSAGE'
+  | 'EDGE_BLOCK'
+  | 'EDGE_PROCESS'
+
+export type EdgeProcessAction = 'start' | 'stop'
 
 export interface AutomationStep {
   id: string
@@ -29,6 +38,15 @@ export interface AutomationStep {
     epcList?: string
     upcList?: string
     deviceId?: string
+    /** Edge: block name for POST /activity/invoke */
+    edgeBlockName?: string
+    /** Edge: invoke param values keyed by param name */
+    edgeParams?: Record<string, string>
+    /** Edge: param order when invoking (matches block definition order) */
+    edgeParamOrder?: string[]
+    /** Edge: workflow name */
+    edgeProcessName?: string
+    edgeProcessAction?: EdgeProcessAction
   }
 }
 

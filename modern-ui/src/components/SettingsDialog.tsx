@@ -103,9 +103,11 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'netscan', label: 'LAN scan' },
 ]
 
-const TAB_OPTIONS = IS_MOBILE
-  ? TAB_OPTIONS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'sftp' && t.value !== 'netscan')
-  : TAB_OPTIONS_ALL
+const TAB_OPTIONS = TAB_OPTIONS_ALL.filter(
+  (t) =>
+    t.value !== 'adam' &&
+    (IS_MOBILE ? t.value !== 'sftp' && t.value !== 'netscan' : true),
+)
 
 export function SettingsDialog({
   open,

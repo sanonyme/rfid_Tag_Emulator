@@ -105,6 +105,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ALE API
   aleRequest: (url: string, options: any) => ipcRenderer.invoke('ale-request', url, options),
+  aleRequestBatch: (requests: { url: string; options?: Record<string, unknown> }[]) =>
+    ipcRenderer.invoke('ale-request-batch', requests),
 
   // Inditex API (header/key from persisted config)
   getApiConfig: () => ipcRenderer.invoke('get-api-config'),
@@ -322,6 +324,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const handler = (_e: unknown, progress: Parameters<typeof callback>[0]) => callback(progress)
     ipcRenderer.on('log-aggregator-progress', handler)
     return () => ipcRenderer.removeListener('log-aggregator-progress', handler)
+  },
+
+  // Pop-out windows (multi-window)
+  popoutGetWindowInfo: () =>
+    ipcRenderer.invoke('popout-get-window-info') as Promise<{
+      role: 'main' | 'popout' | 'unknown'
+      tabId: string | null
+      poppedTabs: string[]
+    }>,
+  popoutOpen: (tabId: string, title: string, initState: { tabId: string; state: Record<string, unknown>; isAdmin?: boolean }) =>
+    ipcRenderer.invoke('popout-open', tabId, title, initState) as Promise<{ ok: boolean; focused?: boolean }>,
+  popoutDock: (tabId: string) =>
+    ipcRenderer.invoke('popout-dock', tabId) as Promise<{ ok: boolean }>,
+  popoutGetInitState: () =>
+    ipcRenderer.invoke('popout-get-init-state') as Promise<{
+      tabId: string
+      state: Record<string, unknown>
+      isAdmin?: boolean
+    } | null>,
+  popoutList: () => ipcRenderer.invoke('popout-list') as Promise<string[]>,
+  onPopoutClosed: (callback: (tabId: string) => void) => {
+    const handler = (_e: unknown, tabId: string) => callback(tabId)
+    ipcRenderer.on('popout-closed', handler)
+    return () => ipcRenderer.removeListener('popout-closed', handler)
+  },
+  popoutBroadcastState: (state: Record<string, unknown>, connected: boolean) =>
+    ipcRenderer.send('popout-broadcast-state', state, connected),
+  onPopoutStateUpdate: (callback: (state: Record<string, unknown>, connected: boolean) => void) => {
+    const handler = (_e: unknown, state: Record<string, unknown>, connected: boolean) =>
+      callback(state, connected)
+    ipcRenderer.on('popout-state-update', handler)
+    return () => ipcRenderer.removeListener('popout-state-update', handler)
   },
 })
 

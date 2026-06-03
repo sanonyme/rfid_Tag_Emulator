@@ -1,3 +1,6 @@
+import { makeEdgeSecret } from './edge-auth'
+import { ALE_ENV_MISSING_MSG, getAleEnvCredentials } from './edge-env-credentials'
+
 export interface LogicalDevice {
   name: string
   composite: boolean
@@ -42,8 +45,16 @@ export class AleApiClient {
   }
 
   async authenticate(host: string, port: string = '80'): Promise<string> {
+    const creds = getAleEnvCredentials()
+    if (!creds) {
+      throw new Error(ALE_ENV_MISSING_MSG)
+    }
+    const password = creds.passwordIsHashed
+      ? creds.password
+      : await makeEdgeSecret(creds.password)
+    const username = creds.username
+
     if (window.electronAPI?.aleRequest) {
-      // Use standard request proxy but with special credential injection in main process
       const url = `http://${host}:${port}/ALE/api/auth`
       try {
         const response = await window.electronAPI.aleRequest(url, {
@@ -52,8 +63,8 @@ export class AleApiClient {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                username: import.meta.env.VITE_ALE_USERNAME,
-                password: import.meta.env.VITE_ALE_PASSWORD,
+                username,
+                password,
             }),
         })
         
@@ -90,8 +101,8 @@ export class AleApiClient {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username: import.meta.env.VITE_ALE_USERNAME,
-          password: import.meta.env.VITE_ALE_PASSWORD,
+          username,
+          password,
         }),
       })
 

@@ -14,7 +14,8 @@ import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
-import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw } from 'lucide-react'
+import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow } from 'lucide-react'
+import { EdgeBlockNodeConfig, EdgeProcessNodeConfig } from './EdgeAutomationNodeConfig'
 import {
   Select,
   SelectContent,
@@ -53,6 +54,8 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   FIXED_TAG: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
   HANDHELD_TAG: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400' },
   CUSTOM_MESSAGE: { border: 'border-violet-400/40', bg: 'bg-violet-400/10', icon: 'text-violet-400' },
+  EDGE_BLOCK: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400' },
+  EDGE_PROCESS: { border: 'border-teal-400/40', bg: 'bg-teal-400/10', icon: 'text-teal-400' },
 }
 
 export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParams, host, alePort, customPort }: NodeConfigDialogProps) {
@@ -111,6 +114,8 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               {step.type === 'FIXED_TAG' && <Radio className="h-3 w-3" />}
               {step.type === 'HANDHELD_TAG' && <Smartphone className="h-3 w-3" />}
               {step.type === 'CUSTOM_MESSAGE' && <Terminal className="h-3 w-3" />}
+              {step.type === 'EDGE_BLOCK' && <Box className="h-3 w-3" />}
+              {step.type === 'EDGE_PROCESS' && <Workflow className="h-3 w-3" />}
               {step.type}
             </span>
             {step.name}
@@ -465,6 +470,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 />
               </div>
             </div>
+          )}
+
+          {step.type === 'EDGE_BLOCK' && (
+            <EdgeBlockNodeConfig step={step} onSaveParams={onSaveParams} />
+          )}
+
+          {step.type === 'EDGE_PROCESS' && (
+            <EdgeProcessNodeConfig step={step} onSaveParams={onSaveParams} />
           )}
         </div>
 

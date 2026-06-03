@@ -8,6 +8,8 @@ export type ServiceKey =
   | 'fixed'
   | 'ocr'
   | 'adam'
+  | 'edge'
+  | 'automation'
   | 'db'
   | 'sftp'
   | string // handheld:<port>

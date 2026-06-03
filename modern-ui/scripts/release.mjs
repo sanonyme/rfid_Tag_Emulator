@@ -7,7 +7,7 @@ import { runCommand } from './run-command.mjs'
 const cwd = process.cwd()
 const envPath = path.join(cwd, '.env')
 if (existsSync(envPath)) {
-  dotenv.config({ path: envPath })
+  dotenv.config({ path: envPath, override: true })
 }
 
 const required = ['ZEUS_RELEASE_OWNER', 'ZEUS_RELEASE_REPO', 'GH_TOKEN']

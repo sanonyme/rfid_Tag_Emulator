@@ -399,6 +399,13 @@ button, a, input, select, textarea {
   font-size: 2em;
 }
 
+/* Main navbar tabs — no focus ring flash on click (Electron / Windows) */
+[data-tour="tour-tab-nav"] button[role="tab"]:focus,
+[data-tour="tour-tab-nav"] button[role="tab"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
 /* Page transition - slide when tab becomes active */
 [data-state="active"].tab-content-animate {
   animation: tabSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);

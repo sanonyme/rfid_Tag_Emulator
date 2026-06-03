@@ -139,6 +139,13 @@ export interface ElectronAPI {
     data: string | null,
     headers?: Record<string, string>
   }>
+  aleRequestBatch: (requests: { url: string; options?: Record<string, unknown> }[]) => Promise<{
+    ok: boolean
+    status: number
+    statusText: string
+    data: string | null
+    headers?: Record<string, string>
+  }[]>
 
   // Inditex API (header/key persisted in userData)
   getApiConfig: () => Promise<{ headerName: string; key: string }>
@@ -442,6 +449,29 @@ export interface ElectronAPI {
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   onLogAggregatorProgress?: (
     callback: (progress: import('./log-aggregator').LogAggregatorProgress) => void,
+  ) => () => void
+
+  popoutGetWindowInfo?: () => Promise<{
+    role: 'main' | 'popout' | 'unknown'
+    tabId: string | null
+    poppedTabs: string[]
+  }>
+  popoutOpen?: (
+    tabId: string,
+    title: string,
+    initState: { tabId: string; state: Record<string, unknown>; isAdmin?: boolean },
+  ) => Promise<{ ok: boolean; focused?: boolean }>
+  popoutDock?: (tabId: string) => Promise<{ ok: boolean }>
+  popoutGetInitState?: () => Promise<{
+    tabId: string
+    state: Record<string, unknown>
+    isAdmin?: boolean
+  } | null>
+  popoutList?: () => Promise<string[]>
+  onPopoutClosed?: (callback: (tabId: string) => void) => () => void
+  popoutBroadcastState?: (state: Record<string, unknown>, connected: boolean) => void
+  onPopoutStateUpdate?: (
+    callback: (state: Record<string, unknown>, connected: boolean) => void,
   ) => () => void
 }
 

@@ -48,7 +48,11 @@ import {
   RotateCcw,
   Upload,
   Download,
+  Box,
+  Workflow,
 } from 'lucide-react'
+import { useEdgeSession } from '@/contexts/EdgeSessionContext'
+import { publishStatus, clearStatus } from '@/lib/workspace-status'
 import {
   TCPEmulatorClient,
   HandheldServerClient,
@@ -59,8 +63,13 @@ import {
   expandUpcListToEpcs,
 } from '@/lib/tcp-client'
 import { toast } from 'sonner'
-import { formatTime } from '@/lib/utils'
+import { cn, formatTime } from '@/lib/utils'
 import { getHandheldFullActivityLog } from '@/lib/handheld-log-settings'
+import {
+  getAutomationFullActivityLog,
+  setAutomationFullActivityLog,
+} from '@/lib/automation-log-settings'
+import { Switch } from './ui/switch'
 import type { AutomationStep, AutomationSequence, ActionType } from '@/lib/automation-types'
 import { normalizeSequences, migrateStepsToSequences } from '@/lib/automation-types'
 import { NodeConfigDialog } from './NodeConfigDialog'
@@ -127,6 +136,8 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   FIXED_TAG: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400', label: 'ACTION' },
   HANDHELD_TAG: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400', label: 'ACTION' },
   CUSTOM_MESSAGE: { border: 'border-violet-400/40', bg: 'bg-violet-400/10', icon: 'text-violet-400', label: 'CUSTOM' },
+  EDGE_BLOCK: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400', label: 'EDGE' },
+  EDGE_PROCESS: { border: 'border-teal-400/40', bg: 'bg-teal-400/10', icon: 'text-teal-400', label: 'EDGE' },
 }
 
 function WorkflowNode({
@@ -165,6 +176,11 @@ function WorkflowNode({
       case 'FIXED_TAG': return step.params.upcList || step.params.epcList ? 'Tag list' : (step.params.upc || step.params.epc || 'Configure')
       case 'HANDHELD_TAG': return step.params.epcList || step.params.upcList ? 'Tag list' : 'Configure'
       case 'CUSTOM_MESSAGE': return step.params.message ? `Send ${(step.params.message || '').length} chars` : 'Configure'
+      case 'EDGE_BLOCK': return step.params.edgeBlockName || 'Select block'
+      case 'EDGE_PROCESS': {
+        const action = step.params.edgeProcessAction === 'stop' ? 'Stop' : 'Start'
+        return step.params.edgeProcessName ? `${action} ${step.params.edgeProcessName}` : 'Select process'
+      }
       default: return ''
     }
   }
@@ -206,6 +222,8 @@ function WorkflowNode({
               {step.type === 'FIXED_TAG' && <Radio className={`h-4 w-4 ${style.icon}`} />}
               {step.type === 'HANDHELD_TAG' && <Smartphone className={`h-4 w-4 ${style.icon}`} />}
               {step.type === 'CUSTOM_MESSAGE' && <Terminal className={`h-4 w-4 ${style.icon}`} />}
+              {step.type === 'EDGE_BLOCK' && <Box className={`h-4 w-4 ${style.icon}`} />}
+              {step.type === 'EDGE_PROCESS' && <Workflow className={`h-4 w-4 ${style.icon}`} />}
             </div>
             <div className="min-w-0 flex-1">
               <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">{style.label}</span>
@@ -278,14 +296,35 @@ function WorkflowConnectionLine({
   )
 }
 
-export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePort, customPort, delay, handheldDelay, sequences, setSequences }: AutomationTabProps) {
+export function AutomationTab({
+  emulator,
+  handheldServer,
+  ocrClient,
+  host,
+  alePort,
+  customPort,
+  delay,
+  handheldDelay,
+  sequences,
+  setSequences,
+}: AutomationTabProps) {
   const customClient = useMemo(() => new CustomClient(), [])
+  const edgeSession = useEdgeSession()
   const sortedSeqs = useMemo(() => [...sequences].sort((a, b) => a.order - b.order), [sequences])
   const [selectedSequenceId, setSelectedSequenceId] = useState<string | null>(sortedSeqs[0]?.id ?? null)
   const selectedSequence = sortedSeqs.find(s => s.id === selectedSequenceId)
   const steps = selectedSequence?.steps ?? []
 
   const [isRunning, setIsRunning] = useState(false)
+
+  useEffect(() => {
+    if (isRunning) {
+      publishStatus('automation', { status: 'sending', label: 'Automation' })
+    } else {
+      clearStatus('automation')
+    }
+    return () => clearStatus('automation')
+  }, [isRunning])
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null)
   const [configDialogOpen, setConfigDialogOpen] = useState(false)
   const [deleteConfirmSeq, setDeleteConfirmSeq] = useState<AutomationSequence | null>(null)
@@ -299,6 +338,9 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
   const [runMode, setRunMode] = useState<'loops' | 'duration'>('loops')
   const [runDurationSeconds, setRunDurationSeconds] = useState<string>('300')
   const [log, setLog] = useState<string[]>([])
+  const [fullActivityLog, setFullActivityLog] = useState(() => getAutomationFullActivityLog())
+  const fullActivityLogRef = useRef(fullActivityLog)
+  fullActivityLogRef.current = fullActivityLog
   const logEndRef = useRef<HTMLDivElement>(null)
   const abortControllerRef = useRef<AbortController | null>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -310,9 +352,10 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
     }
   }, [sortedSeqs, selectedSequenceId])
 
-  const addLog = (msg: string) => {
-    setLog(prev => [...prev, `[${formatTime()}] ${msg}`])
-  }
+  const addLog = useCallback((msg: string) => {
+    if (!fullActivityLogRef.current) return
+    setLog((prev) => [...prev, `[${formatTime()}] ${msg}`])
+  }, [])
 
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -396,6 +439,8 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
       FIXED_TAG: 'Fixed Reader Scan',
       HANDHELD_TAG: 'Handheld Scan',
       CUSTOM_MESSAGE: 'Custom Message',
+      EDGE_BLOCK: 'Invoke Edge Block',
+      EDGE_PROCESS: 'Edge Process',
     }
     const newStep: AutomationStep = {
       id: crypto.randomUUID(),
@@ -407,7 +452,12 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
         message: type === 'CUSTOM_MESSAGE' ? '' : '{"test":1}',
         port: type === 'CUSTOM_MESSAGE' ? customPort : undefined,
         epc: '', upc: '', count: 1, startSerial: 1, tid: '', uid: '0000',
-        antenna: '1', rssi: '-45.0', driver: 'llrp', epcList: '', upcList: '', deviceId: ''
+        antenna: '1', rssi: '-45.0', driver: 'llrp', epcList: '', upcList: '', deviceId: '',
+        edgeBlockName: edgeSession.blocks[0]?.name ?? '',
+        edgeParams: {},
+        edgeParamOrder: [],
+        edgeProcessName: edgeSession.processes[0]?.name ?? '',
+        edgeProcessAction: 'start',
       }
     }
     flushSync(() => {
@@ -753,6 +803,53 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
           hhVerbose
         )
         break
+
+      case 'EDGE_BLOCK': {
+        if (!edgeSession.edgeReady) {
+          throw new Error('Edge API not ready — connect to Edge IP first')
+        }
+        const blockName = step.params.edgeBlockName?.trim()
+        if (!blockName) throw new Error('Edge block not configured')
+        const raw = step.params.edgeParams ?? {}
+        const order =
+          step.params.edgeParamOrder?.filter((k) => k in raw) ??
+          Object.keys(raw)
+        const invokeParams: Record<string, unknown> = {}
+        for (const k of order) invokeParams[k] = raw[k] ?? ''
+        for (const [k, v] of Object.entries(raw)) {
+          if (!(k in invokeParams)) invokeParams[k] = v
+        }
+        const paramOrder =
+          order.length > 0 ? order : Object.keys(invokeParams)
+        addLog(`Edge invoke → ${blockName}`)
+        const { status, response } = await edgeSession.invokeBlock(
+          blockName,
+          invokeParams,
+          paramOrder,
+        )
+        const preview = response?.trim()
+          ? response.trim().slice(0, 300) + (response.length > 300 ? '…' : '')
+          : '(empty)'
+        addLog(`Edge block OK (HTTP ${status}): ${preview}`)
+        break
+      }
+
+      case 'EDGE_PROCESS': {
+        if (!edgeSession.edgeReady) {
+          throw new Error('Edge API not ready — connect to Edge IP first')
+        }
+        const processName = step.params.edgeProcessName?.trim()
+        if (!processName) throw new Error('Edge process not configured')
+        const action = step.params.edgeProcessAction ?? 'start'
+        addLog(`Edge ${action} → ${processName}`)
+        if (action === 'stop') {
+          await edgeSession.stopProcess(processName)
+        } else {
+          await edgeSession.startProcess(processName)
+        }
+        addLog(`Edge process ${action} OK: ${processName}`)
+        break
+      }
     }
   }
 
@@ -919,7 +1016,7 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
           {addMenuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 py-1 rounded-lg border border-border bg-popover shadow-lg min-w-[160px]">
+              <div className="absolute right-0 top-full mt-1 z-50 py-1 rounded-lg border border-border bg-popover shadow-lg min-w-[200px]">
                 <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
                   <Clock className="w-4 h-4 text-amber-500" /> Delay
                 </button>
@@ -934,6 +1031,16 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
                 </button>
                 <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CUSTOM_MESSAGE'); setAddMenuOpen(false) }}>
                   <Terminal className="w-4 h-4 text-violet-500" /> Custom Message
+                </button>
+                <div className="my-1 border-t border-border/60" />
+                <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  Edge API
+                </p>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_BLOCK'); setAddMenuOpen(false) }}>
+                  <Box className="w-4 h-4 text-cyan-500" /> Invoke block
+                </button>
+                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_PROCESS'); setAddMenuOpen(false) }}>
+                  <Workflow className="w-4 h-4 text-teal-500" /> Start / stop process
                 </button>
               </div>
             </>
@@ -1286,24 +1393,53 @@ export function AutomationTab({ emulator, handheldServer, ocrClient, host, alePo
               )}
               </div>
               </div>
-              <div className="flex-1 min-h-[120px] max-h-[320px] border border-border/50 rounded-xl bg-muted/10 overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between gap-2 shrink-0">
+                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
+                  <Switch
+                    id="automation-detail-logs"
+                    checked={fullActivityLog}
+                    onCheckedChange={(v) => {
+                      setFullActivityLog(v)
+                      setAutomationFullActivityLog(v)
+                    }}
+                  />
+                  <Label
+                    htmlFor="automation-detail-logs"
+                    className="cursor-pointer text-xs font-medium text-muted-foreground"
+                    title="Off: no log output while running. On: all step detail."
+                  >
+                    Activity log
+                  </Label>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setLog([])} className="shrink-0 h-8">
+                  Clear
+                </Button>
+              </div>
+              <div
+                className={cn(
+                  'flex-1 min-h-[120px] max-h-[320px] border border-border/50 rounded-xl bg-muted/10 overflow-hidden flex flex-col',
+                  !fullActivityLog && 'opacity-80',
+                )}
+              >
                 <ScrollArea className="flex-1 h-full">
                   <div className="p-3 font-mono text-xs space-y-0">
                     {log.length === 0 && (
                       <div className="text-muted-foreground text-center py-4">
-                        Ready to run...
+                        {fullActivityLog ? 'Ready to run…' : 'Activity log off — enable the switch to record runs'}
                       </div>
                     )}
                     {log.map((l, i) => (
-                      <div key={i} className={`text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30 ${i === log.length - 1 ? 'animate-log-new' : ''}`}>{l}</div>
+                      <div
+                        key={i}
+                        className={`text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30 ${i === log.length - 1 ? 'animate-log-new' : ''}`}
+                      >
+                        {l}
+                      </div>
                     ))}
                     <div ref={logEndRef} />
                   </div>
                 </ScrollArea>
               </div>
-              <Button variant="outline" size="sm" onClick={() => setLog([])} className="shrink-0">
-                Clear Log
-              </Button>
             </CardContent>
           </Card>
         </div>

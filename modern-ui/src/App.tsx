@@ -9,6 +9,7 @@ import { AutomationTab } from './components/AutomationTab'
 import { CustomTab } from './components/CustomTab'
 import { AdamTab } from './components/AdamTab'
 import { ApiTab } from './components/Api'
+import { EdgeTab } from './components/EdgeTab'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
 import { DatabaseTab } from './components/DatabaseTab'
 import { SftpTab } from './components/SftpTab'
@@ -44,6 +45,11 @@ import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster, toast } from 'sonner'
 import { AppTour } from './components/AppTour'
 import { TourInteractionProvider } from './contexts/TourInteractionContext'
+import { EdgeSessionProvider } from './contexts/EdgeSessionContext'
+import { PopoutTitleBar } from './components/PopoutTitleBar'
+import { PopOutPlaceholder } from './components/PopOutPlaceholder'
+import { getPopoutTabFromHash, getPopoutTabLabel, isPopoutableTab } from './lib/popout-tabs'
+import { applyPopoutInitState } from './lib/apply-popout-state'
 const TAB_VALUES_FULL = [
   'fixed',
   'handheld',
@@ -60,7 +66,9 @@ const TAB_VALUES_FULL = [
 ] as const
 const TAB_VALUES = (IS_MOBILE
   ? TAB_VALUES_FULL.filter((t) => t !== 'adam' && t !== 'netscan')
-  : TAB_VALUES_FULL) as readonly string[]
+  : TAB_VALUES_FULL.filter((t) => t !== 'adam')) as readonly string[]
+
+const ADMIN_TAB_VALUES = ['adam', 'link2uid', 'terminal', 'logs', 'logagg'] as const
 
 function App() {
   const { settings, setSettings } = useSettings()
@@ -107,7 +115,7 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
-    if (IS_MOBILE && defaultTab === 'adam') return 'fixed'
+    if (defaultTab === 'adam') return 'fixed'
     return defaultTab
   })
 
@@ -129,6 +137,14 @@ function App() {
   const [base64Open, setBase64Open] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [tourRun, setTourRun] = useState(false)
+
+  React.useEffect(() => {
+    if (!isAdmin && activeTab === 'adam') setActiveTab('fixed')
+  }, [isAdmin, activeTab])
+
+  const [popoutTabId] = useState<string | null>(() => getPopoutTabFromHash())
+  const isPopoutWindow = Boolean(popoutTabId && window.electronAPI?.popoutGetWindowInfo)
+  const [poppedOutTabs, setPoppedOutTabs] = useState<Set<string>>(() => new Set())
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
@@ -237,6 +253,132 @@ function App() {
     handheldDelay,
     automationSequences
   }
+
+  const popoutStateSetters = React.useMemo(
+    () => ({
+      setHost,
+      setPort,
+      setAlePort,
+      setDriver,
+      setUid,
+      setAntenna,
+      setRssi,
+      setStartSerial,
+      setFixedUpcList,
+      setFixedEpcList,
+      setHandheldSlots,
+      setOcrMessage,
+      setCustomPort,
+      setCustomMessage,
+      setAdamHost,
+      setDelay,
+      setHandheldDelay,
+      setAutomationSequences,
+      setConnected,
+      setSettings,
+    }),
+    [setSettings],
+  )
+
+  const handlePopOut = useCallback(
+    async (tabId: string) => {
+      if (!window.electronAPI?.popoutOpen || !isPopoutableTab(tabId)) return
+      try {
+        const result = await window.electronAPI.popoutOpen(tabId, getPopoutTabLabel(tabId), {
+          tabId,
+          state: currentProfileState as Record<string, unknown>,
+          isAdmin,
+        })
+        if (result?.ok) {
+          setPoppedOutTabs((prev) => new Set(prev).add(tabId))
+          if (activeTab === tabId) {
+            const next = [...TAB_VALUES, ...(isAdmin ? [...ADMIN_TAB_VALUES] : [])].find(
+              (t) => t !== tabId && !poppedOutTabs.has(t),
+            )
+            if (next) setActiveTab(next)
+          }
+          toast.success(`${getPopoutTabLabel(tabId)} opened in new window`)
+        }
+      } catch (err) {
+        console.error(err)
+        toast.error('Could not open pop-out window')
+      }
+    },
+    [activeTab, currentProfileState, isAdmin, poppedOutTabs],
+  )
+
+  const handleDockPopout = useCallback(async (tabId: string) => {
+    if (!window.electronAPI?.popoutDock) return
+    await window.electronAPI.popoutDock(tabId)
+    setPoppedOutTabs((prev) => {
+      const next = new Set(prev)
+      next.delete(tabId)
+      return next
+    })
+  }, [])
+
+  const handleFocusPopout = useCallback(
+    (tabId: string) => {
+      void handlePopOut(tabId)
+    },
+    [handlePopOut],
+  )
+
+  React.useEffect(() => {
+    if (isPopoutWindow || !window.electronAPI?.popoutGetWindowInfo) return
+    void window.electronAPI.popoutGetWindowInfo().then((info) => {
+      if (info?.poppedTabs?.length) {
+        setPoppedOutTabs(new Set(info.poppedTabs))
+      }
+    })
+    const unsub = window.electronAPI.onPopoutClosed?.((tabId) => {
+      setPoppedOutTabs((prev) => {
+        const next = new Set(prev)
+        next.delete(tabId)
+        return next
+      })
+    })
+    return () => unsub?.()
+  }, [isPopoutWindow])
+
+  React.useEffect(() => {
+    if (!isPopoutWindow || !window.electronAPI?.popoutGetInitState) return
+    void window.electronAPI.popoutGetInitState().then((init) => {
+      if (!init?.state) return
+      applyPopoutInitState(init.state, popoutStateSetters)
+      if (init.isAdmin) setIsAdmin(true)
+    })
+    void window.electronAPI.tcpIsConnected?.().then((c) => {
+      if (c) setConnected(true)
+    })
+  }, [isPopoutWindow, popoutStateSetters])
+
+  React.useEffect(() => {
+    if (!isPopoutWindow || !popoutTabId) return
+    setMountedTabs(new Set([popoutTabId]))
+    setActiveTab(popoutTabId)
+  }, [isPopoutWindow, popoutTabId])
+
+  React.useEffect(() => {
+    if (isPopoutWindow || !window.electronAPI?.popoutBroadcastState) return
+    if (poppedOutTabs.size === 0) return
+    const t = window.setTimeout(() => {
+      window.electronAPI?.popoutBroadcastState?.(
+        currentProfileState as Record<string, unknown>,
+        connected,
+      )
+    }, 250)
+    return () => window.clearTimeout(t)
+  }, [isPopoutWindow, poppedOutTabs, currentProfileState, connected])
+
+  React.useEffect(() => {
+    if (!isPopoutWindow || !window.electronAPI?.onPopoutStateUpdate) return
+    const unsub = window.electronAPI.onPopoutStateUpdate((state, tcpConnected) => {
+      applyPopoutInitState(state, popoutStateSetters)
+      setConnected(tcpConnected)
+    })
+    return () => unsub?.()
+  }, [isPopoutWindow, popoutStateSetters])
 
   React.useEffect(() => {
     // Hide custom titlebar on Linux (uses native titlebar)
@@ -350,9 +492,13 @@ function App() {
     return <AppMobile />
   }
 
+  const effectiveActiveTab = isPopoutWindow && popoutTabId ? popoutTabId : activeTab
+  const tabContentHidden = !isPopoutWindow && poppedOutTabs.has(activeTab)
+
   return (
     <TooltipProvider delayDuration={300}>
     <TourInteractionProvider tourRun={tourRun}>
+    <EdgeSessionProvider host={host} alePort={alePort} tcpConnected={connected}>
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
       {currentTheme === 'christmas' && <SnowOverlay />}
       {/* Animated Background Elements */}
@@ -365,7 +511,13 @@ function App() {
       </div>
 
       {/* Custom Titlebar (Windows/Mac only) */}
-      {showCustomTitlebar && (
+      {showCustomTitlebar && isPopoutWindow && popoutTabId && (
+        <PopoutTitleBar
+          tabId={popoutTabId}
+          onDock={() => void handleDockPopout(popoutTabId)}
+        />
+      )}
+      {showCustomTitlebar && !isPopoutWindow && (
         <TitleBar 
           connected={connected} 
           host={host} 
@@ -400,6 +552,7 @@ function App() {
         />
       )}
       {/* Profile dialogs (triggered by BottomMenu) */}
+      {!isPopoutWindow && (
       <ProfileManager 
         currentState={currentProfileState} 
         onLoadProfile={handleLoadProfile}
@@ -409,22 +562,31 @@ function App() {
         onExternalSaveOpenChange={setSaveProfileOpen}
         dialogsOnly
       />
+      )}
 
       <div className="electron-no-drag flex flex-1 overflow-hidden relative z-10 min-h-0">
         <Tabs
-          value={activeTab}
-          onValueChange={setActiveTab}
+          value={effectiveActiveTab}
+          onValueChange={isPopoutWindow ? undefined : setActiveTab}
           className="flex flex-1 min-h-0 min-w-0 overflow-hidden"
         >
-          {isAdmin && <TabSidebar value={activeTab} />}
+          {isAdmin && !isPopoutWindow && (
+            <TabSidebar
+              value={activeTab}
+              poppedOutTabs={poppedOutTabs}
+              onPopOut={handlePopOut}
+            />
+          )}
 
           {/* Main Content */}
           <main
             className={cn(
               'flex-1 min-w-0 container overflow-hidden min-h-0 flex flex-col',
-              isAdmin ? 'px-4 py-4' : 'px-6 py-6',
+              isAdmin && !isPopoutWindow ? 'px-4 py-4' : 'px-6 py-6',
+              isPopoutWindow && 'px-4 py-4',
             )}
           >
+            {!isPopoutWindow && (
             <div
               className={cn(
                 'flex items-center gap-4',
@@ -443,7 +605,13 @@ function App() {
                 />
               )}
               {!isAdmin && (
-                <TabNavBar value={activeTab} className="animate-scale-in" isAdmin={isAdmin} />
+                <TabNavBar
+                  value={activeTab}
+                  className="animate-scale-in"
+                  isAdmin={isAdmin}
+                  poppedOutTabs={poppedOutTabs}
+                  onPopOut={handlePopOut}
+                />
               )}
               {isAdmin && (
                 <ConnectionStatus
@@ -455,9 +623,39 @@ function App() {
                 />
               )}
             </div>
+            )}
+
+            {isPopoutWindow && (
+              <div className="flex shrink-0 items-center gap-3 mb-3">
+                <ConnectionStatus
+                  emulator={emulator}
+                  host={host}
+                  setHost={setHost}
+                  connected={connected}
+                  setConnected={setConnected}
+                />
+              </div>
+            )}
 
             <div className="flex-1 min-h-0 overflow-hidden">
-            <TabsContent value="fixed" forceMount={mountedTabs.has('fixed') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            {tabContentHidden ? (
+              <PopOutPlaceholder
+                tabId={activeTab}
+                onFocusWindow={() => handleFocusPopout(activeTab)}
+                onDock={() => void handleDockPopout(activeTab)}
+              />
+            ) : (
+            <>
+            <TabsContent
+              value="fixed"
+              forceMount={mountedTabs.has('fixed') ? true : undefined}
+              className={cn(
+                'h-full mt-0 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate data-[state=inactive]:hidden flex flex-col min-h-0',
+                isPopoutWindow && popoutTabId === 'fixed'
+                  ? 'p-3 overflow-hidden'
+                  : 'p-6 overflow-y-auto',
+              )}
+            >
               <FixedTab 
                 emulator={emulator} 
                 host={host}
@@ -484,7 +682,8 @@ function App() {
                 setEpcList={setFixedEpcList}
                 delay={delay}
                 setDelay={setDelay}
-                fixedTabActive={activeTab === 'fixed'}
+                fixedTabActive={effectiveActiveTab === 'fixed'}
+                isPopout={isPopoutWindow && popoutTabId === 'fixed'}
               />
             </TabsContent>
 
@@ -531,6 +730,10 @@ function App() {
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
             </TabsContent>
 
+            <TabsContent value="edge" forceMount={mountedTabs.has('edge') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden flex flex-col data-[state=inactive]:hidden">
+              <EdgeTab onSwitchTab={setActiveTab} />
+            </TabsContent>
+
             <TabsContent value="decoder" forceMount={mountedTabs.has('decoder') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
               <DecoderTab />
             </TabsContent>
@@ -572,7 +775,7 @@ function App() {
                   <LinkToUidTab />
                 </TabsContent>
                 <TabsContent value="terminal" forceMount={mountedTabs.has('terminal') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
-                  <AdminTerminalTab active={activeTab === 'terminal'} />
+                  <AdminTerminalTab active={effectiveActiveTab === 'terminal'} />
                 </TabsContent>
                 <TabsContent value="logs" forceMount={mountedTabs.has('logs') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
                   <SystemLogAnalyzerTab />
@@ -582,12 +785,17 @@ function App() {
                 </TabsContent>
               </>
             )}
+            </>
+            )}
             </div>
           </main>
         </Tabs>
       </div>
     </div>
+    {!isPopoutWindow && (
     <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+    )}
+    {!isPopoutWindow && (
     <CommandPalette
       open={paletteOpen}
       onOpenChange={setPaletteOpen}
@@ -605,7 +813,9 @@ function App() {
       onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
       onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
     />
+    )}
     <Toaster richColors position="bottom-right" />
+    {!isPopoutWindow && (
     <AppTour
       run={tourRun}
       onRunChange={setTourRun}
@@ -614,6 +824,8 @@ function App() {
       isAdmin={isAdmin}
       emulatorConnected={connected}
     />
+    )}
+    </EdgeSessionProvider>
     </TourInteractionProvider>
     </TooltipProvider>
   )
