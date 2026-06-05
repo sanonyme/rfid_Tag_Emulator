@@ -1,4 +1,4 @@
-# Edge RFID Emulator
+# Zeus
 
 A comprehensive RFID tag emulation suite providing both a modern, feature-rich desktop application and a legacy Java-based utility. This tool is designed to simulate RFID tag data transmission over TCP/IP to RFID reader software and Edge servers, facilitating testing and development without physical hardware.
 
