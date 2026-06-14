@@ -1,3 +1,5 @@
+import { atlassianNeutralThemeColors } from './atlassian-neutrals'
+
 export interface ThemeColors {
   primary: string
   primaryForeground: string
@@ -27,6 +29,41 @@ export interface Theme {
     light: ThemeColors
     dark: ThemeColors
   }
+  /** Optional elevation / auxiliary CSS variables beyond the core palette. */
+  extras?: {
+    light?: Record<string, string>
+    dark?: Record<string, string>
+  }
+}
+
+const THEME_EXTRA_KEYS = [
+  '--shadow-color',
+  '--shadow-sm',
+  '--shadow-md',
+  '--shadow-lg',
+  '--file-tree-bg',
+  '--file-tree-hover',
+  '--folder-icon',
+] as const
+
+const DEFAULT_LIGHT_EXTRAS: Record<string, string> = {
+  '--shadow-color': '20 30% 18%',
+  '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.08)',
+  '--shadow-md': '0 4px 12px hsl(var(--shadow-color) / 0.10)',
+  '--shadow-lg': '0 12px 32px hsl(var(--shadow-color) / 0.14)',
+  '--file-tree-bg': '30 12% 96%',
+  '--file-tree-hover': '30 15% 92%',
+  '--folder-icon': '16 45% 42%',
+}
+
+const DEFAULT_DARK_EXTRAS: Record<string, string> = {
+  '--shadow-color': '222 60% 3%',
+  '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.30)',
+  '--shadow-md': '0 4px 14px hsl(var(--shadow-color) / 0.40)',
+  '--shadow-lg': '0 12px 34px hsl(var(--shadow-color) / 0.50)',
+  '--file-tree-bg': '222 40% 14%',
+  '--file-tree-hover': '217 32% 20%',
+  '--folder-icon': '16 55% 58%',
 }
 
 export const themes: Theme[] = [
@@ -275,7 +312,7 @@ export const themes: Theme[] = [
     label: 'John 67',
     colors: {
       light: {
-        primary: '200 12% 23%', // #333F44 (Slate Gray)
+        primary: '240 2% 23%', // Neutral dark gray (matches theme, no blue cast)
         primaryForeground: '0 0% 98%', // White text
         background: '200 10% 95%', // Very light gray for contrast in light mode
         foreground: '240 2% 10%', // #1A1A1B (Almost Black)
@@ -293,30 +330,46 @@ export const themes: Theme[] = [
         destructiveForeground: '0 0% 98%',
         border: '240 2% 85%',
         input: '240 2% 85%',
-        ring: '200 12% 23%', // #333F44
+        ring: '240 2% 23%',
       },
       dark: {
-        primary: '200 12% 23%', // #333F44 (Buttons)
-        primaryForeground: '0 0% 98%', // White text
-        background: '240 2% 10%', // #1A1A1B (Background)
-        foreground: '0 0% 90%', // Light Gray text
-        card: '240 2% 13%', // Slightly lighter than bg
-        cardForeground: '0 0% 90%',
-        popover: '240 2% 13%',
-        popoverForeground: '0 0% 90%',
-        secondary: '240 2% 15%', // Dark gray secondary
-        secondaryForeground: '0 0% 90%',
-        muted: '240 2% 15%',
-        mutedForeground: '0 0% 60%',
-        accent: '240 2% 20%', // Slightly lighter for hover
-        accentForeground: '0 0% 98%',
-        destructive: '0 62.8% 30.6%',
+        primary: '240 5% 90%', // Light CTA buttons on charcoal — clean, high contrast
+        primaryForeground: '240 3% 8%',
+        background: '240 3% 7%', // Deep charcoal base
+        foreground: '240 4% 93%', // Crisp near-white text
+        card: '240 3% 10%', // Lifted panels
+        cardForeground: '240 4% 93%',
+        popover: '240 3% 13%', // Dropdowns float above cards
+        popoverForeground: '240 4% 93%',
+        secondary: '240 3% 14%',
+        secondaryForeground: '240 4% 88%',
+        muted: '240 3% 14%',
+        mutedForeground: '240 4% 52%', // Readable secondary text
+        accent: '240 4% 18%', // Hover / selection highlight
+        accentForeground: '240 4% 93%',
+        destructive: '0 65% 45%',
         destructiveForeground: '0 0% 98%',
-        border: '240 2% 20%',
-        input: '240 2% 20%',
-        ring: '200 12% 23%', // #333F44
+        border: '240 4% 20%', // Soft but visible structure
+        input: '240 3% 12%', // Inputs sit slightly below surface
+        ring: '240 5% 55%', // Clear focus ring
       },
     },
+    extras: {
+      dark: {
+        '--shadow-color': '240 8% 2%',
+        '--shadow-sm': '0 1px 3px hsl(var(--shadow-color) / 0.40)',
+        '--shadow-md': '0 4px 16px hsl(var(--shadow-color) / 0.50)',
+        '--shadow-lg': '0 12px 40px hsl(var(--shadow-color) / 0.60)',
+        '--file-tree-bg': '240 3% 9%',
+        '--file-tree-hover': '240 4% 17%',
+        '--folder-icon': '240 4% 58%',
+      },
+    },
+  },
+  {
+    name: 'atlassian-neutrals',
+    label: 'Atlassian Neutrals',
+    colors: atlassianNeutralThemeColors,
   },
   {
     name: 'cyberpunk',
@@ -373,16 +426,20 @@ export const THEME_CHANGE_EVENT = 'theme-change'
 export function applyTheme(themeName: string, isDark: boolean) {
   const theme = themes.find((t) => t.name === themeName) || themes[0]
   const colors = isDark ? theme.colors.dark : theme.colors.light
+  const defaultExtras = isDark ? DEFAULT_DARK_EXTRAS : DEFAULT_LIGHT_EXTRAS
+  const themeExtras = isDark ? theme.extras?.dark : theme.extras?.light
 
   const root = document.documentElement
-  
+
   Object.entries(colors).forEach(([key, value]) => {
-    // Convert camelCase to kebab-case for CSS variables
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`
     root.style.setProperty(cssVar, value)
   })
 
-  // Dispatch custom event for components that need to react to theme changes
+  for (const key of THEME_EXTRA_KEYS) {
+    root.style.setProperty(key, themeExtras?.[key] ?? defaultExtras[key])
+  }
+
   window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: themeName, isDark } }))
 }
 

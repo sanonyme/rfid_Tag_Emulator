@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Smartphone, Zap, StopCircle, Server, Plus, Trash2, Upload, Download, Activity } from 'lucide-react'
+import { Smartphone, Zap, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient, expandUpcListToEpcs } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
@@ -15,6 +15,8 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
+import { SendButton, LoopSendButton } from './SendControls'
+import { sectionCard } from '@/lib/ui-tokens'
 import { handheldAccent } from '@/lib/handheld-colors'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
@@ -26,9 +28,6 @@ import {
 } from '@/lib/handheld-log-settings'
 
 const MAX_HANDHELD_LOG_LINES = 500
-
-const SECTION_CARD =
-  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
 
 export interface HandheldSlot {
   id: string
@@ -207,7 +206,7 @@ export function HandheldTab({
 
   const runSendWorkflow = async (
     slotId: string,
-    opts?: { suppressSuccessToast?: boolean; loop?: boolean }
+    opts?: { loop?: boolean }
   ) => {
     const slot = slotsRef.current.find((s) => s.id === slotId)
     if (!slot) return
@@ -246,7 +245,6 @@ export function HandheldTab({
       /no handheld connected|cancelled by user|^stopped:/i.test(msg)
 
     let round = 0
-    const firstCount = firstTags.length
     let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
     let cachedParseKey = ''
 
@@ -324,18 +322,14 @@ export function HandheldTab({
     })
     publishStatus(handheldKey(port), { status: 'connected', port, detail: undefined })
 
-    if (!opts?.suppressSuccessToast) {
-      if (!startedRepeat) {
-        toast.success(`${firstCount} EPC(s) sent successfully`)
-      } else if (userCancelled) {
-        toast.info('Loop send stopped')
-      }
+    if (startedRepeat && userCancelled) {
+      toast.info('Loop send stopped')
     }
   }
 
   const handleSendToSlot = async (
     slot: HandheldSlot,
-    sendOpts?: { suppressSuccessToast?: boolean; loop?: boolean }
+    sendOpts?: { loop?: boolean }
   ) => {
     await runSendWorkflow(slot.id, sendOpts)
   }
@@ -356,12 +350,7 @@ export function HandheldTab({
     }
 
     addLog(`Sending to ${slotsWithTags.length} handheld(s) in parallel...`)
-    await Promise.all(slotsWithTags.map((slot) => handleSendToSlot(slot, { suppressSuccessToast: true })))
-    const epcTotal = slotsWithTags.reduce(
-      (n, s) => n + parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length,
-      0,
-    )
-    toast.success(`${slotsWithTags.length} handheld(s), ${epcTotal} EPC(s) sent`)
+    await Promise.all(slotsWithTags.map((slot) => handleSendToSlot(slot)))
   }
 
   const handleStopSend = (port: number) => {
@@ -386,7 +375,7 @@ export function HandheldTab({
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       {/* Toolbar */}
-      <div className={cn(SECTION_CARD, 'shrink-0 px-4 py-3 sm:px-5 sm:py-3.5')} data-tour="tour-handheld-toolbar">
+      <div className={cn(sectionCard, 'shrink-0 px-4 py-3 sm:px-5 sm:py-3.5')} data-tour="tour-handheld-toolbar">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 lg:flex-nowrap lg:justify-between lg:gap-4">
           <p className="min-w-0 flex-[1_1_220px] text-sm leading-snug text-muted-foreground lg:flex-1">
             Point VSBL Debug at <strong className="font-mono text-foreground">YOUR_PC_IP:PORT</strong> for each slot
@@ -438,18 +427,16 @@ export function HandheldTab({
               >
                 Stop all
               </Button>
-              <Button
+              <SendButton
+                ripple
                 size="sm"
+                label="Send all"
                 onClick={handleSendAll}
                 disabled={
                   sendingPorts.size > 0 ||
                   slots.every((s) => parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length === 0)
                 }
-                className="gap-1.5 rounded-lg shadow-sm shadow-primary/25"
-              >
-                <Zap className={`h-4 w-4 ${sendingPorts.size > 0 ? 'animate-pulse' : ''}`} />
-                Send all
-              </Button>
+              />
             </div>
           </div>
         </div>
@@ -461,7 +448,7 @@ export function HandheldTab({
         data-tour="tour-handheld-slots"
       >
         <div
-          className="grid gap-4 p-1"
+          className="stagger-children grid gap-4 p-1"
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
         >
           {slots.map((slot) => (
@@ -485,7 +472,7 @@ export function HandheldTab({
       </ScrollArea>
 
       {/* Log Area */}
-      <Card className={cn(SECTION_CARD, 'max-h-[200px] min-h-[140px] shrink-0')} data-tour="tour-handheld-log">
+      <Card className={cn(sectionCard, 'max-h-[200px] min-h-[140px] shrink-0')} data-tour="tour-handheld-log">
         <CardHeader className="border-b border-border/40 bg-muted/10 px-4 py-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-2">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
@@ -644,7 +631,7 @@ function HandheldSlotCard({
 
   return (
     <Card
-      className={cn(SECTION_CARD, 'relative flex min-h-0 flex-col overflow-hidden')}
+      className={cn(sectionCard, 'relative flex min-h-0 flex-col overflow-hidden')}
       style={{ borderTopColor: accent.color, borderTopWidth: 2 }}
     >
       <CardHeader className="shrink-0 px-4 pb-3 pt-4">
@@ -662,9 +649,9 @@ function HandheldSlotCard({
             {isRunning && (
               <Badge
                 variant="outline"
-                className="inline-flex shrink-0 items-center gap-1.5 border-emerald-500/40 bg-emerald-500/10 py-0 px-2 text-xs text-emerald-600 dark:text-emerald-400"
+                className="inline-flex shrink-0 items-center gap-1.5 border-success/40 bg-success/10 py-0 px-2 text-xs text-success"
               >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current shadow-[0_0_6px_rgba(34,197,94,0.85)]" />
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current shadow-[0_0_6px_hsl(var(--success)/0.85)]" />
                 Running
               </Badge>
             )}
@@ -831,43 +818,25 @@ function HandheldSlotCard({
           </TabsContent>
         </Tabs>
 
-        {/* Send row — mirrors Fixed tab: Send once + Loop Send / Stop */}
+        {/* Send row — standardized with the Fixed tab: Send + Loop Send / Stop */}
         <div className="flex shrink-0 flex-col gap-2 pt-1 sm:flex-row sm:items-stretch">
-          <Button
+          <SendButton
+            ripple
+            size="sm"
+            label="Send"
             onClick={onSendOnce}
             disabled={isSending || !isRunning}
+            className="flex-1 sm:min-h-10"
+          />
+          <LoopSendButton
+            ripple
             size="sm"
-            className={cn(
-              'flex-1 gap-1.5 rounded-lg sm:min-h-10',
-              !isSending && isRunning && 'shadow-sm shadow-primary/20',
-            )}
-          >
-            <Zap className="h-3.5 w-3.5 shrink-0" />
-            Send
-          </Button>
-          <Button
+            active={isSending}
             onClick={isSending ? onStopSend : onLoopSend}
             disabled={!isRunning || (!isSending && !hasTags)}
-            variant={isSending ? 'destructive' : 'outline'}
-            size="sm"
-            className={cn(
-              'gap-1.5 rounded-lg sm:min-h-10 sm:min-w-[7.5rem]',
-              !isSending && 'bg-background/90',
-            )}
+            className="sm:min-h-10 sm:min-w-[7.5rem]"
             title={isSending ? 'Stop current send or loop' : 'Repeat full tag list until stopped'}
-          >
-            {isSending ? (
-              <>
-                <StopCircle className="h-3.5 w-3.5 shrink-0 animate-spin" />
-                Stop
-              </>
-            ) : (
-              <>
-                <Activity className="h-3.5 w-3.5 shrink-0" />
-                Loop Send
-              </>
-            )}
-          </Button>
+          />
         </div>
       </CardContent>
     </Card>

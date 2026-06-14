@@ -3,9 +3,10 @@ import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { ScrollArea } from './ui/scroll-area'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Tabs, TabsContent } from './ui/tabs'
 import { Radar, Play, Square, Monitor, Loader2, Copy, Check, Radio, Trash2, Send, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SegmentedTabs } from './SegmentedTabs'
 import { toast } from 'sonner'
 import type { NetScanStartPayload, ReaderDiscoveryPayload, ReaderVendor } from '../types/electron'
 
@@ -614,20 +615,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3" data-tour="tour-netscan-root">
       <Tabs value={lanMode} onValueChange={(v) => setLanMode(v as typeof lanMode)} className="flex h-full min-h-0 flex-col">
-        <TabsList className="grid h-auto w-full max-w-2xl shrink-0 grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
-          <TabsTrigger value="udpDiscovery" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
-            <Radio className="w-3.5 h-3.5" />
-            Edge Discovery (UDP)
-          </TabsTrigger>
-          <TabsTrigger value="readerDiscovery" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
-            <Search className="w-3.5 h-3.5" />
-            RFID Readers
-          </TabsTrigger>
-          <TabsTrigger value="pingScan" className="gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm">
-            <Radar className="w-3.5 h-3.5" />
-            Ping Scan
-          </TabsTrigger>
-        </TabsList>
+        <SegmentedTabs
+          value={lanMode}
+          layoutId="lan-mode-nav"
+          className="max-w-2xl shrink-0 grid-cols-3"
+          items={[
+            { value: 'udpDiscovery', label: 'Edge Discovery (UDP)', icon: <Radio className="w-3.5 h-3.5" /> },
+            { value: 'readerDiscovery', label: 'RFID Readers', icon: <Search className="w-3.5 h-3.5" /> },
+            { value: 'pingScan', label: 'Ping Scan', icon: <Radar className="w-3.5 h-3.5" /> },
+          ]}
+        />
 
         {/* ── UDP Edge Discovery ── */}
         <TabsContent value="udpDiscovery" className="flex-1 min-h-0 flex flex-col gap-3 mt-3">
@@ -861,17 +858,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           </div>
 
           <Tabs value={readers.mode} onValueChange={(v) => readers.setMode(v as ReaderMode)} className="w-full shrink-0">
-            <TabsList className="grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
-              <TabsTrigger value="cidr" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-                CIDR
-              </TabsTrigger>
-              <TabsTrigger value="range" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-                IP range
-              </TabsTrigger>
-              <TabsTrigger value="allSubnets" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-                All subnets
-              </TabsTrigger>
-            </TabsList>
+            <SegmentedTabs
+              value={readers.mode}
+              layoutId="reader-target-nav"
+              className="max-w-xl grid-cols-3"
+              items={[
+                { value: 'cidr', label: 'CIDR' },
+                { value: 'range', label: 'IP range' },
+                { value: 'allSubnets', label: 'All subnets' },
+              ]}
+            />
             <TabsContent value="cidr" className="mt-3 space-y-1.5">
               <Label className="text-xs text-muted-foreground">Network (CIDR)</Label>
               <Input
@@ -1084,17 +1080,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
         onValueChange={(v) => setScanMode(v as ScanMode)}
         className="w-full shrink-0"
       >
-        <TabsList className="grid h-auto w-full max-w-xl grid-cols-3 gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
-          <TabsTrigger value="cidr" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-            CIDR
-          </TabsTrigger>
-          <TabsTrigger value="range" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-            IP range
-          </TabsTrigger>
-          <TabsTrigger value="allSubnets" className="rounded-lg text-xs data-[state=active]:shadow-sm">
-            All subnets
-          </TabsTrigger>
-        </TabsList>
+        <SegmentedTabs
+          value={scanMode}
+          layoutId="ping-target-nav"
+          className="max-w-xl grid-cols-3"
+          items={[
+            { value: 'cidr', label: 'CIDR' },
+            { value: 'range', label: 'IP range' },
+            { value: 'allSubnets', label: 'All subnets' },
+          ]}
+        />
         <TabsContent value="cidr" className="mt-3 space-y-1.5">
           <Label className="text-xs text-muted-foreground">Network (CIDR)</Label>
           <Input

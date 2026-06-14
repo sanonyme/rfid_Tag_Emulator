@@ -110,37 +110,48 @@ export function ConnectionStatus({
     setRecentHosts(updated)
   }
 
-  const handleMouseEnter = () => {
+  const openPopover = () => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current)
     setIsOpen(true)
     tourIx?.setConnectionPopoverOpen(true)
   }
 
+  const closePopover = () => {
+    setIsOpen(false)
+    tourIx?.setConnectionPopoverOpen(false)
+  }
+
+  const handleMouseEnter = openPopover
+
   const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
-      setIsOpen(false)
-      tourIx?.setConnectionPopoverOpen(false)
-    }, 300)
+    timeoutRef.current = setTimeout(closePopover, 300)
   }
 
   return (
     <div className="relative inline-flex items-center" data-tour="tour-connection">
-        <div
+        <button
+            type="button"
+            aria-label={connected ? 'Connected — manage connection' : 'Disconnected — manage connection'}
+            aria-expanded={isOpen}
             className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-all duration-300 focus:outline-none focus-visible:outline-none",
-                connected 
-                    ? "bg-green-500/10 text-green-500 hover:bg-green-500/20" 
-                    : "bg-red-500/10 text-red-500 hover:bg-red-500/20"
+                "smooth-press w-10 h-10 rounded-full flex items-center justify-center cursor-pointer outline-none transition-all duration-300 ring-1 active:scale-95 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                connected
+                    ? "bg-success/10 text-success ring-success/20 hover:bg-success/20 focus-visible:ring-success"
+                    : "bg-destructive/10 text-destructive ring-destructive/20 hover:bg-destructive/20 focus-visible:ring-destructive"
             )}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
+            onClick={() => (isOpen ? closePopover() : openPopover())}
+            onKeyDown={(e) => { if (e.key === 'Escape') closePopover() }}
         >
-            {connected ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
-        </div>
+            <span key={connected ? 'on' : 'off'} className="animate-scale-in inline-flex">
+                {connected ? <Wifi className="w-5 h-5" /> : <WifiOff className="w-5 h-5" />}
+            </span>
+        </button>
 
         {isOpen && (
             <div 
-                className="absolute left-0 top-[calc(100%+8px)] w-[270px] p-4 bg-popover border border-border rounded-xl shadow-lg z-50 animate-in slide-in-from-top-2"
+                className="absolute left-0 top-[calc(100%+8px)] w-[270px] p-4 bg-popover border border-border/60 rounded-xl shadow-elev-lg z-50 animate-in fade-in-0 zoom-in-95 slide-in-from-top-2"
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
             >
@@ -166,11 +177,11 @@ export function ConnectionStatus({
 
                     <div className="flex gap-2">
                         {!connected ? (
-                            <Button size="sm" className="w-full" onClick={handleConnect}>
+                            <Button ripple size="sm" className="w-full" onClick={handleConnect}>
                                 Connect
                             </Button>
                         ) : (
-                            <Button size="sm" variant="destructive" className="w-full" onClick={handleDisconnect}>
+                            <Button ripple size="sm" variant="destructive" className="w-full" onClick={handleDisconnect}>
                                 Disconnect
                             </Button>
                         )}
@@ -188,14 +199,14 @@ export function ConnectionStatus({
                                         className="group flex items-center gap-2 px-2 py-1 rounded-md hover:bg-accent cursor-pointer transition-colors"
                                     >
                                         <button
-                                            className="text-amber-500 hover:text-amber-600"
+                                            className="rounded text-amber-500 outline-none transition-colors hover:text-amber-600 focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={(e) => { e.stopPropagation(); togglePin(h) }}
                                             title="Unpin"
                                         >
                                             <Star className="w-3 h-3 fill-current" />
                                         </button>
                                         <button
-                                            className="flex-1 text-left text-xs font-mono text-foreground truncate"
+                                            className="flex-1 rounded text-left text-xs font-mono text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={() => connectTo(h)}
                                         >
                                             {h}
@@ -218,20 +229,20 @@ export function ConnectionStatus({
                                         className="group flex items-center gap-2 px-2 py-1 rounded-md hover:bg-accent cursor-pointer transition-colors"
                                     >
                                         <button
-                                            className="opacity-40 hover:opacity-100 hover:text-amber-500 transition-colors"
+                                            className="rounded opacity-40 outline-none transition-colors hover:opacity-100 hover:text-amber-500 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={(e) => { e.stopPropagation(); togglePin(h) }}
                                             title="Pin to keep at top"
                                         >
                                             <Star className="w-3 h-3" />
                                         </button>
                                         <button
-                                            className="flex-1 text-left text-xs font-mono text-foreground truncate"
+                                            className="flex-1 rounded text-left text-xs font-mono text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={() => connectTo(h)}
                                         >
                                             {h}
                                         </button>
                                         <button
-                                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-destructive/10 hover:text-destructive transition-all"
+                                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 p-0.5 rounded outline-none hover:bg-destructive/10 hover:text-destructive transition-all focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={(e) => { e.stopPropagation(); removeRecentHost(h) }}
                                         >
                                             <X className="w-3 h-3" />

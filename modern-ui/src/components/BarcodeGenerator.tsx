@@ -11,7 +11,8 @@ import { Slider } from './ui/slider'
 import { Switch } from './ui/switch'
 import { Download, Copy, RefreshCw, Plus, Trash2, ArrowUp, ArrowDown, Upload, FileText, Loader2, Package, ScanLine, Layers, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { Tabs, TabsContent } from './ui/tabs'
+import { SegmentedTabs } from './SegmentedTabs'
 import { QrCodeGenerator } from './QrCodeGenerator'
 import { ZplViewerTab } from './ZplViewerTab'
 import JSZip from 'jszip'
@@ -151,6 +152,7 @@ function generateRandomValue(format: BarcodeFormat) {
 }
 
 export function BarcodeGenerator() {
+  const [genMode, setGenMode] = useState<'barcode' | 'qrcode' | 'zpl' | 'batch'>('barcode')
   const [barcodes, setBarcodes] = useState<BarcodeConfig[]>([
     { id: '1', text: 'ZEUS-12345', format: 'CODE128', height: 100 }
   ])
@@ -317,22 +319,21 @@ export function BarcodeGenerator() {
 
   return (
     <div className="h-full">
-      <Tabs defaultValue="barcode" className="h-full flex flex-col">
+      <Tabs value={genMode} onValueChange={(v) => setGenMode(v as typeof genMode)} className="h-full flex flex-col">
         <div className="mb-4 px-2">
-          <TabsList className="mx-auto grid w-full max-w-3xl grid-cols-2 sm:grid-cols-4 gap-1 p-1" data-tour="tour-gen-modes">
-            <TabsTrigger value="barcode" className="w-full px-2 sm:px-3">
-              Barcodes
-            </TabsTrigger>
-            <TabsTrigger value="qrcode" className="w-full px-2 sm:px-3">
-              QR Codes
-            </TabsTrigger>
-            <TabsTrigger value="zpl" className="w-full px-2 sm:px-3">
-              ZPL
-            </TabsTrigger>
-            <TabsTrigger value="batch" className="w-full px-2 sm:px-3" data-tour="tour-gen-batch-tab">
-              Batch Export
-            </TabsTrigger>
-          </TabsList>
+          <SegmentedTabs
+            value={genMode}
+            layoutId="gen-mode-nav"
+            dataTour="tour-gen-modes"
+            className="mx-auto max-w-3xl grid-cols-2 sm:grid-cols-4"
+            triggerClassName="w-full px-2 sm:px-3"
+            items={[
+              { value: 'barcode', label: 'Barcodes' },
+              { value: 'qrcode', label: 'QR Codes' },
+              { value: 'zpl', label: 'ZPL' },
+              { value: 'batch', label: 'Batch Export', dataTour: 'tour-gen-batch-tab' },
+            ]}
+          />
         </div>
 
         <TabsContent value="barcode" className="flex-1 mt-0">
@@ -411,7 +412,7 @@ export function BarcodeGenerator() {
                       </Button>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="stagger-children space-y-4">
                       {barcodes.map((barcode, index) => (
                         <div key={barcode.id} className="relative space-y-4 rounded-2xl border border-border/50 bg-card/70 p-4 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:shadow-md">
                           <div className="flex items-start justify-between gap-4">
@@ -566,7 +567,7 @@ export function BarcodeGenerator() {
                     </div>
                     <div className="rounded-2xl border border-border/50 bg-background/70 p-4">
                       <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Status</p>
-                      <div className={`mt-2 flex items-center gap-2 text-sm font-medium ${hasInvalidBarcodes ? 'text-destructive' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      <div className={`mt-2 flex items-center gap-2 text-sm font-medium ${hasInvalidBarcodes ? 'text-destructive' : 'text-success'}`}>
                         <Sparkles className="h-4 w-4" />
                         {hasInvalidBarcodes ? `${invalidCount} issue${invalidCount === 1 ? '' : 's'} to fix` : 'Ready to export'}
                       </div>

@@ -7,8 +7,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
 import {
-  Zap,
-  StopCircle,
   Activity,
   RefreshCw,
   Radio,
@@ -23,8 +21,12 @@ import {
   FileCode2,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { motion, AnimatePresence } from 'framer-motion'
 import { TCPEmulatorClient, expandUpcListToEpcs, type TagData } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
+import { prefersReducedMotion } from '@/lib/motion'
+import { sectionCard, actionGroup, actionBtnMuted } from '@/lib/ui-tokens'
+import { SendButton, LoopSendButton } from './SendControls'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { TagListSummary } from './TagListSummary'
@@ -265,6 +267,7 @@ export function FixedTab({
 
   const selectedUids = uid ? uid.split(',').filter(Boolean) : []
   const selectedAntennaCount = antenna.split(',').filter(Boolean).length || 1
+  const reducedMotion = prefersReducedMotion()
   const totalInputRows =
     upcList.split('\n').filter((line) => line.trim()).length +
     epcList.split('\n').filter((line) => line.trim()).length
@@ -414,7 +417,6 @@ export function FixedTab({
           handleSendTags(true)
         } else {
           setSending(false)
-          if (!isLooping) toast.success(`${tagCount} tag(s) sent successfully`)
           if (isLooping) {
             setLooping(false)
             loopingRef.current = false
@@ -487,17 +489,6 @@ export function FixedTab({
     [upcList, setUpcList],
   )
 
-  const sectionCard =
-    'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
-
-  /** Segmented control shell shared by toolbars and primary actions */
-  const actionGroup =
-    'flex items-stretch gap-1 rounded-xl bg-muted/35 p-1 ring-1 ring-border/25'
-  const actionBtnMuted =
-    'h-10 rounded-lg border-transparent bg-background/90 shadow-none transition-colors hover:bg-background'
-  const actionBtnPrimary =
-    'h-10 gap-2 rounded-lg font-semibold shadow-sm shadow-primary/25 ring-1 ring-primary/20 transition-all hover:bg-primary/90 hover:shadow-md hover:shadow-primary/35 active:scale-[0.98]'
-
   const sendTagsShortcutLabel =
     typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent)
       ? '⌘ Enter'
@@ -515,7 +506,7 @@ export function FixedTab({
       {/* Left Sidebar - Configuration */}
       <div
         className={cn(
-          'space-y-4 overflow-y-auto pr-1 min-h-0',
+          'stagger-children space-y-4 overflow-y-auto pr-1 min-h-0',
           isPopout && 'max-h-[42vh] shrink-0 lg:max-h-none lg:shrink',
         )}
       >
@@ -546,9 +537,11 @@ export function FixedTab({
                 {[1, 2, 3, 4].map((ant) => {
                   const selected = antenna.split(',').filter(Boolean).includes(String(ant))
                   return (
-                    <button
+                    <motion.button
                       key={ant}
                       type="button"
+                      whileTap={reducedMotion ? undefined : { scale: 0.9 }}
+                      transition={reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 500, damping: 28 }}
                       onClick={() => {
                         const current = new Set(antenna.split(',').filter(Boolean))
                         if (current.has(String(ant))) {
@@ -560,18 +553,45 @@ export function FixedTab({
                         setAntenna(sorted.join(',') || '1')
                       }}
                       className={cn(
-                        'relative flex flex-1 flex-col items-center justify-center gap-0.5 rounded-lg py-2.5 transition-all duration-200',
+                        'relative flex flex-1 flex-col items-center justify-center gap-0.5 overflow-hidden rounded-lg py-2.5 transition-[background,color,box-shadow] duration-300 ease-out',
                         selected
-                          ? 'bg-gradient-to-b from-emerald-500/20 to-emerald-600/10 text-emerald-700 shadow-sm ring-1 ring-emerald-500/35 dark:text-emerald-300'
+                          ? 'text-emerald-700 shadow-sm ring-1 ring-emerald-500/35 dark:text-emerald-300'
                           : 'text-muted-foreground hover:bg-background/70 hover:text-foreground',
                       )}
                     >
-                      <Radio className={cn('h-4 w-4', selected ? 'text-emerald-600 dark:text-emerald-400' : 'opacity-50')} />
+                      <AnimatePresence>
+                        {selected && (
+                          <motion.span
+                            key="bg"
+                            aria-hidden
+                            initial={reducedMotion ? false : { opacity: 0, scale: 0.85 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85 }}
+                            transition={reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 400, damping: 30 }}
+                            className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-gradient-to-b from-emerald-500/20 to-emerald-600/10"
+                          />
+                        )}
+                      </AnimatePresence>
+                      <motion.span
+                        animate={selected && !reducedMotion ? { rotate: [0, -12, 12, 0] } : { rotate: 0 }}
+                        transition={{ duration: 0.4, ease: 'easeOut' }}
+                      >
+                        <Radio className={cn('h-4 w-4 transition-colors duration-300', selected ? 'text-emerald-600 dark:text-emerald-400' : 'opacity-50')} />
+                      </motion.span>
                       <span className="text-xs font-semibold tabular-nums">{ant}</span>
-                      {selected && (
-                        <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(34,197,94,0.85)]" />
-                      )}
-                    </button>
+                      <AnimatePresence>
+                        {selected && (
+                          <motion.span
+                            key="dot"
+                            initial={reducedMotion ? false : { scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={reducedMotion ? { opacity: 0 } : { scale: 0, opacity: 0 }}
+                            transition={reducedMotion ? { duration: 0 } : { type: 'spring', stiffness: 600, damping: 22 }}
+                            className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(34,197,94,0.85)]"
+                          />
+                        )}
+                      </AnimatePresence>
+                    </motion.button>
                   )
                 })}
               </div>
@@ -982,21 +1002,14 @@ export function FixedTab({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="flex min-w-0 flex-1">
-                      <Button
+                      <SendButton
+                        ripple
                         onClick={() => handleSendTags(false)}
                         disabled={!connected || sending || looping}
-                        size="lg"
-                        className={cn(
-                          actionBtnPrimary,
-                          'h-11 min-h-11 w-full min-w-0 flex-wrap justify-center gap-x-2 gap-y-1 px-4 py-2.5 sm:min-w-[10.75rem]',
-                        )}
-                      >
-                        <Zap className="h-4 w-4 shrink-0" />
-                        <span>Send Tags</span>
-                        <kbd className="pointer-events-none inline-flex items-center rounded-md border border-primary-foreground/25 bg-primary-foreground/15 px-1.5 py-0.5 font-mono text-[10px] font-medium leading-none text-primary-foreground/95">
-                          {sendTagsShortcutLabel}
-                        </kbd>
-                      </Button>
+                        label="Send Tags"
+                        shortcut={sendTagsShortcutLabel}
+                        className="w-full min-w-0 flex-wrap justify-center gap-x-2 gap-y-1 px-4 py-2.5 sm:min-w-[10.75rem]"
+                      />
                     </span>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-xs text-xs">
@@ -1005,30 +1018,12 @@ export function FixedTab({
                     </span>
                   </TooltipContent>
                 </Tooltip>
-                <Button
+                <LoopSendButton
+                  active={sending || looping}
                   onClick={sending || looping ? handleStop : handleToggleLoop}
                   disabled={!connected || (!sending && !looping && totalInputRows === 0)}
-                  variant={sending || looping ? 'destructive' : 'outline'}
-                  size="lg"
-                  className={cn(
-                    'h-11 min-h-11 gap-2 px-4 font-medium sm:min-w-[9.75rem]',
-                    sending || looping
-                      ? 'rounded-lg shadow-sm ring-1 ring-destructive/25'
-                      : cn(actionBtnMuted, 'border-0'),
-                  )}
-                >
-                  {sending || looping ? (
-                    <>
-                      <StopCircle className="h-4 w-4 shrink-0" />
-                      Stop
-                    </>
-                  ) : (
-                    <>
-                      <Activity className="h-4 w-4 shrink-0" />
-                      Loop Send
-                    </>
-                  )}
-                </Button>
+                  ripple
+                />
               </div>
             </div>
           </CardContent>

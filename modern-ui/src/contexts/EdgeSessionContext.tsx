@@ -48,6 +48,11 @@ type EdgeSessionContextValue = {
   ) => Promise<{ status: number; response: string | null }>
   startProcess: (name: string) => Promise<void>
   stopProcess: (name: string) => Promise<void>
+  fetchEdgeMeta: () => Promise<{
+    version: string | null
+    setup: string | null
+    licenseValid: boolean | null
+  }>
 }
 
 const EdgeSessionContext = createContext<EdgeSessionContextValue | null>(null)
@@ -366,6 +371,18 @@ export function EdgeSessionProvider({
     selectedProcessRef.current = name
   }, [])
 
+  const fetchEdgeMeta = useCallback(async () => {
+    if (!edgeReady || !host.trim()) {
+      return { version: null, setup: null, licenseValid: null }
+    }
+    const [version, setup, licenseValid] = await Promise.all([
+      clientRef.current.getVersion(host, port).catch(() => null),
+      clientRef.current.getSetup(host, port).catch(() => null),
+      clientRef.current.checkLicenseValid(host, port).catch(() => null),
+    ])
+    return { version, setup, licenseValid }
+  }, [edgeReady, host, port])
+
   const value = useMemo(
     () => ({
       tcpConnected,
@@ -390,6 +407,7 @@ export function EdgeSessionProvider({
       invokeBlock,
       startProcess,
       stopProcess,
+      fetchEdgeMeta,
     }),
     [
       tcpConnected,
@@ -413,6 +431,7 @@ export function EdgeSessionProvider({
       invokeBlock,
       startProcess,
       stopProcess,
+      fetchEdgeMeta,
     ],
   )
 

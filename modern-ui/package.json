@@ -72,6 +72,7 @@
     "zpl-renderer-js": "^3.4.0"
   },
   "overrides": {
+    "esbuild": "^0.28.1",
     "serialize-javascript": "^7.0.3",
     "node-gyp": "^12.2.0",
     "uuid": "^14.0.0"

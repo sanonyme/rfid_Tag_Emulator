@@ -24,9 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select'
-
-const SECTION_CARD =
-  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
+import { sectionCard as SECTION_CARD } from '@/lib/ui-tokens'
 
 const PARTITION_TABLE = [
   { companyBits: 40, itemBits: 4 },

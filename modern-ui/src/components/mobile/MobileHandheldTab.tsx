@@ -156,7 +156,6 @@ export function MobileHandheldTab({
       /no handheld connected|cancelled by user|^stopped:/i.test(msg)
 
     let round = 0
-    const firstCount = parseTagsFromSlot(curSlot, rssiRef.current, serialContinuesRef.current).length
     let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
     let cachedParseKey = ''
 
@@ -231,9 +230,7 @@ export function MobileHandheldTab({
       return n
     })
 
-    if (!startedRepeat) {
-      toast.success(`${firstCount} EPC(s) sent`)
-    } else if (userCancelled) {
+    if (startedRepeat && userCancelled) {
       toast.info('Loop send stopped')
     }
   }

@@ -34,11 +34,25 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
+    /* Semantic status colors */
+    --success: 142 60% 40%;
+    --success-foreground: 0 0% 98%;
+    --warning: 38 92% 48%;
+    --warning-foreground: 28 60% 14%;
+    --info: 199 85% 45%;
+    --info-foreground: 0 0% 98%;
+
     --border: 30 10% 85%;
     --input: 30 10% 85%;
     --ring: 16 53% 50%;
 
     --radius: 0.5rem;
+
+    /* Elevation tokens — consistent shadows that adapt to theme */
+    --shadow-color: 20 30% 18%;
+    --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.08);
+    --shadow-md: 0 4px 12px hsl(var(--shadow-color) / 0.10);
+    --shadow-lg: 0 12px 32px hsl(var(--shadow-color) / 0.14);
 
     --file-tree-bg: 30 12% 96%;
     --file-tree-hover: 30 15% 92%;
@@ -72,6 +86,14 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
 
+    /* Semantic status colors — brighter for dark surfaces */
+    --success: 142 55% 50%;
+    --success-foreground: 222 47% 11%;
+    --warning: 38 95% 58%;
+    --warning-foreground: 28 60% 12%;
+    --info: 199 88% 56%;
+    --info-foreground: 222 47% 11%;
+
     --border: 217 32% 17%;
     --input: 217 32% 17%;
     --ring: 16 60% 60%;
@@ -79,6 +101,12 @@
     --file-tree-bg: 222 40% 14%;
     --file-tree-hover: 217 32% 20%;
     --folder-icon: 16 55% 58%;
+
+    /* Elevation tokens — deeper shadows for dark mode */
+    --shadow-color: 222 60% 3%;
+    --shadow-sm: 0 1px 2px hsl(var(--shadow-color) / 0.30);
+    --shadow-md: 0 4px 14px hsl(var(--shadow-color) / 0.40);
+    --shadow-lg: 0 12px 34px hsl(var(--shadow-color) / 0.50);
   }
 }
 
@@ -316,6 +344,22 @@ button, a, input, select, textarea {
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/*
+ * Guarantees press/hover feedback (e.g. active:scale) eases smoothly even when
+ * a utility like `transition-colors` would otherwise drop `transform` from the
+ * transitioned properties. Declared after Tailwind utilities with equal
+ * specificity so it wins the cascade, while leaving each element's own
+ * transition-duration/timing untouched.
+ */
+.smooth-press {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, box-shadow, transform, filter, opacity;
+}
+@media (prefers-reduced-motion: reduce) {
+  .smooth-press {
+    transition: none !important;
+  }
+}
+
 /* Animated gradient for text */
 @keyframes gradient {
   0%, 100% {
@@ -406,18 +450,80 @@ button, a, input, select, textarea {
   box-shadow: none !important;
 }
 
-/* Page transition - slide when tab becomes active */
+/* Page transition - fade + subtle lift when a tab becomes active */
 [data-state="active"].tab-content-animate {
-  animation: tabSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: tabSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 @keyframes tabSlideIn {
   from {
     opacity: 0;
-    transform: translateX(8px);
+    transform: translateY(6px) scale(0.995);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
+ * Staggered content entrance. Put `stagger-children` on a container; direct
+ * children animate in with an increasing delay. Pair with `reveal-item` on the
+ * children (or rely on the nth-child delays below for the first ~12 items).
+ */
+@keyframes revealItem {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal-item,
+.stagger-children > * {
+  animation: revealItem 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
+.stagger-children > *:nth-child(2) { animation-delay: 0.06s; }
+.stagger-children > *:nth-child(3) { animation-delay: 0.10s; }
+.stagger-children > *:nth-child(4) { animation-delay: 0.14s; }
+.stagger-children > *:nth-child(5) { animation-delay: 0.18s; }
+.stagger-children > *:nth-child(6) { animation-delay: 0.22s; }
+.stagger-children > *:nth-child(7) { animation-delay: 0.26s; }
+.stagger-children > *:nth-child(8) { animation-delay: 0.30s; }
+.stagger-children > *:nth-child(9) { animation-delay: 0.34s; }
+.stagger-children > *:nth-child(10) { animation-delay: 0.38s; }
+.stagger-children > *:nth-child(11) { animation-delay: 0.42s; }
+.stagger-children > *:nth-child(n+12) { animation-delay: 0.46s; }
+
+/* Interactive card: smooth hover lift + press, theme-aware shadow */
+.hover-lift-card {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
+  will-change: transform;
+}
+.hover-lift-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+.hover-lift-card:active {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Honor reduced-motion: disable the larger entrance/transition motion. */
+@media (prefers-reduced-motion: reduce) {
+  [data-state="active"].tab-content-animate,
+  .reveal-item,
+  .stagger-children > * {
+    animation: none !important;
+  }
+  .hover-lift-card {
+    transition: none;
+  }
+  .hover-lift-card:hover,
+  .hover-lift-card:active {
+    transform: none;
   }
 }
 
@@ -458,4 +564,40 @@ button, a, input, select, textarea {
 }
 .animate-skeleton {
   animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+/* Button ripple (Material-style press feedback) */
+@keyframes button-ripple {
+  from {
+    transform: scale(0);
+    opacity: 0.35;
+  }
+  to {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+.animate-button-ripple {
+  animation: button-ripple 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* Edge Command Center ambient background */
+.edge-mesh-bg {
+  background-image:
+    radial-gradient(ellipse 80% 50% at 20% -10%, hsl(var(--info) / 0.12), transparent 55%),
+    radial-gradient(ellipse 60% 40% at 90% 100%, hsl(var(--primary) / 0.08), transparent 50%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .edge-mesh-bg {
+    background-image: none;
+  }
+}
+
+/* Respect reduced-motion: keep buttons functional but calm */
+@media (prefers-reduced-motion: reduce) {
+  .animate-button-ripple {
+    animation: none;
+    display: none;
+  }
 }

@@ -45,18 +45,6 @@ const TAB_ITEMS_ADMIN = [
   { value: 'terminal', label: 'Terminal', icon: Terminal },
 ]
 
-/** Edge tab — distinct accent so it stands out in the main navbar */
-const EDGE_TAB_ACCENT = {
-  triggerIdle:
-    'text-cyan-800 dark:text-cyan-100 bg-cyan-500/15 hover:bg-cyan-500/25 hover:text-cyan-900 dark:hover:text-white shadow-[0_0_14px_rgba(34,211,238,0.2)]',
-  triggerActive:
-    'text-cyan-950 dark:text-cyan-50 bg-cyan-500/25 shadow-[0_0_14px_rgba(34,211,238,0.25)]',
-  indicatorBg: 'bg-cyan-500/30 dark:bg-cyan-400/20',
-  indicatorBar: 'bg-cyan-500 dark:bg-cyan-300 shadow-[0_0_8px_rgba(34,211,238,0.75)]',
-  indicatorGlow: 'bg-cyan-400/30 dark:bg-cyan-300/25',
-  icon: 'text-cyan-600 dark:text-cyan-300',
-} as const
-
 interface TabNavBarProps {
   value: string
   className?: string
@@ -123,8 +111,6 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
     return out
   }, [statusMap])
 
-  const activeTabIsEdge = value === 'edge'
-
   return (
     <LayoutGroup id="tab-nav-bar">
       <div className={cn('flex items-center justify-center gap-1 overflow-x-auto', className)}>
@@ -134,7 +120,6 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
         >
           {TAB_ITEMS.map((item) => {
           const Icon = item.icon
-          const isEdge = item.value === 'edge'
           const isActive = value === item.value
           const status = tabStatus[item.value]
 
@@ -148,29 +133,17 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                 'ring-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0',
                 'shadow-none data-[state=active]:shadow-none',
                 'data-[state=active]:bg-transparent',
-                isEdge
-                  ? isActive
-                    ? EDGE_TAB_ACCENT.triggerActive
-                    : EDGE_TAB_ACCENT.triggerIdle
-                  : cn(
-                      'bg-transparent text-foreground/70 hover:text-foreground',
-                      'data-[state=active]:text-primary dark:data-[state=active]:text-white',
-                    ),
+                'bg-transparent text-foreground/70 hover:text-foreground',
+                'data-[state=active]:text-primary dark:data-[state=active]:text-white',
               )}
             >
               {isCompact ? (
                 <span className="flex items-center justify-center w-8 h-8">
-                  <Icon
-                    className={cn('w-4 h-4', isEdge && EDGE_TAB_ACCENT.icon)}
-                    strokeWidth={2.5}
-                  />
+                  <Icon className="w-4 h-4" strokeWidth={2.5} />
                 </span>
               ) : (
                 <span className="flex items-center gap-2">
-                  <Icon
-                    className={cn('w-4 h-4 shrink-0', isEdge && EDGE_TAB_ACCENT.icon)}
-                    strokeWidth={2.5}
-                  />
+                  <Icon className="w-4 h-4 shrink-0" strokeWidth={2.5} />
                   {item.label}
                 </span>
               )}
@@ -187,30 +160,9 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                     damping: 30,
                   }}
                 >
-                  <div
-                    className={cn(
-                      'absolute inset-0 rounded-full transition-colors duration-200',
-                      activeTabIsEdge
-                        ? EDGE_TAB_ACCENT.indicatorBg
-                        : 'bg-primary/20 dark:bg-white/15',
-                    )}
-                  />
-                  <div
-                    className={cn(
-                      'absolute -top-1.5 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full transition-colors duration-200',
-                      activeTabIsEdge
-                        ? EDGE_TAB_ACCENT.indicatorBar
-                        : 'bg-primary dark:bg-white shadow-[0_0_6px_hsl(var(--primary))] dark:shadow-[0_0_6px_rgba(255,255,255,0.6)]',
-                    )}
-                  />
-                  <div
-                    className={cn(
-                      'absolute w-10 h-10 rounded-full blur-lg -top-2.5 left-1/2 -translate-x-1/2 transition-colors duration-200',
-                      activeTabIsEdge
-                        ? EDGE_TAB_ACCENT.indicatorGlow
-                        : 'bg-primary/15 dark:bg-white/20',
-                    )}
-                  />
+                  <div className="absolute inset-0 rounded-full bg-primary/20 transition-colors duration-200 dark:bg-white/15" />
+                  <div className="absolute -top-1.5 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_6px_hsl(var(--primary))] transition-colors duration-200 dark:bg-white dark:shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
+                  <div className="absolute -top-2.5 left-1/2 h-10 w-10 -translate-x-1/2 rounded-full bg-primary/15 blur-lg transition-colors duration-200 dark:bg-white/20" />
                 </motion.div>
               )}
             </TabsTrigger>
@@ -241,27 +193,27 @@ function StatusDot({ status }: { status: ServiceStatus | undefined }) {
     switch (status) {
       case 'connected':
         return {
-          dot: 'bg-emerald-500',
-          glow: 'bg-emerald-500/50',
-          ping: 'bg-emerald-400/70',
+          dot: 'bg-success',
+          glow: 'bg-success/50',
+          ping: 'bg-success/70',
         }
       case 'sending':
         return {
-          dot: 'bg-sky-500',
-          glow: 'bg-sky-500/50',
-          ping: 'bg-sky-400/70',
+          dot: 'bg-info',
+          glow: 'bg-info/50',
+          ping: 'bg-info/70',
         }
       case 'connecting':
         return {
-          dot: 'bg-amber-500',
-          glow: 'bg-amber-500/50',
-          ping: 'bg-amber-400/70',
+          dot: 'bg-warning',
+          glow: 'bg-warning/50',
+          ping: 'bg-warning/70',
         }
       case 'error':
         return {
-          dot: 'bg-red-500',
-          glow: 'bg-red-500/50',
-          ping: 'bg-red-400/70',
+          dot: 'bg-destructive',
+          glow: 'bg-destructive/50',
+          ping: 'bg-destructive/70',
         }
       default:
         return { dot: '', glow: '', ping: '' }

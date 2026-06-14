@@ -5,9 +5,13 @@ import { Label } from './ui/label'
 import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Textarea } from './ui/textarea'
-import { Download, Copy, RefreshCw, Trash2 } from 'lucide-react'
+import { Download, Copy, RefreshCw, Trash2, Boxes, QrCode } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
+import { SegmentedTabs } from './SegmentedTabs'
+import { SimpleQrCodeGenerator } from './SimpleQrCodeGenerator'
+import { Badge } from './ui/badge'
+import { Reveal } from './Reveal'
 
 const FIELD_MAPPINGS: Record<string, string> = {
   "00": "Version",
@@ -58,6 +62,38 @@ const DEFAULT_VALUES: Record<string, string> = {
 };
 
 export function QrCodeGenerator() {
+  const [generatorMode, setGeneratorMode] = useState<'box' | 'simple'>('box')
+
+  return (
+    <Tabs
+      value={generatorMode}
+      onValueChange={(v) => setGeneratorMode(v as 'box' | 'simple')}
+      className="flex h-full min-h-0 flex-col"
+    >
+      <div className="mb-5 shrink-0 px-2">
+        <SegmentedTabs
+          value={generatorMode}
+          layoutId="qr-gen-mode"
+          className="mx-auto max-w-lg grid-cols-2"
+          items={[
+            { value: 'box', label: 'Box Fields', icon: <Boxes className="h-3.5 w-3.5" /> },
+            { value: 'simple', label: 'Text / URL', icon: <QrCode className="h-3.5 w-3.5" /> },
+          ]}
+        />
+      </div>
+
+      <TabsContent value="box" className="mt-0 min-h-0 flex-1">
+        <BoxQrCodeGenerator />
+      </TabsContent>
+
+      <TabsContent value="simple" className="mt-0 min-h-0 flex-1">
+        <SimpleQrCodeGenerator />
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+function BoxQrCodeGenerator() {
   const [formData, setFormData] = useState<Record<string, string>>(DEFAULT_VALUES)
   const [jsonInput, setJsonInput] = useState(JSON.stringify(DEFAULT_VALUES, null, 2))
   const qrSize = 256
@@ -160,61 +196,86 @@ export function QrCodeGenerator() {
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
-      <div className="space-y-6 overflow-y-auto pr-2">
-        <Card className="border-border/50">
-          <CardHeader className="pb-3">
-            <CardTitle>QR Content Editor</CardTitle>
-            <CardDescription>Edit the fields to generate the QR code</CardDescription>
+    <Reveal stagger className="grid h-full min-h-0 gap-5 overflow-hidden lg:grid-cols-2">
+      <div className="min-h-0 overflow-y-auto pr-1">
+        <Card className="border-border/50 bg-gradient-to-br from-background via-background to-muted/20 shadow-sm">
+          <CardHeader className="pb-4">
+            <div className="rounded-2xl border border-border/50 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Boxes className="h-4 w-4 text-primary" />
+                    Structured payload
+                  </div>
+                  <CardTitle className="text-2xl tracking-tight">Box QR editor</CardTitle>
+                  <CardDescription className="max-w-md text-sm leading-6">
+                    Fill numbered logistics fields or paste raw JSON — both stay in sync.
+                  </CardDescription>
+                </div>
+                <Badge variant="outline" className="rounded-full bg-background/70 px-3 py-1 font-mono">
+                  {Object.keys(formData).length} fields
+                </Badge>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent className="space-y-6">
+          <CardContent className="space-y-6 pb-6">
             <Tabs defaultValue="editor" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-4">
-                <TabsTrigger value="editor">Field Editor</TabsTrigger>
-                <TabsTrigger value="json">Raw JSON</TabsTrigger>
+              <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
+                <TabsTrigger value="editor" className="rounded-lg text-xs">
+                  Field editor
+                </TabsTrigger>
+                <TabsTrigger value="json" className="rounded-lg text-xs">
+                  Raw JSON
+                </TabsTrigger>
               </TabsList>
-              
+
               <TabsContent value="editor" className="space-y-4">
-                <div className="flex justify-end gap-2 mb-4">
-                  <Button variant="outline" size="sm" onClick={resetToDefault}>
+                <div className="mb-2 flex justify-end gap-2">
+                  <Button variant="outline" size="sm" className="rounded-full" onClick={resetToDefault}>
                     <RefreshCw className="mr-2 h-4 w-4" /> Reset
                   </Button>
-                  <Button variant="outline" size="sm" onClick={clearAll} className="text-destructive hover:text-destructive">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-full text-destructive hover:text-destructive"
+                    onClick={clearAll}
+                  >
                     <Trash2 className="mr-2 h-4 w-4" /> Clear
                   </Button>
                 </div>
-                
+
                 <div className="grid grid-cols-2 gap-3">
                   {Object.entries(FIELD_MAPPINGS)
                     .sort((a, b) => a[0].localeCompare(b[0]))
                     .map(([key, label]) => (
-                    <div key={key} className="space-y-1">
-                      <Label htmlFor={`field-${key}`} className="text-xs flex items-center gap-1.5">
-                        <span className="font-mono text-muted-foreground">{key}</span>
-                        <span className="font-medium truncate">{label}</span>
-                      </Label>
-                      <Input
-                        id={`field-${key}`}
-                        value={formData[key] || ''}
-                        onChange={(e) => updateFormData(key, e.target.value)}
-                        className="h-8 text-sm"
-                      />
-                    </div>
-                  ))}
+                      <div
+                        key={key}
+                        className="space-y-1.5 rounded-xl border border-border/40 bg-background/60 p-2.5"
+                      >
+                        <Label htmlFor={`field-${key}`} className="flex items-center gap-1.5 text-xs">
+                          <span className="font-mono text-muted-foreground">{key}</span>
+                          <span className="truncate font-medium">{label}</span>
+                        </Label>
+                        <Input
+                          id={`field-${key}`}
+                          value={formData[key] || ''}
+                          onChange={(e) => updateFormData(key, e.target.value)}
+                          className="h-8 rounded-lg border-border/50 bg-background/90 text-sm"
+                        />
+                      </div>
+                    ))}
                 </div>
               </TabsContent>
-              
+
               <TabsContent value="json">
-                <div className="space-y-2">
-                  <Label>JSON Data</Label>
-                  <Textarea 
-                    value={jsonInput} 
+                <div className="space-y-2 rounded-2xl border border-border/50 bg-muted/15 p-4">
+                  <Label>JSON data</Label>
+                  <Textarea
+                    value={jsonInput}
                     onChange={handleJsonChange}
-                    className="font-mono text-sm min-h-[300px]"
+                    className="min-h-[300px] rounded-xl border-border/50 bg-background/80 font-mono text-sm"
                   />
-                  <p className="text-xs text-muted-foreground">
-                    Directly edit the JSON object here.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Directly edit the JSON object here.</p>
                 </div>
               </TabsContent>
             </Tabs>
@@ -222,36 +283,34 @@ export function QrCodeGenerator() {
         </Card>
       </div>
 
-      <div className="space-y-6">
-        <Card className="h-full flex flex-col border-border/50">
-          <CardHeader>
-            <CardTitle>Preview</CardTitle>
-            <CardDescription>Live preview of your QR code</CardDescription>
-          </CardHeader>
-          <CardContent className="flex min-h-0 flex-1 flex-col px-6 pb-6 pt-0">
-            <div className="flex min-h-[300px] flex-1 flex-col items-center justify-center overflow-hidden rounded-lg border border-dashed border-muted-foreground/25 bg-white/5 p-8">
-              <div ref={qrRef} className="rounded-lg bg-white p-8 shadow-lg">
-                <QRCodeSVG
-                  value={JSON.stringify(formData)}
-                  size={qrSize}
-                  level={"M"}
-                  includeMargin={true}
-                />
-              </div>
+      <Card className="flex min-h-0 flex-col overflow-hidden border-border/50 bg-gradient-to-br from-card via-card to-muted/10 shadow-sm">
+        <CardHeader className="shrink-0 border-b border-border/30 pb-4">
+          <CardTitle className="text-lg">Preview</CardTitle>
+          <CardDescription>Encoded box payload as QR</CardDescription>
+        </CardHeader>
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+          <div className="edge-mesh-bg relative flex min-h-[300px] flex-1 flex-col items-center justify-center overflow-hidden p-8">
+            <div ref={qrRef} className="relative rounded-2xl bg-white p-8 shadow-elev-lg ring-1 ring-black/5">
+              <QRCodeSVG
+                value={JSON.stringify(formData)}
+                size={qrSize}
+                level="M"
+                includeMargin
+              />
             </div>
-          </CardContent>
-          <div className="p-6 pt-0 flex justify-center gap-4">
-            <Button className="w-full sm:w-auto" onClick={downloadQrCode}>
+          </div>
+          <div className="flex shrink-0 flex-wrap justify-center gap-3 border-t border-border/30 bg-muted/10 p-5">
+            <Button className="min-w-[140px] rounded-full px-6 shadow-sm" onClick={downloadQrCode}>
               <Download className="mr-2 h-4 w-4" />
               Download PNG
             </Button>
-            <Button variant="outline" className="w-full sm:w-auto" onClick={copyToClipboard}>
+            <Button variant="outline" className="min-w-[140px] rounded-full bg-background/80 px-6" onClick={copyToClipboard}>
               <Copy className="mr-2 h-4 w-4" />
-              Copy Image
+              Copy image
             </Button>
           </div>
-        </Card>
-      </div>
-    </div>
+        </CardContent>
+      </Card>
+    </Reveal>
   )
 }

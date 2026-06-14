@@ -562,4 +562,47 @@ export class EdgeApiClient {
     const res = await this.request(host, port, '/ALE/api/ping')
     return res.ok
   }
+
+  async getVersion(host: string, port: string): Promise<string | null> {
+    const res = await this.request(host, port, '/ALE/api/version', {
+      timeoutMs: EDGE_GET_TIMEOUT_MS,
+    })
+    if (!res.ok || !res.data?.trim()) return null
+    const parsed = parseJson<{ version?: string } | string>(res.data)
+    if (typeof parsed === 'string') return parsed.trim() || null
+    return parsed?.version?.trim() || res.data.trim() || null
+  }
+
+  async getSetup(host: string, port: string): Promise<string | null> {
+    const res = await this.request(host, port, '/ALE/api/setup', {
+      timeoutMs: EDGE_GET_TIMEOUT_MS,
+    })
+    if (!res.ok || !res.data?.trim()) return null
+    const parsed = parseJson<{ name?: string; setup?: string } | string>(res.data)
+    if (typeof parsed === 'string') return parsed.trim() || null
+    return parsed?.name?.trim() || parsed?.setup?.trim() || res.data.trim() || null
+  }
+
+  async checkLicenseValid(host: string, port: string): Promise<boolean | null> {
+    const res = await this.request(host, port, '/ALE/api/valid', {
+      timeoutMs: EDGE_GET_TIMEOUT_MS,
+    })
+    if (!res.ok) return null
+    const raw = res.data?.trim().toLowerCase() ?? ''
+    if (raw === 'true' || raw === '1') return true
+    if (raw === 'false' || raw === '0') return false
+    const parsed = parseJson<{ valid?: boolean } | boolean>(res.data || '')
+    if (typeof parsed === 'boolean') return parsed
+    if (parsed && typeof parsed === 'object' && 'valid' in parsed) return Boolean(parsed.valid)
+    return null
+  }
+
+  async getSystemMonitor(host: string, port: string): Promise<Record<string, unknown> | null> {
+    const res = await this.request(host, port, '/ALE/api/system-monitor', {
+      timeoutMs: EDGE_GET_TIMEOUT_MS,
+    })
+    if (!res.ok || !res.data?.trim()) return null
+    const parsed = parseJson<Record<string, unknown>>(res.data)
+    return parsed && typeof parsed === 'object' ? parsed : { raw: res.data }
+  }
 }

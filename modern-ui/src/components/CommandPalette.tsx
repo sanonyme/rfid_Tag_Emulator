@@ -62,7 +62,7 @@ const TAB_COMMANDS_BASE = TAB_COMMANDS_PUBLIC.map((t, i) => ({
   num: i + 1,
 }))
 
-const TAB_COMMAND_ADAM = { value: 'adam', label: 'ADAM', icon: <Server className="w-4 h-4" /> }
+const TAB_COMMAND_ADAM: { value: string; label: string; icon: React.ReactNode; num?: number } = { value: 'adam', label: 'ADAM', icon: <Server className="w-4 h-4" /> }
 const TAB_COMMAND_LINK2UID = { value: 'link2uid', label: 'Link→UID', icon: <Link2 className="w-4 h-4" />, num: 10 }
 const TAB_COMMAND_TERMINAL = { value: 'terminal', label: 'Terminal', icon: <Terminal className="w-4 h-4" />, num: 11 }
 const TAB_COMMAND_LOGS = { value: 'logs', label: 'Log Analyzer', icon: <LineChart className="w-4 h-4" />, num: 12 }

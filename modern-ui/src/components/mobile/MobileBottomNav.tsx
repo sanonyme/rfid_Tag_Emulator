@@ -32,7 +32,7 @@ export function MobileBottomNav({
             type="button"
             onClick={() => onTabChange(tab.id)}
             className={cn(
-              'flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
+              'smooth-press flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
               isActive
                 ? 'text-primary'
                 : 'text-muted-foreground'
@@ -47,7 +47,7 @@ export function MobileBottomNav({
         type="button"
         onClick={onMorePress}
         className={cn(
-          'flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
+          'smooth-press flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
           ['custom', 'decoder', 'generator'].includes(activeTab)
             ? 'text-primary'
             : 'text-muted-foreground'

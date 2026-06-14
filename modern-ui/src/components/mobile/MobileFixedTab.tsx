@@ -296,7 +296,6 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           handleSendTags(true)
         } else {
           setSending(false)
-          if (!isLoop) toast.success(`${tags.length} tag(s) sent`)
           if (isLoop) {
             setLooping(false)
             loopingRef.current = false

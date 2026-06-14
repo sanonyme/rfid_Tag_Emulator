@@ -16,9 +16,7 @@ import {
 } from './ui/dialog'
 import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2, FileSpreadsheet, Eye, PlayCircle, Square, Trash2, Download, ChevronDown, ChevronRight, Package, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const SECTION_CARD =
-  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
+import { sectionCard as SECTION_CARD } from '@/lib/ui-tokens'
 
 /** Normalize pipe-table row label for lookup (trim, collapse spaces, lowercase). */
 function normalizeTableLabel(label: string): string {

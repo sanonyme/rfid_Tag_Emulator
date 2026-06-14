@@ -361,7 +361,7 @@ export const TagPresetMenu = forwardRef<TagPresetMenuHandle, TagPresetMenuProps>
             <Label htmlFor={`new-preset-${kind}`} className="text-xs font-medium">
               Save current list as preset
             </Label>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               <Input
                 id={`new-preset-${kind}`}
                 ref={saveInputRef}
@@ -371,13 +371,13 @@ export const TagPresetMenu = forwardRef<TagPresetMenuHandle, TagPresetMenuProps>
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSaveNew()
                 }}
-                className="h-8 text-sm"
+                className="h-9 flex-1 text-sm"
               />
               <Button
                 size="sm"
                 onClick={handleSaveNew}
                 disabled={!newName.trim() || !currentValue.trim()}
-                className="gap-1.5"
+                className="h-9 shrink-0 gap-1.5"
               >
                 <PlusSquare className="h-3.5 w-3.5" />
                 Save

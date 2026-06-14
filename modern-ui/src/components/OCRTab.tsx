@@ -10,9 +10,7 @@ import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
 import { Badge } from './ui/badge'
-
-const SECTION_CARD =
-  'rounded-xl border-border/40 bg-card/95 shadow-sm ring-1 ring-border/20 backdrop-blur-sm'
+import { sectionCard as SECTION_CARD } from '@/lib/ui-tokens'
 
 interface OCRTabProps {
   host: string
@@ -122,7 +120,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   }
 
   return (
-    <div className="mx-auto flex h-full max-w-4xl flex-col gap-4">
+    <div className="stagger-children mx-auto flex h-full max-w-4xl flex-col gap-4">
       {/* OCR Input Card */}
       <Card className={SECTION_CARD} data-tour="tour-ocr-main">
         <CardHeader className="space-y-3 pb-3 pt-5 px-5">

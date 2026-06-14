@@ -23,7 +23,7 @@ export function MobileHeader({
           type="button"
           onClick={onConnectionPress}
           className={cn(
-            'flex items-center gap-2 px-3 py-2 rounded-xl min-h-[44px] min-w-[44px] justify-center transition-colors active:scale-95',
+            'smooth-press flex items-center gap-2 px-3 py-2 rounded-xl min-h-[44px] min-w-[44px] justify-center transition-colors active:scale-95',
             connected
               ? 'bg-green-500/15 text-green-600 dark:text-green-400'
               : 'bg-muted text-muted-foreground'
@@ -35,7 +35,7 @@ export function MobileHeader({
         <button
           type="button"
           onClick={onMenuPress}
-          className="flex items-center justify-center w-11 h-11 rounded-xl bg-muted active:scale-95"
+          className="smooth-press flex items-center justify-center w-11 h-11 rounded-xl bg-muted transition-transform duration-200 active:scale-95"
           aria-label="More options"
         >
           <Menu className="w-5 h-5" />
