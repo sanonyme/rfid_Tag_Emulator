@@ -27,4 +27,5 @@ release
 *.sw?
 
 # Private Edge OpenAPI spec (local only — do not commit)
+openapi.json
 private/openapi.json
