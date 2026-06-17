@@ -52,10 +52,9 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
     return (
 
-      <p className="text-[11px] leading-relaxed text-muted-foreground">
+      <p className="m-0 text-[11px] leading-normal text-muted-foreground">
 
         Calculated check digit{' '}
-
         <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary ring-1 ring-primary/15">
 
           {status.calculatedCheck}
@@ -74,7 +73,7 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
     return (
 
-      <p className="text-[11px] leading-snug text-emerald-800 dark:text-emerald-300">
+      <p className="m-0 text-[11px] leading-normal text-emerald-800 dark:text-emerald-300">
 
         Check digit is valid.
 
@@ -90,7 +89,7 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
     return (
 
-      <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+      <p className="m-0 text-[11px] leading-normal text-amber-900 dark:text-amber-200">
 
         Check digit mismatch (expected {status.expected}, got {status.provided}). You can still send — EPCs use
 
@@ -108,7 +107,7 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
       <div className="space-y-1">
 
-        <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+        <p className="m-0 text-[11px] leading-normal text-amber-900 dark:text-amber-200">
 
           UPC is {status.digitCount} digits; GTIN-14 encoding uses the rightmost 14 digits.
 
@@ -116,7 +115,7 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
         {status.checkValid ? (
 
-          <p className="text-[11px] leading-snug text-emerald-800 dark:text-emerald-300">
+          <p className="m-0 text-[11px] leading-normal text-emerald-800 dark:text-emerald-300">
 
             Check digit is valid on those 14 digits.
 
@@ -124,7 +123,7 @@ function StatusBanner({ status }: { status: UpcCheckDigitStatus }) {
 
         ) : (
 
-          <p className="text-[11px] leading-snug text-amber-900 dark:text-amber-200">
+          <p className="m-0 text-[11px] leading-normal text-amber-900 dark:text-amber-200">
 
             Check digit mismatch on rightmost 14 (expected {status.expected}, got {status.provided}). You can
 
@@ -168,7 +167,7 @@ function CheckDigitHintPanel({
 
       className={cn(
 
-        'rounded-lg border px-2.5 py-2 ring-1',
+        'rounded-lg border px-2.5 py-1.5 ring-1',
 
         tone === 'valid' &&
 
@@ -184,9 +183,9 @@ function CheckDigitHintPanel({
 
     >
 
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2">
 
-        <div className="min-w-0 flex-1 space-y-2">{children}</div>
+        <div className="min-w-0 flex-1 space-y-1.5">{children}</div>
 
         <HintInfoPopover
 
@@ -195,6 +194,8 @@ function CheckDigitHintPanel({
           actionLabel="Turn off in Settings"
 
           onAction={() => requestOpenSettings('upcCheckDigitHints')}
+
+          className="shrink-0"
 
         />
 
@@ -288,7 +289,7 @@ export function UpcCheckDigitHint({ value, activeLine, className }: UpcCheckDigi
 
   return (
 
-    <div className={cn('space-y-2', className)}>
+    <div className={cn('space-y-1.5', className)}>
 
       <CheckDigitHintPanel tone={panelTone}>
 

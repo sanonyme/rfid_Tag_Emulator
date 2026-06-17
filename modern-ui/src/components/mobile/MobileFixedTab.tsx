@@ -37,7 +37,6 @@ interface MobileFixedTabProps {
   port: string
   setPort: (port: string) => void
   alePort: string
-  setAlePort: (port: string) => void
   connected: boolean
   setConnected: (connected: boolean) => void
   driver: string
@@ -89,7 +88,6 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     delay,
     setDelay,
     alePort,
-    setAlePort,
   } = props
 
   const { settings } = useSettings()
@@ -429,18 +427,8 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <Label>Device</Label>
-              <span className="text-xs text-muted-foreground">ALE port:</span>
-            </div>
+            <Label>Device</Label>
             <div className="flex gap-2">
-              <Input
-                type="text"
-                value={alePort}
-                onChange={(e) => setAlePort(e.target.value)}
-                placeholder="80"
-                className="h-10 w-16 font-mono"
-              />
               <Dialog>
                 <DialogTrigger asChild>
                   <Button variant="outline" className="flex-1 justify-between h-12">

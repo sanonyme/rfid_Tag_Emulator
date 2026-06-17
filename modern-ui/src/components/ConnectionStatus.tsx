@@ -40,10 +40,14 @@ function pushRecentHost(host: string): string[] {
   return trimmed
 }
 
+const ALE_PORT_PRESETS = ['80', '8080'] as const
+
 interface ConnectionStatusProps {
   emulator: TCPEmulatorClient
   host: string
   setHost: (host: string) => void
+  alePort: string
+  setAlePort: (port: string) => void
   connected: boolean
   setConnected: (connected: boolean) => void
 }
@@ -52,12 +56,15 @@ export function ConnectionStatus({
   emulator,
   host,
   setHost,
+  alePort,
+  setAlePort,
   connected,
   setConnected
 }: ConnectionStatusProps) {
   const tourIx = useTourInteractionOptional()
   const [isOpen, setIsOpen] = useState(false)
   const [localHost, setLocalHost] = useState(host)
+  const [localAlePort, setLocalAlePort] = useState(alePort)
   const [recentHosts, setRecentHosts] = useState<string[]>(loadRecentHosts)
   const [pinnedHosts, setPinnedHosts] = useState<string[]>(loadPinnedHosts)
   const timeoutRef = useRef<NodeJS.Timeout>()
@@ -77,6 +84,16 @@ export function ConnectionStatus({
   useEffect(() => {
     setLocalHost(host)
   }, [host])
+
+  useEffect(() => {
+    setLocalAlePort(alePort)
+  }, [alePort])
+
+  const commitAlePort = (value: string) => {
+    const trimmed = value.replace(/\D/g, '').slice(0, 5)
+    setLocalAlePort(trimmed)
+    setAlePort(trimmed)
+  }
 
   const connectTo = async (targetHost: string) => {
     if (!targetHost) return
@@ -159,7 +176,7 @@ export function ConnectionStatus({
                     <div className="space-y-1">
                         <h4 className="font-medium leading-none">Connection</h4>
                         <p className="text-xs text-muted-foreground">
-                            Port is fixed to {FIXED_PORT}.
+                            Edge host for tag emulation and ALE API.
                         </p>
                     </div>
                     
@@ -171,8 +188,43 @@ export function ConnectionStatus({
                             onChange={(e) => setLocalHost(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleConnect() }}
                             placeholder="192.168.1.100"
-                            className="h-8"
+                            className="h-8 font-mono text-sm"
                         />
+                        <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-1.5">
+                            <Label
+                                htmlFor="ale-port"
+                                className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                            >
+                                ALE
+                            </Label>
+                            <Input
+                                id="ale-port"
+                                type="text"
+                                inputMode="numeric"
+                                value={localAlePort}
+                                onChange={(e) => commitAlePort(e.target.value)}
+                                placeholder="80"
+                                className="h-6 w-11 shrink-0 border-0 bg-transparent px-0 text-center text-xs font-mono shadow-none focus-visible:ring-0"
+                                title="Port for ALE API (often 80 or 8080)"
+                            />
+                            <div className="ml-auto flex gap-0.5">
+                                {ALE_PORT_PRESETS.map((preset) => (
+                                    <button
+                                        key={preset}
+                                        type="button"
+                                        className={cn(
+                                            'rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums transition-colors',
+                                            localAlePort === preset
+                                                ? 'bg-primary/15 text-primary'
+                                                : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground',
+                                        )}
+                                        onClick={() => commitAlePort(preset)}
+                                    >
+                                        {preset}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex gap-2">

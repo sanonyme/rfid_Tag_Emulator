@@ -82,6 +82,7 @@ interface SftpFileTreeProps {
   onFolderDragOver: (path: string | null) => void
   onFolderDrop: (targetDir: string, e: React.DragEvent) => void
   onNodeDragStart: (node: SftpFileNode, e: React.DragEvent) => void
+  onNodeContextMenu?: (node: SftpFileNode, e: React.MouseEvent) => void
   sortKey: SftpSortKey
   sortDir: 'asc' | 'desc'
   foldersFirst: boolean
@@ -104,6 +105,7 @@ interface FileItemProps {
   onFolderDragOver: (path: string | null) => void
   onFolderDrop: (targetDir: string, e: React.DragEvent) => void
   onNodeDragStart: (node: SftpFileNode, e: React.DragEvent) => void
+  onNodeContextMenu?: (node: SftpFileNode, e: React.MouseEvent) => void
   sortKey: SftpSortKey
   sortDir: 'asc' | 'desc'
   foldersFirst: boolean
@@ -279,6 +281,7 @@ function FileItem({
   onFolderDragOver,
   onFolderDrop,
   onNodeDragStart,
+  onNodeContextMenu,
   sortKey,
   sortDir,
   foldersFirst,
@@ -371,6 +374,9 @@ function FileItem({
           isDropTarget && 'ring-2 ring-primary/60 bg-primary/10',
         )}
         onClick={handleRowClick}
+        onContextMenu={(e) => {
+          if (onNodeContextMenu) onNodeContextMenu(node, e)
+        }}
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
       >
@@ -509,6 +515,7 @@ function FileItem({
               onFolderDragOver={onFolderDragOver}
               onFolderDrop={onFolderDrop}
               onNodeDragStart={onNodeDragStart}
+              onNodeContextMenu={onNodeContextMenu}
               sortKey={sortKey}
               sortDir={sortDir}
               foldersFirst={foldersFirst}
@@ -536,6 +543,7 @@ export function SftpFileTree({
   onFolderDragOver,
   onFolderDrop,
   onNodeDragStart,
+  onNodeContextMenu,
   sortKey,
   sortDir,
   foldersFirst,
@@ -587,6 +595,7 @@ export function SftpFileTree({
             onFolderDragOver={onFolderDragOver}
             onFolderDrop={onFolderDrop}
             onNodeDragStart={onNodeDragStart}
+            onNodeContextMenu={onNodeContextMenu}
             sortKey={sortKey}
             sortDir={sortDir}
             foldersFirst={foldersFirst}

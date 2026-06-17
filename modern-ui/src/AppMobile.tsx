@@ -199,7 +199,6 @@ function AppMobile() {
               port={port}
               setPort={setPort}
               alePort={alePort}
-              setAlePort={setAlePort}
               connected={connected}
               setConnected={setConnected}
               driver={driver}
@@ -278,7 +277,6 @@ function AppMobile() {
               port={port}
               setPort={setPort}
               alePort={alePort}
-              setAlePort={setAlePort}
               connected={connected}
               setConnected={setConnected}
               driver={driver}
@@ -328,6 +326,8 @@ function AppMobile() {
           emulator={emulator}
           host={host}
           setHost={setHost}
+          alePort={alePort}
+          setAlePort={setAlePort}
           connected={connected}
           setConnected={setConnected}
         />

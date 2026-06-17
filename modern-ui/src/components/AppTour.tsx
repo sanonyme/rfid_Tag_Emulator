@@ -197,7 +197,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'right',
       title: 'Fixed — driver & device',
       content:
-        'Pick logical devices, set the reader driver family, and adjust inter-read delay (ms). If the logical device is not found, check the ALE port / modify it t o 80 or 8080.',
+        'Pick logical devices, set the reader driver family, and adjust inter-read delay (ms). If logical devices are missing, set the ALE port in the connection bubble (often 80 or 8080).',
       data: { tab: 'fixed' } satisfies TourStepData,
     },
     {

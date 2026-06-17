@@ -146,6 +146,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpRename: (oldPath: string, newPath: string) => ipcRenderer.invoke('sftp-rename', oldPath, newPath),
   sftpUnlink: (remotePath: string) => ipcRenderer.invoke('sftp-unlink', remotePath),
   sftpRmrf: (remotePath: string) => ipcRenderer.invoke('sftp-rmrf', remotePath),
+  sftpStat: (remotePath: string) => ipcRenderer.invoke('sftp-stat', remotePath),
+  sftpCalculateSize: (remotePath: string) => ipcRenderer.invoke('sftp-calculate-size', remotePath),
+  sftpSetAttributes: (
+    remotePath: string,
+    attrs: { mode?: number; uid?: number; gid?: number },
+    options?: { recursive?: boolean; addXToDirectories?: boolean },
+  ) => ipcRenderer.invoke('sftp-set-attributes', remotePath, attrs, options),
+  sftpFindFiles: (
+    options: {
+      rootPath: string
+      pattern: string
+      recursive: boolean
+      caseSensitive: boolean
+      filesOnly: boolean
+      foldersOnly: boolean
+    },
+    operationId: string,
+  ) => ipcRenderer.invoke('sftp-find-files', options, operationId),
+  sftpFindCancel: () => ipcRenderer.invoke('sftp-find-cancel'),
   sftpDownloadSaveDialog: (remotePath: string, operationId: string) =>
     ipcRenderer.invoke('sftp-download-save-dialog', remotePath, operationId),
   sftpDownloadToPath: (remotePath: string, localPath: string, operationId: string) =>
@@ -281,6 +300,58 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ) => callback(payload)
     ipcRenderer.on('sftp-transfer-progress', handler)
     return () => ipcRenderer.removeListener('sftp-transfer-progress', handler)
+  },
+
+  onSftpFindProgress: (
+    callback: (payload: {
+      operationId: string
+      scannedDirs: number
+      matchCount: number
+      currentDir: string
+      limitReached?: boolean
+    }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      payload: {
+        operationId: string
+        scannedDirs: number
+        matchCount: number
+        currentDir: string
+        limitReached?: boolean
+      },
+    ) => callback(payload)
+    ipcRenderer.on('sftp-find-progress', handler)
+    return () => ipcRenderer.removeListener('sftp-find-progress', handler)
+  },
+
+  onSftpFindMatch: (
+    callback: (payload: {
+      operationId: string
+      match: {
+        path: string
+        name: string
+        type: 'file' | 'folder'
+        size?: number
+        mtime?: number
+      }
+    }) => void,
+  ) => {
+    const handler = (
+      _e: unknown,
+      payload: {
+        operationId: string
+        match: {
+          path: string
+          name: string
+          type: 'file' | 'folder'
+          size?: number
+          mtime?: number
+        }
+      },
+    ) => callback(payload)
+    ipcRenderer.on('sftp-find-match', handler)
+    return () => ipcRenderer.removeListener('sftp-find-match', handler)
   },
 
   safeStoreSet: (key: string, value: string) => ipcRenderer.invoke('safe-store-set', key, value),

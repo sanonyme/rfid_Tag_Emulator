@@ -442,7 +442,7 @@ export function DecoderTab() {
     if (gtinDigits.length === 13) {
       const check = EPCDecoder.calculateCheckDigit(gtinDigits)
       return (
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
+        <p className="m-0 text-[11px] leading-normal text-muted-foreground">
           Calculated check digit{' '}
           <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary ring-1 ring-primary/15">
             {check}
@@ -458,13 +458,15 @@ export function DecoderTab() {
       return (
         <div
           className={cn(
-            'rounded-lg border px-3 py-2 text-[11px] leading-snug ring-1',
+            'flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] leading-normal ring-1',
             isValid
               ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-800 ring-emerald-500/15 dark:text-emerald-300'
               : 'border-destructive/40 bg-destructive/[0.06] text-destructive ring-destructive/10'
           )}
         >
-          {isValid ? 'Check digit is valid.' : `Check digit mismatch (expected ${calcCheck}).`}
+          <span className="m-0">
+            {isValid ? 'Check digit is valid.' : `Check digit mismatch (expected ${calcCheck}).`}
+          </span>
         </div>
       )
     }

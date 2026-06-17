@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -19,24 +20,18 @@ import {
   type SftpSortKey,
 } from './sftp/SftpFileTree'
 import { LocalDirList, LOCAL_DND_MIME, type LocalEntryRow } from './sftp/LocalDirList'
+import { collectRemoteFiles } from './sftp/sftp-remote-download'
+import { SftpPropertiesDialog } from './sftp/SftpPropertiesDialog'
+import { SftpMoveDialog } from './sftp/SftpMoveDialog'
+import { SftpRemoteContextMenu } from './sftp/SftpRemoteContextMenu'
+import { SftpFindDialog } from './sftp/SftpFindDialog'
+import { SftpToolbar } from './sftp/SftpToolbar'
 import {
   FolderInput,
   Loader2,
   PlugZap,
-  Unplug,
-  RefreshCw,
-  FolderPlus,
-  FilePlus,
-  Upload,
-  Trash2,
   AlertCircle,
   Monitor,
-  CheckSquare,
-  ListChecks,
-  Download,
-  Pencil,
-  Copy,
-  FolderOpen,
   ChevronRight,
   ChevronDown,
   PanelBottom,
@@ -74,6 +69,15 @@ function joinLocalDir(base: string, fileName: string): string {
   const win = window.electronAPI?.platform === 'win32'
   const sep = win ? '\\' : '/'
   return `${base.replace(/[/\\]+$/, '')}${sep}${fileName.replace(/^[/\\]+/, '')}`
+}
+
+function joinLocalSegments(base: string, relPath: string): string {
+  const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean)
+  let p = base.replace(/[/\\]+$/, '')
+  for (const part of parts) {
+    p = joinLocalDir(p, part)
+  }
+  return p
 }
 
 function fileExtension(name: string): string | undefined {
@@ -229,9 +233,35 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<SftpFileNode[]>([])
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: SftpFileNode } | null>(null)
+  const [propertiesOpen, setPropertiesOpen] = useState(false)
+  const [propertiesNode, setPropertiesNode] = useState<SftpFileNode | null>(null)
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [moveNode, setMoveNode] = useState<SftpFileNode | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
   useEffect(() => {
     treeRef.current = tree
   }, [tree])
+
+  useEffect(() => {
+    if (!ctxMenu) return
+    const close = (e: Event) => {
+      const menu = document.getElementById('sftp-remote-ctx-menu')
+      if (menu?.contains(e.target as Node)) return
+      setCtxMenu(null)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCtxMenu(null)
+    }
+    window.addEventListener('mousedown', close)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [ctxMenu])
 
   useEffect(() => {
     tourIx?.setSftpShellConnected(connected)
@@ -757,6 +787,142 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     [api, pushTransfer, updateTransfer],
   )
 
+  const downloadRemoteFolder = useCallback(
+    async (remoteFolderPath: string, folderName: string) => {
+      if (!api?.localPickFolder || !api.sftpDownloadToPath || !api.sftpReaddir) {
+        toast.error('Folder download requires the desktop app')
+        return
+      }
+      try {
+        const files = await collectRemoteFiles(api, remoteFolderPath)
+        if (files.length === 0) {
+          toast.message('Folder is empty')
+          return
+        }
+        const pick = await api.localPickFolder()
+        if (!pick.ok || !('path' in pick) || !pick.path) return
+        const localBase = joinLocalDir(pick.path, folderName)
+        for (const { remotePath, relPath } of files) {
+          const dest = joinLocalSegments(localBase, relPath)
+          await downloadToLocalPath(remotePath, dest, relPath)
+        }
+        toast.success(`Downloaded ${files.length} file(s) from ${folderName}`)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Folder download failed')
+      }
+    },
+    [api, downloadToLocalPath],
+  )
+
+  const downloadRemoteItem = useCallback(
+    async (node: SftpFileNode) => {
+      if (node.type === 'folder') {
+        await downloadRemoteFolder(node.path, node.name)
+      } else {
+        await downloadRemoteFile(node.path, node.name)
+      }
+    },
+    [downloadRemoteFile, downloadRemoteFolder],
+  )
+
+  const openRemoteCtxMenu = useCallback((node: SftpFileNode, e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    handleSelectNode(node)
+    setCtxMenu({ x: e.clientX, y: e.clientY, node })
+  }, [handleSelectNode])
+
+  const openRenameForNode = useCallback((node: SftpFileNode) => {
+    handleSelectNode(node)
+    setRenameValue(node.name)
+    setRenameOpen(true)
+  }, [handleSelectNode])
+
+  const openEditForNode = useCallback(
+    async (node: SftpFileNode) => {
+      if (node.type !== 'file' || !api?.sftpReadFile) return
+      const r = await api.sftpReadFile(node.path)
+      if (!r.ok) {
+        toast.error(r.error)
+        return
+      }
+      if ('isBinary' in r && r.isBinary) {
+        toast.error('Binary file — use Download instead')
+        return
+      }
+      if ('text' in r) {
+        handleSelectNode(node)
+        setEditPath(node.path)
+        setEditText(r.text)
+        setEditOpen(true)
+      }
+    },
+    [api, handleSelectNode],
+  )
+
+  const duplicateForNode = useCallback(
+    async (node: SftpFileNode) => {
+      if (node.type !== 'file' || !api?.sftpCopyRemoteFile) return
+      const base = node.name
+      const dot = base.lastIndexOf('.')
+      const copyName =
+        dot > 0 ? `${base.slice(0, dot)}-copy${base.slice(dot)}` : `${base}-copy`
+      const dest = posixJoin(parentDir(node.path), copyName)
+      const id = nextOpId()
+      pushTransfer({ id, label: `Copy ${base}`, kind: 'copy' })
+      const r = await api.sftpCopyRemoteFile(node.path, dest, id)
+      if (r.ok) {
+        updateTransfer(id, { status: 'done', progress: 100 })
+        toast.success('Duplicated on server')
+        await refreshDirectory(parentDir(node.path), true)
+      } else {
+        updateTransfer(id, { status: 'error', error: r.error })
+        toast.error(r.error)
+      }
+    },
+    [api, pushTransfer, updateTransfer, refreshDirectory],
+  )
+
+  const deleteNode = useCallback((node: SftpFileNode) => {
+    handleSelectNode(node)
+    setDeleteTargets([
+      { path: node.path, name: node.name, isFolder: node.type === 'folder' },
+    ])
+  }, [handleSelectNode])
+
+  const copyTextToClipboard = useCallback(async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success(label)
+    } catch {
+      toast.error('Could not copy to clipboard')
+    }
+  }, [])
+
+  const openPropertiesForNode = useCallback((node: SftpFileNode) => {
+    handleSelectNode(node)
+    setPropertiesNode(node)
+    setPropertiesOpen(true)
+  }, [handleSelectNode])
+
+  const openMoveForNode = useCallback((node: SftpFileNode) => {
+    handleSelectNode(node)
+    setMoveNode(node)
+    setMoveOpen(true)
+  }, [handleSelectNode])
+
+  const openNode = useCallback(
+    (node: SftpFileNode) => {
+      handleSelectNode(node)
+      if (node.type === 'folder') {
+        void handleToggleFolder(node)
+      } else {
+        void openEditForNode(node)
+      }
+    },
+    [handleSelectNode, handleToggleFolder, openEditForNode],
+  )
+
   const pickLocalRoot = useCallback(async () => {
     if (!api?.localPickFolder) return
     const r = await api.localPickFolder()
@@ -858,8 +1024,13 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
             name: string
             type: string
           }
+          if (type === 'folder') {
+            await downloadRemoteFolder(remotePath, name)
+            await refreshLocalListing()
+            return
+          }
           if (type !== 'file') {
-            toast.error('Download folders from remote tree one file at a time')
+            toast.error('Unsupported item type')
             return
           }
           const localPath = joinLocalDir(localDirPath, name)
@@ -891,7 +1062,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
         await refreshLocalListing()
       }
     },
-    [api, localRoot, downloadToLocalPath, refreshLocalListing],
+    [api, localRoot, downloadToLocalPath, downloadRemoteFolder, refreshLocalListing],
   )
 
   const submitCreate = useCallback(async () => {
@@ -1023,25 +1194,6 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     }
   }, [selectedPath, tree, renameValue, api, refreshRoot])
 
-  const openEditDialog = useCallback(async () => {
-    const node = selectedPath ? findNode(tree, selectedPath) : null
-    if (!selectedPath || !node || node.type !== 'file' || !api?.sftpReadFile) return
-    const r = await api.sftpReadFile(selectedPath)
-    if (!r.ok) {
-      toast.error(r.error)
-      return
-    }
-    if (r.ok && 'isBinary' in r && r.isBinary) {
-      toast.error('Binary file — use Download instead')
-      return
-    }
-    if (r.ok && 'text' in r) {
-      setEditPath(selectedPath)
-      setEditText(r.text)
-      setEditOpen(true)
-    }
-  }, [selectedPath, tree, api])
-
   const submitEdit = useCallback(async () => {
     if (!editPath || !api?.sftpWriteTextFile) return
     setEditBusy(true)
@@ -1059,44 +1211,93 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
     }
   }, [editPath, editText, api, refreshDirectory])
 
-  const duplicateRemoteFile = useCallback(async () => {
-    const node = selectedPath ? findNode(tree, selectedPath) : null
-    if (!selectedPath || !node || node.type !== 'file' || !api?.sftpCopyRemoteFile) return
-    const base = node.name
-    const dot = base.lastIndexOf('.')
-    const copyName =
-      dot > 0 ? `${base.slice(0, dot)}-copy${base.slice(dot)}` : `${base}-copy`
-    const dest = posixJoin(parentDir(selectedPath), copyName)
-    const id = nextOpId()
-    pushTransfer({ id, label: `Copy ${base}`, kind: 'copy' })
-    const r = await api.sftpCopyRemoteFile(selectedPath, dest, id)
-    if (r.ok) {
-      updateTransfer(id, { status: 'done', progress: 100 })
-      toast.success('Duplicated on server')
-      await refreshDirectory(parentDir(selectedPath), true)
-    } else {
-      updateTransfer(id, { status: 'error', error: r.error })
-      toast.error(r.error)
-    }
-  }, [selectedPath, tree, api, pushTransfer, updateTransfer, refreshDirectory])
-
   const batchDownload = useCallback(async () => {
     if (!api?.localPickFolder || !api.sftpDownloadToPath) return
-    const files = Array.from(selectedPaths)
+    const nodes = Array.from(selectedPaths)
       .map((p) => findNode(tree, p))
-      .filter((n): n is SftpFileNode => Boolean(n && n.type === 'file'))
-    if (files.length === 0) {
-      toast.message('Select one or more files')
+      .filter((n): n is SftpFileNode => Boolean(n))
+    if (nodes.length === 0) {
+      toast.message('Select one or more items')
       return
     }
     const pick = await api.localPickFolder()
     if (!pick.ok || !('path' in pick) || !pick.path) return
-    for (const n of files) {
-      const localPath = joinLocalDir(pick.path, n.name)
-      await downloadToLocalPath(n.path, localPath, n.name)
+    let count = 0
+    for (const n of nodes) {
+      if (n.type === 'file') {
+        const localPath = joinLocalDir(pick.path, n.name)
+        await downloadToLocalPath(n.path, localPath, n.name)
+        count++
+      } else {
+        try {
+          const files = await collectRemoteFiles(api, n.path)
+          const localBase = joinLocalDir(pick.path, n.name)
+          for (const { remotePath, relPath } of files) {
+            const dest = joinLocalSegments(localBase, relPath)
+            await downloadToLocalPath(remotePath, dest, relPath)
+            count++
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : `Failed to list ${n.name}`)
+        }
+      }
     }
-    toast.success(`Queued ${files.length} download(s)`)
+    toast.success(`Queued ${count} download(s)`)
   }, [api, selectedPaths, tree, downloadToLocalPath])
+
+  useEffect(() => {
+    if (!connected) return
+    const isTyping = () => {
+      const el = document.activeElement
+      if (!el) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (isTyping()) return
+      if (e.key === 'f' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        setFindOpen(true)
+        return
+      }
+      const node = selectedPath ? findNode(treeRef.current, selectedPath) : null
+      if (!node) return
+      if (e.key === 'F2') {
+        e.preventDefault()
+        openRenameForNode(node)
+      } else if (e.key === 'F8') {
+        e.preventDefault()
+        deleteNode(node)
+      } else if (e.key === 'F9') {
+        e.preventDefault()
+        openPropertiesForNode(node)
+      } else if (e.key === 'F5' && !e.shiftKey) {
+        e.preventDefault()
+        void downloadRemoteItem(node)
+      } else if (e.key === 'F5' && e.shiftKey) {
+        e.preventDefault()
+        void duplicateForNode(node)
+      } else if (e.key === 'F6' && e.shiftKey) {
+        e.preventDefault()
+        openMoveForNode(node)
+      } else if (e.key === 'c' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault()
+        void copyTextToClipboard(node.path, 'Path copied')
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [
+    connected,
+    selectedPath,
+    openRenameForNode,
+    deleteNode,
+    openPropertiesForNode,
+    downloadRemoteItem,
+    duplicateForNode,
+    openMoveForNode,
+    copyTextToClipboard,
+  ])
 
   const selectedNode = selectedPath ? findNode(tree, selectedPath) : null
 
@@ -1201,179 +1402,75 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2" data-tour="tour-sftp">
-      <div className="flex flex-wrap items-center gap-2 shrink-0">
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void handleDisconnect()}>
-          <Unplug className="w-3.5 h-3.5" />
-          Disconnect
-        </Button>
-        <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
-          {host}:{sftpPort}
-        </span>
-        <div className="flex-1 min-w-[8px]" />
-        <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => void refreshRoot()}>
-          <RefreshCw className="w-3.5 h-3.5" />
-          Refresh
-        </Button>
-        <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void pickLocalRoot()}>
-          <FolderOpen className="w-3.5 h-3.5" />
-          Local folder
-        </Button>
-        <Button
-          size="sm"
-          className="gap-1.5 bg-gradient-to-r from-amber-500 to-rose-500 text-white hover:from-amber-500/90 hover:to-rose-500/90"
-          onClick={() => {
-            setMigrateConfirmText('')
-            setMigrateOpen(true)
-          }}
-        >
-          <Database className="w-3.5 h-3.5" />
-          Migrate cleanup
-        </Button>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={foldersFirst}
-            onChange={(e) => setFoldersFirst(e.target.checked)}
-            className="rounded border-border/50 accent-primary w-3.5 h-3.5"
-          />
-          Folders first
-        </label>
-        <Button
-          variant={selectMode ? 'default' : 'secondary'}
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setSelectMode((v) => {
-              if (v) setSelectedPaths(new Set())
-              return !v
-            })
-          }}
-        >
-          <CheckSquare className="w-3.5 h-3.5" />
-          {selectMode ? 'Selecting…' : 'Select'}
-        </Button>
-        {selectMode && (
-          <>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => selectAllInTargetDir()}>
-              <ListChecks className="w-3.5 h-3.5" />
-              All in target
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void batchDownload()}>
-              <Download className="w-3.5 h-3.5" />
-              Download to…
-            </Button>
-          </>
-        )}
-        <Button
-          variant="secondary"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setCreateName('New folder')
-            setCreateKind('folder')
-          }}
-        >
-          <FolderPlus className="w-3.5 h-3.5" />
-          New folder
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          className="gap-1.5"
-          onClick={() => {
-            setCreateName('notes.txt')
-            setCreateKind('file')
-          }}
-        >
-          <FilePlus className="w-3.5 h-3.5" />
-          New file
-        </Button>
-        <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
-          <Upload className="w-3.5 h-3.5" />
-          Upload
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
-          onClick={() => void downloadRemoteFile(selectedPath!, selectedNode!.name)}
-        >
-          <Download className="w-3.5 h-3.5" />
-          Download
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={!selectedPath || !selectedNode}
-          onClick={() => {
-            if (!selectedNode) return
-            setRenameValue(selectedNode.name)
-            setRenameOpen(true)
-          }}
-        >
-          <Pencil className="w-3.5 h-3.5" />
-          Rename
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
-          onClick={() => void openEditDialog()}
-        >
-          <Pencil className="w-3.5 h-3.5" />
-          Edit
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5"
-          disabled={!selectedPath || !selectedNode || selectedNode.type !== 'file'}
-          onClick={() => void duplicateRemoteFile()}
-        >
-          <Copy className="w-3.5 h-3.5" />
-          Duplicate
-        </Button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          onChange={(e) => void onPickFiles(e.target.files)}
-        />
-        <Button
-          variant="destructive"
-          size="sm"
-          className="gap-1.5"
-          disabled={selectMode ? selectedPaths.size === 0 : !selectedPath}
-          onClick={() => {
-            if (selectMode && selectedPaths.size > 0) {
-              const items = Array.from(selectedPaths)
-                .map((path) => {
-                  const n = findNode(tree, path)
-                  return n ? { path, name: n.name, isFolder: n.type === 'folder' } : null
-                })
-                .filter((x): x is { path: string; name: string; isFolder: boolean } => x !== null)
-              if (items.length) setDeleteTargets(items)
-              return
-            }
-            if (selectedPath && selectedNode) {
-              setDeleteTargets([
-                {
-                  path: selectedPath,
-                  name: selectedNode.name,
-                  isFolder: selectedNode.type === 'folder',
-                },
-              ])
-            }
-          }}
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-          Delete
-        </Button>
-      </div>
+      <SftpToolbar
+        host={host}
+        sftpPort={sftpPort}
+        foldersFirst={foldersFirst}
+        onFoldersFirstChange={setFoldersFirst}
+        selectMode={selectMode}
+        onSelectModeToggle={() => {
+          setSelectMode((v) => {
+            if (v) setSelectedPaths(new Set())
+            return !v
+          })
+        }}
+        selectedPathsCount={selectedPaths.size}
+        selectedPath={selectedPath}
+        selectedNode={selectedNode}
+        onDisconnect={() => void handleDisconnect()}
+        onRefresh={() => void refreshRoot()}
+        onFind={() => setFindOpen(true)}
+        onPickLocal={() => void pickLocalRoot()}
+        onMigrateOpen={() => {
+          setMigrateConfirmText('')
+          setMigrateOpen(true)
+        }}
+        onSelectAllInTarget={() => selectAllInTargetDir()}
+        onBatchDownload={() => void batchDownload()}
+        onNewFolder={() => {
+          setCreateName('New folder')
+          setCreateKind('folder')
+        }}
+        onNewFile={() => {
+          setCreateName('notes.txt')
+          setCreateKind('file')
+        }}
+        onUpload={() => fileInputRef.current?.click()}
+        onDownload={() => void downloadRemoteItem(selectedNode!)}
+        onRename={() => openRenameForNode(selectedNode!)}
+        onEdit={() => void openEditForNode(selectedNode!)}
+        onDuplicate={() => void duplicateForNode(selectedNode!)}
+        onMove={() => openMoveForNode(selectedNode!)}
+        onProperties={() => openPropertiesForNode(selectedNode!)}
+        onDelete={() => {
+          if (selectMode && selectedPaths.size > 0) {
+            const items = Array.from(selectedPaths)
+              .map((path) => {
+                const n = findNode(tree, path)
+                return n ? { path, name: n.name, isFolder: n.type === 'folder' } : null
+              })
+              .filter((x): x is { path: string; name: string; isFolder: boolean } => x !== null)
+            if (items.length) setDeleteTargets(items)
+            return
+          }
+          if (selectedPath && selectedNode) {
+            setDeleteTargets([
+              {
+                path: selectedPath,
+                name: selectedNode.name,
+                isFolder: selectedNode.type === 'folder',
+              },
+            ])
+          }
+        }}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        onChange={(e) => void onPickFiles(e.target.files)}
+      />
 
       <div className="flex flex-wrap items-center gap-2 shrink-0 text-xs">
         <span className="text-muted-foreground">Remote path</span>
@@ -1514,6 +1611,7 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
                 )
                 ev.dataTransfer.effectAllowed = 'move'
               }}
+              onNodeContextMenu={openRemoteCtxMenu}
               sortKey={sortKey}
               sortDir={sortDir}
               foldersFirst={foldersFirst}
@@ -1821,6 +1919,49 @@ export function SftpTab({ host, setHost }: SftpTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {ctxMenu &&
+        createPortal(
+          <SftpRemoteContextMenu
+            x={ctxMenu.x}
+            y={ctxMenu.y}
+            node={ctxMenu.node}
+            onClose={() => setCtxMenu(null)}
+            onOpen={() => openNode(ctxMenu.node)}
+            onEdit={() => void openEditForNode(ctxMenu.node)}
+            onDownload={() => void downloadRemoteItem(ctxMenu.node)}
+            onDuplicate={() => void duplicateForNode(ctxMenu.node)}
+            onMove={() => openMoveForNode(ctxMenu.node)}
+            onDelete={() => deleteNode(ctxMenu.node)}
+            onRename={() => openRenameForNode(ctxMenu.node)}
+            onCopyPath={() => void copyTextToClipboard(ctxMenu.node.path, 'Path copied')}
+            onCopyName={() => void copyTextToClipboard(ctxMenu.node.name, 'Name copied')}
+            onCopyParent={() =>
+              void copyTextToClipboard(parentDir(ctxMenu.node.path), 'Parent directory copied')
+            }
+            onProperties={() => openPropertiesForNode(ctxMenu.node)}
+          />,
+          document.body,
+        )}
+
+      <SftpPropertiesDialog
+        open={propertiesOpen}
+        onOpenChange={setPropertiesOpen}
+        node={propertiesNode}
+        onApplied={() => void refreshRoot(true)}
+      />
+      <SftpMoveDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        node={moveNode}
+        onMoved={() => void refreshRoot(true)}
+      />
+      <SftpFindDialog
+        open={findOpen}
+        onOpenChange={setFindOpen}
+        defaultRootPath={uploadTargetDir}
+        onGoToPath={(path) => void navigateRemotePath(path)}
+      />
     </div>
   )
 }

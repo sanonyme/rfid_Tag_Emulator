@@ -60,7 +60,6 @@ interface FixedTabProps {
   port: string
   setPort: (port: string) => void
   alePort: string
-  setAlePort: (port: string) => void
   connected: boolean
   setConnected: (connected: boolean) => void
   driver: string
@@ -102,7 +101,6 @@ export function FixedTab({
   // port, 
   // setPort,
   alePort,
-  setAlePort,
   connected, 
   setConnected, 
   driver,
@@ -691,25 +689,9 @@ export function FixedTab({
           <CardContent className="space-y-4 px-5 pb-5 pt-0">
             {/* Logical Device Selection */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <Label htmlFor="logical-device" className="text-sm font-medium">
-                  Logical device
-                </Label>
-                <div className="flex items-center gap-2 shrink-0">
-                  <Label htmlFor="ale-port" className="text-[11px] text-muted-foreground whitespace-nowrap">
-                    ALE
-                  </Label>
-                  <Input
-                    id="ale-port"
-                    type="text"
-                    value={alePort}
-                    onChange={(e) => setAlePort(e.target.value)}
-                    placeholder="80"
-                    className="h-8 w-[4.25rem] rounded-lg text-center text-xs font-mono"
-                    title="Port for ALE API. Some Edge servers use 80, 8080."
-                  />
-                </div>
-              </div>
+              <Label htmlFor="logical-device" className="text-sm font-medium">
+                Logical device
+              </Label>
               <div className={cn(actionGroup, 'gap-1.5 p-1.5')}>
                 <Dialog>
                   <DialogTrigger asChild>

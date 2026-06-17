@@ -450,3 +450,311 @@ export async function sftpCopyRemoteFile(
     return { ok: false, error: msg }
   }
 }
+
+export interface SftpPathStat {
+  path: string
+  isDirectory: boolean
+  size: number
+  mode: number
+  uid: number
+  gid: number
+  mtime?: number
+}
+
+export async function sftpStat(
+  remotePath: string,
+): Promise<{ ok: true; stat: SftpPathStat } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const p = normalizeRemotePath(remotePath)
+  try {
+    const stats = await promisifySftp<Stats>((cb) => s.stat(p, cb))
+    return {
+      ok: true,
+      stat: {
+        path: p,
+        isDirectory: stats.isDirectory(),
+        size: typeof stats.size === 'number' ? stats.size : 0,
+        mode: typeof stats.mode === 'number' ? stats.mode : 0,
+        uid: typeof stats.uid === 'number' ? stats.uid : 0,
+        gid: typeof stats.gid === 'number' ? stats.gid : 0,
+        mtime: typeof stats.mtime === 'number' ? stats.mtime : undefined,
+      },
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+async function collectRemotePathsRecursive(s: SFTPWrapper, dirPath: string): Promise<string[]> {
+  const out: string[] = [dirPath]
+  const list = await promisifySftp<FileEntry[]>((cb) => s.readdir(dirPath, cb))
+  for (const e of list) {
+    if (e.filename === '.' || e.filename === '..') continue
+    const full = path.posix.join(dirPath, e.filename)
+    if (attrsIsDirectory(e.attrs)) {
+      const nested = await collectRemotePathsRecursive(s, full)
+      out.push(...nested.slice(1))
+    } else {
+      out.push(full)
+    }
+  }
+  return out
+}
+
+export async function sftpCalculateSize(
+  remotePath: string,
+): Promise<{ ok: true; size: number; fileCount: number } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const p = normalizeRemotePath(remotePath)
+  try {
+    const stats = await promisifySftp<Stats>((cb) => s.stat(p, cb))
+    if (!stats.isDirectory()) {
+      return { ok: true, size: typeof stats.size === 'number' ? stats.size : 0, fileCount: 1 }
+    }
+    let totalSize = 0
+    let fileCount = 0
+    const walk = async (dir: string) => {
+      const list = await promisifySftp<FileEntry[]>((cb) => s.readdir(dir, cb))
+      for (const e of list) {
+        if (e.filename === '.' || e.filename === '..') continue
+        const full = path.posix.join(dir, e.filename)
+        if (attrsIsDirectory(e.attrs)) {
+          await walk(full)
+        } else {
+          const st = await promisifySftp<Stats>((cb) => s.stat(full, cb))
+          totalSize += typeof st.size === 'number' ? st.size : 0
+          fileCount += 1
+        }
+      }
+    }
+    await walk(p)
+    return { ok: true, size: totalSize, fileCount }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+function applyAddXToDirectory(mode: number): number {
+  const perm = mode & 0o777
+  const xBits = (perm & 0o444) >> 2
+  return (mode & ~0o777) | (perm | xBits)
+}
+
+export async function sftpSetAttributes(
+  remotePath: string,
+  attrs: { mode?: number; uid?: number; gid?: number },
+  options?: { recursive?: boolean; addXToDirectories?: boolean },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+  const p = normalizeRemotePath(remotePath)
+  try {
+    const paths: string[] = []
+    const rootStat = await promisifySftp<Stats>((cb) => s.stat(p, cb))
+    if (options?.recursive && rootStat.isDirectory()) {
+      paths.push(...(await collectRemotePathsRecursive(s, p)))
+    } else {
+      paths.push(p)
+    }
+
+    for (const target of paths) {
+      const st = await promisifySftp<Stats>((cb) => s.stat(target, cb))
+      const setAttrs: Record<string, number> = {}
+      if (attrs.uid !== undefined) setAttrs.uid = attrs.uid
+      if (attrs.gid !== undefined) setAttrs.gid = attrs.gid
+      if (attrs.mode !== undefined) {
+        let mode = attrs.mode
+        if (options?.addXToDirectories && st.isDirectory()) {
+          mode = applyAddXToDirectory(mode)
+        }
+        setAttrs.mode = mode
+      }
+      if (Object.keys(setAttrs).length > 0) {
+        await promisifySftp<void>((cb) => s.setstat(target, setAttrs, cb))
+      }
+    }
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+const MAX_FIND_MATCHES = 5000
+
+let findCancelRequested = false
+
+export function cancelSftpFind(): void {
+  findCancelRequested = true
+}
+
+export interface SftpFindMatch {
+  path: string
+  name: string
+  type: 'file' | 'folder'
+  size?: number
+  mtime?: number
+}
+
+export interface SftpFindOptions {
+  rootPath: string
+  pattern: string
+  recursive: boolean
+  caseSensitive: boolean
+  filesOnly: boolean
+  foldersOnly: boolean
+}
+
+function parseFindPatterns(pattern: string): string[] {
+  const parts = pattern.split(';').map((p) => p.trim()).filter(Boolean)
+  return parts.length > 0 ? parts : ['*']
+}
+
+function globToRegex(pattern: string, caseSensitive: boolean): RegExp {
+  let re = '^'
+  for (const ch of pattern) {
+    if (ch === '*') re += '.*'
+    else if (ch === '?') re += '.'
+    else if (/[.+^${}()|[\]\\]/.test(ch)) re += `\\${ch}`
+    else re += ch
+  }
+  re += '$'
+  return new RegExp(re, caseSensitive ? '' : 'i')
+}
+
+function nameMatchesFindPattern(
+  name: string,
+  patterns: string[],
+  caseSensitive: boolean,
+): boolean {
+  return patterns.some((p) => globToRegex(p, caseSensitive).test(name))
+}
+
+export async function sftpFindFiles(
+  options: SftpFindOptions,
+  callbacks?: {
+    onProgress?: (payload: {
+      scannedDirs: number
+      matchCount: number
+      currentDir: string
+      limitReached?: boolean
+    }) => void
+    onMatch?: (match: SftpFindMatch) => void
+    shouldCancel?: () => boolean
+  },
+): Promise<
+  | { ok: true; matchCount: number; cancelled: boolean; limitReached?: boolean }
+  | { ok: false; error: string }
+> {
+  const s = getSftp()
+  if (!s) return { ok: false, error: 'Not connected' }
+
+  findCancelRequested = false
+  const root = normalizeRemotePath(options.rootPath)
+  const patterns = parseFindPatterns(options.pattern)
+  let scannedDirs = 0
+  let matchCount = 0
+  let limitReached = false
+
+  const shouldCancel = () => findCancelRequested || callbacks?.shouldCancel?.() === true
+
+  const emitProgress = (currentDir: string) => {
+    callbacks?.onProgress?.({
+      scannedDirs,
+      matchCount,
+      currentDir,
+      limitReached: limitReached || undefined,
+    })
+  }
+
+  const considerEntry = (
+    fullPath: string,
+    name: string,
+    isFolder: boolean,
+    size?: number,
+    mtime?: number,
+  ) => {
+    if (options.filesOnly && isFolder) return
+    if (options.foldersOnly && !isFolder) return
+    if (!nameMatchesFindPattern(name, patterns, options.caseSensitive)) return
+
+    matchCount += 1
+    callbacks?.onMatch?.({
+      path: fullPath,
+      name,
+      type: isFolder ? 'folder' : 'file',
+      size,
+      mtime,
+    })
+    if (matchCount >= MAX_FIND_MATCHES) {
+      limitReached = true
+    }
+  }
+
+  try {
+    const rootStat = await promisifySftp<Stats>((cb) => s.stat(root, cb))
+    if (!rootStat.isDirectory()) {
+      const name = path.posix.basename(root)
+      considerEntry(
+        root,
+        name,
+        false,
+        typeof rootStat.size === 'number' ? rootStat.size : undefined,
+        typeof rootStat.mtime === 'number' ? rootStat.mtime : undefined,
+      )
+      emitProgress(root)
+      return { ok: true, matchCount, cancelled: false, limitReached: limitReached || undefined }
+    }
+
+    const walk = async (dirPath: string) => {
+      if (shouldCancel() || limitReached) return
+      scannedDirs += 1
+      emitProgress(dirPath)
+
+      const list = await promisifySftp<FileEntry[]>((cb) => s.readdir(dirPath, cb))
+      for (const e of list) {
+        if (shouldCancel() || limitReached) return
+        if (e.filename === '.' || e.filename === '..') continue
+
+        const full = path.posix.join(dirPath, e.filename)
+        const isFolder = attrsIsDirectory(e.attrs)
+        const mtimeRaw = e.attrs.mtime
+        const mtimeSec =
+          mtimeRaw !== undefined
+            ? typeof mtimeRaw === 'number'
+              ? mtimeRaw
+              : Math.floor(new Date(mtimeRaw).getTime() / 1000)
+            : undefined
+
+        considerEntry(
+          full,
+          e.filename,
+          isFolder,
+          typeof e.attrs.size === 'number' ? e.attrs.size : undefined,
+          mtimeSec,
+        )
+
+        if (isFolder && options.recursive && !limitReached && !shouldCancel()) {
+          await walk(full)
+        }
+      }
+    }
+
+    await walk(root)
+    emitProgress(root)
+
+    return {
+      ok: true,
+      matchCount,
+      cancelled: shouldCancel(),
+      limitReached: limitReached || undefined,
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, error: msg }
+  }
+}

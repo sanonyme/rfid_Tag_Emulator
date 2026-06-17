@@ -35,6 +35,11 @@ import {
   sftpDownloadToLocalFile,
   sftpUploadFromLocalFile,
   sftpCopyRemoteFile,
+  sftpStat,
+  sftpCalculateSize,
+  sftpSetAttributes,
+  sftpFindFiles,
+  cancelSftpFind,
 } from './sftp-handler.js'
 import { localReaddir, localWriteFileBase64, localParentDir } from './local-fs-handler.js'
 import {
@@ -556,6 +561,45 @@ app.whenReady().then(() => {
   ipcMain.handle('sftp-rename', async (_event, oldPath: string, newPath: string) => sftpRename(oldPath, newPath))
   ipcMain.handle('sftp-unlink', async (_event, remotePath: string) => sftpUnlink(remotePath))
   ipcMain.handle('sftp-rmrf', async (_event, remotePath: string) => sftpRmrf(remotePath))
+  ipcMain.handle('sftp-stat', async (_event, remotePath: string) => sftpStat(remotePath))
+  ipcMain.handle('sftp-calculate-size', async (_event, remotePath: string) => sftpCalculateSize(remotePath))
+  ipcMain.handle(
+    'sftp-set-attributes',
+    async (
+      _event,
+      remotePath: string,
+      attrs: { mode?: number; uid?: number; gid?: number },
+      options?: { recursive?: boolean; addXToDirectories?: boolean },
+    ) => sftpSetAttributes(remotePath, attrs, options),
+  )
+
+  ipcMain.handle(
+    'sftp-find-files',
+    async (
+      event,
+      options: {
+        rootPath: string
+        pattern: string
+        recursive: boolean
+        caseSensitive: boolean
+        filesOnly: boolean
+        foldersOnly: boolean
+      },
+      operationId: string,
+    ) => {
+      return sftpFindFiles(options, {
+        onProgress: (payload) => {
+          event.sender.send('sftp-find-progress', { operationId, ...payload })
+        },
+        onMatch: (match) => {
+          event.sender.send('sftp-find-match', { operationId, match })
+        },
+      })
+    },
+  )
+  ipcMain.handle('sftp-find-cancel', () => {
+    cancelSftpFind()
+  })
 
   ipcMain.handle(
     'sftp-download-save-dialog',

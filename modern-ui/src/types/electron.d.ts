@@ -280,6 +280,46 @@ export interface ElectronAPI {
   sftpRename: (oldPath: string, newPath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpUnlink: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpRmrf: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpStat: (
+    remotePath: string,
+  ) => Promise<
+    | {
+        ok: true
+        stat: {
+          path: string
+          isDirectory: boolean
+          size: number
+          mode: number
+          uid: number
+          gid: number
+          mtime?: number
+        }
+      }
+    | { ok: false; error: string }
+  >
+  sftpCalculateSize: (
+    remotePath: string,
+  ) => Promise<{ ok: true; size: number; fileCount: number } | { ok: false; error: string }>
+  sftpSetAttributes: (
+    remotePath: string,
+    attrs: { mode?: number; uid?: number; gid?: number },
+    options?: { recursive?: boolean; addXToDirectories?: boolean },
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpFindFiles: (
+    options: {
+      rootPath: string
+      pattern: string
+      recursive: boolean
+      caseSensitive: boolean
+      filesOnly: boolean
+      foldersOnly: boolean
+    },
+    operationId: string,
+  ) => Promise<
+    | { ok: true; matchCount: number; cancelled: boolean; limitReached?: boolean }
+    | { ok: false; error: string }
+  >
+  sftpFindCancel: () => Promise<void>
   sftpDownloadSaveDialog: (
     remotePath: string,
     operationId: string,
@@ -321,6 +361,27 @@ export interface ElectronAPI {
   >
   onSftpTransferProgress: (
     callback: (payload: { operationId: string; loaded: number; total: number }) => void,
+  ) => () => void
+  onSftpFindProgress: (
+    callback: (payload: {
+      operationId: string
+      scannedDirs: number
+      matchCount: number
+      currentDir: string
+      limitReached?: boolean
+    }) => void,
+  ) => () => void
+  onSftpFindMatch: (
+    callback: (payload: {
+      operationId: string
+      match: {
+        path: string
+        name: string
+        type: 'file' | 'folder'
+        size?: number
+        mtime?: number
+      }
+    }) => void,
   ) => () => void
   localWriteFileBase64: (
     root: string,

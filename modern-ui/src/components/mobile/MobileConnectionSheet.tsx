@@ -11,10 +11,12 @@ import { Label } from '@/components/ui/label'
 import { X, Clock, Wifi, Globe, Link2 } from 'lucide-react'
 import { TCPEmulatorClient } from '@/lib/tcp-client'
 import { playConnect, playDisconnect } from '@/lib/sounds'
+import { cn } from '@/lib/utils'
 
 const RECENT_HOSTS_KEY = 'recent-hosts'
 const MAX_RECENT = 8
 const FIXED_PORT = 12352
+const ALE_PORT_PRESETS = ['80', '8080'] as const
 
 function loadRecentHosts(): string[] {
   try {
@@ -38,6 +40,8 @@ interface MobileConnectionSheetProps {
   emulator: TCPEmulatorClient
   host: string
   setHost: (host: string) => void
+  alePort: string
+  setAlePort: (port: string) => void
   connected: boolean
   setConnected: (connected: boolean) => void
 }
@@ -48,15 +52,28 @@ export function MobileConnectionSheet({
   emulator,
   host,
   setHost,
+  alePort,
+  setAlePort,
   connected,
   setConnected,
 }: MobileConnectionSheetProps) {
   const [localHost, setLocalHost] = useState(host)
+  const [localAlePort, setLocalAlePort] = useState(alePort)
   const [recentHosts, setRecentHosts] = useState<string[]>(loadRecentHosts)
 
   useEffect(() => {
     setLocalHost(host)
   }, [host])
+
+  useEffect(() => {
+    setLocalAlePort(alePort)
+  }, [alePort])
+
+  const commitAlePort = (value: string) => {
+    const trimmed = value.replace(/\D/g, '').slice(0, 5)
+    setLocalAlePort(trimmed)
+    setAlePort(trimmed)
+  }
 
   const connectTo = async (targetHost: string) => {
     if (!targetHost) return
@@ -109,12 +126,8 @@ export function MobileConnectionSheet({
             </div>
             <div>
               <DialogTitle className="text-xl font-semibold tracking-tight">Connection</DialogTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">Connect to RFID reader</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Edge host for tag emulation and ALE</p>
             </div>
-          </div>
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/80 text-xs font-mono text-muted-foreground w-fit">
-            <Globe className="h-3.5 w-3.5" />
-            Port {FIXED_PORT}
           </div>
         </DialogHeader>
         <div className="relative space-y-5 pt-1">
@@ -131,6 +144,40 @@ export function MobileConnectionSheet({
                 placeholder="192.168.1.100"
                 className="h-12 pl-10 text-base font-mono bg-background/60 border-border/80 focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
               />
+            </div>
+            <div className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/40 px-3 py-2">
+              <Label
+                htmlFor="mobile-ale-port"
+                className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                ALE
+              </Label>
+              <Input
+                id="mobile-ale-port"
+                type="text"
+                inputMode="numeric"
+                value={localAlePort}
+                onChange={(e) => commitAlePort(e.target.value)}
+                placeholder="80"
+                className="h-8 w-14 shrink-0 border-0 bg-transparent px-0 text-center text-sm font-mono shadow-none focus-visible:ring-0"
+              />
+              <div className="ml-auto flex gap-1">
+                {ALE_PORT_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    className={cn(
+                      'rounded-md px-2 py-1 text-xs font-mono tabular-nums transition-colors',
+                      localAlePort === preset
+                        ? 'bg-primary/15 text-primary'
+                        : 'text-muted-foreground hover:bg-muted/80',
+                    )}
+                    onClick={() => commitAlePort(preset)}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
           <div>

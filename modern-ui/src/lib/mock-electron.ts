@@ -525,6 +525,33 @@ class MockElectronAPI implements ElectronAPI {
   async sftpRmrf(_remotePath: string) {
     return this.sftpUnavailable()
   }
+  async sftpStat(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpCalculateSize(_remotePath: string) {
+    return this.sftpUnavailable()
+  }
+  async sftpSetAttributes(
+    _remotePath: string,
+    _attrs: { mode?: number; uid?: number; gid?: number },
+    _options?: { recursive?: boolean; addXToDirectories?: boolean },
+  ) {
+    return this.sftpUnavailable()
+  }
+  async sftpFindFiles(
+    _options: {
+      rootPath: string
+      pattern: string
+      recursive: boolean
+      caseSensitive: boolean
+      filesOnly: boolean
+      foldersOnly: boolean
+    },
+    _operationId: string,
+  ) {
+    return this.sftpUnavailable()
+  }
+  async sftpFindCancel() {}
   async sftpDownloadSaveDialog(_remotePath: string, _operationId: string) {
     return this.sftpUnavailable()
   }
@@ -544,6 +571,31 @@ class MockElectronAPI implements ElectronAPI {
     return this.sftpUnavailable()
   }
   onSftpTransferProgress(_callback: (payload: { operationId: string; loaded: number; total: number }) => void) {
+    return () => {}
+  }
+  onSftpFindProgress(
+    _callback: (payload: {
+      operationId: string
+      scannedDirs: number
+      matchCount: number
+      currentDir: string
+      limitReached?: boolean
+    }) => void,
+  ) {
+    return () => {}
+  }
+  onSftpFindMatch(
+    _callback: (payload: {
+      operationId: string
+      match: {
+        path: string
+        name: string
+        type: 'file' | 'folder'
+        size?: number
+        mtime?: number
+      }
+    }) => void,
+  ) {
     return () => {}
   }
   async localWriteFileBase64(_root: string, _filePath: string, _base64Data: string) {

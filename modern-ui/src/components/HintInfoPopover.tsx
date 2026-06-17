@@ -73,7 +73,7 @@ export function HintInfoPopover({
         ref={triggerRef}
         type="button"
         className={cn(
-          'mt-0.5 shrink-0 rounded-md p-0.5 text-muted-foreground/70 transition-colors hover:bg-background/60 hover:text-foreground',
+          'shrink-0 self-center rounded-md p-0.5 text-muted-foreground/70 transition-colors hover:bg-background/60 hover:text-foreground',
           open && 'bg-background/60 text-foreground',
           className,
         )}
