@@ -32,11 +32,14 @@ function parentDir(filePath: string): string {
   return trimmed.slice(0, i) || '/'
 }
 
+import type { SftpSessionApi } from '@/lib/sftp-session-api'
+
 interface SftpFindDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultRootPath: string
   onGoToPath: (path: string) => void
+  sftp: SftpSessionApi | null
 }
 
 export function SftpFindDialog({
@@ -44,6 +47,7 @@ export function SftpFindDialog({
   onOpenChange,
   defaultRootPath,
   onGoToPath,
+  sftp,
 }: SftpFindDialogProps) {
   const api = window.electronAPI
 
@@ -75,11 +79,11 @@ export function SftpFindDialog({
   }, [open, defaultRootPath])
 
   const cancelSearch = useCallback(async () => {
-    await api?.sftpFindCancel?.()
-  }, [api])
+    await sftp?.findCancel()
+  }, [sftp])
 
   const startSearch = useCallback(async () => {
-    if (!api?.sftpFindFiles) {
+    if (!sftp?.findFiles) {
       toast.error('Find requires the desktop app')
       return
     }
@@ -95,7 +99,7 @@ export function SftpFindDialog({
     setSelectedPath(null)
     setProgress({ scannedDirs: 0, matchCount: 0, currentDir: trimmedRoot, limitReached: false })
 
-    const unsubProgress = api.onSftpFindProgress?.((payload) => {
+    const unsubProgress = api?.onSftpFindProgress?.((payload) => {
       if (payload.operationId !== operationId) return
       setProgress({
         scannedDirs: payload.scannedDirs,
@@ -104,13 +108,13 @@ export function SftpFindDialog({
         limitReached: payload.limitReached ?? false,
       })
     })
-    const unsubMatch = api.onSftpFindMatch?.((payload) => {
+    const unsubMatch = api?.onSftpFindMatch?.((payload) => {
       if (payload.operationId !== operationId) return
       setResults((prev) => [...prev, payload.match])
     })
 
     try {
-      const r = await api.sftpFindFiles(
+      const r = await sftp.findFiles(
         {
           rootPath: trimmedRoot,
           pattern: trimmedPattern,

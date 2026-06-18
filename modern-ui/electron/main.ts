@@ -24,6 +24,7 @@ import {
 import {
   sftpConnect,
   sftpDisconnect,
+  sftpDisconnectAll,
   sftpReaddir,
   sftpReadFile,
   sftpWriteFile,
@@ -537,7 +538,7 @@ app.whenReady().then(() => {
     return dbGetDatabaseSchema(database)
   })
 
-  // SFTP (ssh2, single session)
+  // SFTP (ssh2, multi-session)
   ipcMain.handle(
     'sftp-connect',
     async (_event, host: string, port: number, username: string, password: string) => {
@@ -545,38 +546,60 @@ app.whenReady().then(() => {
       return sftpConnect(host, port, username, password)
     }
   )
-  ipcMain.handle('sftp-disconnect', async () => {
-    console.log('SFTP: Disconnect')
-    await sftpDisconnect()
+  ipcMain.handle('sftp-disconnect', async (_event, sessionId: string) => {
+    console.log(`SFTP: Disconnect ${sessionId}`)
+    await sftpDisconnect(sessionId)
   })
-  ipcMain.handle('sftp-readdir', async (_event, remotePath: string) => sftpReaddir(remotePath))
-  ipcMain.handle('sftp-read-file', async (_event, remotePath: string) => sftpReadFile(remotePath))
-  ipcMain.handle('sftp-write-file', async (_event, remotePath: string, base64Data: string) =>
-    sftpWriteFile(remotePath, base64Data)
+  ipcMain.handle('sftp-readdir', async (_event, sessionId: string, remotePath: string) =>
+    sftpReaddir(sessionId, remotePath),
   )
-  ipcMain.handle('sftp-write-text-file', async (_event, remotePath: string, text: string) =>
-    sftpWriteTextFile(remotePath, text)
+  ipcMain.handle('sftp-read-file', async (_event, sessionId: string, remotePath: string) =>
+    sftpReadFile(sessionId, remotePath),
   )
-  ipcMain.handle('sftp-mkdir', async (_event, remotePath: string) => sftpMkdir(remotePath))
-  ipcMain.handle('sftp-rename', async (_event, oldPath: string, newPath: string) => sftpRename(oldPath, newPath))
-  ipcMain.handle('sftp-unlink', async (_event, remotePath: string) => sftpUnlink(remotePath))
-  ipcMain.handle('sftp-rmrf', async (_event, remotePath: string) => sftpRmrf(remotePath))
-  ipcMain.handle('sftp-stat', async (_event, remotePath: string) => sftpStat(remotePath))
-  ipcMain.handle('sftp-calculate-size', async (_event, remotePath: string) => sftpCalculateSize(remotePath))
+  ipcMain.handle(
+    'sftp-write-file',
+    async (_event, sessionId: string, remotePath: string, base64Data: string) =>
+      sftpWriteFile(sessionId, remotePath, base64Data),
+  )
+  ipcMain.handle(
+    'sftp-write-text-file',
+    async (_event, sessionId: string, remotePath: string, text: string) =>
+      sftpWriteTextFile(sessionId, remotePath, text),
+  )
+  ipcMain.handle('sftp-mkdir', async (_event, sessionId: string, remotePath: string) =>
+    sftpMkdir(sessionId, remotePath),
+  )
+  ipcMain.handle('sftp-rename', async (_event, sessionId: string, oldPath: string, newPath: string) =>
+    sftpRename(sessionId, oldPath, newPath),
+  )
+  ipcMain.handle('sftp-unlink', async (_event, sessionId: string, remotePath: string) =>
+    sftpUnlink(sessionId, remotePath),
+  )
+  ipcMain.handle('sftp-rmrf', async (_event, sessionId: string, remotePath: string) =>
+    sftpRmrf(sessionId, remotePath),
+  )
+  ipcMain.handle('sftp-stat', async (_event, sessionId: string, remotePath: string) =>
+    sftpStat(sessionId, remotePath),
+  )
+  ipcMain.handle('sftp-calculate-size', async (_event, sessionId: string, remotePath: string) =>
+    sftpCalculateSize(sessionId, remotePath),
+  )
   ipcMain.handle(
     'sftp-set-attributes',
     async (
       _event,
+      sessionId: string,
       remotePath: string,
       attrs: { mode?: number; uid?: number; gid?: number },
       options?: { recursive?: boolean; addXToDirectories?: boolean },
-    ) => sftpSetAttributes(remotePath, attrs, options),
+    ) => sftpSetAttributes(sessionId, remotePath, attrs, options),
   )
 
   ipcMain.handle(
     'sftp-find-files',
     async (
       event,
+      sessionId: string,
       options: {
         rootPath: string
         pattern: string
@@ -587,7 +610,7 @@ app.whenReady().then(() => {
       },
       operationId: string,
     ) => {
-      return sftpFindFiles(options, {
+      return sftpFindFiles(sessionId, options, {
         onProgress: (payload) => {
           event.sender.send('sftp-find-progress', { operationId, ...payload })
         },
@@ -597,13 +620,13 @@ app.whenReady().then(() => {
       })
     },
   )
-  ipcMain.handle('sftp-find-cancel', () => {
-    cancelSftpFind()
+  ipcMain.handle('sftp-find-cancel', (_event, sessionId: string) => {
+    cancelSftpFind(sessionId)
   })
 
   ipcMain.handle(
     'sftp-download-save-dialog',
-    async (event, remotePath: string, operationId: string) => {
+    async (event, sessionId: string, remotePath: string, operationId: string) => {
       const win = BrowserWindow.fromWebContents(event.sender)
       const base = path.posix.basename(String(remotePath).replace(/\\/g, '/')) || 'download'
       const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
@@ -613,7 +636,7 @@ app.whenReady().then(() => {
       if (canceled || !filePath) {
         return { ok: false as const, cancelled: true as const }
       }
-      const r = await sftpDownloadToLocalFile(remotePath, filePath, (loaded, total) => {
+      const r = await sftpDownloadToLocalFile(sessionId, remotePath, filePath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r.ok ? { ok: true as const, localPath: filePath } : r
@@ -622,8 +645,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'sftp-download-to-path',
-    async (event, remotePath: string, localPath: string, operationId: string) => {
-      const r = await sftpDownloadToLocalFile(remotePath, localPath, (loaded, total) => {
+    async (event, sessionId: string, remotePath: string, localPath: string, operationId: string) => {
+      const r = await sftpDownloadToLocalFile(sessionId, remotePath, localPath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r
@@ -632,8 +655,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'sftp-upload-from-local',
-    async (event, localPath: string, remotePath: string, operationId: string) => {
-      const r = await sftpUploadFromLocalFile(localPath, remotePath, (loaded, total) => {
+    async (event, sessionId: string, localPath: string, remotePath: string, operationId: string) => {
+      const r = await sftpUploadFromLocalFile(sessionId, localPath, remotePath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r
@@ -642,8 +665,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'sftp-copy-remote-file',
-    async (event, remoteSrc: string, remoteDest: string, operationId: string) => {
-      const r = await sftpCopyRemoteFile(remoteSrc, remoteDest, (loaded, total) => {
+    async (event, sessionId: string, remoteSrc: string, remoteDest: string, operationId: string) => {
+      const r = await sftpCopyRemoteFile(sessionId, remoteSrc, remoteDest, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r
@@ -1153,7 +1176,7 @@ app.on('window-all-closed', () => {
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()
-  void sftpDisconnect()
+  void sftpDisconnectAll()
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -1172,6 +1195,6 @@ app.on('before-quit', () => {
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()
-  void sftpDisconnect()
+  void sftpDisconnectAll()
 })
 // trigger rebuild 2

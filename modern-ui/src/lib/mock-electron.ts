@@ -500,38 +500,39 @@ class MockElectronAPI implements ElectronAPI {
   async sftpConnect(_host: string, _port: number, _username: string, _password: string) {
     return this.sftpUnavailable()
   }
-  async sftpDisconnect() {}
-  async sftpReaddir(_remotePath: string) {
+  async sftpDisconnect(_sessionId: string) {}
+  async sftpReaddir(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpReadFile(_remotePath: string) {
+  async sftpReadFile(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpWriteFile(_remotePath: string, _base64Data: string) {
+  async sftpWriteFile(_sessionId: string, _remotePath: string, _base64Data: string) {
     return this.sftpUnavailable()
   }
-  async sftpWriteTextFile(_remotePath: string, _text: string) {
+  async sftpWriteTextFile(_sessionId: string, _remotePath: string, _text: string) {
     return this.sftpUnavailable()
   }
-  async sftpMkdir(_remotePath: string) {
+  async sftpMkdir(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpRename(_oldPath: string, _newPath: string) {
+  async sftpRename(_sessionId: string, _oldPath: string, _newPath: string) {
     return this.sftpUnavailable()
   }
-  async sftpUnlink(_remotePath: string) {
+  async sftpUnlink(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpRmrf(_remotePath: string) {
+  async sftpRmrf(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpStat(_remotePath: string) {
+  async sftpStat(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
-  async sftpCalculateSize(_remotePath: string) {
+  async sftpCalculateSize(_sessionId: string, _remotePath: string) {
     return this.sftpUnavailable()
   }
   async sftpSetAttributes(
+    _sessionId: string,
     _remotePath: string,
     _attrs: { mode?: number; uid?: number; gid?: number },
     _options?: { recursive?: boolean; addXToDirectories?: boolean },
@@ -539,6 +540,7 @@ class MockElectronAPI implements ElectronAPI {
     return this.sftpUnavailable()
   }
   async sftpFindFiles(
+    _sessionId: string,
     _options: {
       rootPath: string
       pattern: string
@@ -551,17 +553,32 @@ class MockElectronAPI implements ElectronAPI {
   ) {
     return this.sftpUnavailable()
   }
-  async sftpFindCancel() {}
-  async sftpDownloadSaveDialog(_remotePath: string, _operationId: string) {
+  async sftpFindCancel(_sessionId: string) {}
+  async sftpDownloadSaveDialog(_sessionId: string, _remotePath: string, _operationId: string) {
     return this.sftpUnavailable()
   }
-  async sftpDownloadToPath(_remotePath: string, _localPath: string, _operationId: string) {
+  async sftpDownloadToPath(
+    _sessionId: string,
+    _remotePath: string,
+    _localPath: string,
+    _operationId: string,
+  ) {
     return this.sftpUnavailable()
   }
-  async sftpUploadFromLocal(_localPath: string, _remotePath: string, _operationId: string) {
+  async sftpUploadFromLocal(
+    _sessionId: string,
+    _localPath: string,
+    _remotePath: string,
+    _operationId: string,
+  ) {
     return this.sftpUnavailable()
   }
-  async sftpCopyRemoteFile(_remoteSrc: string, _remoteDest: string, _operationId: string) {
+  async sftpCopyRemoteFile(
+    _sessionId: string,
+    _remoteSrc: string,
+    _remoteDest: string,
+    _operationId: string,
+  ) {
     return this.sftpUnavailable()
   }
   async localPickFolder() {

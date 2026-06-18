@@ -1,5 +1,6 @@
 import fs from 'fs'
 import path from 'path'
+import { randomUUID } from 'crypto'
 import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { Client } from 'ssh2'
@@ -9,8 +10,13 @@ const READ_MAX_BYTES = 2 * 1024 * 1024
 const S_IFMT = 0o170000
 const S_IFDIR = 0o040000
 
-let client: Client | null = null
-let sftp: SFTPWrapper | null = null
+interface SftpSession {
+  client: Client
+  sftp: SFTPWrapper
+  findCancelRequested: boolean
+}
+
+const sessions = new Map<string, SftpSession>()
 
 function normalizeRemotePath(p: string): string {
   if (!p || p === '.') return '/'
@@ -19,8 +25,12 @@ function normalizeRemotePath(p: string): string {
   return normalized || '/'
 }
 
-function getSftp(): SFTPWrapper | null {
-  return sftp
+function getSession(sessionId: string): SftpSession | null {
+  return sessions.get(sessionId) ?? null
+}
+
+function getSftp(sessionId: string): SFTPWrapper | null {
+  return getSession(sessionId)?.sftp ?? null
 }
 
 function attrsIsDirectory(attrs: FileEntry['attrs'] | Stats): boolean {
@@ -51,17 +61,33 @@ export interface SftpListEntry {
   gid?: number
 }
 
+async function closeSession(sessionId: string): Promise<void> {
+  const session = sessions.get(sessionId)
+  if (!session) return
+  sessions.delete(sessionId)
+  try {
+    session.sftp.end()
+  } catch {
+    /* ignore */
+  }
+  try {
+    session.client.end()
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function sftpConnect(
   host: string,
   port: number,
   username: string,
   password: string
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  await sftpDisconnect()
+): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
+  const sessionId = randomUUID()
   const c = new Client()
   return new Promise((resolve) => {
     let settled = false
-    const finish = (result: { ok: true } | { ok: false; error: string }) => {
+    const finish = (result: { ok: true; sessionId: string } | { ok: false; error: string }) => {
       if (settled) return
       settled = true
       clearTimeout(t)
@@ -88,9 +114,12 @@ export async function sftpConnect(
           finish({ ok: false, error: err.message })
           return
         }
-        client = c
-        sftp = sftpInst
-        finish({ ok: true })
+        sessions.set(sessionId, {
+          client: c,
+          sftp: sftpInst,
+          findCancelRequested: false,
+        })
+        finish({ ok: true, sessionId })
       })
     })
 
@@ -101,6 +130,10 @@ export async function sftpConnect(
         /* ignore */
       }
       finish({ ok: false, error: err.message })
+    })
+
+    c.on('close', () => {
+      sessions.delete(sessionId)
     })
 
     try {
@@ -118,29 +151,20 @@ export async function sftpConnect(
   })
 }
 
-export async function sftpDisconnect(): Promise<void> {
-  if (sftp) {
-    try {
-      sftp.end()
-    } catch {
-      /* ignore */
-    }
-    sftp = null
-  }
-  if (client) {
-    try {
-      client.end()
-    } catch {
-      /* ignore */
-    }
-    client = null
-  }
+export async function sftpDisconnect(sessionId: string): Promise<void> {
+  await closeSession(sessionId)
+}
+
+export async function sftpDisconnectAll(): Promise<void> {
+  const ids = [...sessions.keys()]
+  await Promise.all(ids.map((id) => closeSession(id)))
 }
 
 export async function sftpReaddir(
+  sessionId: string,
   remotePath: string
 ): Promise<{ ok: true; entries: SftpListEntry[] } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const dir = normalizeRemotePath(remotePath)
   try {
@@ -191,13 +215,14 @@ function isMostlyText(buf: Buffer): boolean {
 }
 
 export async function sftpReadFile(
+  sessionId: string,
   remotePath: string
 ): Promise<
   | { ok: true; text: string; isBinary: false; size: number }
   | { ok: true; isBinary: true; size: number; previewBase64: string }
   | { ok: false; error: string }
 > {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -228,10 +253,11 @@ export async function sftpReadFile(
 }
 
 export async function sftpWriteFile(
+  sessionId: string,
   remotePath: string,
   base64Data: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -250,10 +276,11 @@ export async function sftpWriteFile(
 }
 
 export async function sftpWriteTextFile(
+  sessionId: string,
   remotePath: string,
   text: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -268,9 +295,10 @@ export async function sftpWriteTextFile(
 }
 
 export async function sftpMkdir(
+  sessionId: string,
   remotePath: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -283,10 +311,11 @@ export async function sftpMkdir(
 }
 
 export async function sftpRename(
+  sessionId: string,
   oldPath: string,
   newPath: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const a = normalizeRemotePath(oldPath)
   const b = normalizeRemotePath(newPath)
@@ -300,9 +329,10 @@ export async function sftpRename(
 }
 
 export async function sftpUnlink(
+  sessionId: string,
   remotePath: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -329,9 +359,10 @@ async function rmrfRecursive(s: SFTPWrapper, dirPath: string): Promise<void> {
 }
 
 export async function sftpRmrf(
+  sessionId: string,
   remotePath: string
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -351,11 +382,12 @@ export async function sftpRmrf(
 
 /** Stream remote file to local path (any size). */
 export async function sftpDownloadToLocalFile(
+  sessionId: string,
   remotePath: string,
   localPath: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -388,11 +420,12 @@ export async function sftpDownloadToLocalFile(
 
 /** Stream local file to remote path (any size). */
 export async function sftpUploadFromLocalFile(
+  sessionId: string,
   localPath: string,
   remotePath: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -420,11 +453,12 @@ export async function sftpUploadFromLocalFile(
 
 /** Copy a remote file to another path on the same server (streaming). */
 export async function sftpCopyRemoteFile(
+  sessionId: string,
   remoteSrc: string,
   remoteDest: string,
   onProgress?: (loaded: number, total: number) => void,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const a = normalizeRemotePath(remoteSrc)
   const b = normalizeRemotePath(remoteDest)
@@ -462,9 +496,10 @@ export interface SftpPathStat {
 }
 
 export async function sftpStat(
+  sessionId: string,
   remotePath: string,
 ): Promise<{ ok: true; stat: SftpPathStat } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -504,9 +539,10 @@ async function collectRemotePathsRecursive(s: SFTPWrapper, dirPath: string): Pro
 }
 
 export async function sftpCalculateSize(
+  sessionId: string,
   remotePath: string,
 ): Promise<{ ok: true; size: number; fileCount: number } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -545,11 +581,12 @@ function applyAddXToDirectory(mode: number): number {
 }
 
 export async function sftpSetAttributes(
+  sessionId: string,
   remotePath: string,
   attrs: { mode?: number; uid?: number; gid?: number },
   options?: { recursive?: boolean; addXToDirectories?: boolean },
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
   const p = normalizeRemotePath(remotePath)
   try {
@@ -586,10 +623,9 @@ export async function sftpSetAttributes(
 
 const MAX_FIND_MATCHES = 5000
 
-let findCancelRequested = false
-
-export function cancelSftpFind(): void {
-  findCancelRequested = true
+export function cancelSftpFind(sessionId: string): void {
+  const session = getSession(sessionId)
+  if (session) session.findCancelRequested = true
 }
 
 export interface SftpFindMatch {
@@ -635,6 +671,7 @@ function nameMatchesFindPattern(
 }
 
 export async function sftpFindFiles(
+  sessionId: string,
   options: SftpFindOptions,
   callbacks?: {
     onProgress?: (payload: {
@@ -650,17 +687,19 @@ export async function sftpFindFiles(
   | { ok: true; matchCount: number; cancelled: boolean; limitReached?: boolean }
   | { ok: false; error: string }
 > {
-  const s = getSftp()
+  const s = getSftp(sessionId)
   if (!s) return { ok: false, error: 'Not connected' }
 
-  findCancelRequested = false
+  const session = getSession(sessionId)
+  if (session) session.findCancelRequested = false
   const root = normalizeRemotePath(options.rootPath)
   const patterns = parseFindPatterns(options.pattern)
   let scannedDirs = 0
   let matchCount = 0
   let limitReached = false
 
-  const shouldCancel = () => findCancelRequested || callbacks?.shouldCancel?.() === true
+  const shouldCancel = () =>
+    (session?.findCancelRequested ?? false) || callbacks?.shouldCancel?.() === true
 
   const emitProgress = (currentDir: string) => {
     callbacks?.onProgress?.({

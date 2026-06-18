@@ -49,15 +49,17 @@ function isInvalidMove(src: string, destDir: string, name: string, isFolder: boo
   return null
 }
 
+import type { SftpSessionApi } from '@/lib/sftp-session-api'
+
 interface SftpMoveDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   node: SftpFileNode | null
   onMoved?: () => void
+  sftp: SftpSessionApi | null
 }
 
-export function SftpMoveDialog({ open, onOpenChange, node, onMoved }: SftpMoveDialogProps) {
-  const api = window.electronAPI
+export function SftpMoveDialog({ open, onOpenChange, node, onMoved, sftp }: SftpMoveDialogProps) {
   const [destDir, setDestDir] = useState('/')
   const [busy, setBusy] = useState(false)
 
@@ -67,7 +69,7 @@ export function SftpMoveDialog({ open, onOpenChange, node, onMoved }: SftpMoveDi
   }, [open, node])
 
   const submit = async () => {
-    if (!node || !api?.sftpRename) return
+    if (!node || !sftp?.rename) return
     const trimmed = destDir.trim()
     if (!trimmed) {
       toast.error('Enter a destination folder')
@@ -81,7 +83,7 @@ export function SftpMoveDialog({ open, onOpenChange, node, onMoved }: SftpMoveDi
     const newPath = normalizeRemotePath(posixJoin(trimmed, node.name))
     setBusy(true)
     try {
-      const r = await api.sftpRename(node.path, newPath)
+      const r = await sftp.rename(node.path, newPath)
       if (r.ok) {
         toast.success('Moved')
         onOpenChange(false)

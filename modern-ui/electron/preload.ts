@@ -135,25 +135,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   sftpConnect: (host: string, port: number, username: string, password: string) =>
     ipcRenderer.invoke('sftp-connect', host, port, username, password),
-  sftpDisconnect: () => ipcRenderer.invoke('sftp-disconnect'),
-  sftpReaddir: (remotePath: string) => ipcRenderer.invoke('sftp-readdir', remotePath),
-  sftpReadFile: (remotePath: string) => ipcRenderer.invoke('sftp-read-file', remotePath),
-  sftpWriteFile: (remotePath: string, base64Data: string) =>
-    ipcRenderer.invoke('sftp-write-file', remotePath, base64Data),
-  sftpWriteTextFile: (remotePath: string, text: string) =>
-    ipcRenderer.invoke('sftp-write-text-file', remotePath, text),
-  sftpMkdir: (remotePath: string) => ipcRenderer.invoke('sftp-mkdir', remotePath),
-  sftpRename: (oldPath: string, newPath: string) => ipcRenderer.invoke('sftp-rename', oldPath, newPath),
-  sftpUnlink: (remotePath: string) => ipcRenderer.invoke('sftp-unlink', remotePath),
-  sftpRmrf: (remotePath: string) => ipcRenderer.invoke('sftp-rmrf', remotePath),
-  sftpStat: (remotePath: string) => ipcRenderer.invoke('sftp-stat', remotePath),
-  sftpCalculateSize: (remotePath: string) => ipcRenderer.invoke('sftp-calculate-size', remotePath),
+  sftpDisconnect: (sessionId: string) => ipcRenderer.invoke('sftp-disconnect', sessionId),
+  sftpReaddir: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-readdir', sessionId, remotePath),
+  sftpReadFile: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-read-file', sessionId, remotePath),
+  sftpWriteFile: (sessionId: string, remotePath: string, base64Data: string) =>
+    ipcRenderer.invoke('sftp-write-file', sessionId, remotePath, base64Data),
+  sftpWriteTextFile: (sessionId: string, remotePath: string, text: string) =>
+    ipcRenderer.invoke('sftp-write-text-file', sessionId, remotePath, text),
+  sftpMkdir: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-mkdir', sessionId, remotePath),
+  sftpRename: (sessionId: string, oldPath: string, newPath: string) =>
+    ipcRenderer.invoke('sftp-rename', sessionId, oldPath, newPath),
+  sftpUnlink: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-unlink', sessionId, remotePath),
+  sftpRmrf: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-rmrf', sessionId, remotePath),
+  sftpStat: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-stat', sessionId, remotePath),
+  sftpCalculateSize: (sessionId: string, remotePath: string) =>
+    ipcRenderer.invoke('sftp-calculate-size', sessionId, remotePath),
   sftpSetAttributes: (
+    sessionId: string,
     remotePath: string,
     attrs: { mode?: number; uid?: number; gid?: number },
     options?: { recursive?: boolean; addXToDirectories?: boolean },
-  ) => ipcRenderer.invoke('sftp-set-attributes', remotePath, attrs, options),
+  ) => ipcRenderer.invoke('sftp-set-attributes', sessionId, remotePath, attrs, options),
   sftpFindFiles: (
+    sessionId: string,
     options: {
       rootPath: string
       pattern: string
@@ -163,16 +173,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       foldersOnly: boolean
     },
     operationId: string,
-  ) => ipcRenderer.invoke('sftp-find-files', options, operationId),
-  sftpFindCancel: () => ipcRenderer.invoke('sftp-find-cancel'),
-  sftpDownloadSaveDialog: (remotePath: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-download-save-dialog', remotePath, operationId),
-  sftpDownloadToPath: (remotePath: string, localPath: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-download-to-path', remotePath, localPath, operationId),
-  sftpUploadFromLocal: (localPath: string, remotePath: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-upload-from-local', localPath, remotePath, operationId),
-  sftpCopyRemoteFile: (remoteSrc: string, remoteDest: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-copy-remote-file', remoteSrc, remoteDest, operationId),
+  ) => ipcRenderer.invoke('sftp-find-files', sessionId, options, operationId),
+  sftpFindCancel: (sessionId: string) => ipcRenderer.invoke('sftp-find-cancel', sessionId),
+  sftpDownloadSaveDialog: (sessionId: string, remotePath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-download-save-dialog', sessionId, remotePath, operationId),
+  sftpDownloadToPath: (sessionId: string, remotePath: string, localPath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-download-to-path', sessionId, remotePath, localPath, operationId),
+  sftpUploadFromLocal: (sessionId: string, localPath: string, remotePath: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-upload-from-local', sessionId, localPath, remotePath, operationId),
+  sftpCopyRemoteFile: (sessionId: string, remoteSrc: string, remoteDest: string, operationId: string) =>
+    ipcRenderer.invoke('sftp-copy-remote-file', sessionId, remoteSrc, remoteDest, operationId),
   localPickFolder: () => ipcRenderer.invoke('local-pick-folder'),
   localReaddir: (root: string, dirPath: string) => ipcRenderer.invoke('local-readdir', root, dirPath),
   localWriteFileBase64: (root: string, filePath: string, base64Data: string) =>

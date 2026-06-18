@@ -74,11 +74,14 @@ function PermRow({
   )
 }
 
+import type { SftpSessionApi } from '@/lib/sftp-session-api'
+
 interface SftpPropertiesDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   node: SftpFileNode | null
   onApplied?: () => void
+  sftp: SftpSessionApi | null
 }
 
 export function SftpPropertiesDialog({
@@ -86,8 +89,8 @@ export function SftpPropertiesDialog({
   onOpenChange,
   node,
   onApplied,
+  sftp,
 }: SftpPropertiesDialogProps) {
-  const api = window.electronAPI
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -126,10 +129,10 @@ export function SftpPropertiesDialog({
   )
 
   const loadStat = useCallback(async () => {
-    if (!node || !api?.sftpStat) return
+    if (!node || !sftp?.stat) return
     setLoading(true)
     try {
-      const r = await api.sftpStat(node.path)
+      const r = await sftp.stat(node.path)
       if (!r.ok) {
         toast.error(r.error)
         return
@@ -156,7 +159,7 @@ export function SftpPropertiesDialog({
     } finally {
       setLoading(false)
     }
-  }, [api, node])
+  }, [sftp, node])
 
   useEffect(() => {
     if (!open || !node) return
@@ -166,10 +169,10 @@ export function SftpPropertiesDialog({
   }, [open, node, loadStat])
 
   const onCalculateSize = async () => {
-    if (!node || !api?.sftpCalculateSize) return
+    if (!node || !sftp?.calculateSize) return
     setCalculating(true)
     try {
-      const r = await api.sftpCalculateSize(node.path)
+      const r = await sftp.calculateSize(node.path)
       if (!r.ok) {
         toast.error(r.error)
         return
@@ -191,7 +194,7 @@ export function SftpPropertiesDialog({
   }
 
   const onSubmit = async () => {
-    if (!node || !api?.sftpSetAttributes) return
+    if (!node || !sftp?.setAttributes) return
     const attrs: { mode?: number; uid?: number; gid?: number } = {}
     if (uid !== origUid) attrs.uid = uid
     if (gid !== origGid) attrs.gid = gid
@@ -203,7 +206,7 @@ export function SftpPropertiesDialog({
     }
     setSaving(true)
     try {
-      const r = await api.sftpSetAttributes(node.path, attrs, {
+      const r = await sftp.setAttributes(node.path, attrs, {
         recursive,
         addXToDirectories,
       })

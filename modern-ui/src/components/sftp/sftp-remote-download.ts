@@ -1,4 +1,4 @@
-import type { ElectronAPI } from '@/types/electron.d'
+import type { SftpSessionApi } from '@/lib/sftp-session-api'
 
 function posixJoin(dir: string, name: string): string {
   const d = dir.replace(/\/+$/, '') || '/'
@@ -11,18 +11,18 @@ export type RemoteFileRef = { remotePath: string; relPath: string }
 
 /** Recursively list all files under a remote directory (relative paths from that directory). */
 export async function collectRemoteFiles(
-  api: ElectronAPI,
+  sftp: SftpSessionApi,
   remoteDir: string,
   relativePrefix = '',
 ): Promise<RemoteFileRef[]> {
-  const r = await api.sftpReaddir(remoteDir)
+  const r = await sftp.readdir(remoteDir)
   if (!r.ok) throw new Error(r.error)
   const out: RemoteFileRef[] = []
   for (const entry of r.entries) {
     const childRemote = posixJoin(remoteDir, entry.name)
     const childRel = relativePrefix ? `${relativePrefix}/${entry.name}` : entry.name
     if (entry.type === 'folder') {
-      out.push(...(await collectRemoteFiles(api, childRemote, childRel)))
+      out.push(...(await collectRemoteFiles(sftp, childRemote, childRel)))
     } else {
       out.push({ remotePath: childRemote, relPath: childRel })
     }

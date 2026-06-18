@@ -236,15 +236,16 @@ export interface ElectronAPI {
   installRegistrySetEnabled: (enabled: boolean) => Promise<boolean>
   installRegistrySendNow: () => Promise<InstallRegistrySendResult>
 
-  // SFTP (Electron main / ssh2)
+  // SFTP (Electron main / ssh2, multi-session)
   sftpConnect: (
     host: string,
     port: number,
     username: string,
     password: string
-  ) => Promise<{ ok: true } | { ok: false; error: string }>
-  sftpDisconnect: () => Promise<void>
+  ) => Promise<{ ok: true; sessionId: string } | { ok: false; error: string }>
+  sftpDisconnect: (sessionId: string) => Promise<void>
   sftpReaddir: (
+    sessionId: string,
     remotePath: string
   ) => Promise<
     | {
@@ -262,6 +263,7 @@ export interface ElectronAPI {
     | { ok: false; error: string }
   >
   sftpReadFile: (
+    sessionId: string,
     remotePath: string
   ) => Promise<
     | { ok: true; text: string; isBinary: false; size: number }
@@ -269,18 +271,25 @@ export interface ElectronAPI {
     | { ok: false; error: string }
   >
   sftpWriteFile: (
+    sessionId: string,
     remotePath: string,
     base64Data: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpWriteTextFile: (
+    sessionId: string,
     remotePath: string,
     text: string
   ) => Promise<{ ok: true } | { ok: false; error: string }>
-  sftpMkdir: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  sftpRename: (oldPath: string, newPath: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  sftpUnlink: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
-  sftpRmrf: (remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpMkdir: (sessionId: string, remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpRename: (
+    sessionId: string,
+    oldPath: string,
+    newPath: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpUnlink: (sessionId: string, remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
+  sftpRmrf: (sessionId: string, remotePath: string) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpStat: (
+    sessionId: string,
     remotePath: string,
   ) => Promise<
     | {
@@ -298,14 +307,17 @@ export interface ElectronAPI {
     | { ok: false; error: string }
   >
   sftpCalculateSize: (
+    sessionId: string,
     remotePath: string,
   ) => Promise<{ ok: true; size: number; fileCount: number } | { ok: false; error: string }>
   sftpSetAttributes: (
+    sessionId: string,
     remotePath: string,
     attrs: { mode?: number; uid?: number; gid?: number },
     options?: { recursive?: boolean; addXToDirectories?: boolean },
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpFindFiles: (
+    sessionId: string,
     options: {
       rootPath: string
       pattern: string
@@ -319,8 +331,9 @@ export interface ElectronAPI {
     | { ok: true; matchCount: number; cancelled: boolean; limitReached?: boolean }
     | { ok: false; error: string }
   >
-  sftpFindCancel: () => Promise<void>
+  sftpFindCancel: (sessionId: string) => Promise<void>
   sftpDownloadSaveDialog: (
+    sessionId: string,
     remotePath: string,
     operationId: string,
   ) => Promise<
@@ -328,16 +341,19 @@ export interface ElectronAPI {
     | { ok: false; error: string; cancelled?: boolean }
   >
   sftpDownloadToPath: (
+    sessionId: string,
     remotePath: string,
     localPath: string,
     operationId: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpUploadFromLocal: (
+    sessionId: string,
     localPath: string,
     remotePath: string,
     operationId: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpCopyRemoteFile: (
+    sessionId: string,
     remoteSrc: string,
     remoteDest: string,
     operationId: string,
