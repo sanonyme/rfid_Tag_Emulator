@@ -1,4 +1,4 @@
-// TCP Client for communicating with Java backend via Electron IPC
+// TCP Client for communicating with the emulator backend via Electron IPC
 
 export interface TagData {
   epc: string
@@ -52,12 +52,13 @@ export class TCPEmulatorClient {
       return
     }
 
-    // Set callbacks for this specific connection attempt
-    this.connectCallback = onSuccess
-    this.errorCallback = onError
-    
-    // Send connection request to main process
-    window.electronAPI.tcpConnect(host, parseInt(port.toString()))
+    try {
+      const result = await window.electronAPI.tcpConnect(host, parseInt(port.toString()))
+      if (result.ok) onSuccess(result.message ?? 'Connected')
+      else onError(result.error ?? 'Connection failed')
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async disconnect(onComplete: (message: string) => void): Promise<void> {
@@ -89,12 +90,22 @@ export class TCPEmulatorClient {
       return
     }
 
-    // Set callbacks for send progress
-    this.progressCallback = onProgress
-    this.completeCallback = onComplete
-    
-    // Send tags to main process which will handle real TCP communication
-    window.electronAPI.tcpSendTags(tags, driverCode, delay)
+    const api = window.electronAPI
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      }
+      this.progressCallback = onProgress
+      this.completeCallback = (message: string) => {
+        onComplete(message)
+        finish()
+      }
+      api.tcpSendTags(tags, driverCode, delay)
+    })
   }
 
   cancelSend(): void {
@@ -180,11 +191,22 @@ export class HandheldServerClient {
       return
     }
 
-    // Set callbacks for send progress
-    this.progressCallback = onProgress
-    this.completeCallback = onComplete
-
-    window.electronAPI.handheldSendEpcs(this.port, tags, delay, verboseProgress)
+    const api = window.electronAPI
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      }
+      this.progressCallback = onProgress
+      this.completeCallback = (message: string) => {
+        onComplete(message)
+        finish()
+      }
+      api.handheldSendEpcs(this.port, tags, delay, verboseProgress)
+    })
   }
 
   cancelSend(): void {

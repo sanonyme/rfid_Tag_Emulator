@@ -282,27 +282,6 @@ function buildSteps(isAdmin: boolean): Step[] {
       data: { tab: 'custom' } satisfies TourStepData,
     },
     {
-      target: '[data-tour="tour-adam-top"]',
-      placement: 'bottom',
-      title: 'ADAM — connection & inputs',
-      content: 'Modbus/TCP to Advantech ADAM-6000: connect, watch digital inputs, and invert mapping when needed.',
-      data: { tab: 'adam' } satisfies TourStepData,
-    },
-    {
-      target: '[data-tour="tour-adam-do"]',
-      placement: 'top',
-      title: 'ADAM — digital outputs',
-      content: 'Toggle DO channels once the module is connected.',
-      data: { tab: 'adam' } satisfies TourStepData,
-    },
-    {
-      target: '[data-tour="tour-adam-log"]',
-      placement: 'top',
-      title: 'ADAM — log',
-      content: 'Module activity and errors appear in this log.',
-      data: { tab: 'adam' } satisfies TourStepData,
-    },
-    {
       target: '[data-tour="tour-api-request"]',
       placement: 'bottom',
       title: 'API — request',

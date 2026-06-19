@@ -50,36 +50,22 @@ class MockElectronAPI implements ElectronAPI {
     error: []
   };
 
-  private _adamCallbacks: {
-    connected: ((message: string) => void)[],
-    disconnected: ((message: string) => void)[],
-    dataDI: ((data: { start: number, values: boolean[] }) => void)[],
-    writeSuccess: ((message: string) => void)[],
-    error: ((message: string) => void)[]
-  } = {
-    connected: [],
-    disconnected: [],
-    dataDI: [],
-    writeSuccess: [],
-    error: []
-  };
-
   // Window controls
   minimize() { console.log('Mock: minimize'); }
   maximize() { console.log('Mock: maximize'); }
   close() { console.log('Mock: close'); }
 
   // TCP Emulator - validate host reachability via HTTP probe (browser can't do raw TCP)
-  tcpConnect(host: string, port: number) {
+  async tcpConnect(host: string, port: number): Promise<{ ok: boolean; message?: string; error?: string }> {
     console.log(`Mock: Validating reachability of ${host}...`);
-    const probePorts = [8080, 80, port]; // ALE often on 8080/80; also try the requested port
+    const probePorts = [8080, 80, port];
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
 
     const tryProbe = (p: number) =>
       fetch(`http://${host}:${p}/`, {
         method: 'HEAD',
-        mode: 'no-cors', // Rejects on connection refused; resolves if host responds
+        mode: 'no-cors',
         signal: controller.signal,
         cache: 'no-store',
       });
@@ -95,20 +81,25 @@ class MockElectronAPI implements ElectronAPI {
       }
       return false;
     };
-    tryAny()
-      .then((ok) => {
-        clearTimeout(timeoutId);
-        if (ok) {
-          this._tcpConnected = true;
-          this._trigger(this._tcpCallbacks.connect, `Connected to ${host}:${port}`);
-        } else {
-          this._trigger(this._tcpCallbacks.error, `Host ${host} unreachable. Check IP, network, and firewall.`);
-        }
-      })
-      .catch(() => {
-        clearTimeout(timeoutId);
-        this._trigger(this._tcpCallbacks.error, `Host ${host} unreachable. Check IP, network, and firewall.`);
-      });
+
+    try {
+      const ok = await tryAny();
+      clearTimeout(timeoutId);
+      if (ok) {
+        this._tcpConnected = true;
+        const message = `Connected to ${host}:${port}`;
+        this._trigger(this._tcpCallbacks.connect, message);
+        return { ok: true, message };
+      }
+      const error = `Host ${host} unreachable. Check IP, network, and firewall.`;
+      this._trigger(this._tcpCallbacks.error, error);
+      return { ok: false, error };
+    } catch {
+      clearTimeout(timeoutId);
+      const error = `Host ${host} unreachable. Check IP, network, and firewall.`;
+      this._trigger(this._tcpCallbacks.error, error);
+      return { ok: false, error };
+    }
   }
 
   tcpDisconnect() {
@@ -279,46 +270,6 @@ class MockElectronAPI implements ElectronAPI {
   onCustomSuccess(callback: (message: string) => void) { this._customCallbacks.success.push(callback); }
   onCustomError(callback: (message: string) => void) { this._customCallbacks.error.push(callback); }
 
-  // ADAM Module
-  adamConnect(host: string, port: number) {
-    console.log(`Mock: Connecting to ADAM at ${host}:${port}`);
-    setTimeout(() => {
-        this._trigger(this._adamCallbacks.connected, `Connected to ${host}:${port}`);
-    }, 1000);
-  }
-
-  adamDisconnect() {
-    console.log('Mock: Disconnecting ADAM');
-    setTimeout(() => {
-        this._trigger(this._adamCallbacks.disconnected, 'Disconnected');
-    }, 500);
-  }
-
-  adamSetDO(coil: number, value: boolean) {
-    console.log(`Mock: Set DO ${coil} to ${value}`);
-    setTimeout(() => {
-        this._trigger(this._adamCallbacks.writeSuccess, `Written DO ${coil} to ${value}`);
-    }, 200);
-  }
-
-  adamReadDIs(start: number, count: number) {
-    const values = Array(count).fill(false).map(() => Math.random() > 0.5);
-    this._adamCallbacks.dataDI.forEach(cb => cb({ start, values }));
-  }
-
-  adamSetDIInvert(mask: number, _registerAddress?: number) {
-    console.log(`Mock: Set DI invert mask=0x${mask.toString(16)}`);
-    setTimeout(() => {
-      this._trigger(this._adamCallbacks.writeSuccess, `DI invert mask set to 0x${mask.toString(16)}`);
-    }, 100);
-  }
-
-  onAdamConnected(callback: (message: string) => void) { this._adamCallbacks.connected.push(callback); }
-  onAdamDisconnected(callback: (message: string) => void) { this._adamCallbacks.disconnected.push(callback); }
-  onAdamError(callback: (message: string) => void) { this._adamCallbacks.error.push(callback); }
-  onAdamDataDI(callback: (data: { start: number, values: boolean[] }) => void) { this._adamCallbacks.dataDI.push(callback); }
-  onAdamWriteSuccess(callback: (message: string) => void) { this._adamCallbacks.writeSuccess.push(callback); }
-
   // Auto Updater
   checkForUpdate() { console.log('Mock: checkForUpdate'); }
   startDownload() { console.log('Mock: startDownload'); }
@@ -333,12 +284,24 @@ class MockElectronAPI implements ElectronAPI {
   onUpdateDownloaded(_callback: (info: any) => void) { console.log('Mock: onUpdateDownloaded registered'); }
 
   // ALE API - try proxy first (dev server), fallback to direct fetch (PWA or proxy unreachable)
+  async aleGetCredentialMeta() {
+    const u = import.meta.env.VITE_ALE_USERNAME as string | undefined
+    if (!u?.trim()) return { ok: false as const }
+    const pw = (import.meta.env.VITE_ALE_PASSWORD as string | undefined) ?? ''
+    return { ok: true as const, username: u.trim(), passwordIsHashed: /^[a-f0-9]{64}$/i.test(pw.trim()) }
+  }
+  async aleGetBasicAuthHeader() {
+    const meta = await this.aleGetCredentialMeta()
+    if (!meta.ok) return { ok: false as const, error: 'Missing credentials' }
+    const pw = (import.meta.env.VITE_ALE_PASSWORD as string | undefined) ?? ''
+    const token = btoa(`${meta.username}:${pw}`)
+    return { ok: true as const, username: meta.username, header: `Basic ${token}` }
+  }
   async aleRequest(url: string, options: any) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 15000);
     const tryProxy = typeof window !== 'undefined' && window.location?.origin?.startsWith('http');
     try {
-      let res: Response;
       if (tryProxy) {
         try {
           const proxyRes = await fetch('/api/ale-proxy', {
@@ -362,7 +325,7 @@ class MockElectronAPI implements ElectronAPI {
           /* proxy failed or not available, fall through to direct */
         }
       }
-      res = await fetch(url, {
+      const res = await fetch(url, {
         method: options?.method || 'GET',
         headers: options?.headers || {},
         body: options?.body,
@@ -425,6 +388,9 @@ class MockElectronAPI implements ElectronAPI {
     return { ok: false as const, error: 'Database not available in browser mode' }
   }
   async dbDisconnect() {}
+  async dbListDatabases(): Promise<{ ok: true; databases: string[] } | { ok: false; error: string }> {
+    return { ok: false as const, error: 'Not connected' }
+  }
   async dbGetTables(_database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
     return { ok: false as const, error: 'Not connected' }
   }
@@ -491,6 +457,22 @@ class MockElectronAPI implements ElectronAPI {
   }
   async installRegistrySendNow() {
     return { status: 'disabled' as const, error: 'Not available in browser' }
+  }
+
+  private _adminAuthed = false
+  async adminLogin(username: string, password: string) {
+    if (username === 'admin' && password === 'admin') {
+      this._adminAuthed = true
+      return { ok: true }
+    }
+    return { ok: false, error: 'Invalid username or password' }
+  }
+  async adminLogout() {
+    this._adminAuthed = false
+    return { ok: true }
+  }
+  async adminIsAuthenticated() {
+    return { ok: this._adminAuthed }
   }
 
   private sftpUnavailable() {
@@ -562,6 +544,7 @@ class MockElectronAPI implements ElectronAPI {
     _remotePath: string,
     _localPath: string,
     _operationId: string,
+    _localRoot?: string,
   ) {
     return this.sftpUnavailable()
   }
@@ -570,6 +553,7 @@ class MockElectronAPI implements ElectronAPI {
     _localPath: string,
     _remotePath: string,
     _operationId: string,
+    _localRoot?: string,
   ) {
     return this.sftpUnavailable()
   }

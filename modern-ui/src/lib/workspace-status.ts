@@ -7,7 +7,6 @@ import { useEffect, useState } from 'react'
 export type ServiceKey =
   | 'fixed'
   | 'ocr'
-  | 'adam'
   | 'edge'
   | 'automation'
   | 'db'

@@ -979,7 +979,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
         <CardHeader className="space-y-3 pb-3 pt-5 px-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-500/10 text-sky-600 ring-1 ring-sky-500/20 dark:text-sky-400">
                 <Globe className="h-5 w-5" />
               </div>
               <div className="min-w-0 space-y-1">
@@ -1068,7 +1068,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <Label htmlFor="api-subst-table" className="flex items-center gap-2 text-sm font-medium">
-                  <Table2 className="h-4 w-4 text-muted-foreground" />
+                  <Table2 className="h-4 w-4 text-violet-600 dark:text-violet-400" />
                   Placeholder table
                 </Label>
                 <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
@@ -1167,8 +1167,8 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
         <CardHeader className="shrink-0 border-b border-border/40 bg-muted/10 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
-                <Activity className="h-3.5 w-3.5 text-primary" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-emerald-500/10 ring-1 ring-emerald-500/20">
+                <Activity className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
               </span>
               Response
               {response && (
@@ -1228,7 +1228,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
               ) : (
                 <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
               )}
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400">
                 <FileSpreadsheet className="h-4 w-4" />
               </div>
               <CardTitle className="text-base font-semibold tracking-tight">Bulk CSV / TSV decoder</CardTitle>
@@ -1591,7 +1591,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
         <DialogContent className="max-w-2xl">
           <DialogHeader className="space-y-2">
             <DialogTitle className="flex items-center gap-3 text-base">
-              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
+              <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-500/10 text-indigo-600 ring-1 ring-indigo-500/20 dark:text-indigo-400">
                 <Braces className="h-4 w-4" />
               </span>
               Base64 decoder / encoder

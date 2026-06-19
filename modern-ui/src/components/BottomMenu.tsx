@@ -38,9 +38,6 @@ const THEME_OPTIONS = [
   { key: 'system', icon: Monitor, text: 'System' },
 ] as const
 
-const ADMIN_USER = 'admin'
-const ADMIN_PASS = 'admin'
-
 interface BottomMenuProps {
   activeTab: string
   onSwitchTab: (tab: string) => void
@@ -90,15 +87,20 @@ export function BottomMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleAdminLogin = () => {
+  const handleAdminLogin = async () => {
     setAdminError('')
-    if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
+    if (!window.electronAPI?.adminLogin) {
+      setAdminError('Admin login unavailable')
+      return
+    }
+    const result = await window.electronAPI.adminLogin(adminUser, adminPass)
+    if (result.ok) {
       onAdminLogin?.()
       setAdminUser('')
       setAdminPass('')
       setView('default')
     } else {
-      setAdminError('Invalid username or password')
+      setAdminError(result.error ?? 'Invalid username or password')
     }
   }
 

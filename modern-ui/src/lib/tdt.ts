@@ -86,7 +86,7 @@ let translatorPromise: Promise<TDTtranslatorInstance> | null = null
 function ensureGlobals() {
   if (typeof window === 'undefined') return
   if (!window.JSZip) {
-    ;(window as unknown as { JSZip: unknown }).JSZip = JSZip
+    (window as unknown as { JSZip: unknown }).JSZip = JSZip
   }
 }
 

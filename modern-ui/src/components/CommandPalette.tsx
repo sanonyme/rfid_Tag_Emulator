@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import {
-  Radio, Smartphone, ScanLine, Terminal, Server, Cloud, Globe,
+  Radio, Smartphone, ScanLine, Terminal, Cloud, Globe,
   Code2, Workflow, QrCode, Database, FolderInput, Link2, Radar, LineChart, Wifi, WifiOff, Moon, Sun,
   Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces, Layers
 } from 'lucide-react'
@@ -42,19 +42,18 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'handheld', label: 'Handheld', icon: <Smartphone className="w-4 h-4" />, num: 2 },
   { value: 'ocr', label: 'OCR', icon: <ScanLine className="w-4 h-4" />, num: 3 },
   { value: 'custom', label: 'Custom', icon: <Terminal className="w-4 h-4" />, num: 4 },
-  { value: 'adam', label: 'ADAM', icon: <Server className="w-4 h-4" />, num: 5 },
-  { value: 'edge', label: 'Edge', icon: <Cloud className="w-4 h-4" />, num: 6 },
-  { value: 'api', label: 'API', icon: <Globe className="w-4 h-4" />, num: 7 },
-  { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 8 },
-  { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 9 },
-  { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 10 },
+  { value: 'edge', label: 'Edge', icon: <Cloud className="w-4 h-4" />, num: 5 },
+  { value: 'api', label: 'API', icon: <Globe className="w-4 h-4" />, num: 6 },
+  { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 7 },
+  { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 8 },
+  { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
   { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
   { value: 'sftp', label: 'SFTP', icon: <FolderInput className="w-4 h-4" /> },
   { value: 'netscan', label: 'LAN scan', icon: <Radar className="w-4 h-4" /> },
 ]
 
 const TAB_COMMANDS_PUBLIC = TAB_COMMANDS_ALL.filter(
-  (t) => t.value !== 'adam' && (IS_MOBILE ? t.value !== 'sftp' && t.value !== 'netscan' : true),
+  (t) => (IS_MOBILE ? t.value !== 'sftp' && t.value !== 'netscan' : true),
 )
 
 const TAB_COMMANDS_BASE = TAB_COMMANDS_PUBLIC.map((t, i) => ({
@@ -62,7 +61,6 @@ const TAB_COMMANDS_BASE = TAB_COMMANDS_PUBLIC.map((t, i) => ({
   num: i + 1,
 }))
 
-const TAB_COMMAND_ADAM: { value: string; label: string; icon: React.ReactNode; num?: number } = { value: 'adam', label: 'ADAM', icon: <Server className="w-4 h-4" /> }
 const TAB_COMMAND_LINK2UID = { value: 'link2uid', label: 'Link→UID', icon: <Link2 className="w-4 h-4" />, num: 10 }
 const TAB_COMMAND_TERMINAL = { value: 'terminal', label: 'Terminal', icon: <Terminal className="w-4 h-4" />, num: 11 }
 const TAB_COMMAND_LOGS = { value: 'logs', label: 'Log Analyzer', icon: <LineChart className="w-4 h-4" />, num: 12 }
@@ -91,25 +89,30 @@ export function CommandPalette({
   const listRef = useRef<HTMLDivElement>(null)
 
   const tabCommands = isAdmin
-    ? [...TAB_COMMANDS_BASE, TAB_COMMAND_ADAM, TAB_COMMAND_LINK2UID, TAB_COMMAND_TERMINAL, TAB_COMMAND_LOGS, TAB_COMMAND_LOGAGG]
+    ? [...TAB_COMMANDS_BASE, TAB_COMMAND_LINK2UID, TAB_COMMAND_TERMINAL, TAB_COMMAND_LOGS, TAB_COMMAND_LOGAGG]
     : TAB_COMMANDS_BASE
-  const ADMIN_USER = 'admin'
-  const ADMIN_PASS = 'admin'
 
   const [adminLoginOpen, setAdminLoginOpen] = useState(false)
   const [adminUser, setAdminUser] = useState('')
   const [adminPass, setAdminPass] = useState('')
   const [adminError, setAdminError] = useState('')
 
-  const handleAdminLogin = () => {
+  const handleAdminLogin = async () => {
     setAdminError('')
-    if (adminUser === ADMIN_USER && adminPass === ADMIN_PASS) {
+    if (!window.electronAPI?.adminLogin) {
+      setAdminError('Admin login unavailable')
+      return
+    }
+    const result = await window.electronAPI.adminLogin(adminUser, adminPass)
+    if (result.ok) {
       onAdminLogin?.()
       setAdminLoginOpen(false)
       onOpenChange(false)
+      setAdminUser('')
+      setAdminPass('')
       return
     }
-    setAdminError('Invalid username or password')
+    setAdminError(result.error ?? 'Invalid username or password')
   }
 
   const commands: Command[] = [

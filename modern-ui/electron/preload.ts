@@ -9,7 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   close: () => ipcRenderer.send('window-close'),
   
   // TCP Emulator
-  tcpConnect: (host: string, port: number) => ipcRenderer.send('tcp-connect', host, port),
+  tcpConnect: (host: string, port: number) =>
+    ipcRenderer.invoke('tcp-connect', host, port) as Promise<{ ok: boolean; message?: string; error?: string }>,
   tcpDisconnect: () => ipcRenderer.send('tcp-disconnect'),
   tcpSendTags: (tags: any[], driverCode: string, delayMs: number) => 
     ipcRenderer.send('tcp-send-tags', tags, driverCode, delayMs),
@@ -64,24 +65,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCustomError: (callback: (message: string) => void) => 
     ipcRenderer.on('custom-error', (_event, message) => callback(message)),
 
-  // ADAM Module
-  adamConnect: (host: string, port: number) => ipcRenderer.send('adam-connect', host, port),
-  adamDisconnect: () => ipcRenderer.send('adam-disconnect'),
-  adamSetDO: (coil: number, value: boolean) => ipcRenderer.send('adam-set-do', coil, value),
-  adamReadDIs: (start: number, count: number) => ipcRenderer.send('adam-read-di', start, count),
-  adamSetDIInvert: (mask: number, registerAddress?: number) => ipcRenderer.send('adam-set-di-invert', mask, registerAddress ?? 100),
-  
-  onAdamConnected: (callback: (message: string) => void) => 
-    ipcRenderer.on('adam-connected', (_event, message) => callback(message)),
-  onAdamDisconnected: (callback: (message: string) => void) => 
-    ipcRenderer.on('adam-disconnected', (_event, message) => callback(message)),
-  onAdamError: (callback: (message: string) => void) => 
-    ipcRenderer.on('adam-error', (_event, message) => callback(message)),
-  onAdamDataDI: (callback: (data: { start: number, values: boolean[] }) => void) => 
-    ipcRenderer.on('adam-data-di', (_event, data) => callback(data)),
-  onAdamWriteSuccess: (callback: (message: string) => void) => 
-    ipcRenderer.on('adam-write-success', (_event, message) => callback(message)),
-
   // Auto Updater
   checkForUpdate: () => ipcRenderer.send('check-for-update'),
   startDownload: () => ipcRenderer.send('start-download'),
@@ -104,6 +87,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('update-downloaded', (_event, info) => callback(info)),
 
   // ALE API
+  aleGetCredentialMeta: () =>
+    ipcRenderer.invoke('ale-get-credential-meta') as Promise<
+      { ok: true; username: string; passwordIsHashed: boolean } | { ok: false }
+    >,
+  aleGetBasicAuthHeader: () =>
+    ipcRenderer.invoke('ale-get-basic-auth-header') as Promise<
+      { ok: true; username: string; header: string } | { ok: false; error?: string }
+    >,
   aleRequest: (url: string, options: any) => ipcRenderer.invoke('ale-request', url, options),
   aleRequestBatch: (requests: { url: string; options?: Record<string, unknown> }[]) =>
     ipcRenderer.invoke('ale-request-batch', requests),
@@ -116,6 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Database
   dbConnect: (host: string, user: string, password: string) => ipcRenderer.invoke('db-connect', host, user, password),
   dbDisconnect: () => ipcRenderer.invoke('db-disconnect'),
+  dbListDatabases: () => ipcRenderer.invoke('db-list-databases'),
   dbGetTables: (database: string) => ipcRenderer.invoke('db-get-tables', database),
   dbGetTableData: (database: string, table: string, limit?: number, offset?: number) =>
     ipcRenderer.invoke('db-get-table-data', database, table, limit, offset),
@@ -177,10 +169,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpFindCancel: (sessionId: string) => ipcRenderer.invoke('sftp-find-cancel', sessionId),
   sftpDownloadSaveDialog: (sessionId: string, remotePath: string, operationId: string) =>
     ipcRenderer.invoke('sftp-download-save-dialog', sessionId, remotePath, operationId),
-  sftpDownloadToPath: (sessionId: string, remotePath: string, localPath: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-download-to-path', sessionId, remotePath, localPath, operationId),
-  sftpUploadFromLocal: (sessionId: string, localPath: string, remotePath: string, operationId: string) =>
-    ipcRenderer.invoke('sftp-upload-from-local', sessionId, localPath, remotePath, operationId),
+  sftpDownloadToPath: (
+    sessionId: string,
+    remotePath: string,
+    localPath: string,
+    operationId: string,
+    localRoot?: string,
+  ) =>
+    ipcRenderer.invoke('sftp-download-to-path', sessionId, remotePath, localPath, operationId, localRoot),
+  sftpUploadFromLocal: (
+    sessionId: string,
+    localPath: string,
+    remotePath: string,
+    operationId: string,
+    localRoot?: string,
+  ) =>
+    ipcRenderer.invoke('sftp-upload-from-local', sessionId, localPath, remotePath, operationId, localRoot),
   sftpCopyRemoteFile: (sessionId: string, remoteSrc: string, remoteDest: string, operationId: string) =>
     ipcRenderer.invoke('sftp-copy-remote-file', sessionId, remoteSrc, remoteDest, operationId),
   localPickFolder: () => ipcRenderer.invoke('local-pick-folder'),
@@ -371,6 +375,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installRegistryGetStatus: () => ipcRenderer.invoke('install-registry-get-status'),
   installRegistrySetEnabled: (enabled: boolean) => ipcRenderer.invoke('install-registry-set-enabled', enabled),
   installRegistrySendNow: () => ipcRenderer.invoke('install-registry-send-now'),
+
+  adminLogin: (username: string, password: string) =>
+    ipcRenderer.invoke('admin-login', username, password) as Promise<{ ok: boolean; error?: string }>,
+  adminLogout: () => ipcRenderer.invoke('admin-logout') as Promise<{ ok: boolean }>,
+  adminIsAuthenticated: () =>
+    ipcRenderer.invoke('admin-is-authenticated') as Promise<{ ok: boolean }>,
 
   // Admin Shell (multi-tab: sessionId required)
   shellStart: (sessionId: string, cols?: number, rows?: number) => ipcRenderer.send('shell-start', sessionId, cols, rows),

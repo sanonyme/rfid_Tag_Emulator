@@ -52,6 +52,8 @@ import { basicSetup } from 'codemirror'
 interface DatabaseTabProps {
   host: string
   connected: boolean
+  /** When false, background auto-refresh is paused. */
+  active?: boolean
 }
 
 interface TableInfo {
@@ -152,7 +154,7 @@ function downloadFile(content: string, filename: string, mime: string) {
 
 const DB_CREDS_KEY = 'db-credentials'
 
-export function DatabaseTab({ host, connected }: DatabaseTabProps) {
+export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps) {
   const tourIx = useTourInteractionOptional()
   const [dbConnected, setDbConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -340,14 +342,13 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
 
   const persistCreds = useCallback(async () => {
     const payload = JSON.stringify({ user: dbUser, pass: dbPass })
+    if (!window.electronAPI?.safeStoreSet) return
     try {
-      if (window.electronAPI?.safeStoreSet) {
-        await window.electronAPI.safeStoreSet(DB_CREDS_KEY, payload)
-        localStorage.removeItem(DB_CREDS_KEY)
-        return
-      }
-    } catch { /* fall through */ }
-    localStorage.setItem(DB_CREDS_KEY, payload)
+      await window.electronAPI.safeStoreSet(DB_CREDS_KEY, payload)
+      localStorage.removeItem(DB_CREDS_KEY)
+    } catch {
+      toast.error('Could not save credentials securely')
+    }
   }, [dbUser, dbPass])
 
   const clearCreds = useCallback(async () => {
@@ -420,22 +421,20 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
     setEditingCell(null)
     setSelectedRowIdxs(new Set())
 
-    const [result, pks] = await Promise.all([
-      window.electronAPI.dbGetTableData(dbName, tableName, size, page * size),
-      window.electronAPI.dbGetPrimaryKeys(dbName, tableName),
-    ])
+    const result = await window.electronAPI.dbGetTableData(dbName, tableName, size, page * size)
     if (result.ok) {
       setTableColumns(result.columns)
       setTableRows(result.rows)
       setTableTotal(result.total)
       setColumnTypes(result.columnTypes || {})
+      setPrimaryKeys(result.primaryKeys ?? [])
     } else {
       setTableColumns([])
       setTableRows([])
       setTableTotal(0)
       setColumnTypes({})
+      setPrimaryKeys([])
     }
-    setPrimaryKeys(pks)
     setTableLoading(false)
   }, [])
 
@@ -456,7 +455,11 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   const refreshDatabases = useCallback(async () => {
     if (!window.electronAPI) return
     setRefreshing(true)
-    const result = await window.electronAPI.dbConnect(host, dbUser, dbPass)
+    const expandedDbNames = databases.filter((d) => d.expanded).map((d) => d.name)
+    let result = await window.electronAPI.dbListDatabases?.()
+    if (!result?.ok) {
+      result = await window.electronAPI.dbConnect(host, dbUser, dbPass)
+    }
     if (result.ok) {
       setDbConnected(true)
       setError('')
@@ -468,11 +471,21 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
           return { name: d, tables: undefined, expanded: false, loading: false }
         })
       })
-      for (const db of databases.filter((d) => d.expanded)) {
-        const tablesResult = await window.electronAPI.dbGetTables(db.name)
-        if (tablesResult.ok) {
-          setDatabases((prev) => prev.map((d) => d.name === db.name ? { ...d, tables: tablesResult.tables, loading: false } : d))
-        }
+      const namesToRefresh = expandedDbNames.filter((name) => result.databases.includes(name))
+      if (namesToRefresh.length > 0) {
+        const tableResults = await Promise.all(
+          namesToRefresh.map((name) => window.electronAPI!.dbGetTables(name)),
+        )
+        setDatabases((prev) =>
+          prev.map((d) => {
+            const idx = namesToRefresh.indexOf(d.name)
+            if (idx < 0) return d
+            const tablesResult = tableResults[idx]
+            return tablesResult.ok
+              ? { ...d, tables: tablesResult.tables, loading: false }
+              : d
+          }),
+        )
       }
       if (selectedDb && selectedTable) {
         loadPage(selectedDb, selectedTable, currentPage, pageSize)
@@ -906,10 +919,10 @@ export function DatabaseTab({ host, connected }: DatabaseTabProps) {
   }, [showExportMenu, showHistory, showAutoRefreshMenu])
 
   useEffect(() => {
-    if (!autoRefresh || !dbConnected) return
+    if (!active || !autoRefresh || !dbConnected) return
     const id = setInterval(() => { refreshDatabases() }, autoRefreshSec * 1000)
     return () => clearInterval(id)
-  }, [autoRefresh, autoRefreshSec, dbConnected, refreshDatabases])
+  }, [active, autoRefresh, autoRefreshSec, dbConnected, refreshDatabases])
 
   const schemaForAutocomplete = useMemo(() => {
     const schema: Record<string, string[]> = {}

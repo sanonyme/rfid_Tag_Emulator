@@ -1,7 +1,15 @@
 import mysql from 'mysql2/promise'
 import type { Connection } from 'mysql2/promise'
+import { assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
 
 let connection: Connection | null = null
+
+async function selectDatabase(database: string): Promise<void> {
+  if (!connection) throw new Error('Not connected')
+  const safe = assertSafeSqlIdentifier(database)
+  if (!safe) throw new Error('Invalid database name')
+  await connection.query(`USE \`${safe}\``)
+}
 
 function sanitizeValue(val: any): any {
   if (val === null || val === undefined) return null
@@ -62,28 +70,36 @@ export async function dbDisconnect(): Promise<void> {
   }
 }
 
-export async function dbGetTables(database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
+/** List databases on the existing connection (no reconnect). */
+export async function dbListDatabases(): Promise<{ ok: true; databases: string[] } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    const [rows] = await connection.query('SHOW DATABASES')
+    const databases = (rows as any[]).map((r: any) => Object.values(r)[0] as string)
+    return { ok: true, databases }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Failed to list databases' }
+  }
+}
 
-    const [tableRows] = await connection.query('SHOW TABLES')
-    const tableNames = (tableRows as any[]).map((r: any) => String(Object.values(r)[0]))
-
-    // Get exact row counts in parallel — each query is independent
-    const conn = connection
-    const counts = await Promise.allSettled(
-      tableNames.map(async (t) => {
-        const [cr] = await conn.query(`SELECT COUNT(*) AS c FROM \`${database}\`.\`${t}\``)
-        return { name: t, count: parseInt(String((cr as any[])[0].c), 10) || 0 }
-      })
+export async function dbGetTables(database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  const safe = assertSafeSqlIdentifier(database)
+  if (!safe) return { ok: false, error: 'Invalid database name' }
+  try {
+    const [rows] = await connection.query(
+      `SELECT TABLE_NAME, TABLE_ROWS
+       FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = ?
+         AND TABLE_TYPE = 'BASE TABLE'
+       ORDER BY TABLE_NAME`,
+      [safe],
     )
 
-    const tables = tableNames.map((name, i) => {
-      const result = counts[i]
-      const rows = result.status === 'fulfilled' ? result.value.count : 0
-      return { name, rows }
-    })
+    const tables = (rows as any[]).map((r) => ({
+      name: String(r.TABLE_NAME),
+      rows: parseInt(String(r.TABLE_ROWS), 10) || 0,
+    }))
 
     return { ok: true, tables }
   } catch (err: any) {
@@ -97,28 +113,65 @@ export async function dbGetTableData(
   limit = 1000,
   offset = 0
 ): Promise<
-  { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string> } | { ok: false; error: string }
+  | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string>; primaryKeys: string[] }
+  | { ok: false; error: string }
 > {
   if (!connection) return { ok: false, error: 'Not connected' }
+  const safeDb = assertSafeSqlIdentifier(database)
+  const safeTable = assertSafeSqlIdentifier(table)
+  if (!safeDb || !safeTable) return { ok: false, error: 'Invalid database or table name' }
   try {
-    await connection.query(`USE \`${database}\``)
-
-    const [countResult] = await connection.query(`SELECT COUNT(*) as cnt FROM \`${table}\``)
-    const total = parseInt(String((countResult as any[])[0].cnt), 10) || 0
+    await selectDatabase(safeDb)
 
     const [rows, fields] = await connection.query(
-      `SELECT * FROM \`${table}\` LIMIT ? OFFSET ?`,
-      [limit, offset]
+      `SELECT * FROM \`${safeTable}\` LIMIT ? OFFSET ?`,
+      [limit, offset],
     )
+    const rowArr = rows as any[]
     const columns = (fields as any[]).map((f: any) => f.name)
 
-    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
+    const [metaRows] = await connection.query(
+      `SELECT c.COLUMN_NAME, c.COLUMN_TYPE, c.ORDINAL_POSITION,
+              MAX(CASE WHEN k.CONSTRAINT_NAME = 'PRIMARY' THEN k.ORDINAL_POSITION END) AS pk_ord
+       FROM information_schema.COLUMNS c
+       LEFT JOIN information_schema.KEY_COLUMN_USAGE k
+         ON k.TABLE_SCHEMA = c.TABLE_SCHEMA
+        AND k.TABLE_NAME = c.TABLE_NAME
+        AND k.COLUMN_NAME = c.COLUMN_NAME
+        AND k.CONSTRAINT_NAME = 'PRIMARY'
+       WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ?
+       GROUP BY c.COLUMN_NAME, c.COLUMN_TYPE, c.ORDINAL_POSITION
+       ORDER BY c.ORDINAL_POSITION`,
+      [safeDb, safeTable],
+    )
+
     const columnTypes: Record<string, string> = {}
-    for (const r of colRows as any[]) {
-      columnTypes[String(r.Field)] = String(r.Type)
+    const primaryKeys: string[] = []
+    const pkEntries: { ord: number; name: string }[] = []
+    for (const r of metaRows as any[]) {
+      const name = String(r.COLUMN_NAME)
+      columnTypes[name] = String(r.COLUMN_TYPE)
+      if (r.pk_ord != null) {
+        pkEntries.push({ ord: parseInt(String(r.pk_ord), 10) || 0, name })
+      }
+    }
+    pkEntries.sort((a, b) => a.ord - b.ord)
+    for (const e of pkEntries) primaryKeys.push(e.name)
+
+    let total = 0
+    const [estimateRows] = await connection.query(
+      `SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+      [safeDb, safeTable],
+    )
+    total = parseInt(String((estimateRows as any[])[0]?.TABLE_ROWS), 10) || 0
+
+    if (rowArr.length < limit) {
+      total = offset + rowArr.length
+    } else {
+      total = Math.max(total, offset + limit + 1)
     }
 
-    return { ok: true, columns, rows: (rows as any[]).map(sanitizeRow), total, columnTypes }
+    return { ok: true, columns, rows: rowArr.map(sanitizeRow), total, columnTypes, primaryKeys }
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
@@ -131,14 +184,27 @@ export async function dbExecuteQuery(
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
     if (database) {
-      await connection.query(`USE \`${database}\``)
+      await selectDatabase(database)
     }
 
-    const [result, fields] = await connection.query(query)
+    let sql = query.trim()
+    const isSelect = /^\s*(select|show|describe|desc|explain)\b/i.test(sql)
+    if (isSelect && !/\blimit\b/i.test(sql)) {
+      sql = `${sql.replace(/;\s*$/, '')} LIMIT ${DB_QUERY_MAX_ROWS}`
+    }
+
+    const [result, fields] = await connection.query(sql)
 
     if (Array.isArray(result)) {
       const columns = fields ? (fields as any[]).map((f: any) => f.name) : []
-      return { ok: true, columns, rows: (result as any[]).map(sanitizeRow) }
+      const rows = (result as any[]).map(sanitizeRow).slice(0, DB_QUERY_MAX_ROWS)
+      const truncated = (result as any[]).length > DB_QUERY_MAX_ROWS
+      return {
+        ok: true,
+        columns,
+        rows,
+        ...(truncated ? { message: `Results truncated to ${DB_QUERY_MAX_ROWS} rows` } : {}),
+      }
     }
 
     const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
@@ -181,7 +247,7 @@ export async function dbUpdateCell(
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const setClauses = `\`${column}\` = ?`
     const whereEntries = Object.entries(primaryKeys)
@@ -230,7 +296,7 @@ export async function dbDeleteRow(
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const whereEntries = Object.entries(primaryKeys)
     if (whereEntries.length === 0) return { ok: false, error: 'No primary key provided' }
@@ -254,7 +320,7 @@ export async function dbInsertRow(
 ): Promise<{ ok: true; insertId: any } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const entries = Object.entries(values)
     if (entries.length === 0) return { ok: false, error: 'No columns to insert' }
@@ -279,7 +345,7 @@ export async function dbDeleteRows(
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const pkCols = await dbGetPrimaryKeys(database, table)
     if (pkCols.length === 0) return { ok: false, error: 'No primary key on table' }
@@ -309,7 +375,7 @@ export async function dbExportTable(
 ): Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const [countResult] = await connection.query(`SELECT COUNT(*) as cnt FROM \`${table}\``)
     const total = parseInt(String((countResult as any[])[0].cnt), 10) || 0
@@ -321,11 +387,15 @@ export async function dbExportTable(
     const batchSize = 5000
     let offset = 0
     const conn = connection
+    let hasMore = true
 
-    while (true) {
+    while (hasMore) {
       const [batch] = await conn.query(`SELECT * FROM \`${table}\` LIMIT ? OFFSET ?`, [batchSize, offset])
       const batchArr = batch as any[]
-      if (batchArr.length === 0) break
+      if (batchArr.length === 0) {
+        hasMore = false
+        break
+      }
       for (const r of batchArr) {
         allRows.push(sanitizeRow(r))
       }
@@ -369,7 +439,7 @@ export async function dbGetDatabaseSchema(
     return { ok: false, error: 'Invalid database name' }
   }
   try {
-    await connection.query(`USE \`${database}\``)
+    await selectDatabase(database)
 
     const [colRows] = await connection.query(
       `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY, ORDINAL_POSITION

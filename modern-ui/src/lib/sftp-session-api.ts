@@ -98,10 +98,10 @@ export function bindSftpSession(api: ElectronAPI, sessionId: string): SftpSessio
     findCancel: () => api.sftpFindCancel(sessionId),
     downloadSaveDialog: (remotePath, operationId) =>
       api.sftpDownloadSaveDialog(sessionId, remotePath, operationId),
-    downloadToPath: (remotePath, localPath, operationId) =>
-      api.sftpDownloadToPath(sessionId, remotePath, localPath, operationId),
-    uploadFromLocal: (localPath, remotePath, operationId) =>
-      api.sftpUploadFromLocal(sessionId, localPath, remotePath, operationId),
+    downloadToPath: (remotePath, localPath, operationId, localRoot?) =>
+      api.sftpDownloadToPath(sessionId, remotePath, localPath, operationId, localRoot),
+    uploadFromLocal: (localPath, remotePath, operationId, localRoot?) =>
+      api.sftpUploadFromLocal(sessionId, localPath, remotePath, operationId, localRoot),
     copyRemoteFile: (remoteSrc, remoteDest, operationId) =>
       api.sftpCopyRemoteFile(sessionId, remoteSrc, remoteDest, operationId),
   }

@@ -5,6 +5,7 @@ import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { Client } from 'ssh2'
 import type { SFTPWrapper, FileEntry, Stats } from 'ssh2'
+import { normalizeRemotePath } from '../src/lib/sftp-remote-path.js'
 
 const READ_MAX_BYTES = 2 * 1024 * 1024
 const S_IFMT = 0o170000
@@ -17,13 +18,6 @@ interface SftpSession {
 }
 
 const sessions = new Map<string, SftpSession>()
-
-function normalizeRemotePath(p: string): string {
-  if (!p || p === '.') return '/'
-  const normalized = path.posix.normalize(String(p).replace(/\\/g, '/'))
-  if (!normalized.startsWith('/')) return `/${normalized}`
-  return normalized || '/'
-}
 
 function getSession(sessionId: string): SftpSession | null {
   return sessions.get(sessionId) ?? null
@@ -40,7 +34,7 @@ function attrsIsDirectory(attrs: FileEntry['attrs'] | Stats): boolean {
 }
 
 function promisifySftp<T>(
-  fn: (cb: (err: Error | undefined, result: T) => void) => void
+  fn: (cb: (err: Error | null | undefined, result: T) => void) => void
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     fn((err, result) => {

@@ -6,7 +6,6 @@ import {
   Smartphone,
   ScanLine,
   Terminal,
-  Server,
   Globe,
   Code2,
   Workflow,
@@ -40,7 +39,6 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
 ]
 
 const TAB_ITEMS_ADMIN = [
-  { value: 'adam', label: 'ADAM', icon: Server },
   { value: 'link2uid', label: 'Link→UID', icon: Link2 },
   { value: 'terminal', label: 'Terminal', icon: Terminal },
 ]
@@ -68,8 +66,8 @@ function aggregateStatus(statuses: ServiceStatus[]): ServiceStatus {
 export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }: TabNavBarProps) {
   const TAB_ITEMS_ALL = [...TAB_ITEMS_BASE, ...(isAdmin ? TAB_ITEMS_ADMIN : [])]
   const TAB_ITEMS = IS_MOBILE
-    ? TAB_ITEMS_ALL.filter((t) => t.value !== 'adam' && t.value !== 'netscan')
-    : TAB_ITEMS_ALL.filter((t) => t.value !== 'adam' || isAdmin)
+    ? TAB_ITEMS_ALL.filter((t) => t.value !== 'netscan')
+    : TAB_ITEMS_ALL
   const [isCompact, setIsCompact] = useState(false)
 
   useEffect(() => {
@@ -96,7 +94,6 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
     }
     pickOne('fixed', 'fixed')
     pickOne('ocr', 'ocr')
-    pickOne('adam', 'adam')
     pickOne('edge', 'edge')
     pickOne('automation', 'automation')
     pickOne('database', 'db')

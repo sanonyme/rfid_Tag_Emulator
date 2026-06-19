@@ -5,10 +5,17 @@ import * as pty from 'node-pty'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
-import { connectAdam, disconnectAdam, setAdamDO, readAdamDIs, setAdamDIInvertMask } from './adam-handler.js'
+import {
+  grantAdminSession,
+  isAdminSender,
+  requireAdminSender,
+  revokeAdminSession,
+  verifyAdminCredentials,
+} from './admin-session.js'
 import {
   dbConnect,
   dbDisconnect,
+  dbListDatabases,
   dbGetTables,
   dbGetTableData,
   dbExecuteQuery,
@@ -42,7 +49,14 @@ import {
   sftpFindFiles,
   cancelSftpFind,
 } from './sftp-handler.js'
-import { localReaddir, localWriteFileBase64, localParentDir } from './local-fs-handler.js'
+import { localReaddir, localWriteFileBase64, localParentDir, assertPathUnderRoot } from './local-fs-handler.js'
+import {
+  getAleCredentials,
+  hasAleCredentials,
+  makeAleBasicAuthHeader,
+  passwordLooksHashed,
+  resolveAleSecret,
+} from './ale-credentials.js'
 import {
   cancelNetScan,
   getIpv4Interfaces,
@@ -98,7 +112,7 @@ const __dirname = path.dirname(__filename)
 
 // Auto-updater logging
 autoUpdater.logger = console
-// @ts-ignore
+// @ts-expect-error electron-updater logger transport typing
 autoUpdater.logger.transports = {
   file: {
     level: 'info',
@@ -330,9 +344,10 @@ app.whenReady().then(() => {
   })
 
   // TCP Emulator IPC handlers
-  ipcMain.on('tcp-connect', (_event, host: string, port: number) => {
+  ipcMain.handle('tcp-connect', async (_event, host: string, port: number) => {
     console.log(`TCP connect request: ${host}:${port}`)
-    tcpHandler?.connect(host, port)
+    if (!tcpHandler) return { ok: false, error: 'TCP handler not ready' }
+    return tcpHandler.connect(host, port)
   })
 
   ipcMain.on('tcp-disconnect', () => {
@@ -448,32 +463,6 @@ app.whenReady().then(() => {
       .catch((err) => console.error('Custom: Send error:', err))
   })
 
-  // ADAM IPC handlers
-  ipcMain.on('adam-connect', (_event, host: string, port: number) => {
-    console.log(`ADAM: Connect request to ${host}:${port}`)
-    connectAdam(host, port)
-  })
-
-  ipcMain.on('adam-disconnect', () => {
-    console.log('ADAM: Disconnect request')
-    disconnectAdam()
-  })
-
-  ipcMain.on('adam-set-do', (_event, coil: number, value: boolean) => {
-    console.log(`ADAM: Set DO ${coil} to ${value}`)
-    setAdamDO(coil, value)
-  })
-
-  ipcMain.on('adam-read-di', (_event, start: number, count: number) => {
-    console.log(`ADAM: Read DI start=${start} count=${count}`)
-    readAdamDIs(start, count)
-  })
-
-  ipcMain.on('adam-set-di-invert', (_event, mask: number, registerAddress: number) => {
-    console.log(`ADAM: Set DI invert mask=${mask} register=${registerAddress}`)
-    setAdamDIInvertMask(mask, registerAddress)
-  })
-
   // Database IPC handlers
   ipcMain.handle('db-connect', async (_event, host: string, user: string, password: string) => {
     console.log(`DB: Connect request to ${host} as ${user}`)
@@ -483,6 +472,10 @@ app.whenReady().then(() => {
   ipcMain.handle('db-disconnect', async () => {
     console.log('DB: Disconnect request')
     return dbDisconnect()
+  })
+
+  ipcMain.handle('db-list-databases', async () => {
+    return dbListDatabases()
   })
 
   ipcMain.handle('db-get-tables', async (_event, database: string) => {
@@ -575,9 +568,12 @@ app.whenReady().then(() => {
   ipcMain.handle('sftp-unlink', async (_event, sessionId: string, remotePath: string) =>
     sftpUnlink(sessionId, remotePath),
   )
-  ipcMain.handle('sftp-rmrf', async (_event, sessionId: string, remotePath: string) =>
-    sftpRmrf(sessionId, remotePath),
-  )
+  ipcMain.handle('sftp-rmrf', async (event, sessionId: string, remotePath: string) => {
+    if (!requireAdminSender(event.sender)) {
+      return { ok: false as const, error: 'Admin login required' }
+    }
+    return sftpRmrf(sessionId, remotePath)
+  })
   ipcMain.handle('sftp-stat', async (_event, sessionId: string, remotePath: string) =>
     sftpStat(sessionId, remotePath),
   )
@@ -645,8 +641,20 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'sftp-download-to-path',
-    async (event, sessionId: string, remotePath: string, localPath: string, operationId: string) => {
-      const r = await sftpDownloadToLocalFile(sessionId, remotePath, localPath, (loaded, total) => {
+    async (
+      event,
+      sessionId: string,
+      remotePath: string,
+      localPath: string,
+      operationId: string,
+      localRoot?: string,
+    ) => {
+      const safe =
+        localRoot?.trim()
+          ? assertPathUnderRoot(localRoot.trim(), localPath)
+          : path.resolve(localPath)
+      if (!safe) return { ok: false as const, error: 'Path outside local root' }
+      const r = await sftpDownloadToLocalFile(sessionId, remotePath, safe, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r
@@ -655,8 +663,20 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'sftp-upload-from-local',
-    async (event, sessionId: string, localPath: string, remotePath: string, operationId: string) => {
-      const r = await sftpUploadFromLocalFile(sessionId, localPath, remotePath, (loaded, total) => {
+    async (
+      event,
+      sessionId: string,
+      localPath: string,
+      remotePath: string,
+      operationId: string,
+      localRoot?: string,
+    ) => {
+      const safe =
+        localRoot?.trim()
+          ? assertPathUnderRoot(localRoot.trim(), localPath)
+          : path.resolve(localPath)
+      if (!safe) return { ok: false as const, error: 'Path outside local root' }
+      const r = await sftpUploadFromLocalFile(sessionId, safe, remotePath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r
@@ -715,11 +735,14 @@ app.whenReady().then(() => {
     return { ok: true as const, path: filePaths[0] }
   })
 
-  ipcMain.handle('log-aggregator-run', async (event, zipPath: string, outputDir: string) =>
-    runLogAggregator(zipPath, outputDir, (progress) => {
+  ipcMain.handle('log-aggregator-run', async (event, zipPath: string, outputDir: string) => {
+    if (!requireAdminSender(event.sender)) {
+      return { ok: false as const, error: 'Admin login required' }
+    }
+    return runLogAggregator(zipPath, outputDir, (progress) => {
       event.sender.send('log-aggregator-progress', progress)
-    }),
-  )
+    })
+  })
 
   ipcMain.handle('log-aggregator-show-output', async (_event, outputDir: string) => {
     const err = await shell.openPath(outputDir)
@@ -807,8 +830,29 @@ app.whenReady().then(() => {
     }
   })
 
+  ipcMain.handle('admin-login', (event, username: string, password: string) => {
+    if (!verifyAdminCredentials(username, password)) {
+      return { ok: false, error: 'Invalid username or password' }
+    }
+    grantAdminSession(event.sender)
+    return { ok: true }
+  })
+
+  ipcMain.handle('admin-logout', (event) => {
+    revokeAdminSession(event.sender)
+    return { ok: true }
+  })
+
+  ipcMain.handle('admin-is-authenticated', (event) => {
+    return { ok: isAdminSender(event.sender) }
+  })
+
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
-  ipcMain.on('shell-start', (_event, sessionId: string, cols: number = 80, rows: number = 24) => {
+  ipcMain.on('shell-start', (event, sessionId: string, cols: number = 80, rows: number = 24) => {
+    if (!requireAdminSender(event.sender)) {
+      mainWindow?.webContents.send('shell-exit', sessionId, 1, 'Admin required')
+      return
+    }
     const existing = shellProcesses.get(sessionId)
     if (existing) {
       existing.kill()
@@ -834,17 +878,20 @@ app.whenReady().then(() => {
     })
   })
 
-  ipcMain.on('shell-write', (_event, sessionId: string, data: string) => {
+  ipcMain.on('shell-write', (event, sessionId: string, data: string) => {
+    if (!requireAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) proc.write(data)
   })
 
-  ipcMain.on('shell-resize', (_event, sessionId: string, cols: number, rows: number) => {
+  ipcMain.on('shell-resize', (event, sessionId: string, cols: number, rows: number) => {
+    if (!requireAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) proc.resize(cols, rows)
   })
 
-  ipcMain.on('shell-kill', (_event, sessionId: string) => {
+  ipcMain.on('shell-kill', (event, sessionId: string) => {
+    if (!requireAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) {
       proc.kill()
@@ -1052,14 +1099,13 @@ app.whenReady().then(() => {
     if (url.includes('/ALE/api/auth') && options.body) {
       try {
         const body = JSON.parse(String(options.body))
-        if (body.username === 'use_env_vars') {
-          const username = process.env.VITE_ALE_USERNAME
-          const password = process.env.VITE_ALE_PASSWORD
-          if (!username || !password) {
-            throw new Error('Missing ALE credentials in environment variables')
-          }
-          body.username = username
-          body.password = password
+        const creds = getAleCredentials()
+        if (
+          creds &&
+          (body.username === 'use_env_vars' || body.password === 'use_env_vars')
+        ) {
+          body.username = creds.username
+          body.password = resolveAleSecret(creds.password)
           options.body = JSON.stringify(body)
         }
       } catch (e) {
@@ -1127,6 +1173,26 @@ app.whenReady().then(() => {
   }
 
   // ALE API Proxy to bypass CORS (single request)
+  ipcMain.handle('ale-get-credential-meta', () => {
+    const creds = getAleCredentials()
+    if (!creds) return { ok: false as const }
+    return {
+      ok: true as const,
+      username: creds.username,
+      passwordIsHashed: passwordLooksHashed(creds.password),
+    }
+  })
+
+  ipcMain.handle('ale-get-basic-auth-header', () => {
+    const creds = getAleCredentials()
+    if (!creds) return { ok: false as const, error: 'Missing Edge credentials in environment' }
+    return {
+      ok: true as const,
+      username: creds.username,
+      header: makeAleBasicAuthHeader(creds.username, creds.password),
+    }
+  })
+
   ipcMain.handle('ale-request', async (_event, url: string, options: Record<string, unknown>) => {
     return runAleRequest(url, options ?? {})
   })
@@ -1172,7 +1238,6 @@ app.on('window-all-closed', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   closeAllPopoutWindows()
-  disconnectAdam()
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()
@@ -1191,7 +1256,6 @@ app.on('before-quit', () => {
   shellProcesses.forEach((proc) => proc.kill())
   shellProcesses.clear()
   closeAllPopoutWindows()
-  disconnectAdam()
   stopUdpDiscovery()
   cancelReaderDiscovery()
   dbDisconnect()

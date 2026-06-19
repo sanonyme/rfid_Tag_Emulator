@@ -18,18 +18,29 @@ export async function loadDbCredentials(): Promise<DbCredentials | null> {
       }
     }
   } catch {
-    /* fall through */
+    /* ignore */
   }
+  // One-time migration from legacy plaintext localStorage storage.
   try {
     const raw = localStorage.getItem(DB_CREDS_KEY)
-    if (raw) {
-      const parsed = JSON.parse(raw) as { user?: string; pass?: string }
-      if (parsed.user?.trim()) {
-        return { user: parsed.user.trim(), pass: parsed.pass ?? '' }
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { user?: string; pass?: string }
+    if (!parsed.user?.trim()) {
+      localStorage.removeItem(DB_CREDS_KEY)
+      return null
+    }
+    const creds = { user: parsed.user.trim(), pass: parsed.pass ?? '' }
+    if (window.electronAPI?.safeStoreSet) {
+      try {
+        await window.electronAPI.safeStoreSet(DB_CREDS_KEY, raw)
+        localStorage.removeItem(DB_CREDS_KEY)
+      } catch {
+        /* keep in memory only this session; do not re-read localStorage */
       }
     }
+    return creds
   } catch {
-    /* ignore */
+    localStorage.removeItem(DB_CREDS_KEY)
   }
   return null
 }

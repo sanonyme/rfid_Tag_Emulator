@@ -29,7 +29,10 @@
     "release:both": "node scripts/release-both.mjs",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "ci": "npm run typecheck && npm run test:run && vite build"
   },
   "dependencies": {
     "@codemirror/lang-sql": "^6.10.0",
@@ -96,6 +99,11 @@
     "dotenv-cli": "^11.0.0",
     "electron": "^41.0.0",
     "electron-builder": "^26.8.1",
+    "eslint": "^8.57.1",
+    "@typescript-eslint/eslint-plugin": "^7.18.0",
+    "@typescript-eslint/parser": "^7.18.0",
+    "eslint-plugin-react-hooks": "^4.6.2",
+    "eslint-plugin-react-refresh": "^0.4.16",
     "jsdom": "^29.1.1",
     "jsmodbus": "^4.0.4",
     "postcss": "^8.4.33",

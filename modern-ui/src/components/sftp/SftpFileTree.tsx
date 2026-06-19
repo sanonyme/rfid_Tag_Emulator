@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
+import { flattenVisibleSftpRows } from '@/lib/sftp-tree-flatten'
 import {
   formatSftpSize,
   formatSftpMtime,
@@ -111,7 +112,11 @@ interface FileItemProps {
   foldersFirst: boolean
   expandedPaths: ReadonlySet<string>
   onRequestCollapse: (path: string) => void
+  flatMode?: boolean
 }
+
+const SFTP_ROW_HEIGHT = 36
+const SFTP_VIRTUAL_OVERSCAN = 10
 
 const getFileIcon = (extension?: string) => {
   const iconMap: Record<string, { color: string; icon: string }> = {
@@ -209,7 +214,7 @@ function ColumnHeaderRow({
   return (
     <div
       className={cn(
-        'flex w-full min-w-0 items-center gap-1.5 border-b border-border/40 pb-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
+        'flex shrink-0 w-full min-w-0 items-center gap-1.5 border-b border-border/40 pb-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
         'sm:text-xs',
       )}
     >
@@ -287,6 +292,7 @@ function FileItem({
   foldersFirst,
   expandedPaths,
   onRequestCollapse,
+  flatMode = false,
 }: FileItemProps) {
   const [isHovered, setIsHovered] = useState(false)
 
@@ -483,7 +489,7 @@ function FileItem({
         <MetaCells node={node} />
       </div>
 
-      {hasChildrenBlock && (
+      {hasChildrenBlock && !flatMode && (
         <div
           className={cn(
             'transition-[opacity] duration-200 ease-out',
@@ -551,18 +557,60 @@ export function SftpFileTree({
   expandedPaths,
   onRequestCollapse,
 }: SftpFileTreeProps) {
-  const list = useMemo(
-    () => sortChildren(data ?? [], sortKey, sortDir, foldersFirst),
-    [data, sortKey, sortDir, foldersFirst],
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(480)
+
+  const flatRows = useMemo(
+    () => flattenVisibleSftpRows(data ?? [], expandedPaths, sortKey, sortDir, foldersFirst),
+    [data, expandedPaths, sortKey, sortDir, foldersFirst],
   )
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setViewportHeight(el.clientHeight || 480))
+    ro.observe(el)
+    setViewportHeight(el.clientHeight || 480)
+    return () => ro.disconnect()
+  }, [])
+
+  const virtual = useMemo(() => {
+    const totalHeight = flatRows.length * SFTP_ROW_HEIGHT
+    const start = Math.max(0, Math.floor(scrollTop / SFTP_ROW_HEIGHT) - SFTP_VIRTUAL_OVERSCAN)
+    const visibleCount = Math.ceil(viewportHeight / SFTP_ROW_HEIGHT) + SFTP_VIRTUAL_OVERSCAN * 2
+    const end = Math.min(flatRows.length, start + visibleCount)
+    return { totalHeight, start, end, slice: flatRows.slice(start, end) }
+  }, [flatRows, scrollTop, viewportHeight])
+
+  const sharedItemProps = {
+    selectedPath,
+    selectMode,
+    selectedPaths,
+    onTogglePath,
+    onSelect,
+    onToggleFolder,
+    dropHighlightPath,
+    onFolderDragOver,
+    onFolderDrop,
+    onNodeDragStart,
+    onNodeContextMenu,
+    sortKey,
+    sortDir,
+    foldersFirst,
+    expandedPaths,
+    onRequestCollapse,
+    flatMode: true as const,
+  }
+
   return (
     <div
       className={cn(
-        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-h-[200px] min-w-0',
+        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-w-0 flex flex-col min-h-0 h-full',
         className,
       )}
     >
-      <div className="flex items-center gap-2 pb-2 mb-1 border-b border-border/30">
+      <div className="flex shrink-0 items-center gap-2 pb-2 mb-1 border-b border-border/30">
         <div className="flex gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
           <div className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
@@ -578,31 +626,35 @@ export function SftpFileTree({
         onSortChange={onSortChange}
       />
 
-      <div className="space-y-0.5 min-w-0">
-        {list.map((node, index) => (
-          <FileItem
-            key={node.path}
-            node={node}
-            depth={0}
-            isLast={index === list.length - 1}
-            selectedPath={selectedPath}
-            selectMode={selectMode}
-            selectedPaths={selectedPaths}
-            onTogglePath={onTogglePath}
-            onSelect={onSelect}
-            onToggleFolder={onToggleFolder}
-            dropHighlightPath={dropHighlightPath}
-            onFolderDragOver={onFolderDragOver}
-            onFolderDrop={onFolderDrop}
-            onNodeDragStart={onNodeDragStart}
-            onNodeContextMenu={onNodeContextMenu}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            foldersFirst={foldersFirst}
-            expandedPaths={expandedPaths}
-            onRequestCollapse={onRequestCollapse}
-          />
-        ))}
+      <div
+        ref={scrollRef}
+        className="min-w-0 flex-1 min-h-0 overflow-auto"
+        onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      >
+        <div style={{ height: virtual.totalHeight, position: 'relative' }}>
+          {virtual.slice.map(({ node, depth }, i) => {
+            const index = virtual.start + i
+            return (
+              <div
+                key={node.path}
+                style={{
+                  position: 'absolute',
+                  top: index * SFTP_ROW_HEIGHT,
+                  left: 0,
+                  right: 0,
+                  height: SFTP_ROW_HEIGHT,
+                }}
+              >
+                <FileItem
+                  node={node}
+                  depth={depth}
+                  isLast={index === flatRows.length - 1}
+                  {...sharedItemProps}
+                />
+              </div>
+            )
+          })}
+        </div>
       </div>
     </div>
   )

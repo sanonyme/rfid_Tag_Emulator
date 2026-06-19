@@ -4,7 +4,6 @@ import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { Textarea } from '../ui/textarea'
-import { ScrollArea } from '../ui/scroll-area'
 import {
   Dialog,
   DialogContent,
@@ -46,95 +45,25 @@ import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
 
+import {
+  posixJoin,
+  parentDir,
+  joinLocalDir,
+  joinLocalSegments,
+  fileExtension,
+  arrayBufferToBase64,
+} from './sftp-path-utils'
+import {
+  setNodeLoading,
+  setChildrenAtPath,
+  findNode,
+  getDirectChildPaths,
+} from './sftp-tree-mutations'
+
 const SFTP_CREDS_KEY = 'sftp-creds'
 const DB_CREDS_KEY = 'db-credentials'
 
 type MigrateEnv = 'prod' | 'staging'
-
-function posixJoin(dir: string, name: string): string {
-  const d = dir.replace(/\/+$/, '') || '/'
-  const seg = name.replace(/^\/+/, '')
-  if (d === '/') return `/${seg}`.replace(/\/+/g, '/')
-  return `${d}/${seg}`.replace(/\/+/g, '/')
-}
-
-function parentDir(filePath: string): string {
-  if (filePath === '/' || !filePath) return '/'
-  const trimmed = filePath.replace(/\/+$/, '')
-  const i = trimmed.lastIndexOf('/')
-  if (i <= 0) return '/'
-  return trimmed.slice(0, i) || '/'
-}
-
-function joinLocalDir(base: string, fileName: string): string {
-  const win = window.electronAPI?.platform === 'win32'
-  const sep = win ? '\\' : '/'
-  return `${base.replace(/[/\\]+$/, '')}${sep}${fileName.replace(/^[/\\]+/, '')}`
-}
-
-function joinLocalSegments(base: string, relPath: string): string {
-  const parts = relPath.replace(/\\/g, '/').split('/').filter(Boolean)
-  let p = base.replace(/[/\\]+$/, '')
-  for (const part of parts) {
-    p = joinLocalDir(p, part)
-  }
-  return p
-}
-
-function fileExtension(name: string): string | undefined {
-  const i = name.lastIndexOf('.')
-  if (i <= 0 || i === name.length - 1) return undefined
-  return name.slice(i + 1).toLowerCase()
-}
-
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  let binary = ''
-  const bytes = new Uint8Array(buffer)
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]!)
-  }
-  return btoa(binary)
-}
-
-function setNodeLoading(nodes: SftpFileNode[], target: string, loading: boolean): SftpFileNode[] {
-  return nodes.map((n) => {
-    if (n.path === target) return { ...n, loading }
-    if (Array.isArray(n.children))
-      return { ...n, children: setNodeLoading(n.children, target, loading) }
-    return n
-  })
-}
-
-function setChildrenAtPath(
-  nodes: SftpFileNode[],
-  target: string,
-  children: SftpFileNode[],
-): SftpFileNode[] {
-  return nodes.map((n) => {
-    if (n.path === target) return { ...n, children, loaded: true, loading: false }
-    if (Array.isArray(n.children))
-      return { ...n, children: setChildrenAtPath(n.children, target, children) }
-    return n
-  })
-}
-
-function findNode(nodes: SftpFileNode[], path: string): SftpFileNode | null {
-  for (const n of nodes) {
-    if (n.path === path) return n
-    if (Array.isArray(n.children)) {
-      const f = findNode(n.children, path)
-      if (f) return f
-    }
-  }
-  return null
-}
-
-function getDirectChildPaths(nodes: SftpFileNode[], dir: string): string[] {
-  if (dir === '/') return nodes.map((n) => n.path)
-  const parent = findNode(nodes, dir)
-  if (!parent?.children?.length) return []
-  return parent.children.map((c) => c.path)
-}
 
 type TransferItem = {
   id: string
@@ -595,7 +524,7 @@ export function SftpSessionPanel({
   }, [uploadTargetDir])
 
   useEffect(() => {
-    ;(async () => {
+    (async () => {
       try {
         if (api?.safeStoreGet) {
           const raw = await api.safeStoreGet(SFTP_CREDS_KEY)
@@ -842,7 +771,7 @@ export function SftpSessionPanel({
       if (!sftp?.downloadToPath) return
       const id = nextOpId()
       pushTransfer({ id, label, kind: 'download' })
-      const r = await sftp.downloadToPath(remotePath, localPath, id)
+      const r = await sftp.downloadToPath(remotePath, localPath, id, localRoot ?? undefined)
       if (r.ok) {
         updateTransfer(id, { status: 'done', progress: 100 })
       } else {
@@ -850,7 +779,7 @@ export function SftpSessionPanel({
         toast.error(r.error)
       }
     },
-    [api, pushTransfer, updateTransfer],
+    [sftp, localRoot, pushTransfer, updateTransfer],
   )
 
   const downloadRemoteFolder = useCallback(
@@ -1009,7 +938,7 @@ export function SftpSessionPanel({
           const id = nextOpId()
           pushTransfer({ id, label: `${name} → remote`, kind: 'upload' })
           const dest = posixJoin(targetDir, name)
-          const r = await sftp.uploadFromLocal(localPath, dest, id)
+          const r = await sftp.uploadFromLocal(localPath, dest, id, localRoot ?? undefined)
           if (r.ok) {
             updateTransfer(id, { status: 'done', progress: 100 })
             toast.success('Uploaded')
@@ -1178,7 +1107,7 @@ export function SftpSessionPanel({
         if (filePath && sftp?.uploadFromLocal) {
           const id = nextOpId()
           pushTransfer({ id, label: f.name, kind: 'upload' })
-          const r = await sftp.uploadFromLocal(filePath, dest, id)
+          const r = await sftp.uploadFromLocal(filePath, dest, id, localRoot ?? undefined)
           if (r.ok) updateTransfer(id, { status: 'done', progress: 100 })
           else {
             updateTransfer(id, { status: 'error', error: r.error })
@@ -1657,9 +1586,9 @@ export function SftpSessionPanel({
             void handleDropOnDir('/', e)
           }}
         >
-          <ScrollArea className="flex-1 min-h-[240px] basis-0 h-full max-h-[calc(100vh-280px)]">
-            <SftpFileTree
-              data={tree}
+          <SftpFileTree
+            className="flex-1 min-h-0"
+            data={tree}
               title="Remote"
               selectedPath={selectedPath}
               selectMode={selectMode}
@@ -1684,8 +1613,7 @@ export function SftpSessionPanel({
               onSortChange={handleSortChange}
               expandedPaths={expandedPaths}
               onRequestCollapse={onRequestCollapse}
-            />
-          </ScrollArea>
+          />
         </div>
       </div>
 

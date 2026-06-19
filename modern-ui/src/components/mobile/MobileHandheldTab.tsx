@@ -159,8 +159,7 @@ export function MobileHandheldTab({
     let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
     let cachedParseKey = ''
 
-    while (true) {
-      if (loopCancelRef.current.has(port)) break
+    while (!loopCancelRef.current.has(port)) {
 
       const s =
         slotsRef.current.find((x) => x.id === slotId) ??

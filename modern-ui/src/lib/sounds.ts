@@ -28,7 +28,9 @@ function beep(frequency: number, duration: number, type: OscillatorType = 'sine'
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration)
     osc.start(ctx.currentTime)
     osc.stop(ctx.currentTime + duration)
-  } catch {}
+  } catch {
+    /* Web Audio unavailable */
+  }
 }
 
 export function playSuccess(): void {

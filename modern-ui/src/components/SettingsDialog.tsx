@@ -93,7 +93,6 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'handheld', label: 'Handheld' },
   { value: 'ocr', label: 'OCR' },
   { value: 'custom', label: 'Custom' },
-  { value: 'adam', label: 'ADAM' },
   { value: 'api', label: 'API' },
   { value: 'decoder', label: 'Decoder' },
   { value: 'automation', label: 'Auto' },
@@ -104,9 +103,7 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
 ]
 
 const TAB_OPTIONS = TAB_OPTIONS_ALL.filter(
-  (t) =>
-    t.value !== 'adam' &&
-    (IS_MOBILE ? t.value !== 'sftp' && t.value !== 'netscan' : true),
+  (t) => (IS_MOBILE ? t.value !== 'sftp' && t.value !== 'netscan' : true),
 )
 
 export function SettingsDialog({

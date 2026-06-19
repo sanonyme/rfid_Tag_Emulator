@@ -71,6 +71,8 @@ type EdgeSessionProviderProps = {
   host: string
   alePort: string
   tcpConnected: boolean
+  /** When false, background process polling is paused (saves re-renders on unrelated tabs). */
+  pollActive?: boolean
   children: ReactNode
 }
 
@@ -78,6 +80,7 @@ export function EdgeSessionProvider({
   host,
   alePort,
   tcpConnected,
+  pollActive = true,
   children,
 }: EdgeSessionProviderProps) {
   const clientRef = useRef(new EdgeApiClient())
@@ -215,19 +218,20 @@ export function EdgeSessionProvider({
       return
     }
 
-    const creds = getAleEnvCredentials()
-    if (!creds) {
-      setEdgeReady(false)
-      setEdgeError(ALE_ENV_MISSING_MSG)
-      clearStatus('edge')
-      return
-    }
-
     let cancelled = false
     setEdgeConnecting(true)
     setEdgeError(null)
 
     void (async () => {
+      const creds = await getAleEnvCredentials()
+      if (!creds) {
+        if (cancelled) return
+        setEdgeReady(false)
+        setEdgeError(ALE_ENV_MISSING_MSG)
+        clearStatus('edge')
+        return
+      }
+
       try {
         await clientRef.current.initCredentials(
           creds.username,
@@ -273,6 +277,11 @@ export function EdgeSessionProvider({
 
     return () => {
       cancelled = true
+      clientRef.current.clearSession()
+      setEdgeReady(false)
+      setBlocks([])
+      setProcesses([])
+      clearStatus('edge')
     }
   }, [tcpConnected, host, port])
 
@@ -280,7 +289,7 @@ export function EdgeSessionProvider({
 
   // Light poll: refresh process list + status for selected process only (not N× getProcess).
   useEffect(() => {
-    if (!tcpConnected || !edgeReady || !host.trim()) return
+    if (!pollActive || !tcpConnected || !edgeReady || !host.trim()) return
 
     let intervalId: number | undefined
     const delayId = window.setTimeout(() => {
@@ -308,7 +317,7 @@ export function EdgeSessionProvider({
       window.clearTimeout(delayId)
       if (intervalId != null) window.clearInterval(intervalId)
     }
-  }, [tcpConnected, edgeReady, host, port])
+  }, [pollActive, tcpConnected, edgeReady, host, port])
 
   const invokeBlock = useCallback(
     async (name: string, params: Record<string, unknown>, orderedParamNames?: string[]) => {

@@ -1,85 +1,46 @@
-# How to Run the Modern RFID Emulator with Java Backend
+# How to Run Zeus (Modern UI)
 
-The modern Electron UI now connects to the actual Java backend servers!
+Zeus is an Electron desktop app. TCP, SFTP, MySQL, and Edge REST all run in the **Electron main process** — you do not need the legacy Java UI for normal use.
 
-## Architecture
+## Development
 
-- **Electron Frontend** (modern-ui) - Beautiful React UI
-- **Java Backend** (root directory) - Handles actual TCP/IP connections and RFID emulation
-
-## Running the App
-
-### Option 1: Development Mode (Recommended for testing)
-
-**Step 1: Start the Java Backend (if needed for Fixed Reader mode)**
-The Java backend `TCPEmulator` connects to RFID readers. You typically don't need to start it separately unless you're testing with actual reader hardware.
-
-**Step 2: Run the Electron App**
 ```bash
 cd modern-ui
+npm install
 npm run electron:dev
 ```
 
-The app will:
-- Connect to Java backend when you click "Connect" (Fixed Reader tab)
-- Start/connect to Handheld Server on port 10472 (Handheld tab)
-- Send OCR messages to specified host (OCR tab)
+Copy `.env.example` to `.env` and set `VITE_ALE_USERNAME` / `VITE_ALE_PASSWORD` if you use the Fixed tab stations or Edge tab.
 
-### Option 2: Production Mode (Built .exe)
+Use `npm run dev` only for browser/mobile UI mock testing (no real TCP/SFTP).
 
-**Run the app:**
+## Production build
+
+```bash
+cd modern-ui
+npm run electron:build
 ```
-modern-ui\dist-app\win-unpacked\edge RFID Emulator.exe
-```
 
-## How It Works
+Installers land in `modern-ui/dist-app/`.
 
-### Fixed Reader Tab
-- **Connect**: Creates TCP connection to specified host:port (typically your RFID reader)
-- **Send Tags**: Sends formatted RFID tag data over TCP using the selected driver format
-- Formats: LLRP, ARP, ImpinjETK, Octane, SEUIC
+## What each layer does
 
-### Handheld Tab  
-- **Subscribe**: Connects to Java Handheld Server on localhost:10472
-- **Generate & Send**: Creates EPCs and broadcasts them to connected handheld devices
-- The Java backend handles the server socket and client connections
+| Layer | Role |
+|-------|------|
+| `src/` | React UI |
+| `electron/main.ts` | IPC handlers, window management |
+| `electron/tcp-handler.ts` | Fixed reader, handheld server, OCR TCP |
+| `electron/sftp-handler.ts` | SFTP sessions |
+| `electron/db-handler.ts` | MySQL admin tab |
 
-### OCR Tab
-- **Send Message**: Sends barcode/OCR data via TCP to specified host
+## Legacy Java UI
 
-## Differences from Java UI
-
-✅ **Same Backend**: Uses the same Java TCP emulation logic
-✅ **Same Protocols**: Compatible with all RFID drivers (LLRP, ARP, Impinj, etc.)
-✅ **Better UI**: Modern, responsive interface with dark mode
-✅ **Cross-Platform**: Works on Windows, Mac, and Linux
+The `legacy-java/` folder is deprecated. See root `README.md` if you still need it.
 
 ## Troubleshooting
 
-### "Electron API not available"
-- You're running in a browser instead of Electron
-- Use `npm run electron:dev` instead of `npm run dev`
+**"Electron API not available"** — Run via `npm run electron:dev`, not `npm run dev` alone.
 
-### Connection Refused
-- Ensure the target RFID reader/server is running and accessible
-- Check firewall settings
-- Verify the correct host:port
+**Connection refused** — Check host/port, firewall, and that the Edge appliance or reader is reachable.
 
-### Handheld Server Issues
-- The app automatically manages the Java Handheld Server
-- Port 10472 must be available
-- Ensure no other app is using this port
-
-## Technical Details
-
-The Electron app communicates with Java backend via:
-1. **IPC (Inter-Process Communication)** between React UI and Electron main process
-2. **Node.js TCP Sockets** in the Electron main process
-3. **Real TCP/IP** to Java backend servers and RFID hardware
-
-Files:
-- `electron/tcp-handler.ts` - Real TCP socket implementation
-- `electron/main.ts` - IPC handlers and Electron main process
-- `electron/preload.ts` - Secure bridge between renderer and main
-- `src/lib/tcp-client.ts` - React/TypeScript TCP client wrapper
-
+**Missing logical devices / Edge auth** — Verify `VITE_ALE_*` in `.env` and restart the dev server after changes.

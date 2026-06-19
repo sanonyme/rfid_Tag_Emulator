@@ -8,7 +8,6 @@ export type DefaultTab =
   | 'handheld'
   | 'ocr'
   | 'custom'
-  | 'adam'
   | 'api'
   | 'decoder'
   | 'automation'
@@ -71,7 +70,11 @@ export function loadSettings(): AppSettings {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
     const parsed = withSerialMigration(JSON.parse(raw) as Partial<AppSettings>)
-    return { ...DEFAULTS, ...parsed }
+    const merged = { ...DEFAULTS, ...parsed }
+    if ((parsed as { defaultTab?: string }).defaultTab === 'adam') {
+      merged.defaultTab = 'fixed'
+    }
+    return merged
   } catch {
     return { ...DEFAULTS }
   }

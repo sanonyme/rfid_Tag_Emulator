@@ -66,7 +66,7 @@ export interface ElectronAPI {
   close: () => void
   
   // TCP Emulator
-  tcpConnect: (host: string, port: number) => void
+  tcpConnect: (host: string, port: number) => Promise<{ ok: boolean; message?: string; error?: string }>
   tcpDisconnect: () => void
   tcpSendTags: (tags: any[], driverCode: string, delayMs: number) => void
   tcpCancelSend: () => void
@@ -105,18 +105,6 @@ export interface ElectronAPI {
   onCustomSuccess: (callback: (message: string) => void) => void
   onCustomError: (callback: (message: string) => void) => void
 
-  // ADAM Module
-  adamConnect: (host: string, port: number) => void
-  adamDisconnect: () => void
-  adamSetDO: (coil: number, value: boolean) => void
-  adamReadDIs: (start: number, count: number) => void
-  adamSetDIInvert: (mask: number, registerAddress?: number) => void
-  onAdamConnected: (callback: (message: string) => void) => void
-  onAdamDisconnected: (callback: (message: string) => void) => void
-  onAdamError: (callback: (message: string) => void) => void
-  onAdamDataDI: (callback: (data: { start: number, values: boolean[] }) => void) => void
-  onAdamWriteSuccess: (callback: (message: string) => void) => void
-
   // Auto Updater
   checkForUpdate: () => void
   startDownload: () => void
@@ -132,7 +120,13 @@ export interface ElectronAPI {
   onUpdateDownloaded: (callback: (info: any) => void) => void
 
   // ALE API
-  aleRequest: (url: string, options: any) => Promise<{ 
+  aleGetCredentialMeta: () => Promise<
+    { ok: true; username: string; passwordIsHashed: boolean } | { ok: false }
+  >
+  aleGetBasicAuthHeader: () => Promise<
+    { ok: true; username: string; header: string } | { ok: false; error?: string }
+  >
+  aleRequest: (url: string, options: any) => Promise<{
     ok: boolean, 
     status: number, 
     statusText: string, 
@@ -161,6 +155,7 @@ export interface ElectronAPI {
   // Database
   dbConnect: (host: string, user: string, password: string) => Promise<{ ok: true; databases: string[] } | { ok: false; error: string }>
   dbDisconnect: () => Promise<void>
+  dbListDatabases: () => Promise<{ ok: true; databases: string[] } | { ok: false; error: string }>
   dbGetTables: (database: string) => Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }>
   dbGetTableData: (
     database: string,
@@ -168,7 +163,7 @@ export interface ElectronAPI {
     limit?: number,
     offset?: number
   ) => Promise<
-    | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string> }
+    | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string>; primaryKeys: string[] }
     | { ok: false; error: string }
   >
   dbExecuteQuery: (query: string, database?: string) => Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; message?: string } | { ok: false; error: string }>
@@ -235,6 +230,10 @@ export interface ElectronAPI {
   installRegistryGetStatus: () => Promise<InstallRegistryStatus>
   installRegistrySetEnabled: (enabled: boolean) => Promise<boolean>
   installRegistrySendNow: () => Promise<InstallRegistrySendResult>
+
+  adminLogin: (username: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  adminLogout: () => Promise<{ ok: boolean }>
+  adminIsAuthenticated: () => Promise<{ ok: boolean }>
 
   // SFTP (Electron main / ssh2, multi-session)
   sftpConnect: (
@@ -345,12 +344,14 @@ export interface ElectronAPI {
     remotePath: string,
     localPath: string,
     operationId: string,
+    localRoot?: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpUploadFromLocal: (
     sessionId: string,
     localPath: string,
     remotePath: string,
     operationId: string,
+    localRoot?: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   sftpCopyRemoteFile: (
     sessionId: string,

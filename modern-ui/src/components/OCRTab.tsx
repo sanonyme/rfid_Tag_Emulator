@@ -126,7 +126,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
         <CardHeader className="space-y-3 pb-3 pt-5 px-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/15">
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400">
                 <ScanLine className="h-5 w-5" />
               </div>
               <div className="min-w-0 space-y-1">
@@ -194,14 +194,14 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
         <CardHeader className="shrink-0 border-b border-border/40 bg-muted/10 px-4 py-3">
           <div className="flex items-center justify-between gap-2">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
-                <Activity className="h-3.5 w-3.5 text-primary" />
+              <span className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-500/10 ring-1 ring-amber-500/20">
+                <Activity className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
               </span>
               OCR log
               {sending && (
                 <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-500 opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
                 </span>
               )}
             </CardTitle>
@@ -253,7 +253,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
             <div className="space-y-0.5 p-3 font-mono text-xs sm:text-sm">
               {log.length === 0 && (
                 <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-muted-foreground">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400">
                     <ScanLine className="h-5 w-5" />
                   </div>
                   <p className="text-sm font-medium text-foreground">No OCR traffic yet</p>

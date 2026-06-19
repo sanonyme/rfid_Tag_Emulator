@@ -222,7 +222,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
       effectiveMin = minN ?? defaultRandomMin
       effectiveMax = maxN ?? defaultRandomMax
       if (effectiveMin > effectiveMax) {
-        ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+        [effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
       }
     }
 

@@ -6,7 +6,6 @@ import {
   Smartphone,
   ScanLine,
   Terminal,
-  Server,
   Globe,
   Code2,
   Workflow,
@@ -66,7 +65,6 @@ const ADMIN_GROUP: TabGroup = {
   id: 'admin',
   label: 'Admin',
   items: [
-    { value: 'adam', label: 'ADAM', icon: Server },
     { value: 'link2uid', label: 'Link → UID', icon: Link2 },
     { value: 'terminal', label: 'Terminal', icon: Terminal },
     { value: 'logs', label: 'Log Analyzer', icon: LineChart, badge: 'BETA' },
@@ -105,7 +103,7 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
     .map((g) => ({
       ...g,
       items: IS_MOBILE
-        ? g.items.filter((t) => t.value !== 'adam' && t.value !== 'netscan')
+        ? g.items.filter((t) => t.value !== 'netscan')
         : g.items,
     }))
     .filter((g) => g.items.length > 0)

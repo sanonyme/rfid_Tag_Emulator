@@ -37,6 +37,35 @@ export type EdgeLogicalDevice = {
   composite?: boolean
 }
 
+/** Full ALE logical-device record (Fixed tab station picker). */
+export type AleLogicalDevice = {
+  name: string
+  composite: boolean
+  logicalReaders: string[]
+  vendor: string
+  uid: string
+  locationX: string
+  locationY: string
+  groupName: string
+  antennas: number[]
+}
+
+function parseAleLogicalDevice(item: unknown): AleLogicalDevice | null {
+  if (!item || typeof item !== 'object' || !('name' in item)) return null
+  const o = item as Record<string, unknown>
+  return {
+    name: String(o.name),
+    composite: Boolean(o.composite),
+    logicalReaders: Array.isArray(o.logicalReaders) ? o.logicalReaders.map(String) : [],
+    vendor: o.vendor != null ? String(o.vendor) : '',
+    uid: o.uid != null ? String(o.uid) : '',
+    locationX: o.locationX != null ? String(o.locationX) : '',
+    locationY: o.locationY != null ? String(o.locationY) : '',
+    groupName: o.groupName != null ? String(o.groupName) : '',
+    antennas: Array.isArray(o.antennas) ? o.antennas.map((n) => Number(n)) : [],
+  }
+}
+
 /** UI-friendly block param; sourced from defineBlockBody_list (+ optional default). */
 export type EdgeBlockParam = {
   name: string
@@ -226,6 +255,19 @@ export class EdgeApiClient {
     password: string,
     passwordIsHashed: boolean,
   ): Promise<void> {
+    if (!password && window.electronAPI?.aleGetBasicAuthHeader) {
+      const hres = await window.electronAPI.aleGetBasicAuthHeader()
+      if (hres.ok && hres.header) {
+        this.sessionCreds = {
+          username: hres.username ?? username,
+          password: '',
+          passwordIsHashed: true,
+        }
+        this.basicAuth = hres.header
+        this.authSecret = 'use_env_vars'
+        return
+      }
+    }
     this.sessionCreds = { username, password, passwordIsHashed }
     this.authSecret = await resolveEdgeSecret(password, passwordIsHashed)
     this.basicAuth = `Basic ${btoa(`${username.trim()}:${this.authSecret}`)}`
@@ -379,10 +421,13 @@ export class EdgeApiClient {
       await this.prepareCredentials(username, password, passwordIsHashed)
     }
 
-    const body: AuthenticateBody = {
-      username: username.trim(),
-      password: this.authSecret!,
-    }
+    const body: AuthenticateBody =
+      this.authSecret === 'use_env_vars'
+        ? { username: 'use_env_vars', password: 'use_env_vars' }
+        : {
+            username: username.trim(),
+            password: this.authSecret!,
+          }
 
     const res = await this.request(host, port, '/ALE/api/auth', {
       method: 'POST',
@@ -473,6 +518,8 @@ export class EdgeApiClient {
           return {
             name: String(o.name),
             vendor: o.vendor != null ? String(o.vendor) : undefined,
+            uid: o.uid != null ? String(o.uid) : undefined,
+            composite: o.composite != null ? Boolean(o.composite) : undefined,
           }
         }
         return null
@@ -481,6 +528,21 @@ export class EdgeApiClient {
 
     this.logicalDevicesCache = devices
     return devices
+  }
+
+  /** GET /ALE/api/logical-device — full station records for Fixed tab. */
+  async listAleLogicalDevices(host: string, port: string): Promise<AleLogicalDevice[]> {
+    const res = await this.request(host, port, '/ALE/api/logical-device/', {
+      timeoutMs: EDGE_GET_TIMEOUT_MS,
+    })
+    if (!res.ok) {
+      throw new Error(res.data?.trim() || `List logical devices failed (${res.status})`)
+    }
+    const parsed = parseJson<unknown>(res.data || '[]')
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map(parseAleLogicalDevice)
+      .filter((d): d is AleLogicalDevice => d != null)
   }
 
   /**

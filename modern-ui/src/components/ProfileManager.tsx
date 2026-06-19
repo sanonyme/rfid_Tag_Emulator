@@ -45,8 +45,6 @@ export interface Profile {
   // Custom Tab State
   customPort?: string
   customMessage?: string
-  // ADAM Tab State
-  adamHost?: string
   /** Delay (ms) between tags for the fixed reader TCP emulator */
   delay: string
   /** Delay (ms) between tags for handheld broadcast (independent of `delay`) */

@@ -1,7 +1,9 @@
 // TCP Handler for Electron Main Process
-// Handles real TCP connections to Java backend
+// Handles real TCP connections to the tag emulator backend
 
 import { Socket, Server, createServer } from 'net'
+import { formatTcpTagMessage, type TcpTagPayload } from '../src/lib/tcp-wire-format.js'
+import { formatHandheldBroadcastPayload, type HandheldTagPayload } from '../src/lib/handheld-wire-format.js'
 import { broadcastToAllWindows } from './window-broadcast.js'
 
 /** Yields to the event loop and honours cancel; avoids long sleeps before stop takes effect. */
@@ -33,52 +35,101 @@ function socketWrite(sock: Socket, data: string): Promise<void> {
   })
 }
 
-export interface TagData {
-  epc: string
-  tid: string
-  uid: string
-  antenna: number
-  rssi: string
-}
+export type TagData = TcpTagPayload
 
 export class TCPEmulatorHandler {
   private socket: Socket | null = null
   private isConnected: boolean = false
   private cancelRequested: boolean = false
+  private connectGeneration = 0
 
-  connect(host: string, port: number): void {
+  connect(host: string, port: number): Promise<{ ok: boolean; message?: string; error?: string }> {
     if (this.socket && this.isConnected) {
-      this.sendToRenderer('tcp-error', 'Already connected')
-      return
+      const msg = 'Already connected'
+      this.sendToRenderer('tcp-error', msg)
+      return Promise.resolve({ ok: false, error: msg })
     }
+
+    const gen = ++this.connectGeneration
 
     if (this.socket) {
       this.socket.removeAllListeners()
       this.socket.destroy()
       this.socket = null
+      this.isConnected = false
     }
 
-    this.socket = new Socket()
+    const socket = new Socket()
+    this.socket = socket
 
-    this.socket.on('connect', () => {
-      this.isConnected = true
-      this.sendToRenderer('tcp-connected', `Connected to ${host}:${port}`)
+    const CONNECT_TIMEOUT_MS = 15_000
+
+    return new Promise((resolve) => {
+      let settled = false
+      let connectTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+        if (settled || gen !== this.connectGeneration) return
+        socket.destroy()
+        fail('Connection timed out')
+      }, CONNECT_TIMEOUT_MS)
+
+      const clearConnectTimer = () => {
+        if (connectTimer) {
+          clearTimeout(connectTimer)
+          connectTimer = null
+        }
+      }
+
+      const finish = (result: { ok: boolean; message?: string; error?: string }) => {
+        if (settled) return
+        settled = true
+        clearConnectTimer()
+        resolve(result)
+      }
+
+      const fail = (error: string) => {
+        clearConnectTimer()
+        if (gen !== this.connectGeneration) {
+          if (!settled) finish({ ok: false, error: 'Connection cancelled' })
+          return
+        }
+        this.isConnected = false
+        this.sendToRenderer('tcp-error', `Connection error: ${error}`)
+        finish({ ok: false, error })
+      }
+
+      socket.on('connect', () => {
+        if (gen !== this.connectGeneration) {
+          if (!settled) finish({ ok: false, error: 'Connection cancelled' })
+          return
+        }
+        clearConnectTimer()
+        this.isConnected = true
+        const message = `Connected to ${host}:${port}`
+        this.sendToRenderer('tcp-connected', message)
+        finish({ ok: true, message })
+      })
+
+      socket.on('error', (error) => {
+        fail(error.message)
+      })
+
+      socket.on('close', () => {
+        clearConnectTimer()
+        if (gen !== this.connectGeneration) {
+          if (!settled) finish({ ok: false, error: 'Connection cancelled' })
+          return
+        }
+        this.isConnected = false
+        if (!settled) fail('Connection closed')
+        else this.sendToRenderer('tcp-disconnected', 'Connection closed')
+      })
+
+      socket.connect(port, host)
     })
-
-    this.socket.on('error', (error) => {
-      this.isConnected = false
-      this.sendToRenderer('tcp-error', `Connection error: ${error.message}`)
-    })
-
-    this.socket.on('close', () => {
-      this.isConnected = false
-      this.sendToRenderer('tcp-disconnected', 'Connection closed')
-    })
-
-    this.socket.connect(port, host)
   }
 
   disconnect(): void {
+    this.connectGeneration++
     if (this.socket) {
       this.isConnected = false
       this.socket.destroy()
@@ -135,7 +186,7 @@ export class TCPEmulatorHandler {
   }
 
   private formatMessage(tag: TagData, driver: string): string {
-    return `driver=${driver} epc=${tag.epc} @tid=${tag.tid} uid=${tag.uid} antenna=${tag.antenna} @rssi=${tag.rssi}\n`
+    return formatTcpTagMessage(tag, driver)
   }
 
   cancelSend(): void {
@@ -159,6 +210,7 @@ export class TCPEmulatorHandler {
 // CREATES A SERVER that LISTENS on a configurable port for handheld devices to connect
 export class HandheldServerHandler {
   private serverRunning: boolean = false
+  private serverStarting: boolean = false
   private serverSocket: Server | null = null
   private connectedClients: Socket[] = []
   private cancelRequested: boolean = false
@@ -172,6 +224,20 @@ export class HandheldServerHandler {
     if (this.serverRunning) {
       this.sendToRenderer('handheld-started', `Handheld server already running on port ${this.port}`)
       return
+    }
+    if (this.serverStarting) {
+      this.sendToRenderer('handheld-started', `Handheld server is starting on port ${this.port}`)
+      return
+    }
+    this.serverStarting = true
+
+    if (this.serverSocket) {
+      try {
+        this.serverSocket.close()
+      } catch {
+        /* ignore */
+      }
+      this.serverSocket = null
     }
     
     // Java: serverSocket = new ServerSocket(listenPort);
@@ -197,6 +263,7 @@ export class HandheldServerHandler {
     })
 
     this.serverSocket.on('error', (error: Error) => {
+      this.serverStarting = false
       console.log('Handheld: Server error:', error.message)
       this.sendToRenderer('handheld-error', `Server error: ${error.message}`)
     })
@@ -204,6 +271,7 @@ export class HandheldServerHandler {
     // Java: running = true; onLog.accept("Handheld server listening on port " + listenPort);
     // Listen on all interfaces (0.0.0.0) so handheld devices can connect
     this.serverSocket.listen(this.port, '0.0.0.0', () => {
+      this.serverStarting = false
       this.serverRunning = true
       console.log(`Handheld: Server successfully started on 0.0.0.0:${this.port}`)
       this.sendToRenderer('handheld-started', `Handheld server listening on port ${this.port}`)
@@ -288,17 +356,11 @@ export class HandheldServerHandler {
     if (tags.length === 0) return 0
 
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }
-    let payload = ''
-    for (const tag of tags) {
-      // Java: String json = "{\"epc\":\"" + epc + "\",\"date\":\"" + nowString() + "\",\"rssi\":70.0}";
-      const json = JSON.stringify({
-        epc: tag.epc,
-        tid: tag.tid || tag.epc, // User requested: defaults to EPC if not provided
-        date: this.nowString(),
-        rssi: this.handheldJsonRssi(tag),
-      })
-      payload += json + '\r\n'
-    }
+    const payload = formatHandheldBroadcastPayload(
+      tags as HandheldTagPayload[],
+      this.nowString(),
+      (tag) => this.handheldJsonRssi(tag),
+    )
 
     // Snapshot so connect/disconnect handlers can't mutate the array mid-iteration
     const snapshot = [...this.connectedClients]
@@ -360,6 +422,7 @@ export class HandheldServerHandler {
   stop(): void {
     // Java: running = false;
     this.serverRunning = false
+    this.serverStarting = false
     
     // Java: if (serverSocket != null && !serverSocket.isClosed()) { serverSocket.close(); }
     if (this.serverSocket) {

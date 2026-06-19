@@ -164,11 +164,14 @@ export function HandheldTab({
     if (slots.length <= 1) return
     const slot = slots.find(s => s.id === id)
     if (slot) {
-      setRunningPorts(prev => {
-        const next = new Set(prev)
-        next.delete(slot.port)
-        return next
-      })
+      if (runningPorts.has(slot.port)) {
+        getClient(slot.port).shutdown()
+        setRunningPorts((prev) => {
+          const next = new Set(prev)
+          next.delete(slot.port)
+          return next
+        })
+      }
       clearStatus(handheldKey(slot.port))
     }
     setSlots(slots.filter(s => s.id !== id))
@@ -181,15 +184,33 @@ export function HandheldTab({
   const handleStartServer = async (port: number) => {
     const client = getClient(port)
     publishStatus(handheldKey(port), { status: 'connecting', port, label: `HH :${port}` })
-    client.start(
-      (msg) => addLog(msg, port),
-      (err) => {
-        addLog(`Error: ${err}`, port)
-        publishStatus(handheldKey(port), { status: 'error', port, error: err })
-      },
-    )
-    setRunningPorts(prev => new Set([...prev, port]))
-    publishStatus(handheldKey(port), { status: 'connected', port, label: `HH :${port}` })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => reject(new Error('Server start timed out')), 15_000)
+        client.start(
+          (msg) => {
+            window.clearTimeout(timeoutId)
+            addLog(msg, port)
+            setRunningPorts((prev) => new Set([...prev, port]))
+            publishStatus(handheldKey(port), { status: 'connected', port, label: `HH :${port}` })
+            resolve()
+          },
+          (err) => {
+            window.clearTimeout(timeoutId)
+            addLog(`Error: ${err}`, port)
+            publishStatus(handheldKey(port), { status: 'error', port, error: err })
+            reject(new Error(err))
+          },
+        )
+      })
+    } catch {
+      setRunningPorts((prev) => {
+        const next = new Set(prev)
+        next.delete(port)
+        return next
+      })
+      clearStatus(handheldKey(port))
+    }
   }
 
   const handleStopServer = (port: number) => {
@@ -221,7 +242,7 @@ export function HandheldTab({
     }
 
     const startedRepeat = opts?.loop === true
-    let firstTags = parseTagsFromSlot(slot, rssiRef.current, serialContinuesRef.current)
+    const firstTags = parseTagsFromSlot(slot, rssiRef.current, serialContinuesRef.current)
     if (firstTags.length === 0) {
       addLog('Error: No EPCs generated', port)
       return
@@ -248,8 +269,7 @@ export function HandheldTab({
     let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
     let cachedParseKey = ''
 
-    while (true) {
-      if (loopCancelRef.current.has(port)) break
+    while (!loopCancelRef.current.has(port)) {
 
       const cur = slotsRef.current.find((s) => s.id === slotId)
       if (!cur) {

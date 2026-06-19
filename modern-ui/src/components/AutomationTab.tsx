@@ -1,6 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
-import { flushSync } from 'react-dom'
-import { motion, Reorder, type PanInfo, useDragControls } from 'framer-motion'
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
+import { motion, Reorder, useMotionValue } from 'framer-motion'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -113,7 +112,7 @@ function makeRssiPicker(params: AutomationStep['params']): () => string {
     effectiveMin = minN ?? defaultRandomMin
     effectiveMax = maxN ?? defaultRandomMax
     if (effectiveMin > effectiveMax) {
-      ;[effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
+      [effectiveMin, effectiveMax] = [effectiveMax, effectiveMin]
     }
   }
 
@@ -140,9 +139,10 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   EDGE_PROCESS: { border: 'border-teal-400/40', bg: 'bg-teal-400/10', icon: 'text-teal-400', label: 'EDGE' },
 }
 
-function WorkflowNode({
+const WorkflowNode = memo(function WorkflowNode({
   step,
   pos,
+  canvasZoom,
   style,
   isDragging,
   isActive,
@@ -156,18 +156,66 @@ function WorkflowNode({
 }: {
   step: AutomationStep
   pos: { x: number; y: number }
+  canvasZoom: number
   style: { border: string; bg: string; icon: string; label: string }
   isDragging: boolean
   isActive: boolean
   isSelected: boolean
   isRunning: boolean
   onDragStart: (id: string) => void
-  onDrag: (id: string, info: PanInfo) => void
-  onDragEnd: () => void
+  onDrag: (id: string, x: number, y: number) => void
+  onDragEnd: (id: string, x: number, y: number) => void
   onConfigure: (id: string) => void
   onDelete: (id: string) => void
 }) {
-  const dragControls = useDragControls()
+  const x = useMotionValue(pos.x)
+  const y = useMotionValue(pos.y)
+
+  useEffect(() => {
+    if (!isDragging) {
+      x.set(pos.x)
+      y.set(pos.y)
+    }
+  }, [pos.x, pos.y, isDragging, x, y])
+
+  const handleGripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    e.preventDefault()
+    const grip = e.currentTarget
+    grip.setPointerCapture(e.pointerId)
+
+    const startX = pos.x
+    const startY = pos.y
+    const startClientX = e.clientX
+    const startClientY = e.clientY
+    const zoom = Math.max(canvasZoom, 0.01)
+
+    onDragStart(step.id)
+
+    const onMove = (ev: PointerEvent) => {
+      const nx = Math.max(0, startX + (ev.clientX - startClientX) / zoom)
+      const ny = Math.max(0, startY + (ev.clientY - startClientY) / zoom)
+      x.set(nx)
+      y.set(ny)
+      onDrag(step.id, nx, ny)
+    }
+
+    const onUp = (ev: PointerEvent) => {
+      grip.releasePointerCapture(ev.pointerId)
+      grip.removeEventListener('pointermove', onMove)
+      grip.removeEventListener('pointerup', onUp)
+      grip.removeEventListener('pointercancel', onUp)
+      const nx = Math.max(0, startX + (ev.clientX - startClientX) / zoom)
+      const ny = Math.max(0, startY + (ev.clientY - startClientY) / zoom)
+      x.set(nx)
+      y.set(ny)
+      onDragEnd(step.id, nx, ny)
+    }
+
+    grip.addEventListener('pointermove', onMove)
+    grip.addEventListener('pointerup', onUp)
+    grip.addEventListener('pointercancel', onUp)
+  }
 
   const getDescription = () => {
     switch (step.type) {
@@ -187,32 +235,20 @@ function WorkflowNode({
 
   return (
     <motion.div
-      key={step.id}
-      drag
-      dragListener={false}
-      dragControls={dragControls}
-      dragMomentum={false}
-      dragConstraints={{ left: 0, top: 0, right: 100000, bottom: 100000 }}
-      onDragStart={() => onDragStart(step.id)}
-      onDrag={(_, info) => onDrag(step.id, info)}
-      onDragEnd={onDragEnd}
-      style={{ x: pos.x, y: pos.y, width: NODE_WIDTH, transformOrigin: '0 0' }}
-      className="absolute"
-      initial={{ scale: 0.8, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ duration: 0.2 }}
-      whileHover={{ scale: 1.02 }}
-      whileDrag={{ scale: 1.05, zIndex: 50, cursor: 'grabbing' }}
+      style={{ x, y, width: NODE_WIDTH, transformOrigin: '0 0' }}
+      className={cn('absolute', isDragging && 'z-50 cursor-grabbing')}
+      initial={false}
+      whileHover={isDragging ? undefined : { scale: 1.02 }}
     >
       <Card
-        className={`group/node relative w-full overflow-hidden rounded-xl border ${style.border} ${style.bg} bg-background/70 p-3 backdrop-blur transition-all hover:shadow-lg cursor-pointer select-none focus:outline-none ${isDragging ? 'shadow-xl ring-2 ring-primary/50' : ''} ${isActive ? 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]' : ''}`}
+        className={`group/node relative w-full overflow-hidden rounded-xl border ${style.border} ${style.bg} bg-background/70 p-3 ${isDragging ? '' : 'backdrop-blur'} transition-shadow hover:shadow-lg cursor-pointer select-none focus:outline-none ${isDragging ? 'shadow-xl ring-2 ring-primary/50' : ''} ${isActive ? 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]' : ''}`}
         onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('button')) { e.preventDefault(); onConfigure(step.id) } }}
       >
         <div className="relative space-y-2">
           <div className="flex items-center gap-2">
             <div
-              className="flex h-8 w-8 shrink-0 cursor-grab active:cursor-grabbing items-center justify-center rounded-lg border border-border/40 bg-background/60"
-              onPointerDown={(e) => { e.stopPropagation(); dragControls.start(e) }}
+              className="flex h-8 w-8 shrink-0 cursor-grab active:cursor-grabbing items-center justify-center rounded-lg border border-border/40 bg-background/60 touch-none"
+              onPointerDown={handleGripPointerDown}
             >
               <GripVertical className="h-4 w-4 text-muted-foreground" />
             </div>
@@ -259,19 +295,31 @@ function WorkflowNode({
       </Card>
     </motion.div>
   )
-}
+})
 
-function WorkflowConnectionLine({
+const WorkflowConnectionLine = memo(function WorkflowConnectionLine({
   from,
   to,
   steps,
-}: { from: string; to: string; steps: AutomationStep[] }) {
+  dragPreview,
+}: {
+  from: string
+  to: string
+  steps: AutomationStep[]
+  dragPreview: { nodeId: string; x: number; y: number } | null
+}) {
   const fromStep = steps.find((s) => s.id === from)
   const toStep = steps.find((s) => s.id === to)
   if (!fromStep || !toStep) return null
 
-  const fromPos = fromStep.position ?? { x: 0, y: 0 }
-  const toPos = toStep.position ?? { x: 0, y: 0 }
+  const fromPos =
+    dragPreview?.nodeId === from
+      ? { x: dragPreview.x, y: dragPreview.y }
+      : (fromStep.position ?? { x: 0, y: 0 })
+  const toPos =
+    dragPreview?.nodeId === to
+      ? { x: dragPreview.x, y: dragPreview.y }
+      : (toStep.position ?? { x: 0, y: 0 })
 
   const startX = fromPos.x + NODE_WIDTH
   const startY = fromPos.y + NODE_HEIGHT / 2
@@ -294,7 +342,7 @@ function WorkflowConnectionLine({
       className="text-foreground"
     />
   )
-}
+})
 
 export function AutomationTab({
   emulator,
@@ -378,8 +426,10 @@ export function AutomationTab({
   }, [steps.length])
 
   const canvasRef = useRef<HTMLDivElement>(null)
-  const dragStartPosition = useRef<{ x: number; y: number } | null>(null)
+  const dragPreviewRafRef = useRef<number | null>(null)
+  const pendingDragPreviewRef = useRef<{ nodeId: string; x: number; y: number } | null>(null)
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const [dragPreview, setDragPreview] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [canvasZoom, setCanvasZoom] = useState(1)
   const panStartRef = useRef<{ x: number; y: number; startPanX: number; startPanY: number } | null>(null)
@@ -392,35 +442,40 @@ export function AutomationTab({
 
   const handleDragStart = useCallback((nodeId: string) => {
     setDraggingNodeId(nodeId)
-    const step = steps.find((s) => s.id === nodeId)
-    if (step?.position && selectedSequenceId) {
-      dragStartPosition.current = { x: step.position.x, y: step.position.y }
-    }
-  }, [steps, selectedSequenceId])
+  }, [])
 
-  const handleDrag = useCallback((nodeId: string, { offset }: PanInfo) => {
-    if (draggingNodeId !== nodeId || !dragStartPosition.current || !selectedSequenceId) return
-    const newX = Math.max(0, dragStartPosition.current.x + offset.x)
-    const newY = Math.max(0, dragStartPosition.current.y + offset.y)
-    flushSync(() => {
-      updateStepsForSequence(selectedSequenceId, prev =>
-        prev.map((s) => s.id === nodeId ? { ...s, position: { x: newX, y: newY } } : s)
+  const handleDrag = useCallback((nodeId: string, x: number, y: number) => {
+    pendingDragPreviewRef.current = { nodeId, x, y }
+    if (dragPreviewRafRef.current != null) return
+    dragPreviewRafRef.current = requestAnimationFrame(() => {
+      dragPreviewRafRef.current = null
+      if (pendingDragPreviewRef.current) {
+        setDragPreview(pendingDragPreviewRef.current)
+      }
+    })
+  }, [])
+
+  const handleDragEnd = useCallback((nodeId: string, newX: number, newY: number) => {
+    if (dragPreviewRafRef.current != null) {
+      cancelAnimationFrame(dragPreviewRafRef.current)
+      dragPreviewRafRef.current = null
+    }
+    pendingDragPreviewRef.current = null
+    setDragPreview(null)
+    setDraggingNodeId(null)
+
+    if (!selectedSequenceId) return
+
+    updateStepsForSequence(selectedSequenceId, (prev) => {
+      const updated = prev.map((s) =>
+        s.id === nodeId ? { ...s, position: { x: newX, y: newY } } : { ...s, position: s.position ?? { x: 0, y: 0 } },
       )
+      return [...updated].sort((a, b) => a.position!.x - b.position!.x)
     })
     setContentSize((prev) => ({
       width: Math.max(prev.width, newX + NODE_WIDTH + 50),
       height: Math.max(prev.height, newY + NODE_HEIGHT + 50),
     }))
-  }, [draggingNodeId, selectedSequenceId, updateStepsForSequence])
-
-  const handleDragEnd = useCallback(() => {
-    setDraggingNodeId(null)
-    dragStartPosition.current = null
-    if (!selectedSequenceId) return
-    updateStepsForSequence(selectedSequenceId, prev => {
-      const updated = prev.map((s) => ({ ...s, position: s.position ?? { x: 0, y: 0 } }))
-      return [...updated].sort((a, b) => (a.position!.x) - (b.position!.x))
-    })
   }, [selectedSequenceId, updateStepsForSequence])
 
   const handleAddStep = (type: ActionType) => {
@@ -460,9 +515,7 @@ export function AutomationTab({
         edgeProcessAction: 'start',
       }
     }
-    flushSync(() => {
-      updateStepsForSequence(selectedSequenceId, prev => [...prev, newStep])
-    })
+    updateStepsForSequence(selectedSequenceId, (prev) => [...prev, newStep])
     setSelectedStepId(newStep.id)
     setConfigDialogOpen(true)
     setContentSize((prev) => ({
@@ -628,7 +681,7 @@ export function AutomationTab({
         })
         break
 
-      case 'CUSTOM_MESSAGE':
+      case 'CUSTOM_MESSAGE': {
         addLog(`Sending custom message...`)
         if (!host) throw new Error('Host not configured')
         const portStr = step.params.port || customPort
@@ -646,10 +699,11 @@ export function AutomationTab({
           )
         })
         break
+      }
 
-      case 'FIXED_TAG':
+      case 'FIXED_TAG': {
         addLog(`Emulating Fixed Tag...`)
-        let fixedTags: TagData[] = []
+        const fixedTags: TagData[] = []
         const stepAntennas = (step.params.antenna || '1').toString().split(',').filter(Boolean).map(Number)
         if (stepAntennas.length === 0) stepAntennas.push(1)
         const selectedUids = (step.params.uid || '').split(',').filter(Boolean)
@@ -743,8 +797,9 @@ export function AutomationTab({
           (msg) => addLog(`Fixed Complete: ${msg}`)
         )
         break
+      }
 
-      case 'HANDHELD_TAG':
+      case 'HANDHELD_TAG': {
         addLog(`Emulating Handheld Tags...`)
         const getHhTagRssi = makeRssiPicker(step.params)
         const allHhTags: { epc: string; tid?: string; rssi?: string }[] = []
@@ -803,6 +858,7 @@ export function AutomationTab({
           hhVerbose
         )
         break
+      }
 
       case 'EDGE_BLOCK': {
         if (!edgeSession.edgeReady) {
@@ -1282,6 +1338,7 @@ export function AutomationTab({
                     from={steps[i].id}
                     to={steps[i + 1].id}
                     steps={steps}
+                    dragPreview={dragPreview}
                   />
                 ))}
               </svg>
@@ -1292,6 +1349,7 @@ export function AutomationTab({
                   key={step.id}
                   step={step}
                   pos={step.position ?? { x: 50 + index * 250, y: 100 }}
+                  canvasZoom={canvasZoom}
                   style={STEP_TYPE_STYLES[step.type]}
                   isDragging={draggingNodeId === step.id}
                   isActive={currentRunningStepId === step.id}

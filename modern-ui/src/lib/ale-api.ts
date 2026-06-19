@@ -20,24 +20,21 @@ export class AleApiClient {
 
   private async request(url: string, options: RequestInit): Promise<string> {
     if (window.electronAPI?.aleRequest) {
-      // Add stored cookies to headers if available
-      const headers = { ...(options.headers as any || {}) }
+      const headers = { ...(options.headers as Record<string, string> || {}) }
       if (this.cookies) {
         headers['Cookie'] = this.cookies
       }
-      
+
       const res = await window.electronAPI.aleRequest(url, { ...options, headers })
-      
+
       if (!res.ok) throw new Error(`Request failed: ${res.statusText} (${res.status})`)
-      
-      // Store cookies if present in response
+
       if (res.headers && res.headers['set-cookie']) {
         this.cookies = res.headers['set-cookie']
       }
-      
+
       return res.data || ''
     } else {
-      // Fallback for browser (might hit CORS)
       const res = await fetch(url, options)
       if (!res.ok) throw new Error(`Request failed: ${res.statusText}`)
       return await res.text()
@@ -45,14 +42,10 @@ export class AleApiClient {
   }
 
   async authenticate(host: string, port: string = '80'): Promise<string> {
-    const creds = getAleEnvCredentials()
+    const creds = await getAleEnvCredentials()
     if (!creds) {
       throw new Error(ALE_ENV_MISSING_MSG)
     }
-    const password = creds.passwordIsHashed
-      ? creds.password
-      : await makeEdgeSecret(creds.password)
-    const username = creds.username
 
     if (window.electronAPI?.aleRequest) {
       const url = `http://${host}:${port}/ALE/api/auth`
@@ -63,16 +56,15 @@ export class AleApiClient {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                username,
-                password,
+                username: 'use_env_vars',
+                password: 'use_env_vars',
             }),
         })
-        
+
         if (!response.ok) {
             throw new Error(`Auth failed: ${response.statusText}`)
         }
 
-        // Store cookie if present
         if (response.headers && response.headers['set-cookie']) {
             this.cookies = response.headers['set-cookie']
         }
@@ -80,9 +72,13 @@ export class AleApiClient {
         const data = response.data || ''
         try {
           const json = JSON.parse(data)
+          if (json && typeof json === 'object' && 'error' in json && json.error) {
+            throw new Error(String(json.error))
+          }
           if (json.token) return json.token
-          if (data && !data.startsWith('{')) return data 
+          if (data && !data.startsWith('{')) return data
         } catch (e) {
+          if (e instanceof Error && e.message && !e.message.startsWith('Unexpected')) throw e
           return data
         }
         return data
@@ -91,17 +87,19 @@ export class AleApiClient {
         throw error
       }
     }
-    
-    // Fallback for browser (will fail without CORS/Proxy if not electron)
+
     const url = `http://${host}:${port}/ALE/api/auth`
     try {
+      const password = creds.passwordIsHashed
+        ? creds.password
+        : await makeEdgeSecret(creds.password)
       const data = await this.request(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          username,
+          username: creds.username,
           password,
         }),
       })
@@ -109,10 +107,10 @@ export class AleApiClient {
       try {
         const json = JSON.parse(data)
         if (json.token) return json.token
-      } catch (e) {
+      } catch {
         // Not JSON
       }
-      
+
       return data
     } catch (error) {
       console.error('ALE Auth Error:', error)
@@ -121,7 +119,6 @@ export class AleApiClient {
   }
 
   async getLogicalDevices(host: string, port: string = '80'): Promise<LogicalDevice[]> {
-    // First authenticate
     const token = await this.authenticate(host, port)
 
     const url = `http://${host}:${port}/ALE/api/logical-device/`
@@ -135,11 +132,13 @@ export class AleApiClient {
       })
 
       const json = JSON.parse(data)
-      // Data is an array of LogicalDevice objects
+      if (json && typeof json === 'object' && 'error' in json && json.error) {
+        throw new Error(String(json.error))
+      }
       if (Array.isArray(json)) {
         return json as LogicalDevice[]
       }
-      
+
       return []
     } catch (error) {
         console.error('ALE Fetch Error:', error)

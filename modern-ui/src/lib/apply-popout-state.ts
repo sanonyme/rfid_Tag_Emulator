@@ -20,7 +20,6 @@ export type PopoutStateSetters = {
   setOcrMessage: (v: string) => void
   setCustomPort: (v: string) => void
   setCustomMessage: (v: string) => void
-  setAdamHost: (v: string) => void
   setDelay: (v: string) => void
   setHandheldDelay: (v: string) => void
   setAutomationSequences: (v: AutomationSequence[]) => void
@@ -48,7 +47,6 @@ export function applyPopoutInitState(
   if (s.ocrMessage != null) setters.setOcrMessage(s.ocrMessage)
   if (s.customPort != null) setters.setCustomPort(s.customPort)
   if (s.customMessage != null) setters.setCustomMessage(s.customMessage)
-  if (s.adamHost != null) setters.setAdamHost(s.adamHost)
   if (s.delay != null) setters.setDelay(s.delay)
   if (s.handheldDelay != null) setters.setHandheldDelay(s.handheldDelay)
 

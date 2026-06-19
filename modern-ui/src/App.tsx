@@ -1,23 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, Suspense } from 'react'
 import * as React from 'react'
 import { Tabs, TabsContent } from './components/ui/tabs'
-import { FixedTab } from './components/FixedTab'
-import { HandheldTab, type HandheldSlot } from './components/HandheldTab'
-import { OCRTab } from './components/OCRTab'
-import { DecoderTab } from './components/DecoderTab'
-import { AutomationTab } from './components/AutomationTab'
-import { CustomTab } from './components/CustomTab'
-import { AdamTab } from './components/AdamTab'
-import { ApiTab } from './components/Api'
-import { EdgeTab } from './components/EdgeTab'
-import { BarcodeGenerator } from './components/BarcodeGenerator'
-import { DatabaseTab } from './components/DatabaseTab'
-import { SftpTab } from './components/SftpTab'
-import { NetScanTab } from './components/NetScanTab'
-import { LinkToUidTab } from './components/LinkToUidTab'
-import { AdminTerminalTab } from './components/AdminTerminalTab'
-import { SystemLogAnalyzerTab } from './components/SystemLogAnalyzerTab'
-import { LogAggregatorTab } from './components/LogAggregatorTab'
+import { type HandheldSlot } from './components/HandheldTab'
 import { TitleBar } from './components/TitleBar'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
@@ -50,12 +34,105 @@ import { PopoutTitleBar } from './components/PopoutTitleBar'
 import { PopOutPlaceholder } from './components/PopOutPlaceholder'
 import { getPopoutTabFromHash, getPopoutTabLabel, isPopoutableTab } from './lib/popout-tabs'
 import { applyPopoutInitState } from './lib/apply-popout-state'
+
+const FixedTab = React.lazy(() => import('./components/FixedTab').then((m) => ({ default: m.FixedTab })))
+const HandheldTab = React.lazy(() => import('./components/HandheldTab').then((m) => ({ default: m.HandheldTab })))
+const OCRTab = React.lazy(() => import('./components/OCRTab').then((m) => ({ default: m.OCRTab })))
+const DecoderTab = React.lazy(() => import('./components/DecoderTab').then((m) => ({ default: m.DecoderTab })))
+const AutomationTab = React.lazy(() => import('./components/AutomationTab').then((m) => ({ default: m.AutomationTab })))
+const CustomTab = React.lazy(() => import('./components/CustomTab').then((m) => ({ default: m.CustomTab })))
+const ApiTab = React.lazy(() => import('./components/Api').then((m) => ({ default: m.ApiTab })))
+const EdgeTab = React.lazy(() => import('./components/EdgeTab').then((m) => ({ default: m.EdgeTab })))
+const BarcodeGenerator = React.lazy(() => import('./components/BarcodeGenerator').then((m) => ({ default: m.BarcodeGenerator })))
+const DatabaseTab = React.lazy(() => import('./components/DatabaseTab').then((m) => ({ default: m.DatabaseTab })))
+const SftpTab = React.lazy(() => import('./components/SftpTab').then((m) => ({ default: m.SftpTab })))
+const NetScanTab = React.lazy(() => import('./components/NetScanTab').then((m) => ({ default: m.NetScanTab })))
+const LinkToUidTab = React.lazy(() => import('./components/LinkToUidTab').then((m) => ({ default: m.LinkToUidTab })))
+const AdminTerminalTab = React.lazy(() => import('./components/AdminTerminalTab').then((m) => ({ default: m.AdminTerminalTab })))
+const SystemLogAnalyzerTab = React.lazy(() =>
+  import('./components/SystemLogAnalyzerTab').then((m) => ({ default: m.SystemLogAnalyzerTab })),
+)
+const LogAggregatorTab = React.lazy(() => import('./components/LogAggregatorTab').then((m) => ({ default: m.LogAggregatorTab })))
+
+/** Warm tab JS chunks in the background so first click rarely hits Suspense. */
+const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
+  fixed: () => import('./components/FixedTab'),
+  handheld: () => import('./components/HandheldTab'),
+  ocr: () => import('./components/OCRTab'),
+  custom: () => import('./components/CustomTab'),
+  api: () => import('./components/Api'),
+  edge: () => import('./components/EdgeTab'),
+  decoder: () => import('./components/DecoderTab'),
+  automation: () => import('./components/AutomationTab'),
+  generator: () => import('./components/BarcodeGenerator'),
+  database: () => import('./components/DatabaseTab'),
+  sftp: () => import('./components/SftpTab'),
+  netscan: () => import('./components/NetScanTab'),
+  link2uid: () => import('./components/LinkToUidTab'),
+  terminal: () => import('./components/AdminTerminalTab'),
+  logs: () => import('./components/SystemLogAnalyzerTab'),
+  logagg: () => import('./components/LogAggregatorTab'),
+}
+
+function preloadTabModules(): void {
+  const loaders = [
+    TAB_MODULE_LOADERS.fixed,
+    TAB_MODULE_LOADERS.handheld,
+    TAB_MODULE_LOADERS.ocr,
+    TAB_MODULE_LOADERS.edge,
+    TAB_MODULE_LOADERS.api,
+    TAB_MODULE_LOADERS.automation,
+    TAB_MODULE_LOADERS.database,
+  ]
+  const run = () => loaders.forEach((load) => void load())
+  if (typeof requestIdleCallback !== 'undefined') {
+    requestIdleCallback(run, { timeout: 2000 })
+  } else {
+    window.setTimeout(run, 100)
+  }
+}
+
+const TAB_PANEL_CLASS =
+  'h-full mt-0 rounded-xl border border-border/50 tab-content-animate data-[state=inactive]:hidden bg-background data-[state=active]:bg-background/95 data-[state=active]:backdrop-blur-sm'
+
+/** Tabs that unmount when inactive (e.g. terminal shell). */
+const UNMOUNT_ON_LEAVE = new Set(['terminal'])
+
+function TabLoadingFallback() {
+  return (
+    <div className="flex h-full min-h-[12rem] items-center justify-center text-sm text-muted-foreground">
+      Loading…
+    </div>
+  )
+}
+
+function TabPanel({
+  tabId,
+  visited,
+  className,
+  children,
+}: {
+  tabId: string
+  visited: boolean
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <TabsContent
+      value={tabId}
+      forceMount={visited && !UNMOUNT_ON_LEAVE.has(tabId) ? true : undefined}
+      className={className}
+    >
+      <Suspense fallback={<TabLoadingFallback />}>{children}</Suspense>
+    </TabsContent>
+  )
+}
+
 const TAB_VALUES_FULL = [
   'fixed',
   'handheld',
   'ocr',
   'custom',
-  'adam',
   'api',
   'decoder',
   'automation',
@@ -65,10 +142,10 @@ const TAB_VALUES_FULL = [
   'netscan',
 ] as const
 const TAB_VALUES = (IS_MOBILE
-  ? TAB_VALUES_FULL.filter((t) => t !== 'adam' && t !== 'netscan')
-  : TAB_VALUES_FULL.filter((t) => t !== 'adam')) as readonly string[]
+  ? TAB_VALUES_FULL.filter((t) => t !== 'netscan')
+  : TAB_VALUES_FULL) as readonly string[]
 
-const ADMIN_TAB_VALUES = ['adam', 'link2uid', 'terminal', 'logs', 'logagg'] as const
+const ADMIN_TAB_VALUES = ['link2uid', 'terminal', 'logs', 'logagg'] as const
 
 function App() {
   const { settings, setSettings } = useSettings()
@@ -105,9 +182,6 @@ function App() {
   const [customPort, setCustomPort] = useState('12345')
   const [customMessage, setCustomMessage] = useState('')
 
-  // ADAM Tab persistent state
-  const [adamHost, setAdamHost] = useState('')
-
   // Automation Tab persistent state (sequences run in order: 1, 2, 3...)
   const [automationSequences, setAutomationSequences] = useState<AutomationSequence[]>(() => [
     { id: crypto.randomUUID(), name: 'Sequence 1', order: 0, steps: [] }
@@ -115,19 +189,25 @@ function App() {
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
-    if (defaultTab === 'adam') return 'fixed'
     return defaultTab
   })
 
   /**
-   * Tabs that have ever been visited this session. We lazy-mount each tab
-   * on first activation and then keep it mounted across switches so that
-   * connections, logs and in-flight transfers survive tab changes.
+   * Visited tabs stay mounted (hidden when inactive) so revisiting is instant
+   * and tab state is preserved.
    */
-  const [mountedTabs, setMountedTabs] = useState<Set<string>>(() => new Set([activeTab]))
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([activeTab]))
+
+  /** Mark visited in the same tick as the tab change so forceMount does not flip after Suspense starts. */
+  const switchTab = useCallback((tab: string) => {
+    void TAB_MODULE_LOADERS[tab]?.()
+    setActiveTab(tab)
+    setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set([...prev, tab])))
+  }, [])
+
   React.useEffect(() => {
-    setMountedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])))
-  }, [activeTab])
+    preloadTabModules()
+  }, [])
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -138,9 +218,23 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false)
   const [tourRun, setTourRun] = useState(false)
 
+  const handleAdminLogin = useCallback(() => {
+    setIsAdmin(true)
+    switchTab('link2uid')
+    toast.success('Admin access granted')
+  }, [switchTab])
+
+  const handleAdminLogout = useCallback(() => {
+    void window.electronAPI?.adminLogout?.()
+    setIsAdmin(false)
+    switchTab('fixed')
+  }, [switchTab])
+
   React.useEffect(() => {
-    if (!isAdmin && activeTab === 'adam') setActiveTab('fixed')
-  }, [isAdmin, activeTab])
+    void window.electronAPI?.adminIsAuthenticated?.().then((res) => {
+      if (res?.ok) setIsAdmin(true)
+    })
+  }, [])
 
   const [popoutTabId] = useState<string | null>(() => getPopoutTabFromHash())
   const isPopoutWindow = Boolean(popoutTabId && window.electronAPI?.popoutGetWindowInfo)
@@ -168,9 +262,9 @@ function App() {
   }, [emulator])
 
   const handleOpenBase64 = useCallback(() => {
-    setActiveTab('api')
+    switchTab('api')
     setBase64Open(true)
-  }, [])
+  }, [switchTab])
 
   const handleOpenSettings = useCallback((highlight?: SettingsHighlightTarget) => {
     setSettingsHighlight(highlight ?? null)
@@ -221,7 +315,6 @@ function App() {
     setOcrMessage(profile.ocrMessage)
     if (profile.customPort) setCustomPort(profile.customPort)
     if (profile.customMessage) setCustomMessage(profile.customMessage)
-    if (profile.adamHost) setAdamHost(profile.adamHost)
     setDelay(profile.delay)
     setHandheldDelay(profile.handheldDelay ?? profile.delay)
     if (profile.automationSequences?.length) {
@@ -248,7 +341,6 @@ function App() {
     ocrMessage,
     customPort,
     customMessage,
-    adamHost,
     delay,
     handheldDelay,
     automationSequences
@@ -270,7 +362,6 @@ function App() {
       setOcrMessage,
       setCustomPort,
       setCustomMessage,
-      setAdamHost,
       setDelay,
       setHandheldDelay,
       setAutomationSequences,
@@ -295,7 +386,7 @@ function App() {
             const next = [...TAB_VALUES, ...(isAdmin ? [...ADMIN_TAB_VALUES] : [])].find(
               (t) => t !== tabId && !poppedOutTabs.has(t),
             )
-            if (next) setActiveTab(next)
+            if (next) switchTab(next)
           }
           toast.success(`${getPopoutTabLabel(tabId)} opened in new window`)
         }
@@ -304,7 +395,7 @@ function App() {
         toast.error('Could not open pop-out window')
       }
     },
-    [activeTab, currentProfileState, isAdmin, poppedOutTabs],
+    [activeTab, currentProfileState, isAdmin, poppedOutTabs, switchTab],
   )
 
   const handleDockPopout = useCallback(async (tabId: string) => {
@@ -355,9 +446,9 @@ function App() {
 
   React.useEffect(() => {
     if (!isPopoutWindow || !popoutTabId) return
-    setMountedTabs(new Set([popoutTabId]))
-    setActiveTab(popoutTabId)
-  }, [isPopoutWindow, popoutTabId])
+    setVisitedTabs(new Set([popoutTabId]))
+    switchTab(popoutTabId)
+  }, [isPopoutWindow, popoutTabId, switchTab])
 
   React.useEffect(() => {
     if (isPopoutWindow || !window.electronAPI?.popoutBroadcastState) return
@@ -477,16 +568,16 @@ function App() {
         const num = parseInt(e.key)
         if (num >= 1 && num <= 9) {
           e.preventDefault()
-          setActiveTab(TAB_VALUES[num - 1])
+          switchTab(TAB_VALUES[num - 1])
         } else if (e.key === '0') {
           e.preventDefault()
-          setActiveTab(TAB_VALUES[9])
+          switchTab(TAB_VALUES[9])
         }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [switchTab])
 
   if (IS_MOBILE) {
     return <AppMobile />
@@ -498,16 +589,16 @@ function App() {
   return (
     <TooltipProvider delayDuration={300}>
     <TourInteractionProvider tourRun={tourRun}>
-    <EdgeSessionProvider host={host} alePort={alePort} tcpConnected={connected}>
+    <EdgeSessionProvider
+      host={host}
+      alePort={alePort}
+      tcpConnected={connected}
+      pollActive={effectiveActiveTab === 'edge' || effectiveActiveTab === 'automation'}
+    >
     <div className="h-screen flex flex-col bg-background relative overflow-hidden">
       {currentTheme === 'christmas' && <SnowOverlay />}
-      {/* Animated Background Elements */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/5 rounded-full blur-3xl animate-pulse-slow animate-float"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary/3 rounded-full blur-3xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1s' }}></div>
-        <div className="absolute top-1/4 right-1/3 w-64 h-64 bg-accent/5 rounded-full blur-2xl animate-pulse-slow animate-float" style={{ animationDelay: '0.5s' }}></div>
-        <div className="absolute bottom-1/3 left-1/3 w-48 h-48 bg-primary/3 rounded-full blur-2xl animate-pulse-slow animate-float-reverse" style={{ animationDelay: '1.5s' }}></div>
-        <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.03)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.03)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000,transparent)]"></div>
+        <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.02)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000,transparent)]" />
       </div>
 
       {/* Custom Titlebar (Windows/Mac only) */}
@@ -533,7 +624,7 @@ function App() {
           actionsMenu={
             <BottomMenu
               activeTab={activeTab}
-              onSwitchTab={setActiveTab}
+              onSwitchTab={switchTab}
               onOpenProfiles={() => setProfilesOpen(true)}
               onOpenSaveCurrent={() => setSaveProfileOpen(true)}
               onOpenSettings={() => handleOpenSettings()}
@@ -545,8 +636,8 @@ function App() {
               }}
               inline
               isAdmin={isAdmin}
-              onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
-              onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
+              onAdminLogin={handleAdminLogin}
+              onAdminLogout={handleAdminLogout}
             />
           }
         />
@@ -567,7 +658,7 @@ function App() {
       <div className="electron-no-drag flex flex-1 overflow-hidden relative z-10 min-h-0">
         <Tabs
           value={effectiveActiveTab}
-          onValueChange={isPopoutWindow ? undefined : setActiveTab}
+          onValueChange={isPopoutWindow ? undefined : switchTab}
           className="flex flex-1 min-h-0 min-w-0 overflow-hidden"
         >
           {isAdmin && !isPopoutWindow && (
@@ -652,11 +743,12 @@ function App() {
               />
             ) : (
             <>
-            <TabsContent
-              value="fixed"
-              forceMount={mountedTabs.has('fixed') ? true : undefined}
+            <TabPanel
+              tabId="fixed"
+              visited={visitedTabs.has('fixed')}
               className={cn(
-                'h-full mt-0 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate data-[state=inactive]:hidden flex flex-col min-h-0',
+                TAB_PANEL_CLASS,
+                'flex flex-col min-h-0',
                 isPopoutWindow && popoutTabId === 'fixed'
                   ? 'p-3 overflow-hidden'
                   : 'p-6 overflow-y-auto',
@@ -690,9 +782,9 @@ function App() {
                 fixedTabActive={effectiveActiveTab === 'fixed'}
                 isPopout={isPopoutWindow && popoutTabId === 'fixed'}
               />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="handheld" forceMount={mountedTabs.has('handheld') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="handheld" visited={visitedTabs.has('handheld')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
@@ -700,9 +792,9 @@ function App() {
                 setHandheldDelay={setHandheldDelay}
                 rssi={rssi}
               />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="ocr" forceMount={mountedTabs.has('ocr') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="ocr" visited={visitedTabs.has('ocr')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <OCRTab 
                 host={host} 
                 connected={connected} 
@@ -710,9 +802,9 @@ function App() {
                 message={ocrMessage}
                 setMessage={setOcrMessage}
               />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="custom" forceMount={mountedTabs.has('custom') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="custom" visited={visitedTabs.has('custom')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <CustomTab 
                 host={host} 
                 message={customMessage}
@@ -720,30 +812,21 @@ function App() {
                 port={customPort}
                 setPort={setCustomPort}
               />
-            </TabsContent>
+            </TabPanel>
 
-            {!IS_MOBILE && (
-            <TabsContent value="adam" forceMount={mountedTabs.has('adam') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
-              <AdamTab 
-                host={adamHost} 
-                setHost={setAdamHost}
-              />
-            </TabsContent>
-            )}
-
-            <TabsContent value="api" forceMount={mountedTabs.has('api') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="api" visited={visitedTabs.has('api')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="edge" forceMount={mountedTabs.has('edge') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden flex flex-col data-[state=inactive]:hidden">
-              <EdgeTab onSwitchTab={setActiveTab} />
-            </TabsContent>
+            <TabPanel tabId="edge" visited={visitedTabs.has('edge')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden flex flex-col')}>
+              <EdgeTab onSwitchTab={switchTab} />
+            </TabPanel>
 
-            <TabsContent value="decoder" forceMount={mountedTabs.has('decoder') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="decoder" visited={visitedTabs.has('decoder')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <DecoderTab />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="automation" forceMount={mountedTabs.has('automation') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
+            <TabPanel tabId="automation" visited={visitedTabs.has('automation')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
@@ -756,38 +839,38 @@ function App() {
                 sequences={automationSequences}
                 setSequences={setAutomationSequences}
               />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="generator" forceMount={mountedTabs.has('generator') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+            <TabPanel tabId="generator" visited={visitedTabs.has('generator')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <BarcodeGenerator />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="database" forceMount={mountedTabs.has('database') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
-              <DatabaseTab host={host} connected={connected} />
-            </TabsContent>
+            <TabPanel tabId="database" visited={visitedTabs.has('database')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+              <DatabaseTab host={host} connected={connected} active={effectiveActiveTab === 'database'} />
+            </TabPanel>
 
-            <TabsContent value="sftp" forceMount={mountedTabs.has('sftp') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
+            <TabPanel tabId="sftp" visited={visitedTabs.has('sftp')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <SftpTab host={host} setHost={setHost} />
-            </TabsContent>
+            </TabPanel>
 
-            <TabsContent value="netscan" forceMount={mountedTabs.has('netscan') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
+            <TabPanel tabId="netscan" visited={visitedTabs.has('netscan')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <NetScanTab host={host} setHost={setHost} />
-            </TabsContent>
+            </TabPanel>
 
             {isAdmin && (
               <>
-                <TabsContent value="link2uid" forceMount={mountedTabs.has('link2uid') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+                <TabPanel tabId="link2uid" visited={visitedTabs.has('link2uid')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <LinkToUidTab />
-                </TabsContent>
-                <TabsContent value="terminal" forceMount={mountedTabs.has('terminal') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-hidden data-[state=inactive]:hidden">
+                </TabPanel>
+                <TabPanel tabId="terminal" visited={visitedTabs.has('terminal')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
                   <AdminTerminalTab active={effectiveActiveTab === 'terminal'} />
-                </TabsContent>
-                <TabsContent value="logs" forceMount={mountedTabs.has('logs') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+                </TabPanel>
+                <TabPanel tabId="logs" visited={visitedTabs.has('logs')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <SystemLogAnalyzerTab />
-                </TabsContent>
-                <TabsContent value="logagg" forceMount={mountedTabs.has('logagg') ? true : undefined} className="h-full mt-0 p-6 bg-background/60 backdrop-blur-sm rounded-xl border border-border/50 tab-content-animate overflow-y-auto data-[state=inactive]:hidden">
+                </TabPanel>
+                <TabPanel tabId="logagg" visited={visitedTabs.has('logagg')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <LogAggregatorTab />
-                </TabsContent>
+                </TabPanel>
               </>
             )}
             </>
@@ -804,7 +887,7 @@ function App() {
     <CommandPalette
       open={paletteOpen}
       onOpenChange={setPaletteOpen}
-      onSwitchTab={setActiveTab}
+      onSwitchTab={switchTab}
       connected={connected}
       onConnect={handlePaletteConnect}
       onDisconnect={handlePaletteDisconnect}
@@ -815,8 +898,8 @@ function App() {
       onOpenBase64={handleOpenBase64}
       host={host}
       isAdmin={isAdmin}
-      onAdminLogin={() => { setIsAdmin(true); setActiveTab('link2uid'); toast.success('Admin access granted') }}
-      onAdminLogout={() => { setIsAdmin(false); setActiveTab('fixed') }}
+      onAdminLogin={handleAdminLogin}
+      onAdminLogout={handleAdminLogout}
     />
     )}
     <Toaster richColors position="bottom-right" />
@@ -825,7 +908,7 @@ function App() {
       run={tourRun}
       onRunChange={setTourRun}
       activeTab={activeTab}
-      setActiveTab={setActiveTab}
+      setActiveTab={switchTab}
       isAdmin={isAdmin}
       emulatorConnected={connected}
     />

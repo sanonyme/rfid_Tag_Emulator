@@ -160,7 +160,6 @@ function AppMobile() {
     ocrMessage,
     customPort,
     customMessage,
-    adamHost: '',
     delay,
     handheldDelay,
     automationSequences,
