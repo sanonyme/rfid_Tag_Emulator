@@ -21,7 +21,13 @@ import { Slider } from './ui/slider'
 import { Badge } from './ui/badge'
 import { Reveal } from './Reveal'
 import { cn } from '@/lib/utils'
-import { indicatorSpring, prefersReducedMotion } from '@/lib/motion'
+import {
+  indicatorSpring,
+  prefersReducedMotion,
+  SLIDE_TAB_ATTR,
+  SlidingHighlight,
+  useSlidingIndicator,
+} from '@/lib/motion'
 
 type ErrorLevel = 'L' | 'M' | 'Q' | 'H'
 
@@ -79,6 +85,7 @@ export function SimpleQrCodeGenerator() {
   const [includeMargin, setIncludeMargin] = useState(true)
   const qrRef = useRef<HTMLDivElement>(null)
   const reduced = prefersReducedMotion()
+  const errorLevelNav = useSlidingIndicator(level)
 
   const trimmed = content.trim()
   const hasContent = trimmed.length > 0
@@ -246,28 +253,31 @@ export function SimpleQrCodeGenerator() {
 
               <div className="space-y-2 rounded-xl border border-border/40 bg-background/70 p-4">
                 <Label className="text-sm font-medium">Error correction</Label>
-                <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted/40 p-1 ring-1 ring-border/25">
+                <div
+                  ref={errorLevelNav.containerRef}
+                  className="relative grid grid-cols-4 gap-1 rounded-lg bg-muted/40 p-1 ring-1 ring-border/25"
+                >
+                  <SlidingHighlight
+                    rect={errorLevelNav.rect}
+                    ready={errorLevelNav.ready}
+                    className="rounded-md"
+                    transition={reduced ? { duration: 0 } : indicatorSpring}
+                  />
                   {ERROR_LEVELS.map((opt) => {
                     const active = level === opt.value
                     return (
                       <button
                         key={opt.value}
+                        {...{ [SLIDE_TAB_ATTR]: opt.value }}
                         type="button"
                         onClick={() => setLevel(opt.value)}
                         className={cn(
-                          'relative rounded-md px-1 py-2 text-center transition-colors',
+                          'relative z-[1] rounded-md px-1 py-2 text-center transition-colors',
                           active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                         )}
                       >
-                        {active && (
-                          <motion.span
-                            layoutId="qr-error-level"
-                            className="absolute inset-0 rounded-md bg-background shadow-elev-sm ring-1 ring-border/40"
-                            transition={reduced ? { duration: 0 } : indicatorSpring}
-                          />
-                        )}
-                        <span className="relative z-10 block text-[11px] font-semibold">{opt.label}</span>
-                        <span className="relative z-10 block text-[9px] text-muted-foreground">{opt.hint}</span>
+                        <span className="block text-[11px] font-semibold">{opt.label}</span>
+                        <span className="block text-[9px] text-muted-foreground">{opt.hint}</span>
                       </button>
                     )
                   })}

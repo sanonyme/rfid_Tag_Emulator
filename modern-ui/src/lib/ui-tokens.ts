@@ -26,13 +26,5 @@ export const actionBtnMuted =
 export const sectionLabel =
   "text-xs font-semibold uppercase tracking-wide text-muted-foreground"
 
-/**
- * Segmented sub-navigation (in-tab Tabs). Pair `segmentedTabsList` on the
- * `TabsList` with `segmentedTabTrigger` on each `TabsTrigger` for a consistent
- * pill-style switcher across tabs (LAN, Generator, ...).
- */
 export const segmentedTabsList =
   "grid h-auto w-full gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30"
-
-export const segmentedTabTrigger =
-  "gap-1.5 rounded-lg text-xs data-[state=active]:shadow-sm"

@@ -613,7 +613,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3" data-tour="tour-netscan-root">
+    <div className="stagger-children flex h-full min-h-0 flex-col gap-3" data-tour="tour-netscan-root">
       <Tabs value={lanMode} onValueChange={(v) => setLanMode(v as typeof lanMode)} className="flex h-full min-h-0 flex-col">
         <SegmentedTabs
           value={lanMode}
@@ -975,7 +975,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                 </div>
                 {readers.results.length === 0 && !readers.scanning && (
                   <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-                    Run reader discovery to detect any RFID reader on your LAN (LLRP + HTTP vendor fingerprint).
+                    Run reader discovery to detect any RFID reader on your LAN.
                   </p>
                 )}
                 {readers.results.map((r) => (
@@ -1268,7 +1268,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
       {host && (
         <p className="text-xs text-muted-foreground shrink-0">
-          Current reader host: <span className="font-mono text-foreground">{host}</span>
+          Current host: <span className="font-mono text-foreground">{host}</span>
         </p>
       )}
     </div>

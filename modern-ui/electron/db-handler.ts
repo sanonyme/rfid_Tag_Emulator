@@ -3,12 +3,50 @@ import type { Connection } from 'mysql2/promise'
 import { assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
 
 let connection: Connection | null = null
+let currentDatabase: string | null = null
+
+/** ponytail: per-table meta cache; cleared on disconnect. Page changes = SELECT only. */
+type TableMeta = {
+  columnTypes: Record<string, string>
+  primaryKeys: string[]
+  rowEstimate: number
+}
+const tableMetaCache = new Map<string, TableMeta>()
+
+function tableMetaKey(db: string, table: string): string {
+  return `${db}\0${table}`
+}
 
 async function selectDatabase(database: string): Promise<void> {
   if (!connection) throw new Error('Not connected')
   const safe = assertSafeSqlIdentifier(database)
   if (!safe) throw new Error('Invalid database name')
+  if (currentDatabase === safe) return
   await connection.query(`USE \`${safe}\``)
+  currentDatabase = safe
+}
+
+async function fetchTableMeta(safeDb: string, safeTable: string): Promise<TableMeta> {
+  if (!connection) throw new Error('Not connected')
+  const [colResult, keyResult, estResult] = await Promise.all([
+    connection.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``),
+    connection.query(
+      `SHOW KEYS FROM \`${safeTable}\` FROM \`${safeDb}\` WHERE Key_name = 'PRIMARY'`,
+    ),
+    connection.query(
+      `SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+      [safeDb, safeTable],
+    ),
+  ])
+  const columnTypes: Record<string, string> = {}
+  for (const r of colResult[0] as any[]) {
+    columnTypes[String(r.Field)] = String(r.Type)
+  }
+  const primaryKeys = (keyResult[0] as any[])
+    .sort((a, b) => (a.Seq_in_index ?? 0) - (b.Seq_in_index ?? 0))
+    .map((r) => String(r.Column_name))
+  const rowEstimate = parseInt(String((estResult[0] as any[])[0]?.TABLE_ROWS), 10) || 0
+  return { columnTypes, primaryKeys, rowEstimate }
 }
 
 function sanitizeValue(val: any): any {
@@ -43,6 +81,8 @@ export async function dbConnect(host: string, user: string, password: string): P
       await connection.end().catch(() => {})
       connection = null
     }
+    currentDatabase = null
+    tableMetaCache.clear()
 
     connection = await mysql.createConnection({
       host,
@@ -68,6 +108,8 @@ export async function dbDisconnect(): Promise<void> {
     await connection.end().catch(() => {})
     connection = null
   }
+  currentDatabase = null
+  tableMetaCache.clear()
 }
 
 /** List databases on the existing connection (no reconnect). */
@@ -123,55 +165,36 @@ export async function dbGetTableData(
   try {
     await selectDatabase(safeDb)
 
-    const [rows, fields] = await connection.query(
+    const cacheKey = tableMetaKey(safeDb, safeTable)
+    const cached = tableMetaCache.get(cacheKey)
+
+    const dataPromise = connection.query(
       `SELECT * FROM \`${safeTable}\` LIMIT ? OFFSET ?`,
       [limit, offset],
     )
+    const metaPromise = cached ? Promise.resolve(cached) : fetchTableMeta(safeDb, safeTable)
+
+    const [[rows, fields], meta] = await Promise.all([dataPromise, metaPromise])
+    if (!cached) tableMetaCache.set(cacheKey, meta)
+
     const rowArr = rows as any[]
     const columns = (fields as any[]).map((f: any) => f.name)
 
-    const [metaRows] = await connection.query(
-      `SELECT c.COLUMN_NAME, c.COLUMN_TYPE, c.ORDINAL_POSITION,
-              MAX(CASE WHEN k.CONSTRAINT_NAME = 'PRIMARY' THEN k.ORDINAL_POSITION END) AS pk_ord
-       FROM information_schema.COLUMNS c
-       LEFT JOIN information_schema.KEY_COLUMN_USAGE k
-         ON k.TABLE_SCHEMA = c.TABLE_SCHEMA
-        AND k.TABLE_NAME = c.TABLE_NAME
-        AND k.COLUMN_NAME = c.COLUMN_NAME
-        AND k.CONSTRAINT_NAME = 'PRIMARY'
-       WHERE c.TABLE_SCHEMA = ? AND c.TABLE_NAME = ?
-       GROUP BY c.COLUMN_NAME, c.COLUMN_TYPE, c.ORDINAL_POSITION
-       ORDER BY c.ORDINAL_POSITION`,
-      [safeDb, safeTable],
-    )
-
-    const columnTypes: Record<string, string> = {}
-    const primaryKeys: string[] = []
-    const pkEntries: { ord: number; name: string }[] = []
-    for (const r of metaRows as any[]) {
-      const name = String(r.COLUMN_NAME)
-      columnTypes[name] = String(r.COLUMN_TYPE)
-      if (r.pk_ord != null) {
-        pkEntries.push({ ord: parseInt(String(r.pk_ord), 10) || 0, name })
-      }
-    }
-    pkEntries.sort((a, b) => a.ord - b.ord)
-    for (const e of pkEntries) primaryKeys.push(e.name)
-
-    let total = 0
-    const [estimateRows] = await connection.query(
-      `SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
-      [safeDb, safeTable],
-    )
-    total = parseInt(String((estimateRows as any[])[0]?.TABLE_ROWS), 10) || 0
-
+    let total = meta.rowEstimate
     if (rowArr.length < limit) {
       total = offset + rowArr.length
     } else {
       total = Math.max(total, offset + limit + 1)
     }
 
-    return { ok: true, columns, rows: rowArr.map(sanitizeRow), total, columnTypes, primaryKeys }
+    return {
+      ok: true,
+      columns,
+      rows: rowArr.map(sanitizeRow),
+      total,
+      columnTypes: meta.columnTypes,
+      primaryKeys: meta.primaryKeys,
+    }
   } catch (err: any) {
     return { ok: false, error: err.message }
   }
@@ -408,26 +431,11 @@ export async function dbExportTable(
   }
 }
 
-export interface DbSchemaColumn {
-  name: string
-  type: string
-  key: string
-}
-
-export interface DbSchemaTable {
-  name: string
-  columns: DbSchemaColumn[]
-}
-
-export interface DbSchemaForeignKey {
-  constraintName: string
-  childTable: string
-  childColumns: string[]
-  parentTable: string
-  parentColumns: string[]
-}
-
-/** Tables + foreign keys from INFORMATION_SCHEMA for ER-style visualization */
+import type {
+  DbSchemaColumn,
+  DbSchemaForeignKey,
+  DbSchemaTable,
+} from '../src/lib/db-schema-types.js'
 export async function dbGetDatabaseSchema(
   database: string
 ): Promise<

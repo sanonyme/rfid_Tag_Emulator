@@ -393,7 +393,7 @@ export function HandheldTab({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4">
+    <div className="stagger-children flex h-full min-h-0 flex-col gap-4">
       {/* Toolbar */}
       <div className={cn(sectionCard, 'shrink-0 px-4 py-3 sm:px-5 sm:py-3.5')} data-tour="tour-handheld-toolbar">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2.5 lg:flex-nowrap lg:justify-between lg:gap-4">
@@ -468,7 +468,7 @@ export function HandheldTab({
         data-tour="tour-handheld-slots"
       >
         <div
-          className="stagger-children grid gap-4 p-1"
+          className="grid gap-4 p-1"
           style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${slots.length === 1 ? '420px' : '380px'}, 1fr))` }}
         >
           {slots.map((slot) => (

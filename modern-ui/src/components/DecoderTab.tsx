@@ -7,11 +7,15 @@ import { Textarea } from './ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Badge } from './ui/badge'
 import { Switch } from './ui/switch'
-import { EPCDecoder, EPCEncoder, uidToEpcSerial } from '../lib/decoder'
+import { EPCDecoder, uidToEpcSerial } from '../lib/decoder'
 import {
   prewarmTdt,
+  tdtAutodetect,
   tdtDecode,
+  tdtEncode,
+  tdtListSchemes,
   type TdtDecodeResult,
+  type TdtDetectedScheme,
   type TdtOutputLevel,
 } from '../lib/tdt'
 import { ArrowDown, ArrowUp, Copy, Check, Loader2, Sparkles, Download } from 'lucide-react'
@@ -20,7 +24,9 @@ import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from './ui/select'
@@ -89,6 +95,95 @@ const EXAMPLE_EPCS: Array<{ label: string; value: string }> = [
   { label: 'EPC Pure URI', value: 'urn:epc:id:sgtin:9521234.012345.32a%2Fb' },
   { label: 'Bare ID', value: 'gtin=09521234123453;serial=32a/b' },
 ]
+
+/** Identifier-level examples for TDT encode → HEX (not hex-in-hex). */
+const EXAMPLE_ENCODE: Array<{ label: string; value: string }> = [
+  { label: 'AI JSON', value: '{"01":"09521234123453","21":"32a/b"}' },
+  { label: 'Digital Link', value: 'https://id.gs1.org/01/09521234123453/21/32a%2Fb' },
+  { label: 'EPC Pure URI', value: 'urn:epc:id:sgtin:9521234.012345.32a%2Fb' },
+  { label: 'EPC Tag URI', value: 'urn:epc:tag:sgtin-198:0.9521234.012345.32a%2F' },
+  { label: 'Bare ID', value: 'gtin=09521234123453;serial=32a/b' },
+]
+
+function buildSgtinAiJson(
+  gtin: string,
+  serial: string,
+  serialIsUid: boolean,
+): { input?: string; error?: string } {
+  let serialVal = serial.trim()
+  if (serialIsUid) {
+    const parsed = uidToEpcSerial(serialVal)
+    if (parsed.error) return { error: parsed.error }
+    serialVal = parsed.serial
+  }
+  const digits = gtin.replace(/\D/g, '')
+  let gtin14: string
+  if (digits.length === 13) {
+    gtin14 = digits + EPCDecoder.calculateCheckDigit(digits)
+  } else if (digits.length === 14) {
+    gtin14 = digits
+  } else {
+    return { error: 'GTIN must be 13 or 14 digits' }
+  }
+  return { input: JSON.stringify({ '01': gtin14, '21': serialVal }) }
+}
+
+const SCHEME_AUTO = '__auto__'
+
+function TdtSchemeSelect({
+  value,
+  onValueChange,
+  detected,
+  allSchemes,
+  id,
+}: {
+  value: string
+  onValueChange: (scheme: string) => void
+  detected: TdtDetectedScheme[]
+  allSchemes: string[]
+  id?: string
+}) {
+  const detectedNames = new Set(detected.map((d) => d.scheme))
+  const rest = allSchemes.filter((s) => !detectedNames.has(s)).sort((a, b) => a.localeCompare(b))
+  const autoHint = detected[0]?.scheme
+
+  return (
+    <Select value={value || SCHEME_AUTO} onValueChange={(v) => onValueChange(v === SCHEME_AUTO ? '' : v)}>
+      <SelectTrigger id={id} className="h-9 rounded-lg border-border/50 bg-background/80">
+        <SelectValue placeholder="Scheme" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={SCHEME_AUTO}>
+          Auto-detect{autoHint ? ` · ${autoHint}` : ''}
+        </SelectItem>
+        {detected.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>Detected</SelectLabel>
+            {detected.map((d) => (
+              <SelectItem key={`d-${d.scheme}-${d.level}`} value={d.scheme}>
+                {d.scheme}
+                <span className="ml-2 text-xs text-muted-foreground">{d.level}</span>
+                {typeof d.detectedGCPLength === 'number' && d.detectedGCPLength > 0 && (
+                  <span className="ml-2 text-[10px] text-muted-foreground">GCP {d.detectedGCPLength}</span>
+                )}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+        {rest.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>All schemes</SelectLabel>
+            {rest.map((s) => (
+              <SelectItem key={`a-${s}`} value={s}>
+                {s}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+      </SelectContent>
+    </Select>
+  )
+}
 
 function EpcBitVisualizer({
   decoded,
@@ -347,19 +442,48 @@ export function DecoderTab() {
   } | null>(null)
   const [decodeError, setDecodeError] = useState<string | null>(null)
   const [decoding, setDecoding] = useState(false)
+  const [decodeDetected, setDecodeDetected] = useState<TdtDetectedScheme[]>([])
+  const [allTdtSchemes, setAllTdtSchemes] = useState<string[]>([])
 
-  // -------- Encode state (SGTIN-96) --------
+  // -------- Encode (TDT → HEX) --------
+  const [encodeInput, setEncodeInput] = useState('')
+  const [encodeScheme, setEncodeScheme] = useState('')
+  const [encodeDetected, setEncodeDetected] = useState<TdtDetectedScheme[]>([])
   const [gtinInput, setGtinInput] = useState('')
   const [serialInput, setSerialInput] = useState('')
   const [companyPrefixLen, setCompanyPrefixLen] = useState('6')
   const [filterValue, setFilterValue] = useState('0')
-  const [encodedResult, setEncodedResult] = useState<{ epc?: string; error?: string } | null>(null)
+  const [encodedResult, setEncodedResult] = useState<{
+    value?: string
+    scheme?: string
+    error?: string
+  } | null>(null)
   const [serialIsUid, setSerialIsUid] = useState(false)
+  const [encoding, setEncoding] = useState(false)
 
   // Pre-warm the TDT translator + artefacts when this tab mounts.
   useEffect(() => {
     prewarmTdt()
+    void tdtListSchemes().then(setAllTdtSchemes).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const raw = epcInput.trim()
+    if (!raw) {
+      setDecodeDetected([])
+      return
+    }
+    void tdtAutodetect(raw).then(setDecodeDetected)
+  }, [epcInput])
+
+  useEffect(() => {
+    const raw = encodeInput.trim()
+    if (!raw) {
+      setEncodeDetected([])
+      return
+    }
+    void tdtAutodetect(raw).then(setEncodeDetected)
+  }, [encodeInput])
 
   const handleDecode = async (overrides?: { scheme?: string }) => {
     const raw = epcInput.trim()
@@ -388,10 +512,6 @@ export function DecoderTab() {
         return
       }
       setTdtResult(r.result)
-      // If user hadn't explicitly forced a scheme, sync the picker with detection.
-      if (!forcedScheme && !overrides?.scheme) {
-        setForcedScheme(r.result.scheme)
-      }
       toast.success(`Decoded as ${r.result.scheme}`)
     } catch (e) {
       const msg = (e as Error).message || 'Decoding failed'
@@ -409,32 +529,62 @@ export function DecoderTab() {
     }
   }
 
-  const handleEncode = () => {
-    if (!gtinInput.trim() || !serialInput.trim()) {
-      setEncodedResult({ error: 'Please enter both GTIN and Serial' })
-      return
-    }
-    try {
-      let serial = serialInput.trim()
-      if (serialIsUid) {
-        const parsed = uidToEpcSerial(serial)
-        if (parsed.error) {
-          setEncodedResult({ error: parsed.error })
-          toast.error(parsed.error)
-          return
-        }
-        serial = parsed.serial
+  const handleEncode = async () => {
+    let raw = encodeInput.trim()
+    if (!raw) {
+      if (!gtinInput.trim() || !serialInput.trim()) {
+        setEncodedResult({ error: 'Enter an identifier above or GTIN + serial below' })
+        return
       }
-      const length = parseInt(companyPrefixLen)
-      const filter = parseInt(filterValue)
-      const result = EPCEncoder.encodeSgtin96(gtinInput, serial, length, filter)
-      setEncodedResult(result)
-      if (result.error) toast.error(result.error)
-      else toast.success('EPC Encoded successfully')
+      const built = buildSgtinAiJson(gtinInput, serialInput, serialIsUid)
+      if (built.error) {
+        setEncodedResult({ error: built.error })
+        toast.error(built.error)
+        return
+      }
+      raw = built.input!
+    }
+
+    setEncoding(true)
+    setEncodedResult(null)
+    const fromQuickSgtin = !encodeInput.trim()
+    try {
+      const r = await tdtEncode(raw, 'HEX', {
+        scheme: encodeScheme || undefined,
+        filter: parseInt(filterValue, 10) || 0,
+        ...(fromQuickSgtin ? { gcpLength: parseInt(companyPrefixLen, 10) || 6 } : {}),
+      })
+      if (!r.ok) {
+        setEncodedResult({ error: r.error })
+        toast.error(r.error)
+        return
+      }
+      setEncodedResult({ value: r.value, scheme: r.scheme })
+      toast.success(`Encoded as ${r.scheme}`)
     } catch {
       setEncodedResult({ error: 'Encoding failed' })
       toast.error('Encoding failed')
+    } finally {
+      setEncoding(false)
     }
+  }
+
+  const handleClear = () => {
+    setEpcInput('')
+    setForcedScheme('')
+    setTdtResult(null)
+    setSgtinResult(null)
+    setDecodeError(null)
+    setDecodeDetected([])
+    setEncodeInput('')
+    setEncodeScheme('')
+    setEncodeDetected([])
+    setGtinInput('')
+    setSerialInput('')
+    setCompanyPrefixLen('6')
+    setFilterValue('0')
+    setEncodedResult(null)
+    setSerialIsUid(false)
   }
 
   const gtinDigits = gtinInput.replace(/[^0-9]/g, '')
@@ -473,14 +623,11 @@ export function DecoderTab() {
     return null
   }, [gtinDigits])
 
-  const detectedSchemes = tdtResult?.detectedSchemes ?? []
-  const hasMultipleSchemes = detectedSchemes.length > 1
-
   // Decide if we should render the SGTIN-96 bit visualizer
   const showSgtinViz = !!sgtinResult && tdtResult?.scheme === 'SGTIN-96'
 
   return (
-    <div className="flex min-h-full flex-col gap-5">
+    <div className="stagger-children flex min-h-full flex-col gap-5">
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-5 md:grid-cols-2">
         {/* ----------------- Decoder Section ----------------- */}
         <Card className={cn('flex h-full flex-col', SECTION_CARD)} data-tour="tour-decoder-decode">
@@ -538,46 +685,45 @@ export function DecoderTab() {
                 ))}
               </div>
 
-              <Button
-                onClick={() => handleDecode()}
-                className="h-10 w-full rounded-lg font-medium"
-                disabled={decoding}
-              >
-                {decoding ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Decoding…
-                  </>
-                ) : (
-                  'Decode'
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={() => handleDecode()}
+                  className="h-10 min-w-0 flex-1 rounded-lg font-medium"
+                  disabled={decoding}
+                >
+                  {decoding ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Decoding…
+                    </>
+                  ) : (
+                    'Decode'
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10 shrink-0 rounded-lg px-4"
+                  onClick={handleClear}
+                  disabled={decoding || encoding}
+                >
+                  Clear
+                </Button>
+              </div>
             </div>
 
-            {/* Scheme picker (only when multiple are detected) */}
-            {hasMultipleSchemes && (
-              <div className="space-y-1.5">
-                <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Detected schemes ({detectedSchemes.length})
-                </Label>
-                <Select value={forcedScheme} onValueChange={handleSchemeChange}>
-                  <SelectTrigger className="h-9 rounded-lg border-border/50 bg-background/80">
-                    <SelectValue placeholder="Pick a scheme" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {detectedSchemes.map((d) => (
-                      <SelectItem key={`${d.scheme}-${d.level}`} value={d.scheme}>
-                        {d.scheme}
-                        <span className="ml-2 text-xs text-muted-foreground">{d.level}</span>
-                        {typeof d.detectedGCPLength === 'number' && d.detectedGCPLength > 0 && (
-                          <span className="ml-2 text-[10px] text-muted-foreground">GCP {d.detectedGCPLength}</span>
-                        )}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            <div className="space-y-1.5">
+              <Label htmlFor="decode-scheme" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Scheme
+              </Label>
+              <TdtSchemeSelect
+                id="decode-scheme"
+                value={forcedScheme}
+                onValueChange={handleSchemeChange}
+                detected={decodeDetected}
+                allSchemes={allTdtSchemes}
+              />
+            </div>
 
             {/* Error */}
             {decodeError && !tdtResult && (
@@ -695,16 +841,62 @@ export function DecoderTab() {
                 <div className="flex flex-wrap items-center gap-2">
                   <CardTitle className="text-base font-semibold tracking-tight">EPC encoder</CardTitle>
                   <Badge variant="secondary" className="font-normal text-muted-foreground">
-                    SGTIN-96
+                    TDT → HEX
                   </Badge>
                 </div>
                 <CardDescription className="text-xs leading-relaxed">
-                  GTIN + serial → 96-bit hex EPC (filter &amp; prefix length configurable)
+                  AI JSON, Digital Link, URI, or bare ID → hex EPC (all TDT schemes)
                 </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col gap-5 px-5 pb-5 pt-0">
+            <div className="space-y-2">
+              <Label htmlFor="encoder-input" className="text-sm font-medium">
+                Identifier input
+              </Label>
+              <Textarea
+                id="encoder-input"
+                placeholder='e.g. {"01":"09521234123453","21":"123"} or Digital Link / EPC URI'
+                value={encodeInput}
+                onChange={(e) => setEncodeInput(e.target.value)}
+                className="min-h-[4.5rem] resize-y rounded-lg border-border/50 bg-background/80 font-mono text-sm"
+                rows={2}
+              />
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  <Sparkles className="mr-1 inline h-3 w-3" /> examples
+                </span>
+                {EXAMPLE_ENCODE.map((ex) => (
+                  <button
+                    key={ex.value}
+                    type="button"
+                    onClick={() => setEncodeInput(ex.value)}
+                    className="rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {ex.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="encode-scheme" className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Scheme
+              </Label>
+              <TdtSchemeSelect
+                id="encode-scheme"
+                value={encodeScheme}
+                onValueChange={setEncodeScheme}
+                detected={encodeDetected}
+                allSchemes={allTdtSchemes}
+              />
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-border/35 bg-muted/15 px-3 py-3 ring-1 ring-border/15">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Or quick SGTIN
+              </p>
             <div className="space-y-2">
               <Label htmlFor="encoder-gtin" className="text-sm font-medium">
                 GTIN / UPC
@@ -779,13 +971,22 @@ export function DecoderTab() {
                 </Select>
               </div>
             </div>
+            </div>
 
             <Button
-              onClick={handleEncode}
+              onClick={() => void handleEncode()}
               variant="outline"
+              disabled={encoding}
               className="mt-auto h-10 w-full rounded-lg border-primary/35 bg-primary/[0.04] font-medium text-primary hover:bg-primary/[0.08] hover:text-primary"
             >
-              Encode
+              {encoding ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Encoding…
+                </>
+              ) : (
+                'Encode'
+              )}
             </Button>
 
             {encodedResult && (
@@ -805,25 +1006,27 @@ export function DecoderTab() {
                       <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                         Generated EPC (hex)
                       </Label>
-                      <Badge variant="outline" className="font-mono text-[10px] font-normal">
-                        24 hex chars
-                      </Badge>
+                      {encodedResult.scheme && (
+                        <Badge variant="outline" className="font-mono text-[10px] font-normal">
+                          {encodedResult.scheme}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-stretch gap-2">
                       <code className="block min-h-[2.75rem] flex-1 break-all rounded-lg border border-border/40 bg-background/80 p-3 font-mono text-xs leading-relaxed ring-1 ring-border/15 sm:text-sm">
-                        {encodedResult.epc}
+                        {encodedResult.value}
                       </code>
-                      <CopyButton text={encodedResult.epc} />
+                      <CopyButton text={encodedResult.value} />
                     </div>
-                    {encodedResult.epc && (
+                    {encodedResult.value && (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         className="h-8 w-full text-[11px] text-muted-foreground hover:text-foreground"
                         onClick={() => {
-                          if (encodedResult.epc) {
-                            setEpcInput(encodedResult.epc)
+                          if (encodedResult.value) {
+                            setEpcInput(encodedResult.value)
                             void handleDecode()
                           }
                         }}

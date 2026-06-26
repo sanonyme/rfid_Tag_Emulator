@@ -28,6 +28,7 @@ import {
 } from '../ui/dialog'
 import { ScrollArea } from '../ui/scroll-area'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
+import { VENDOR_DRIVERS } from '@/lib/vendor-drivers'
 import { Switch } from '../ui/switch'
 
 interface MobileFixedTabProps {
@@ -56,14 +57,6 @@ interface MobileFixedTabProps {
   delay: string
   setDelay: (delay: string) => void
 }
-
-const VENDOR_DRIVERS = [
-  { code: 'llrp', name: 'All' },
-  { code: 'arp', name: 'Alien' },
-  { code: 'impinjetk', name: 'Impinj R700' },
-  { code: 'octane', name: 'Impinj Others' },
-  { code: 'seuic', name: 'SEUIC' },
-]
 
 export function MobileFixedTab(props: MobileFixedTabProps) {
   const {

@@ -18,24 +18,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { cn } from '@/lib/utils'
 
-export interface DbSchemaColumn {
-  name: string
-  type: string
-  key: string
-}
-
-export interface DbSchemaTable {
-  name: string
-  columns: DbSchemaColumn[]
-}
-
-export interface DbSchemaForeignKey {
-  constraintName: string
-  childTable: string
-  childColumns: string[]
-  parentTable: string
-  parentColumns: string[]
-}
+import type { DbSchemaColumn, DbSchemaForeignKey, DbSchemaTable } from '@/lib/db-schema-types'
 
 type SchemaTableNodeData = {
   label: string

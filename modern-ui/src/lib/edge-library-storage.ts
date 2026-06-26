@@ -1,5 +1,4 @@
 const RECENT_BLOCKS_KEY = 'zeus-edge-recent-blocks'
-const RECENT_PROCESSES_KEY = 'zeus-edge-recent-processes'
 const PINNED_BLOCKS_KEY = 'zeus-edge-pinned-blocks'
 const PINNED_PROCESSES_KEY = 'zeus-edge-pinned-processes'
 const MAX_RECENT = 8
@@ -40,10 +39,6 @@ export function getRecentBlocks() {
   return readList(RECENT_BLOCKS_KEY)
 }
 
-export function getRecentProcesses() {
-  return readList(RECENT_PROCESSES_KEY)
-}
-
 export function getPinnedBlocks() {
   return readList(PINNED_BLOCKS_KEY)
 }
@@ -54,10 +49,6 @@ export function getPinnedProcesses() {
 
 export function trackRecentBlock(name: string) {
   trackRecent(RECENT_BLOCKS_KEY, name)
-}
-
-export function trackRecentProcess(name: string) {
-  trackRecent(RECENT_PROCESSES_KEY, name)
 }
 
 export function togglePinnedBlock(name: string) {

@@ -1054,7 +1054,7 @@ export function AutomationTab({
   const [addMenuOpen, setAddMenuOpen] = useState(false)
 
   return (
-    <div className="h-full flex flex-col gap-0 overflow-hidden">
+    <div className="stagger-children h-full flex flex-col gap-0 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/50">
         <div className="flex items-center gap-3">

@@ -8,11 +8,6 @@ export interface TagData {
   rssi: string
 }
 
-export interface ConnectionConfig {
-  host: string
-  port: number
-}
-
 export class TCPEmulatorClient {
   private connectCallback: ((message: string) => void) | null = null
   private disconnectCallback: ((message: string) => void) | null = null

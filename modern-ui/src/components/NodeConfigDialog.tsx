@@ -29,13 +29,7 @@ import type { AutomationStep, ActionType } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
 
-const VENDOR_DRIVERS = [
-  { code: 'llrp', name: 'All' },
-  { code: 'arp', name: 'Alien' },
-  { code: 'impinjetk', name: 'Impinj R700' },
-  { code: 'octane', name: 'Impinj Others' },
-  { code: 'seuic', name: 'SEUIC' },
-]
+import { VENDOR_DRIVERS } from '@/lib/vendor-drivers'
 
 interface NodeConfigDialogProps {
   open: boolean

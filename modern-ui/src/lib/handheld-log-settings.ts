@@ -1,3 +1,5 @@
+import { getBoolPref, setBoolPref } from './bool-pref'
+
 /**
  * Persisted handheld activity log level.
  * Same storage key as the legacy "per-tag logs" toggle so existing prefs stay valid.
@@ -7,26 +9,12 @@
 export const HANDHELD_FULL_ACTIVITY_LOG_KEY = 'rfid-emulator-handheld-detail-logs'
 
 export function getHandheldFullActivityLog(): boolean {
-  try {
-    return localStorage.getItem(HANDHELD_FULL_ACTIVITY_LOG_KEY) !== '0'
-  } catch {
-    return true
-  }
+  return getBoolPref(HANDHELD_FULL_ACTIVITY_LOG_KEY)
 }
 
 export function setHandheldFullActivityLog(full: boolean): void {
-  try {
-    localStorage.setItem(HANDHELD_FULL_ACTIVITY_LOG_KEY, full ? '1' : '0')
-  } catch {
-    /* ignore */
-  }
+  setBoolPref(HANDHELD_FULL_ACTIVITY_LOG_KEY, full)
 }
-
-/** @deprecated use getHandheldFullActivityLog */
-export const getHandheldDetailLogs = getHandheldFullActivityLog
-
-/** @deprecated use setHandheldFullActivityLog */
-export const setHandheldDetailLogs = setHandheldFullActivityLog
 
 /**
  * When `fullActivity` is false (minimal mode), only connection-related and error lines are kept.

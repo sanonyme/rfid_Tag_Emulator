@@ -714,7 +714,7 @@ export function SystemLogAnalyzerTab() {
   }, [result])
 
   return (
-    <div className="space-y-6">
+    <div className="stagger-children space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">

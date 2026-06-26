@@ -23,6 +23,11 @@ describe('EPCDecoder round-trip', () => {
     expect(decoded.gtin).toBe(gtin)
   })
 
+  it('SGTIN-96 partition 6 (GCP length 6) sets filter+partition byte 0x18', () => {
+    const encoded = EPCEncoder.encodeSgtin96('00000000000000', '1', 6, 0)
+    expect(encoded.epc).toBe('301800000000000000000001')
+  })
+
   it('rejects invalid hex length', () => {
     expect(EPCDecoder.decodeSgtin96('30').error).toContain('24 hex')
   })

@@ -373,11 +373,11 @@ function FileItem({
         }}
         className={cn(
           'group flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none',
-          'transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-primary/30',
+          'transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
           isHovered && 'bg-fileTree-hover',
-          isSelected && 'ring-1 ring-primary/40 bg-primary/5',
-          isInMultiSelect && 'ring-1 ring-primary/50 bg-primary/10',
-          isDropTarget && 'ring-2 ring-primary/60 bg-primary/10',
+          isSelected && 'ring-1 ring-inset ring-primary/40 bg-primary/5',
+          isInMultiSelect && 'ring-1 ring-inset ring-primary/50 bg-primary/10',
+          isDropTarget && 'ring-2 ring-inset ring-primary/60 bg-primary/10',
         )}
         onClick={handleRowClick}
         onContextMenu={(e) => {
@@ -628,7 +628,7 @@ export function SftpFileTree({
 
       <div
         ref={scrollRef}
-        className="min-w-0 flex-1 min-h-0 overflow-auto"
+        className="min-w-0 flex-1 min-h-0 overflow-auto px-0.5"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
         <div style={{ height: virtual.totalHeight, position: 'relative' }}>

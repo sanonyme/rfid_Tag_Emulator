@@ -8,7 +8,6 @@ import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMe
 import {
   grantAdminSession,
   isAdminSender,
-  requireAdminSender,
   revokeAdminSession,
   verifyAdminCredentials,
 } from './admin-session.js'
@@ -569,7 +568,7 @@ app.whenReady().then(() => {
     sftpUnlink(sessionId, remotePath),
   )
   ipcMain.handle('sftp-rmrf', async (event, sessionId: string, remotePath: string) => {
-    if (!requireAdminSender(event.sender)) {
+    if (!isAdminSender(event.sender)) {
       return { ok: false as const, error: 'Admin login required' }
     }
     return sftpRmrf(sessionId, remotePath)
@@ -736,7 +735,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('log-aggregator-run', async (event, zipPath: string, outputDir: string) => {
-    if (!requireAdminSender(event.sender)) {
+    if (!isAdminSender(event.sender)) {
       return { ok: false as const, error: 'Admin login required' }
     }
     return runLogAggregator(zipPath, outputDir, (progress) => {
@@ -849,7 +848,7 @@ app.whenReady().then(() => {
 
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
   ipcMain.on('shell-start', (event, sessionId: string, cols: number = 80, rows: number = 24) => {
-    if (!requireAdminSender(event.sender)) {
+    if (!isAdminSender(event.sender)) {
       mainWindow?.webContents.send('shell-exit', sessionId, 1, 'Admin required')
       return
     }
@@ -879,19 +878,19 @@ app.whenReady().then(() => {
   })
 
   ipcMain.on('shell-write', (event, sessionId: string, data: string) => {
-    if (!requireAdminSender(event.sender)) return
+    if (!isAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) proc.write(data)
   })
 
   ipcMain.on('shell-resize', (event, sessionId: string, cols: number, rows: number) => {
-    if (!requireAdminSender(event.sender)) return
+    if (!isAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) proc.resize(cols, rows)
   })
 
   ipcMain.on('shell-kill', (event, sessionId: string) => {
-    if (!requireAdminSender(event.sender)) return
+    if (!isAdminSender(event.sender)) return
     const proc = shellProcesses.get(sessionId)
     if (proc) {
       proc.kill()

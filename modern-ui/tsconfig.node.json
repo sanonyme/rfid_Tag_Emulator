@@ -14,6 +14,8 @@
     "src/lib/tcp-wire-format.ts",
     "src/lib/handheld-wire-format.ts",
     "src/lib/sftp-remote-path.ts",
-    "src/lib/log-aggregator.ts"
+    "src/lib/log-aggregator.ts",
+    "src/lib/db-schema-types.ts",
+    "src/types/log-aggregator.ts"
   ]
 }

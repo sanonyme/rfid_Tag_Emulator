@@ -111,7 +111,7 @@ export function SftpTab({ host }: SftpTabProps) {
   if (!activeTab) return null
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <div className="stagger-children flex h-full min-h-0 flex-col gap-2">
       <div
         className="flex shrink-0 items-center gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted/20 px-1 py-1"
         role="tablist"

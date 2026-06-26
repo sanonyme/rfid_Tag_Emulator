@@ -318,7 +318,7 @@ export function BarcodeGenerator() {
   }
 
   return (
-    <div className="h-full">
+    <div className="stagger-children h-full">
       <Tabs value={genMode} onValueChange={(v) => setGenMode(v as typeof genMode)} className="h-full flex flex-col">
         <div className="mb-4 px-2">
           <SegmentedTabs
@@ -412,7 +412,7 @@ export function BarcodeGenerator() {
                       </Button>
                     </div>
 
-                    <div className="stagger-children space-y-4">
+                    <div className="space-y-4">
                       {barcodes.map((barcode, index) => (
                         <div key={barcode.id} className="relative space-y-4 rounded-2xl border border-border/50 bg-card/70 p-4 shadow-sm backdrop-blur-sm transition-all hover:border-primary/30 hover:shadow-md">
                           <div className="flex items-start justify-between gap-4">

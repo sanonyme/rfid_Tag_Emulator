@@ -819,7 +819,7 @@ function App() {
             </TabPanel>
 
             <TabPanel tabId="edge" visited={visitedTabs.has('edge')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden flex flex-col')}>
-              <EdgeTab onSwitchTab={switchTab} />
+              <EdgeTab onSwitchTab={switchTab} edgeTabActive={effectiveActiveTab === 'edge'} />
             </TabPanel>
 
             <TabPanel tabId="decoder" visited={visitedTabs.has('decoder')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>

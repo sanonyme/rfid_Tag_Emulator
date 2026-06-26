@@ -15,36 +15,14 @@ import {
 
 const execFile = promisify(execFileCb)
 
-export interface LogAggregatorProgress {
-  phase: 'extract' | 'organize' | 'aggregate' | 'done'
-  message: string
-  current?: number
-  total?: number
-}
+import type {
+  LogAggregatorProgress,
+  LogAggregatorCategoryStat,
+  LogAggregatorResult,
+  LogAggregatorRunResponse,
+} from '../src/types/log-aggregator.js'
 
-export interface LogAggregatorCategoryStat {
-  name: string
-  files: number
-  aggregated: boolean
-  aggregatedBytes?: number
-}
-
-export interface LogAggregatorResult {
-  ok: true
-  outputDir: string
-  stats: {
-    filesProcessed: number
-    categories: LogAggregatorCategoryStat[]
-    vsblFolders: number
-    durationMs: number
-    usedGitBash: boolean
-    extractMethod: string
-  }
-}
-
-export type LogAggregatorResponse =
-  | LogAggregatorResult
-  | { ok: false; error: string }
+export type LogAggregatorResponse = LogAggregatorRunResponse
 
 type ProgressFn = (progress: LogAggregatorProgress) => void
 

@@ -47,6 +47,7 @@ interface TDTtranslatorInstance {
     outputLevel: string,
     options?: Record<string, unknown>
   ) => string | undefined
+  schemes?: () => string[]
   hex2bin?: (s: string) => string
 }
 
@@ -246,6 +247,25 @@ export async function tdtAutodetect(rawInput: string): Promise<TdtDetectedScheme
   return t.autodetect(input) || []
 }
 
+export async function tdtListSchemes(): Promise<string[]> {
+  const t = await getTdtTranslator()
+  return (t.schemes?.() ?? []).sort((a, b) => a.localeCompare(b))
+}
+
+function pickTdtScheme(
+  detected: TdtDetectedScheme[],
+  forced?: string,
+): TdtDetectedScheme | undefined {
+  const scheme = forced?.trim()
+  if (!scheme) {
+    return (
+      detected.find((d) => (d.detectedGCPLength ?? -1) > 0) ||
+      detected[0]
+    )
+  }
+  return detected.find((d) => d.scheme === scheme) ?? { scheme, level: detected[0]?.level ?? '' }
+}
+
 /**
  * Decode an input (hex / binary / URN / DL / JSON / bare identifier) by
  * autodetecting the scheme and translating to every supported output level.
@@ -264,17 +284,22 @@ export async function tdtDecode(
 
   const t = await getTdtTranslator()
   const detected = (t.autodetect(input) || []).filter((d) => d && d.scheme)
-  if (!detected.length) {
+  const forced = overrides.scheme?.trim()
+  if (!detected.length && !forced) {
     return { ok: false, error: 'No TDT scheme matched this input', detected }
   }
 
-  const inputLevel = detected[0].level
+  const known = t.schemes?.() ?? []
+  if (forced && known.length && !known.includes(forced)) {
+    return { ok: false, error: `Unknown scheme: ${forced}`, detected }
+  }
 
-  // Pick the requested scheme, else the first detection. Prefer one that detected GCP length.
-  const chosen =
-    (overrides.scheme && detected.find((d) => d.scheme === overrides.scheme)) ||
-    detected.find((d) => (d.detectedGCPLength ?? -1) > 0) ||
-    detected[0]
+  const chosen = pickTdtScheme(detected, forced)
+  if (!chosen) {
+    return { ok: false, error: 'No TDT scheme matched this input', detected }
+  }
+
+  const inputLevel = detected[0]?.level ?? chosen.level
 
   const baseOptions: Record<string, unknown> = {
     filter: overrides.filter ?? 0,
@@ -283,17 +308,18 @@ export async function tdtDecode(
       overrides.gcpLength ?? chosen.detectedGCPLength ?? -1,
   }
 
-  // Apply the matched scheme's optionKey when present, just like the demo does.
+  // Apply autodetected optionKey only when caller didn't set gcpLength (optionKey would clobber it).
   const options: Record<string, unknown> = { ...baseOptions }
-  if (chosen.optionKey?.property && chosen.optionKey.property !== chosen.optionKey.value) {
-    options[chosen.optionKey.property] = chosen.optionKey.value
-  }
-  // Some schemes encode their GCP length as the option key value.
-  if (
-    chosen.optionKey?.property === 'gs1companyprefixlength' &&
-    PROVIDES_GCP_LENGTH.has(inputLevel)
-  ) {
-    options.gs1companyprefixlength = chosen.optionKey.value
+  if (overrides.gcpLength === undefined) {
+    if (chosen.optionKey?.property && chosen.optionKey.property !== chosen.optionKey.value) {
+      options[chosen.optionKey.property] = chosen.optionKey.value
+    }
+    if (
+      chosen.optionKey?.property === 'gs1companyprefixlength' &&
+      PROVIDES_GCP_LENGTH.has(inputLevel)
+    ) {
+      options.gs1companyprefixlength = chosen.optionKey.value
+    }
   }
 
   // Translate to every supported level. Use the scheme's `supportedLevels` if
@@ -360,17 +386,30 @@ export async function tdtEncode(
 
   const t = await getTdtTranslator()
   const detected = (t.autodetect(input) || []).filter((d) => d && d.scheme)
-  if (!detected.length) return { ok: false, error: 'No TDT scheme matched this input' }
+  const forced = overrides.scheme?.trim()
+  if (!detected.length && !forced) {
+    return { ok: false, error: 'No TDT scheme matched this input' }
+  }
 
-  const chosen =
-    (overrides.scheme && detected.find((d) => d.scheme === overrides.scheme)) || detected[0]
+  const known = t.schemes?.() ?? []
+  if (forced && known.length && !known.includes(forced)) {
+    return { ok: false, error: `Unknown scheme: ${forced}` }
+  }
+
+  const chosen = pickTdtScheme(detected, forced)
+  if (!chosen) return { ok: false, error: 'No TDT scheme matched this input' }
 
   const options: Record<string, unknown> = {
     filter: overrides.filter ?? 0,
     uriStem: overrides.uriStem ?? 'https://id.gs1.org',
     gs1companyprefixlength: overrides.gcpLength ?? chosen.detectedGCPLength ?? -1,
   }
-  if (chosen.optionKey?.property && chosen.optionKey.property !== chosen.optionKey.value) {
+  // ponytail: autodetect optionKey loses to explicit gcpLength (e.g. all-zero GTIN → wrong partition)
+  if (
+    overrides.gcpLength === undefined &&
+    chosen.optionKey?.property &&
+    chosen.optionKey.property !== chosen.optionKey.value
+  ) {
     options[chosen.optionKey.property] = chosen.optionKey.value
   }
 
@@ -380,19 +419,5 @@ export async function tdtEncode(
     return { ok: true, value, scheme: chosen.scheme }
   } catch (e) {
     return { ok: false, error: (e as Error).message || 'Translation failed' }
-  }
-}
-
-// Backwards-compatible wrapper used by older callers.
-export async function tdtDecodeFromHex(hexEpc: string) {
-  const r = await tdtDecode(hexEpc)
-  if (!r.ok) {
-    return { error: r.error, detected: r.detected }
-  }
-  return {
-    scheme: r.result.scheme,
-    detected: r.result.detectedSchemes,
-    digitalLink: r.result.outputs.GS1_DIGITAL_LINK,
-    pureIdentity: r.result.outputs.PURE_IDENTITY,
   }
 }

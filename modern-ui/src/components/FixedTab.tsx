@@ -83,16 +83,8 @@ interface FixedTabProps {
   /** Pop-out window: stacked layout on narrow widths, no page-level log scroll. */
   isPopout?: boolean
 }
-
-const VENDOR_DRIVERS = [
-  { code: 'llrp', name: 'All' },
-  { code: 'arp', name: 'Alien' },
-  { code: 'impinjetk', name: 'Impinj R700' },
-  { code: 'octane', name: 'Impinj Others' },
-  { code: 'seuic', name: 'SEUIC' },
-]
-
-const FIXED_FULL_ACTIVITY_LOG_KEY = 'rfid-emulator-fixed-detail-logs'
+import { VENDOR_DRIVERS } from '@/lib/vendor-drivers'
+import { getBoolPref, setBoolPref } from '@/lib/bool-pref'
 
 export function FixedTab({ 
   emulator, 
@@ -148,13 +140,9 @@ export function FixedTab({
   const serialContinuesAcrossUpcLines = settings.fixedSerialContinuesAcrossUpcLines
   const maxLogLinesRef = useRef(settings.maxLogLines)
   maxLogLinesRef.current = settings.maxLogLines
-  const [fullActivityLog, setFullActivityLog] = useState(() => {
-    try {
-      return localStorage.getItem(FIXED_FULL_ACTIVITY_LOG_KEY) !== '0'
-    } catch {
-      return true
-    }
-  })
+  const [fullActivityLog, setFullActivityLog] = useState(() =>
+    getBoolPref('rfid-emulator-fixed-detail-logs'),
+  )
   const fullActivityLogRef = useRef(fullActivityLog)
   fullActivityLogRef.current = fullActivityLog
 
@@ -1034,11 +1022,7 @@ export function FixedTab({
                     checked={fullActivityLog}
                     onCheckedChange={(v) => {
                       setFullActivityLog(v)
-                      try {
-                        localStorage.setItem(FIXED_FULL_ACTIVITY_LOG_KEY, v ? '1' : '0')
-                      } catch {
-                        /* ignore */
-                      }
+                      setBoolPref('rfid-emulator-fixed-detail-logs', v)
                     }}
                   />
                   <Label

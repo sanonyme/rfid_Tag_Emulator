@@ -973,7 +973,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   }
 
   return (
-    <div className="relative mx-auto flex min-h-full max-w-5xl flex-col gap-4">
+    <div className="relative mx-auto flex min-h-full max-w-5xl flex-col gap-4 stagger-children">
       {/* Request Card */}
       <Card className={SECTION_CARD} data-tour="tour-api-request">
         <CardHeader className="space-y-3 pb-3 pt-5 px-5">

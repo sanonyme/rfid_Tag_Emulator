@@ -149,7 +149,7 @@ export function LocalDirList({
         {headerBtn('Changed', 'mtime', col.changed)}
         {headerBtn('Rights', 'mode', col.rights)}
       </div>
-      <div className="space-y-0.5 min-w-0 overflow-y-auto flex-1 min-h-0">
+      <div className="space-y-0.5 min-w-0 overflow-y-auto flex-1 min-h-0 px-0.5">
         {canGoUp && (
           <button
             type="button"
@@ -202,9 +202,9 @@ export function LocalDirList({
               }}
               className={cn(
                 'flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none',
-                'focus-visible:ring-2 focus-visible:ring-primary/30',
-                sel && 'ring-1 ring-primary/40 bg-primary/5',
-                hoverPath === row.path && isFolder && 'ring-2 ring-primary/40 bg-primary/10',
+                'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
+                sel && 'ring-1 ring-inset ring-primary/40 bg-primary/5',
+                hoverPath === row.path && isFolder && 'ring-2 ring-inset ring-primary/40 bg-primary/10',
               )}
             >
               <span className="pl-2 font-mono text-sm min-w-0 flex-1 truncate text-left">

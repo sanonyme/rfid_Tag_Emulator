@@ -35,7 +35,3 @@ export function isAdminSender(sender: WebContents): boolean {
   }
   return true
 }
-
-export function requireAdminSender(sender: WebContents): boolean {
-  return isAdminSender(sender)
-}

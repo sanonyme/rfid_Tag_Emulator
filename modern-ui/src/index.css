@@ -126,6 +126,13 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* ponytail: kill native inset borders on Electron/Windows text fields */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  select {
+    -webkit-appearance: none;
+    appearance: none;
+  }
   /* Font size from settings (text only — controls like switches use fixed px sizes) */
   [data-font-size="compact"] {
     font-size: 13px;
@@ -448,6 +455,12 @@ button, a, input, select, textarea {
 [data-tour="tour-tab-nav"] button[role="tab"]:focus-visible {
   outline: none !important;
   box-shadow: none !important;
+}
+
+/* DB data grid — skip layout/paint for off-screen rows (ponytail: native, no virtualizer dep) */
+.db-data-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 2rem;
 }
 
 /* Page transition - fade + subtle lift when a tab becomes active */

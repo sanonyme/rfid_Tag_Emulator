@@ -1,20 +1,18 @@
-import { motion, LayoutGroup } from 'framer-motion'
 import {
   AlertCircle,
+  Box,
   Copy,
   Loader2,
   RefreshCw,
   Wifi,
   WifiOff,
+  Workflow,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { cn } from '@/lib/utils'
-import { indicatorSpring, prefersReducedMotion } from '@/lib/motion'
 import { sectionCard } from '@/lib/ui-tokens'
 import { toast } from 'sonner'
-
-export type EdgeMode = 'operate' | 'catalog'
 
 type EdgeConnectionHeroProps = {
   tcpConnected: boolean
@@ -22,19 +20,15 @@ type EdgeConnectionHeroProps = {
   edgeConnecting: boolean
   edgeError: string | null
   edgeApiBaseUrl: string
-  edgeMode: EdgeMode
-  onModeChange: (mode: EdgeMode) => void
   onRefreshAll: () => void
   loading: boolean
   version: string | null
   setup: string | null
   licenseValid: boolean | null
+  blockCount: number
+  processCount: number
+  runningProcessCount: number
 }
-
-const MODES: { value: EdgeMode; label: string }[] = [
-  { value: 'operate', label: 'Overall' },
-  { value: 'catalog', label: 'Blocks and Processes' },
-]
 
 export function EdgeConnectionHero({
   tcpConnected,
@@ -42,16 +36,15 @@ export function EdgeConnectionHero({
   edgeConnecting,
   edgeError,
   edgeApiBaseUrl,
-  edgeMode,
-  onModeChange,
   onRefreshAll,
   loading,
   version,
   setup,
   licenseValid,
+  blockCount,
+  processCount,
+  runningProcessCount,
 }: EdgeConnectionHeroProps) {
-  const reduced = prefersReducedMotion()
-
   const copyUrl = async () => {
     if (!edgeApiBaseUrl) return
     try {
@@ -81,17 +74,12 @@ export function EdgeConnectionHero({
         : 'secondary'
 
   return (
-    <div
-      className={cn(
-        sectionCard,
-        'shrink-0 overflow-hidden p-4',
-      )}
-    >
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+    <div className={cn(sectionCard, 'shrink-0 overflow-hidden')}>
+      <div className="flex flex-col gap-4 p-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div
             className={cn(
-              'relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ring-1',
+              'relative mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ring-1',
               edgeReady
                 ? 'bg-success/10 text-success ring-success/30'
                 : edgeError
@@ -105,12 +93,6 @@ export function EdgeConnectionHero({
               <Wifi className="h-5 w-5" />
             ) : (
               <WifiOff className="h-5 w-5" />
-            )}
-            {edgeReady && !reduced && (
-              <span className="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-60" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-success" />
-              </span>
             )}
           </div>
 
@@ -164,47 +146,39 @@ export function EdgeConnectionHero({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
-          <LayoutGroup id="edge-mode-nav">
-            <div className="flex gap-1 rounded-xl bg-muted/40 p-1 ring-1 ring-border/30">
-              {MODES.map((m) => {
-                const active = edgeMode === m.value
-                return (
-                  <button
-                    key={m.value}
-                    type="button"
-                    onClick={() => onModeChange(m.value)}
-                    className={cn(
-                      'relative z-0 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-200',
-                      active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
-                    )}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="edge-mode-active"
-                        aria-hidden
-                        className="absolute inset-0 -z-10 rounded-lg bg-background shadow-elev-sm ring-1 ring-border/40"
-                        transition={reduced ? { duration: 0 } : indicatorSpring}
-                      />
-                    )}
-                    {m.label}
-                  </button>
-                )
-              })}
+        {edgeReady && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2 rounded-xl bg-info/10 px-3 py-2 ring-1 ring-info/25">
+              <Box className="h-4 w-4 text-info" />
+              <div className="text-left">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-info">Blocks</p>
+                <p className="text-sm font-bold tabular-nums">{blockCount}</p>
+              </div>
             </div>
-          </LayoutGroup>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={() => void onRefreshAll()}
-            disabled={!edgeReady || loading}
-          >
-            <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
-            Refresh
-          </Button>
-        </div>
+            <div className="flex items-center gap-2 rounded-xl bg-primary/10 px-3 py-2 ring-1 ring-primary/25">
+              <Workflow className="h-4 w-4 text-primary" />
+              <div className="text-left">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Processes</p>
+                <p className="text-sm font-bold tabular-nums">
+                  {processCount}
+                  {runningProcessCount > 0 && (
+                    <span className="ml-1 text-xs font-medium text-success">({runningProcessCount} live)</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1.5"
+              onClick={() => void onRefreshAll()}
+              disabled={!edgeReady || loading}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+              Refresh
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -215,17 +189,25 @@ export function EdgeDisconnectedPlaceholder() {
     <div
       className={cn(
         sectionCard,
-        'flex flex-1 flex-col items-center justify-center gap-4 p-12 text-center',
+        'flex flex-1 flex-col items-center justify-center gap-6 p-12 text-center',
       )}
     >
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/50 ring-1 ring-border/40">
-        <WifiOff className="h-8 w-8 text-muted-foreground" />
+      <div className="grid max-w-lg grid-cols-2 gap-3">
+        <div className="rounded-2xl border border-info/25 bg-info/5 p-5 ring-1 ring-info/15">
+          <Box className="mx-auto h-8 w-8 text-info" />
+          <p className="mt-3 text-sm font-semibold">Blocks</p>
+          <p className="mt-1 text-xs text-muted-foreground">Invoke one-shot API operations</p>
+        </div>
+        <div className="rounded-2xl border border-primary/25 bg-primary/5 p-5 ring-1 ring-primary/15">
+          <Workflow className="mx-auto h-8 w-8 text-primary" />
+          <p className="mt-3 text-sm font-semibold">Processes</p>
+          <p className="mt-1 text-xs text-muted-foreground">Start and stop long-running workflows</p>
+        </div>
       </div>
       <div>
         <h3 className="text-lg font-semibold">Edge Command Center</h3>
         <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          Connect to your Edge appliance to invoke blocks, control workflows, and monitor system
-          health — all from one cockpit.
+          Connect to your Edge appliance to invoke blocks, control workflows, and monitor activity.
         </p>
       </div>
     </div>

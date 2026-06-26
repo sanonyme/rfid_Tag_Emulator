@@ -24,28 +24,7 @@ if (import.meta.env.DEV && !window.electronAPI) {
     }
   })
 }
-
-class ErrorBoundary extends React.Component<
-  { children: React.ReactNode },
-  { error: Error | null }
-> {
-  state = { error: null as Error | null }
-  static getDerivedStateFromError(error: Error) {
-    return { error }
-  }
-  render() {
-    if (this.state.error) {
-      return (
-        <div style={{ padding: 20, fontFamily: 'sans-serif', maxWidth: 400 }}>
-          <h2>Something went wrong</h2>
-          <pre style={{ overflow: 'auto', fontSize: 12 }}>{this.state.error.message}</pre>
-        </div>
-      )
-    }
-    return this.props.children
-  }
-}
-
+import { ErrorBoundary } from './ErrorBoundary.tsx'
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ErrorBoundary>

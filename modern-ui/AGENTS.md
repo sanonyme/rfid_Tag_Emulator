@@ -35,3 +35,7 @@ Persistent tabs stay mounted after first visit (`visitedTabs` in `App.tsx`). Onl
 
 - Wire format: `src/lib/__tests__/tcp-wire-format.test.ts`, `handheld-wire-format.test.ts`
 - Main-process helpers: `electron/*.test.ts` (node environment)
+
+## Code intelligence (Cursor MCP)
+
+Project uses [codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp) (`.cursor/mcp.json`). After reload, ask the agent to **index this project** before deep structural queries (`trace_path`, `search_graph`, etc.).

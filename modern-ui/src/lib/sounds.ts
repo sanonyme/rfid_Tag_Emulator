@@ -33,19 +33,6 @@ function beep(frequency: number, duration: number, type: OscillatorType = 'sine'
   }
 }
 
-export function playSuccess(): void {
-  if (!loadSettings().soundEnabled) return
-  beep(523, 0.1)
-  setTimeout(() => beep(659, 0.1), 80)
-  setTimeout(() => beep(784, 0.15), 160)
-}
-
-export function playError(): void {
-  if (!loadSettings().soundEnabled) return
-  beep(200, 0.2, 'square')
-  setTimeout(() => beep(150, 0.25, 'square'), 150)
-}
-
 export function playConnect(): void {
   if (!loadSettings().soundEnabled) return
   beep(440, 0.08)

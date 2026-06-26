@@ -1,8 +1,13 @@
 import * as React from "react"
-import { motion, LayoutGroup } from "framer-motion"
 import { TabsList, TabsTrigger } from "./ui/tabs"
 import { segmentedTabsList } from "@/lib/ui-tokens"
-import { indicatorSpring, prefersReducedMotion } from "@/lib/motion"
+import {
+  indicatorSpring,
+  prefersReducedMotion,
+  SLIDE_TAB_ATTR,
+  SlidingHighlight,
+  useSlidingIndicator,
+} from "@/lib/motion"
 import { cn } from "@/lib/utils"
 
 export interface SegmentedTabItem {
@@ -31,52 +36,48 @@ interface SegmentedTabsProps {
 
 /**
  * Segmented in-tab navigation with a smooth sliding active indicator.
- *
- * Uses framer-motion's shared-layout animation (same `layoutId`) so the
- * highlighted background glides between tabs instead of snapping. Mirrors the
- * main app tab bar's motion. Honors `prefers-reduced-motion` (snaps instantly).
+ * Indicator is a sibling of the triggers (not a child) so it never whites out
+ * the tab being left. Honors `prefers-reduced-motion` (snaps instantly).
  */
 export function SegmentedTabs({
   items,
   value,
-  layoutId,
+  layoutId: _layoutId,
   className,
   triggerClassName,
   dataTour,
 }: SegmentedTabsProps) {
   const reduced = prefersReducedMotion()
+  const { containerRef, rect, ready } = useSlidingIndicator(value)
 
   return (
-    <LayoutGroup id={layoutId}>
-      <TabsList className={cn(segmentedTabsList, className)} data-tour={dataTour}>
-        {items.map((item) => {
-          const isActive = value === item.value
-          return (
-            <TabsTrigger
-              key={item.value}
-              value={item.value}
-              data-tour={item.dataTour}
-              className={cn(
-                "relative z-0 gap-1.5 rounded-lg text-xs text-muted-foreground transition-colors duration-200",
-                "data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none",
-                triggerClassName,
-                item.className,
-              )}
-            >
-              {isActive && (
-                <motion.span
-                  layoutId={`${layoutId}-active`}
-                  aria-hidden
-                  className="absolute inset-0 -z-10 rounded-lg bg-background shadow-elev-sm ring-1 ring-border/40"
-                  transition={reduced ? { duration: 0 } : indicatorSpring}
-                />
-              )}
-              {item.icon}
-              {item.label}
-            </TabsTrigger>
-          )
-        })}
-      </TabsList>
-    </LayoutGroup>
+    <TabsList
+      ref={containerRef}
+      className={cn(segmentedTabsList, "relative", className)}
+      data-tour={dataTour}
+    >
+      <SlidingHighlight
+        rect={rect}
+        ready={ready}
+        transition={reduced ? { duration: 0 } : indicatorSpring}
+      />
+      {items.map((item) => (
+        <TabsTrigger
+          key={item.value}
+          value={item.value}
+          {...{ [SLIDE_TAB_ATTR]: item.value }}
+          data-tour={item.dataTour}
+          className={cn(
+            "relative z-[1] gap-1.5 rounded-lg text-xs text-muted-foreground transition-colors duration-200",
+            "data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none",
+            triggerClassName,
+            item.className,
+          )}
+        >
+          {item.icon}
+          {item.label}
+        </TabsTrigger>
+      ))}
+    </TabsList>
   )
 }

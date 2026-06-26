@@ -232,7 +232,7 @@ export function AdminTerminalTab({ active }: AdminTerminalTabProps) {
   }
 
   return (
-    <div className="flex flex-col h-full min-h-0" data-tour="tour-admin-terminal">
+    <div className="stagger-children flex flex-col h-full min-h-0" data-tour="tour-admin-terminal">
       <div className="flex items-center gap-2 mb-2">
         <Tooltip>
           <TooltipTrigger asChild>

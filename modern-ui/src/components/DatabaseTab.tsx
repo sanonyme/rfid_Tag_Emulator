@@ -600,6 +600,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [createDbName, executeMutationSql, refreshDatabases])
 
   const handleSelectTable = useCallback(async (dbName: string, tableName: string) => {
+    setTableLoading(true)
+    setTableRows([])
     setSelectedDb(dbName)
     setSelectedTable(tableName)
     setSortColumn(null)
@@ -1066,10 +1068,6 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     }
   }
 
-  const copyCell = (value: any) => {
-    navigator.clipboard.writeText(String(value ?? ''))
-  }
-
   const startEditing = (row: any, rowIdx: number, col: string, currentValue: any) => {
     if (primaryKeys.length === 0 || readOnly) return
     editingRowRef.current = row
@@ -1114,23 +1112,26 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     }
   }, [editingCell, editValue, primaryKeys, selectedDb, selectedTable])
 
-  const filteredRows = tableRows.filter((row) => {
-    if (!tableSearch) return true
+  const filteredRows = useMemo(() => {
+    if (!tableSearch) return tableRows
     const q = tableSearch.toLowerCase()
-    return Object.values(row).some((v) => String(v ?? '').toLowerCase().includes(q))
-  })
+    return tableRows.filter((row) =>
+      Object.values(row).some((v) => String(v ?? '').toLowerCase().includes(q)),
+    )
+  }, [tableRows, tableSearch])
 
-  const sortedRows = sortColumn && sortDir
-    ? [...filteredRows].sort((a, b) => {
-        const va = a[sortColumn!]
-        const vb = b[sortColumn!]
-        if (va == null && vb == null) return 0
-        if (va == null) return sortDir === 'asc' ? -1 : 1
-        if (vb == null) return sortDir === 'asc' ? 1 : -1
-        if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va
-        return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
-      })
-    : filteredRows
+  const sortedRows = useMemo(() => {
+    if (!sortColumn || !sortDir) return filteredRows
+    return [...filteredRows].sort((a, b) => {
+      const va = a[sortColumn!]
+      const vb = b[sortColumn!]
+      if (va == null && vb == null) return 0
+      if (va == null) return sortDir === 'asc' ? -1 : 1
+      if (vb == null) return sortDir === 'asc' ? 1 : -1
+      if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va
+      return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
+    })
+  }, [filteredRows, sortColumn, sortDir])
 
   sortedRowsRef.current = sortedRows
 
@@ -1211,7 +1212,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     showQueryResults && (queryError || (queryMessage && queryColumns.length === 0))
 
   return (
-    <div className="flex h-full min-h-0" data-tour="tour-database">
+    <div className="stagger-children flex h-full min-h-0" data-tour="tour-database">
       {/* Sidebar */}
       <div
         className="shrink-0 flex flex-col border border-border/50 rounded-xl bg-muted/30 overflow-hidden"
@@ -1572,7 +1573,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                       </thead>
                       <tbody>
                         {sortedRows.map((row, i) => (
-                          <tr key={i} className={cn('border-b border-border/30 hover:bg-white/3 dark:hover:bg-white/5 transition-colors group', selectedRowIdxs.has(i) && 'bg-blue-500/10')}>
+                          <tr key={i} className={cn('db-data-row border-b border-border/30 hover:bg-white/3 dark:hover:bg-white/5 group', selectedRowIdxs.has(i) && 'bg-blue-500/10')}>
                             {primaryKeys.length > 0 && (
                               <td className="px-2 py-1.5">
                                 <button onClick={() => toggleRowSelect(i)} className="text-muted-foreground hover:text-foreground transition-colors">
@@ -1599,12 +1600,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                                       <button onClick={cancelEditing} className="p-1 text-muted-foreground hover:bg-white/10 rounded-sm shrink-0" title="Cancel (Esc)"><X className="w-3 h-3" /></button>
                                     </div>
                                   ) : (
-                                    <>
-                                      <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>{row[col] === null ? 'NULL' : String(row[col])}</span>
-                                      <button onClick={() => copyCell(row[col])} className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/10 transition-opacity" title="Copy">
-                                        <Copy className="w-3 h-3 text-muted-foreground" />
-                                      </button>
-                                    </>
+                                    <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>{row[col] === null ? 'NULL' : String(row[col])}</span>
                                   )}
                                 </td>
                               )
