@@ -108,6 +108,8 @@ function quoteIdent(name: string): string {
 }
 
 const NEW_DB_NAME_RE = /^[a-zA-Z0-9$_-]{1,64}$/
+const NEW_TABLE_NAME_RE = NEW_DB_NAME_RE
+const DEFAULT_CREATE_TABLE_COLUMNS = 'id INT NOT NULL AUTO_INCREMENT PRIMARY KEY'
 
 const HISTORY_KEY = 'db-query-history'
 function loadQueryHistory(): QueryHistoryEntry[] {
@@ -236,6 +238,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const [createDbOpen, setCreateDbOpen] = useState(false)
   const [createDbName, setCreateDbName] = useState('')
+  const [createTableOpen, setCreateTableOpen] = useState(false)
+  const [createTableDb, setCreateTableDb] = useState('')
+  const [createTableName, setCreateTableName] = useState('')
+  const [createTableColumnSql, setCreateTableColumnSql] = useState(DEFAULT_CREATE_TABLE_COLUMNS)
   const [schemaBusy, setSchemaBusy] = useState(false)
 
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([])
@@ -548,6 +554,14 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setCreateDbOpen(true)
   }, [])
 
+  const openCreateTableDialog = useCallback((dbName: string) => {
+    setSidebarCtx(null)
+    setCreateTableDb(dbName)
+    setCreateTableName('')
+    setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+    setCreateTableOpen(true)
+  }, [])
+
   const openTableSidebarMenu = useCallback((e: React.MouseEvent, dbName: string, tableName: string) => {
     e.preventDefault()
     e.stopPropagation()
@@ -623,6 +637,42 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       await refreshDatabases()
     }
   }, [createDbName, executeMutationSql, refreshDatabases])
+
+  const handleCreateTableSubmit = useCallback(async () => {
+    const name = createTableName.trim()
+    const dbName = createTableDb.trim()
+    const columns = createTableColumnSql.trim()
+    if (!dbName) return
+    if (!NEW_TABLE_NAME_RE.test(name)) {
+      toast.error('Invalid table name (letters, digits, _, $, - only; max 64).')
+      return
+    }
+    if (!columns) {
+      toast.error('Add at least one column definition.')
+      return
+    }
+    const sql = `CREATE TABLE ${quoteIdent(name)} (${columns}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    const ok = await executeMutationSql(sql, dbName)
+    if (!ok) return
+
+    setCreateTableOpen(false)
+    setCreateTableName('')
+    setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+
+    if (window.electronAPI) {
+      setDatabases((prev) =>
+        prev.map((d) => (d.name === dbName ? { ...d, expanded: true, loading: true } : d)),
+      )
+      const result = await window.electronAPI.dbGetTables(dbName)
+      setDatabases((prev) =>
+        prev.map((d) => {
+          if (d.name !== dbName) return d
+          if (result.ok) return { ...d, tables: result.tables, loading: false }
+          return { ...d, loading: false }
+        }),
+      )
+    }
+  }, [createTableName, createTableDb, createTableColumnSql, executeMutationSql])
 
   const handleSelectTable = useCallback(async (dbName: string, tableName: string) => {
     setTableLoading(true)
@@ -1430,7 +1480,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   <span className="truncate font-medium text-left">{db.name}</span>
                 </button>
                 {db.expanded && db.tables && (
-                  <div className="ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5">
+                  <div
+                    className="ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5"
+                    onContextMenu={(e) => openDatabaseSidebarMenu(e, db.name)}
+                  >
                     {db.tables.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-2 py-1 italic">No tables</p>
                     ) : db.tables.map((t) => (
@@ -1987,6 +2040,21 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         >
           {sidebarCtx.kind === 'pane' || sidebarCtx.kind === 'database' ? (
             <>
+              {sidebarCtx.kind === 'database' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
+                    title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be modified from here' : undefined}
+                    onClick={() => openCreateTableDialog(sidebarCtx.dbName)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                    New table…
+                  </button>
+                  <div className="border-t border-border/50 my-1" />
+                </>
+              )}
               <button
                 type="button"
                 onClick={openCreateDatabaseDialog}
@@ -2167,6 +2235,68 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
               <Button size="sm" className="gap-1" onClick={() => void handleConfirmImport()} disabled={importBusy}>
                 {importBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
                 Import {importPreview.rows.length.toLocaleString()} row(s)
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
+      {createTableOpen && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-md w-full mx-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Table2 className="w-5 h-5 text-blue-500" />
+              <span className="font-semibold">New table</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Create in <span className="font-mono text-foreground">{createTableDb}</span>
+            </p>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Table name</label>
+                <Input
+                  value={createTableName}
+                  onChange={(e) => setCreateTableName(e.target.value)}
+                  placeholder="my_table"
+                  className="font-mono text-sm"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleCreateTableSubmit()
+                  }}
+                />
+                <p className="text-[10px] text-muted-foreground">Letters, digits, _, $, - only; max 64.</p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-muted-foreground">Column definitions</label>
+                <textarea
+                  value={createTableColumnSql}
+                  onChange={(e) => setCreateTableColumnSql(e.target.value)}
+                  rows={4}
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-y min-h-[88px]"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  SQL inside the parentheses, e.g. <code className="font-mono bg-muted/50 px-1 rounded">name VARCHAR(255) NOT NULL</code>
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setCreateTableOpen(false)
+                  setCreateTableName('')
+                  setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+                }}
+                disabled={schemaBusy}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" className="gap-1" onClick={() => void handleCreateTableSubmit()} disabled={schemaBusy}>
+                {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                Create table
               </Button>
             </div>
           </div>
