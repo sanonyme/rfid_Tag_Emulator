@@ -421,6 +421,9 @@ class MockElectronAPI implements ElectronAPI {
   async dbExportTable(_database: string, _table: string) {
     return { ok: false as const, error: 'Not connected' }
   }
+  async dbImportRows(_database: string, _table: string, _rows: Record<string, any>[]) {
+    return { ok: false as const, error: 'Not connected' }
+  }
   async dbGetDatabaseSchema(_database: string) {
     return { ok: true as const, tables: [], foreignKeys: [] }
   }

@@ -26,6 +26,7 @@ import {
   dbDeleteRows,
   dbExportTable,
   dbGetDatabaseSchema,
+  dbImportRows,
 } from './db-handler.js'
 import {
   sftpConnect,
@@ -523,6 +524,11 @@ app.whenReady().then(() => {
   ipcMain.handle('db-export-table', async (_event, database: string, table: string) => {
     console.log(`DB: Export table ${database}.${table}`)
     return dbExportTable(database, table)
+  })
+
+  ipcMain.handle('db-import-rows', async (_event, database: string, table: string, rows: Record<string, any>[]) => {
+    console.log(`DB: Import rows ${database}.${table} (${rows?.length ?? 0} row(s))`)
+    return dbImportRows(database, table, rows ?? [])
   })
 
   ipcMain.handle('db-get-database-schema', async (_event, database: string) => {

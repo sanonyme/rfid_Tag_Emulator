@@ -525,6 +525,59 @@ export async function dbGetDatabaseSchema(
   }
 }
 
+const DB_IMPORT_MAX_ROWS = 10_000
+
+export async function dbImportRows(
+  database: string,
+  table: string,
+  rows: Record<string, any>[],
+): Promise<{ ok: true; inserted: number; skipped: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  const safeDb = assertSafeSqlIdentifier(database)
+  const safeTable = assertSafeSqlIdentifier(table)
+  if (!safeDb || !safeTable) return { ok: false, error: 'Invalid database or table name' }
+  if (!Array.isArray(rows) || rows.length === 0) return { ok: false, error: 'No rows to import' }
+  if (rows.length > DB_IMPORT_MAX_ROWS) {
+    return { ok: false, error: `Import limited to ${DB_IMPORT_MAX_ROWS} rows per batch` }
+  }
+
+  try {
+    await selectDatabase(safeDb)
+
+    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``)
+    const validCols = new Set((colRows as any[]).map((r) => String(r.Field)))
+
+    let inserted = 0
+    let skipped = 0
+    const conn = connection
+
+    await conn.beginTransaction()
+    try {
+      for (const row of rows) {
+        const entries = Object.entries(row).filter(([k, v]) => validCols.has(k) && v !== undefined)
+        if (entries.length === 0) {
+          skipped++
+          continue
+        }
+        const colList = entries.map(([k]) => `\`${k}\``).join(', ')
+        const placeholders = entries.map(() => '?').join(', ')
+        const sql = `INSERT INTO \`${safeTable}\` (${colList}) VALUES (${placeholders})`
+        const params = entries.map(([, v]) => v)
+        await conn.query(sql, params)
+        inserted++
+      }
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    }
+
+    return { ok: true, inserted, skipped }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Import failed' }
+  }
+}
+
 export function dbIsConnected(): boolean {
   return connection !== null
 }

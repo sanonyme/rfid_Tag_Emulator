@@ -123,6 +123,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbDeleteRows: (database: string, table: string, rows: Record<string, any>[]) =>
     ipcRenderer.invoke('db-delete-rows', database, table, rows),
   dbExportTable: (database: string, table: string) => ipcRenderer.invoke('db-export-table', database, table),
+  dbImportRows: (database: string, table: string, rows: Record<string, any>[]) =>
+    ipcRenderer.invoke('db-import-rows', database, table, rows),
   dbGetDatabaseSchema: (database: string) => ipcRenderer.invoke('db-get-database-schema', database),
 
   sftpConnect: (host: string, port: number, username: string, password: string) =>

@@ -206,6 +206,11 @@ export interface ElectronAPI {
     database: string,
     table: string
   ) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+  dbImportRows: (
+    database: string,
+    table: string,
+    rows: Record<string, any>[]
+  ) => Promise<{ ok: true; inserted: number; skipped: number } | { ok: false; error: string }>
   dbGetDatabaseSchema: (
     database: string
   ) => Promise<

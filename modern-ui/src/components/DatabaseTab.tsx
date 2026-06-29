@@ -38,11 +38,16 @@ import {
   CheckSquare,
   Square,
   Network,
+  Upload,
+  Wand2,
+  FileSearch,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
+import { prettifySql } from '@/lib/sql-format'
+import { coerceImportValue, parseImportFile, type ParsedImport } from '@/lib/db-import-parse'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { sql, MySQL } from '@codemirror/lang-sql'
@@ -218,6 +223,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
 
   type SidebarCtx =
+    | { x: number; y: number; kind: 'pane' }
     | { x: number; y: number; kind: 'database'; dbName: string }
     | { x: number; y: number; kind: 'table'; dbName: string; tableName: string }
   const [sidebarCtx, setSidebarCtx] = useState<SidebarCtx | null>(null)
@@ -274,6 +280,12 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   // Export menu
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [exporting, setExporting] = useState(false)
+
+  // Import
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importPreview, setImportPreview] = useState<ParsedImport | null>(null)
+  const [importFilename, setImportFilename] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
 
   // Refresh
   const [refreshing, setRefreshing] = useState(false)
@@ -523,6 +535,19 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'database', dbName })
   }, [dbConnected])
 
+  const openPaneSidebarMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dbConnected) return
+    setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'pane' })
+  }, [dbConnected])
+
+  const openCreateDatabaseDialog = useCallback(() => {
+    setSidebarCtx(null)
+    setCreateDbName('')
+    setCreateDbOpen(true)
+  }, [])
+
   const openTableSidebarMenu = useCallback((e: React.MouseEvent, dbName: string, tableName: string) => {
     e.preventDefault()
     e.stopPropagation()
@@ -708,6 +733,96 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [executeQuery])
 
   runQueryRef.current = handleRunQuery
+
+  const getEditorQuery = useCallback((): string => {
+    if (!viewRef.current) return ''
+    const view = viewRef.current
+    const selection = view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
+    return (selection.trim() || view.state.doc.toString().trim())
+  }, [])
+
+  const handlePrettifySql = useCallback(() => {
+    if (!viewRef.current) return
+    const query = viewRef.current.state.doc.toString()
+    if (!query.trim()) return
+    const formatted = prettifySql(query)
+    viewRef.current.dispatch({
+      changes: { from: 0, to: viewRef.current.state.doc.length, insert: formatted },
+    })
+    saveCurrentTabContent()
+    toast.success('SQL formatted')
+  }, [saveCurrentTabContent])
+
+  const handleExplainQuery = useCallback(() => {
+    const query = getEditorQuery()
+    if (!query) return
+    const explainSql = /^\s*explain\b/i.test(query) ? query : `EXPLAIN ${query.replace(/;\s*$/, '')}`
+    executeQuery(explainSql)
+  }, [getEditorQuery, executeQuery])
+
+  const handleImportFilePick = useCallback(() => {
+    if (readOnly) {
+      toast.error('Disable read-only mode to import rows')
+      return
+    }
+    if (!selectedDb || !selectedTable) {
+      toast.error('Select a table first')
+      return
+    }
+    importInputRef.current?.click()
+  }, [readOnly, selectedDb, selectedTable])
+
+  const handleImportFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseImportFile(text, file.name)
+      if (parsed.rows.length === 0) {
+        toast.error('File contains no data rows')
+        return
+      }
+      setImportFilename(file.name)
+      setImportPreview(parsed)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not parse import file')
+    }
+  }, [])
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!importPreview || !window.electronAPI || !selectedDb || !selectedTable) return
+    setImportBusy(true)
+    try {
+      const tableColSet = new Set(tableColumns)
+      const rows = importPreview.rows.map((row) => {
+        const out: Record<string, string | number | null> = {}
+        for (const col of importPreview.columns) {
+          if (!tableColSet.has(col)) continue
+          out[col] = coerceImportValue(row[col] ?? '')
+        }
+        return out
+      }).filter((row) => Object.keys(row).length > 0)
+
+      if (rows.length === 0) {
+        toast.error('No import columns match this table')
+        return
+      }
+
+      const result = await window.electronAPI.dbImportRows(selectedDb, selectedTable, rows)
+      if (result.ok) {
+        toast.success(`Imported ${result.inserted} row(s)${result.skipped ? ` (${result.skipped} skipped)` : ''}`)
+        setImportPreview(null)
+        setImportFilename('')
+        await loadPage(selectedDb, selectedTable, currentPage, pageSize)
+        await refreshDatabases()
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setImportBusy(false)
+    }
+  }, [importPreview, selectedDb, selectedTable, tableColumns, loadPage, currentPage, pageSize, refreshDatabases])
 
   const clearQueryResults = useCallback(() => {
     setQueryColumns([])
@@ -1300,8 +1415,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           </div>
         </div>
 
-        <ScrollArea className="flex-1 w-full">
-          <div className="p-1.5 space-y-0.5 overflow-hidden">
+        <ScrollArea className="flex-1 w-full" onContextMenu={openPaneSidebarMenu}>
+          <div className="p-1.5 space-y-0.5 overflow-hidden min-h-full" onContextMenu={openPaneSidebarMenu}>
             {databases.map((db) => (
               <div key={db.name}>
                 <button
@@ -1413,6 +1528,17 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                           <PlusCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
+                    </div>
+
+                    <div className={cn('relative', tableView !== 'data' && 'invisible')}>
+                      <button
+                        onClick={handleImportFilePick}
+                        disabled={readOnly}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-40"
+                        title={readOnly ? 'Read-only mode' : 'Import CSV or JSON'}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
                     </div>
 
                     <div className={cn('relative', tableView !== 'data' && 'invisible')}>
@@ -1731,6 +1857,21 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
+              <button
+                onClick={handlePrettifySql}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                title="Prettify SQL"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleExplainQuery}
+                disabled={queryRunning}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-40"
+                title="Explain query (EXPLAIN …)"
+              >
+                <FileSearch className="w-3.5 h-3.5" />
+              </button>
               <Button size="sm" className="h-5 gap-1 px-2 text-[10px]" onClick={() => handleRunQuery()} disabled={queryRunning}>
                 {queryRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                 Run
@@ -1844,34 +1985,34 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {sidebarCtx.kind === 'database' ? (
+          {sidebarCtx.kind === 'pane' || sidebarCtx.kind === 'database' ? (
             <>
               <button
                 type="button"
-                onClick={() => {
-                  setSidebarCtx(null)
-                  setCreateDbName('')
-                  setCreateDbOpen(true)
-                }}
+                onClick={openCreateDatabaseDialog}
                 className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
               >
                 <PlusCircle className="w-3.5 h-3.5 text-green-500" />
                 New database…
               </button>
-              <div className="border-t border-border/50 my-1" />
-              <button
-                type="button"
-                disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
-                title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be dropped from here' : undefined}
-                onClick={() => {
-                  setSidebarCtx(null)
-                  setSchemaConfirm({ kind: 'dropDatabase', db: sidebarCtx.dbName })
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive disabled:opacity-40 disabled:pointer-events-none"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete database…
-              </button>
+              {sidebarCtx.kind === 'database' && (
+                <>
+                  <div className="border-t border-border/50 my-1" />
+                  <button
+                    type="button"
+                    disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
+                    title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be dropped from here' : undefined}
+                    onClick={() => {
+                      setSidebarCtx(null)
+                      setSchemaConfirm({ kind: 'dropDatabase', db: sidebarCtx.dbName })
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete database…
+                  </button>
+                </>
+              )}
             </>
           ) : (
             <>
@@ -1957,6 +2098,82 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         document.body,
       )}
 
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".csv,.json,text/csv,application/json"
+        className="hidden"
+        onChange={(e) => void handleImportFileChange(e)}
+      />
+
+      {importPreview && createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
+          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-lg w-full mx-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Upload className="w-5 h-5 text-blue-500" />
+              <span className="font-semibold">Import rows</span>
+            </div>
+            <p className="text-sm text-muted-foreground mb-2">
+              Import into <span className="font-mono text-foreground">{selectedDb}.{selectedTable}</span> from{' '}
+              <span className="font-mono">{importFilename}</span>
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              {importPreview.rows.length.toLocaleString()} row(s), {importPreview.columns.length} column(s).
+              Only columns that exist on the table are inserted. Empty cells and <code className="font-mono bg-muted/50 px-1 rounded">NULL</code> become SQL NULL.
+            </p>
+            <div className="rounded-lg border border-border/50 overflow-auto max-h-40 mb-4">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr>
+                    {importPreview.columns.slice(0, 6).map((col) => (
+                      <th key={col} className="px-2 py-1 text-left font-medium text-muted-foreground">
+                        {col}
+                        {!tableColumns.includes(col) && (
+                          <span className="ml-1 text-amber-500" title="Not on target table">!</span>
+                        )}
+                      </th>
+                    ))}
+                    {importPreview.columns.length > 6 && (
+                      <th className="px-2 py-1 text-left text-muted-foreground">…</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.rows.slice(0, 5).map((row, i) => (
+                    <tr key={i} className="border-t border-border/30">
+                      {importPreview.columns.slice(0, 6).map((col) => (
+                        <td key={col} className="px-2 py-1 font-mono truncate max-w-[120px]">
+                          {row[col] || <span className="text-muted-foreground/50 italic">NULL</span>}
+                        </td>
+                      ))}
+                      {importPreview.columns.length > 6 && <td className="px-2 py-1 text-muted-foreground">…</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setImportPreview(null)
+                  setImportFilename('')
+                }}
+                disabled={importBusy}
+              >
+                Cancel
+              </Button>
+              <Button size="sm" className="gap-1" onClick={() => void handleConfirmImport()} disabled={importBusy}>
+                {importBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                Import {importPreview.rows.length.toLocaleString()} row(s)
+              </Button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )}
+
       {createDbOpen && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
           <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-sm w-full mx-4">
@@ -2004,6 +2221,9 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             <Play className="w-3.5 h-3.5 text-green-500" />Run All<kbd className="ml-auto text-[10px] text-muted-foreground">Ctrl+Enter</kbd>
           </button>
           {ctxMenu.hasSelection && <button onClick={handleCtxRunSelected} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Play className="w-3.5 h-3.5 text-blue-500" />Run Selected</button>}
+          <div className="border-t border-border/50 my-1" />
+          <button onClick={() => { setCtxMenu(null); handlePrettifySql() }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Wand2 className="w-3.5 h-3.5" />Prettify SQL</button>
+          <button onClick={() => { setCtxMenu(null); handleExplainQuery() }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><FileSearch className="w-3.5 h-3.5" />Explain</button>
           <div className="border-t border-border/50 my-1" />
           <button onClick={() => { setCtxMenu(null); if (viewRef.current) navigator.clipboard.writeText(viewRef.current.state.doc.toString()) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Copy className="w-3.5 h-3.5" />Copy All</button>
           {queryTabs.length > 1 && <button onClick={() => { setCtxMenu(null); removeQueryTab(activeTabId) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 text-destructive transition-colors text-left"><Trash2 className="w-3.5 h-3.5" />Close Tab</button>}
