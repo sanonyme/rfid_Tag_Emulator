@@ -72,6 +72,7 @@ import { Switch } from './ui/switch'
 import type { AutomationStep, AutomationSequence, ActionType } from '@/lib/automation-types'
 import { normalizeSequences, migrateStepsToSequences } from '@/lib/automation-types'
 import { NodeConfigDialog } from './NodeConfigDialog'
+import { PortaledAnchoredMenu } from './ui/portaled-anchored-menu'
 
 interface AutomationTabProps {
   emulator: TCPEmulatorClient
@@ -1052,6 +1053,17 @@ export function AutomationTab({
   }
 
   const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addNodeBtnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!addMenuOpen) return
+    const close = () => setAddMenuOpen(false)
+    const timer = setTimeout(() => window.addEventListener('click', close), 0)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('click', close)
+    }
+  }, [addMenuOpen])
 
   return (
     <div className="stagger-children h-full flex flex-col gap-0 overflow-hidden">
@@ -1064,43 +1076,50 @@ export function AutomationTab({
           <span className="font-semibold text-sm tracking-wide text-muted-foreground">WORKFLOW BUILDER</span>
         </div>
         <div className="relative">
-          <Button size="sm" onClick={() => setAddMenuOpen(!addMenuOpen)}>
+          <Button
+            ref={addNodeBtnRef}
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation()
+              setAddMenuOpen((open) => !open)
+            }}
+          >
             <Plus className="w-4 h-4 mr-2" />
             ADD NODE
             <ChevronDown className="w-4 h-4 ml-1" />
           </Button>
-          {addMenuOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setAddMenuOpen(false)} />
-              <div className="absolute right-0 top-full mt-1 z-50 py-1 rounded-lg border border-border bg-popover shadow-lg min-w-[200px]">
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
-                  <Clock className="w-4 h-4 text-amber-500" /> Delay
-                </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('OCR'); setAddMenuOpen(false) }}>
-                  <ScanLine className="w-4 h-4 text-pink-500" /> OCR
-                </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('FIXED_TAG'); setAddMenuOpen(false) }}>
-                  <Radio className="w-4 h-4 text-blue-500" /> Fixed Reader
-                </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('HANDHELD_TAG'); setAddMenuOpen(false) }}>
-                  <Smartphone className="w-4 h-4 text-emerald-500" /> Handheld
-                </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CUSTOM_MESSAGE'); setAddMenuOpen(false) }}>
-                  <Terminal className="w-4 h-4 text-violet-500" /> Custom Message
-                </button>
-                <div className="my-1 border-t border-border/60" />
-                <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  Edge API
-                </p>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_BLOCK'); setAddMenuOpen(false) }}>
-                  <Box className="w-4 h-4 text-cyan-500" /> Invoke block
-                </button>
-                <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_PROCESS'); setAddMenuOpen(false) }}>
-                  <Workflow className="w-4 h-4 text-teal-500" /> Start / stop process
-                </button>
-              </div>
-            </>
-          )}
+          <PortaledAnchoredMenu
+            anchorRef={addNodeBtnRef}
+            open={addMenuOpen}
+            className="py-1 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg min-w-[200px]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
+              <Clock className="w-4 h-4 text-amber-500" /> Delay
+            </button>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('OCR'); setAddMenuOpen(false) }}>
+              <ScanLine className="w-4 h-4 text-pink-500" /> OCR
+            </button>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('FIXED_TAG'); setAddMenuOpen(false) }}>
+              <Radio className="w-4 h-4 text-blue-500" /> Fixed Reader
+            </button>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('HANDHELD_TAG'); setAddMenuOpen(false) }}>
+              <Smartphone className="w-4 h-4 text-emerald-500" /> Handheld
+            </button>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CUSTOM_MESSAGE'); setAddMenuOpen(false) }}>
+              <Terminal className="w-4 h-4 text-violet-500" /> Custom Message
+            </button>
+            <div className="my-1 border-t border-border/60" />
+            <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Edge API
+            </p>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_BLOCK'); setAddMenuOpen(false) }}>
+              <Box className="w-4 h-4 text-cyan-500" /> Invoke block
+            </button>
+            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_PROCESS'); setAddMenuOpen(false) }}>
+              <Workflow className="w-4 h-4 text-teal-500" /> Start / stop process
+            </button>
+          </PortaledAnchoredMenu>
         </div>
       </div>
 
