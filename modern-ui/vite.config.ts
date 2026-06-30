@@ -18,6 +18,8 @@ const embedReleaseOwner = (process.env.ZEUS_RELEASE_OWNER ?? '').trim()
 const embedReleaseRepo = (process.env.ZEUS_RELEASE_REPO ?? '').trim()
 const embedSecondReleaseOwner = (process.env.ZEUS_SECOND_RELEASE_OWNER ?? '').trim()
 const embedSecondReleaseRepo = (process.env.ZEUS_SECOND_RELEASE_REPO ?? '').trim()
+const embedAleUsername = (process.env.ZEUS_ALE_USERNAME ?? process.env.VITE_ALE_USERNAME ?? '').trim()
+const embedAlePassword = (process.env.ZEUS_ALE_PASSWORD ?? process.env.VITE_ALE_PASSWORD ?? '').trim()
 
 export default defineConfig({
   plugins: [
@@ -33,6 +35,8 @@ export default defineConfig({
             __ZEUS_EMBED_RELEASE_REPO__: JSON.stringify(embedReleaseRepo),
             __ZEUS_EMBED_SECOND_RELEASE_OWNER__: JSON.stringify(embedSecondReleaseOwner),
             __ZEUS_EMBED_SECOND_RELEASE_REPO__: JSON.stringify(embedSecondReleaseRepo),
+            __ZEUS_EMBED_ALE_USERNAME__: JSON.stringify(embedAleUsername),
+            __ZEUS_EMBED_ALE_PASSWORD__: JSON.stringify(embedAlePassword),
           },
           build: {
             outDir: 'dist-electron',

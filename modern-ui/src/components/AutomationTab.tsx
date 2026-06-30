@@ -1091,6 +1091,7 @@ export function AutomationTab({
           <PortaledAnchoredMenu
             anchorRef={addNodeBtnRef}
             open={addMenuOpen}
+            fitContent
             className="py-1 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg min-w-[200px]"
             onClick={(e) => e.stopPropagation()}
           >

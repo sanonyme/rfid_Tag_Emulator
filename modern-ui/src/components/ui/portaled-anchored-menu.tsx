@@ -9,6 +9,7 @@ export function PortaledAnchoredMenu({
   children,
   onClick,
   maxHeight = 256,
+  fitContent = false,
 }: {
   anchorRef: RefObject<HTMLElement | null>
   open: boolean
@@ -16,9 +17,10 @@ export function PortaledAnchoredMenu({
   children: ReactNode
   onClick?: MouseEventHandler<HTMLDivElement>
   maxHeight?: number
+  fitContent?: boolean
 }) {
   const menuRef = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  const [position, setPosition] = useState<{ left: number; top: number; maxHeight?: number } | null>(null)
 
   useLayoutEffect(() => {
     if (!open) {
@@ -41,8 +43,15 @@ export function PortaledAnchoredMenu({
     const openUp = spaceAbove > spaceBelow
 
     let top: number
-    let resolvedMaxHeight: number
-    if (openUp) {
+    let resolvedMaxHeight: number | undefined
+    if (fitContent) {
+      const menuHeight = menu.scrollHeight
+      if (openUp) {
+        top = Math.max(margin, rect.top - gap - menuHeight)
+      } else {
+        top = rect.bottom + gap
+      }
+    } else if (openUp) {
       resolvedMaxHeight = Math.min(maxHeight, Math.max(120, spaceAbove))
       const menuHeight = Math.min(menu.scrollHeight, resolvedMaxHeight)
       top = Math.max(margin, rect.top - gap - menuHeight)
@@ -53,17 +62,17 @@ export function PortaledAnchoredMenu({
     }
 
     setPosition({ left, top, maxHeight: resolvedMaxHeight })
-  }, [open, anchorRef, children, maxHeight])
+  }, [open, anchorRef, children, maxHeight, fitContent])
 
   if (!open) return null
 
   return createPortal(
     <div
       ref={menuRef}
-      className={cn('fixed z-[9999] overflow-auto', className)}
+      className={cn('fixed z-[9999]', fitContent ? 'overflow-visible' : 'overflow-auto', className)}
       style={
         position
-          ? { left: position.left, top: position.top, maxHeight: position.maxHeight }
+          ? { left: position.left, top: position.top, ...(position.maxHeight != null ? { maxHeight: position.maxHeight } : {}) }
           : { visibility: 'hidden', left: 0, top: 0 }
       }
       onClick={onClick}
