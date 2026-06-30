@@ -26,6 +26,28 @@ function getClient(port: number) {
   return clientCache.get(port)!
 }
 
+function countTagsInSlot(slot: HandheldSlot): number {
+  let count = 0
+  const upcText = slot.upcList.trim()
+  if (upcText) {
+    for (const line of upcText.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const [upc, countStr] = trimmed.split(',')
+      const qty = parseInt(countStr?.trim() || '0', 10)
+      if (qty > 0 && upc?.trim()) count += qty
+    }
+  }
+  const epcText = slot.epcList.trim()
+  if (epcText) {
+    for (const line of epcText.split('\n')) {
+      const epc = line.trim().split(',')[0]?.trim()
+      if (epc) count++
+    }
+  }
+  return count
+}
+
 function parseTagsFromSlot(
   slot: HandheldSlot,
   rssi: string,
@@ -38,7 +60,9 @@ function parseTagsFromSlot(
       slot.startSerial ?? '1',
       serialContinuesAcrossUpcLines,
     )
-    all.push(...expanded.map(({ epc, customTid }) => ({ epc, tid: customTid || epc, rssi })))
+    for (const { epc, customTid } of expanded) {
+      all.push({ epc, tid: customTid || epc, rssi })
+    }
   }
   if (slot.epcList.trim()) {
     for (const line of slot.epcList.trim().split('\n')) {
@@ -112,7 +136,7 @@ export function MobileHandheldTab({
 
   const isRunning = runningPorts.has(slot.port)
   const isSending = sendingPorts.has(slot.port)
-  const tags = parseTagsFromSlot(slot, rssi, serialContinuesAcrossUpcLines)
+  const tagCount = countTagsInSlot(slot)
 
   const handleStart = () => {
     getClient(slot.port).start((m) => addLog(m), (e) => addLog(`Error: ${e}`))
@@ -132,7 +156,7 @@ export function MobileHandheldTab({
     const port = curSlot.port
     const slotId = curSlot.id
 
-    if (!parseTagsFromSlot(curSlot, rssiRef.current, serialContinuesRef.current).length) {
+    if (countTagsInSlot(curSlot) === 0) {
       addLog('Error: No tags')
       return
     }
@@ -349,15 +373,15 @@ export function MobileHandheldTab({
           <div className="flex flex-col gap-2">
             <Button
               onClick={handleSendOnce}
-              disabled={isSending || !isRunning || tags.length === 0}
+              disabled={isSending || !isRunning || tagCount === 0}
               className="h-12 w-full gap-2"
             >
               <Zap className="h-4 w-4 shrink-0" />
-              Send ({tags.length})
+              Send ({tagCount})
             </Button>
             <Button
               onClick={isSending ? handleCancelSend : handleLoopSend}
-              disabled={!isRunning || (!isSending && tags.length === 0)}
+              disabled={!isRunning || (!isSending && tagCount === 0)}
               variant={isSending ? 'destructive' : 'outline'}
               className={cn('h-12 w-full gap-2', !isSending && 'bg-background')}
             >

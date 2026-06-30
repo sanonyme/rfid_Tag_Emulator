@@ -50,6 +50,29 @@ interface HandheldTabProps {
 
 const DEFAULT_PORT = 10472
 
+/** Tag count without materializing EPC hex strings (safe during render). */
+function countTagsInSlot(slot: HandheldSlot): number {
+  let count = 0
+  const upcText = slot.upcList.trim()
+  if (upcText) {
+    for (const line of upcText.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const [upc, countStr] = trimmed.split(',')
+      const qty = parseInt(countStr?.trim() || '0', 10)
+      if (qty > 0 && upc?.trim()) count += qty
+    }
+  }
+  const epcText = slot.epcList.trim()
+  if (epcText) {
+    for (const line of epcText.split('\n')) {
+      const epc = line.trim().split(',')[0]?.trim()
+      if (epc) count++
+    }
+  }
+  return count
+}
+
 function parseTagsFromSlot(
   slot: HandheldSlot,
   rssi: string,
@@ -63,13 +86,9 @@ function parseTagsFromSlot(
       slot.startSerial ?? '1',
       serialContinuesAcrossUpcLines,
     )
-    allTags.push(
-      ...expanded.map(({ epc, customTid }) => ({
-        epc,
-        tid: customTid || epc,
-        rssi,
-      })),
-    )
+    for (const { epc, customTid } of expanded) {
+      allTags.push({ epc, tid: customTid || epc, rssi })
+    }
   }
 
   if (slot.epcList.trim()) {
@@ -355,9 +374,7 @@ export function HandheldTab({
   }
 
   const handleSendAll = async () => {
-    const slotsWithTags = slots.filter(
-      (s) => parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length > 0,
-    )
+    const slotsWithTags = slots.filter((s) => countTagsInSlot(s) > 0)
     if (slotsWithTags.length === 0) {
       addLog('Error: No slots have tags to send')
       return
@@ -452,10 +469,7 @@ export function HandheldTab({
                 size="sm"
                 label="Send all"
                 onClick={handleSendAll}
-                disabled={
-                  sendingPorts.size > 0 ||
-                  slots.every((s) => parseTagsFromSlot(s, rssi, serialContinuesAcrossUpcLines).length === 0)
-                }
+                disabled={sendingPorts.size > 0 || slots.every((s) => countTagsInSlot(s) === 0)}
               />
             </div>
           </div>
@@ -475,7 +489,7 @@ export function HandheldTab({
             <HandheldSlotCard
               key={slot.id}
               slot={slot}
-              hasTags={parseTagsFromSlot(slot, rssi, serialContinuesAcrossUpcLines).length > 0}
+              hasTags={countTagsInSlot(slot) > 0}
               isRunning={runningPorts.has(slot.port)}
               isSending={sendingPorts.has(slot.port)}
               onUpdate={(updates) => updateSlot(slot.id, updates)}
