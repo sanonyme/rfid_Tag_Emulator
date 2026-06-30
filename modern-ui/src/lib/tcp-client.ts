@@ -1,5 +1,7 @@
 // TCP Client for communicating with the emulator backend via Electron IPC
 
+import type { HandheldSendRecipe } from './handheld-tag-iterate'
+
 export interface TagData {
   epc: string
   tid: string
@@ -201,6 +203,36 @@ export class HandheldServerClient {
         finish()
       }
       api.handheldSendEpcs(this.port, tags, delay, verboseProgress)
+    })
+  }
+
+  async sendRecipe(
+    recipe: HandheldSendRecipe,
+    delay: number,
+    onProgress: (message: string) => void,
+    onComplete: (message: string) => void,
+    verboseProgress: boolean = true,
+  ): Promise<void> {
+    if (!window.electronAPI) {
+      onProgress('Error: Electron API not available')
+      return
+    }
+
+    const api = window.electronAPI
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (!settled) {
+          settled = true
+          resolve()
+        }
+      }
+      this.progressCallback = onProgress
+      this.completeCallback = (message: string) => {
+        onComplete(message)
+        finish()
+      }
+      api.handheldSendRecipe(this.port, recipe, delay, verboseProgress)
     })
   }
 

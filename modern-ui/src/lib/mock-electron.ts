@@ -213,6 +213,13 @@ class MockElectronAPI implements ElectronAPI {
     }, Math.max(delayMs, 100));
   }
 
+  handheldSendRecipe(port: number, recipe: import('./handheld-tag-iterate').HandheldSendRecipe, delayMs: number, verboseProgress: boolean = true) {
+    void import('./handheld-tag-iterate').then(({ iterateHandheldTags }) => {
+      const tags = [...iterateHandheldTags(recipe)];
+      this.handheldSendEpcs(port, tags, delayMs, verboseProgress);
+    });
+  }
+
   async handheldIsRunning(_port: number = 10472) {
     return this._handheldRunning;
   }

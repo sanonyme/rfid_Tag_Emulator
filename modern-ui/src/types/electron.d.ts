@@ -85,6 +85,7 @@ export interface ElectronAPI {
   handheldStart: (port: number) => void
   handheldStop: (port: number) => void
   handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) => void
+  handheldSendRecipe: (port: number, recipe: import('@/lib/handheld-tag-iterate').HandheldSendRecipe, delayMs: number, verboseProgress?: boolean) => void
   handheldIsRunning: (port: number) => Promise<boolean>
   handheldCancelSend: (port: number) => void
   

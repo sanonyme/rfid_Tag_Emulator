@@ -38,7 +38,7 @@ export function TagListSummary({ value, kind, variant = 'default', className }: 
   const debouncedValue = useDebouncedValue(value, 120)
   const result = useMemo(() => validateTagList(debouncedValue, kind), [debouncedValue, kind])
 
-  if (result.lines.length === 0) return null
+  if (result.nonBlankLines === 0) return null
 
   const hasErrors = result.invalidLines > 0
   const baseColor = hasErrors
@@ -99,10 +99,14 @@ export function TagListSummary({ value, kind, variant = 'default', className }: 
           </DialogHeader>
 
           <ScrollArea className="h-[300px] rounded-md border bg-muted/10">
+            {result.invalidLinesTruncated && (
+              <p className="border-b border-border/40 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Showing first {result.lines.length} of {result.invalidLines.toLocaleString()} invalid
+                lines.
+              </p>
+            )}
             <ul className="divide-y divide-border/40">
-              {result.lines
-                .filter((l): l is Extract<typeof l, { ok: false }> => !l.ok)
-                .map((line) => (
+              {result.lines.map((line) => (
                   <li key={line.lineNumber} className="space-y-1 px-3 py-2.5">
                     <div className="flex items-center gap-2 text-xs">
                       <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">

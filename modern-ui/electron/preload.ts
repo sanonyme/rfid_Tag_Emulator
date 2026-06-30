@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   handheldStop: (port: number) => ipcRenderer.send('handheld-stop', port),
   handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) =>
     ipcRenderer.send('handheld-send-epcs', port, tags, delayMs, verboseProgress !== false),
+  handheldSendRecipe: (port: number, recipe: unknown, delayMs: number, verboseProgress?: boolean) =>
+    ipcRenderer.send('handheld-send-recipe', port, recipe, delayMs, verboseProgress !== false),
   handheldCancelSend: (port: number) => ipcRenderer.send('handheld-cancel-send', port),
   handheldIsRunning: (port: number) => ipcRenderer.invoke('handheld-is-running', port),
   

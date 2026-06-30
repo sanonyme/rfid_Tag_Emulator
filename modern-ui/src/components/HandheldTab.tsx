@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -9,7 +9,7 @@ import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
 import { Smartphone, Zap, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
 import { toast } from 'sonner'
-import { HandheldServerClient, expandUpcListToEpcs } from '@/lib/tcp-client'
+import { HandheldServerClient } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
 import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
@@ -26,6 +26,12 @@ import {
   setHandheldFullActivityLog,
   shouldAppendHandheldLogLine,
 } from '@/lib/handheld-log-settings'
+import { countHandheldSlotTags } from '@/lib/tag-list-count'
+import {
+  countHandheldRecipeTags,
+  handheldRecipeFromSlot,
+} from '@/lib/handheld-tag-iterate'
+import { useDebouncedValue } from '@/lib/use-debounced-value'
 
 const MAX_HANDHELD_LOG_LINES = 500
 
@@ -50,69 +56,7 @@ interface HandheldTabProps {
 
 const DEFAULT_PORT = 10472
 
-/** Tag count without materializing EPC hex strings (safe during render). */
-function countTagsInSlot(slot: HandheldSlot): number {
-  let count = 0
-  const upcText = slot.upcList.trim()
-  if (upcText) {
-    for (const line of upcText.split('\n')) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const [upc, countStr] = trimmed.split(',')
-      const qty = parseInt(countStr?.trim() || '0', 10)
-      if (qty > 0 && upc?.trim()) count += qty
-    }
-  }
-  const epcText = slot.epcList.trim()
-  if (epcText) {
-    for (const line of epcText.split('\n')) {
-      const epc = line.trim().split(',')[0]?.trim()
-      if (epc) count++
-    }
-  }
-  return count
-}
-
-function parseTagsFromSlot(
-  slot: HandheldSlot,
-  rssi: string,
-  serialContinuesAcrossUpcLines: boolean,
-): { epc: string; tid?: string; rssi: string }[] {
-  const allTags: { epc: string; tid?: string; rssi: string }[] = []
-
-  if (slot.upcList.trim()) {
-    const expanded = expandUpcListToEpcs(
-      slot.upcList,
-      slot.startSerial ?? '1',
-      serialContinuesAcrossUpcLines,
-    )
-    for (const { epc, customTid } of expanded) {
-      allTags.push({ epc, tid: customTid || epc, rssi })
-    }
-  }
-
-  if (slot.epcList.trim()) {
-    const lines = slot.epcList.trim().split('\n')
-    for (const line of lines) {
-      const trimmed = line.trim()
-      if (!trimmed) continue
-      const parts = trimmed.split(',')
-      const epc = parts[0]?.trim()
-      const customTid = parts[1]?.trim()
-      if (epc) {
-        allTags.push({
-          epc,
-          tid: customTid || epc,
-          rssi
-        })
-      }
-    }
-  }
-
-  return allTags
-}
-
-/** Stable key so loop mode can reuse parsed tags instead of regenerating thousands of EPCs every round. */
+/** Stable key so loop mode can detect list / serial changes between rounds. */
 function handheldSlotParseKey(s: HandheldSlot, rssi: string, serialContinuesAcrossUpcLines: boolean): string {
   return `${s.upcList}\0${s.epcList}\0${s.startSerial ?? '1'}\0${serialContinuesAcrossUpcLines ? '1' : '0'}\0${rssi}`
 }
@@ -151,6 +95,11 @@ export function HandheldTab({
   handheldDelayRef.current = handheldDelay
   const serialContinuesRef = useRef(serialContinuesAcrossUpcLines)
   serialContinuesRef.current = serialContinuesAcrossUpcLines
+  const debouncedSlots = useDebouncedValue(slots, 200)
+  const anySlotHasTags = useMemo(
+    () => debouncedSlots.some((s) => countHandheldSlotTags(s) > 0),
+    [debouncedSlots],
+  )
 
   const addLog = (message: string, port?: number) => {
     if (!shouldAppendHandheldLogLine(message, fullActivityLogRef.current)) return
@@ -261,8 +210,9 @@ export function HandheldTab({
     }
 
     const startedRepeat = opts?.loop === true
-    const firstTags = parseTagsFromSlot(slot, rssiRef.current, serialContinuesRef.current)
-    if (firstTags.length === 0) {
+    const recipe = handheldRecipeFromSlot(slot, rssiRef.current, serialContinuesRef.current)
+    const tagCount = countHandheldRecipeTags(recipe)
+    if (tagCount === 0) {
       addLog('Error: No EPCs generated', port)
       return
     }
@@ -270,14 +220,14 @@ export function HandheldTab({
     if (startedRepeat) {
       addLog(`Loop send started on port ${port}. Use Stop send to end.`, port)
     } else {
-      addLog(`Sending ${firstTags.length} EPC(s) to handheld on port ${port}...`, port)
+      addLog(`Sending ${tagCount.toLocaleString()} EPC(s) to handheld on port ${port}...`, port)
     }
 
     setSendingPorts((prev) => new Set([...prev, port]))
     publishStatus(handheldKey(port), {
       status: 'sending',
       port,
-      detail: startedRepeat ? 'loop send' : `sending ${firstTags.length} tag${firstTags.length === 1 ? '' : 's'}`,
+      detail: startedRepeat ? 'loop send' : `sending ${tagCount.toLocaleString()} tag${tagCount === 1 ? '' : 's'}`,
     })
 
     const fatalFinish = (msg: string) =>
@@ -285,7 +235,7 @@ export function HandheldTab({
       /no handheld connected|cancelled by user|^stopped:/i.test(msg)
 
     let round = 0
-    let cachedRoundTags: ReturnType<typeof parseTagsFromSlot> | null = null
+    let cachedRecipe: ReturnType<typeof handheldRecipeFromSlot> | null = null
     let cachedParseKey = ''
 
     while (!loopCancelRef.current.has(port)) {
@@ -298,11 +248,12 @@ export function HandheldTab({
 
       const parseKey = handheldSlotParseKey(cur, rssiRef.current, serialContinuesRef.current)
       if (parseKey !== cachedParseKey) {
-        cachedRoundTags = parseTagsFromSlot(cur, rssiRef.current, serialContinuesRef.current)
+        cachedRecipe = handheldRecipeFromSlot(cur, rssiRef.current, serialContinuesRef.current)
         cachedParseKey = parseKey
       }
-      const roundTags = cachedRoundTags!
-      if (roundTags.length === 0) {
+      const roundRecipe = cachedRecipe!
+      const roundTagCount = countHandheldRecipeTags(roundRecipe)
+      if (roundTagCount === 0) {
         addLog('Error: No EPCs (list empty); stopping.', port)
         break
       }
@@ -314,7 +265,7 @@ export function HandheldTab({
 
       round++
       if (startedRepeat) {
-        addLog(`— Round ${round} (${roundTags.length} tag(s)) —`, port)
+        addLog(`— Round ${round} (${roundTagCount.toLocaleString()} tag(s)) —`, port)
       }
 
       let completeMsg = ''
@@ -326,8 +277,8 @@ export function HandheldTab({
             resolve()
           }
         }
-        client.sendEpcs(
-          roundTags,
+        client.sendRecipe(
+          roundRecipe,
           parseInt(handheldDelayRef.current, 10) || 0,
           (progress) => {
             if (fullActivityLogRef.current) addLog(progress, port)
@@ -374,7 +325,7 @@ export function HandheldTab({
   }
 
   const handleSendAll = async () => {
-    const slotsWithTags = slots.filter((s) => countTagsInSlot(s) > 0)
+    const slotsWithTags = slots.filter((s) => countHandheldSlotTags(s) > 0)
     if (slotsWithTags.length === 0) {
       addLog('Error: No slots have tags to send')
       return
@@ -469,7 +420,7 @@ export function HandheldTab({
                 size="sm"
                 label="Send all"
                 onClick={handleSendAll}
-                disabled={sendingPorts.size > 0 || slots.every((s) => countTagsInSlot(s) === 0)}
+                disabled={sendingPorts.size > 0 || !anySlotHasTags}
               />
             </div>
           </div>
@@ -489,7 +440,6 @@ export function HandheldTab({
             <HandheldSlotCard
               key={slot.id}
               slot={slot}
-              hasTags={countTagsInSlot(slot) > 0}
               isRunning={runningPorts.has(slot.port)}
               isSending={sendingPorts.has(slot.port)}
               onUpdate={(updates) => updateSlot(slot.id, updates)}
@@ -569,7 +519,6 @@ export function HandheldTab({
 
 interface HandheldSlotCardProps {
   slot: HandheldSlot
-  hasTags: boolean
   isRunning: boolean
   isSending: boolean
   onUpdate: (updates: Partial<Omit<HandheldSlot, 'id'>>) => void
@@ -584,7 +533,6 @@ interface HandheldSlotCardProps {
 
 function HandheldSlotCard({
   slot,
-  hasTags,
   isRunning,
   isSending,
   onUpdate,
@@ -601,6 +549,8 @@ function HandheldSlotCard({
   const upcPresetRef = useRef<TagPresetMenuHandle>(null)
   const epcPresetRef = useRef<TagPresetMenuHandle>(null)
   const accent = handheldAccent(slot.port || slot.id)
+  const debouncedSlot = useDebouncedValue(slot, 200)
+  const hasTags = useMemo(() => countHandheldSlotTags(debouncedSlot) > 0, [debouncedSlot])
 
   // Send / loop guards mirror the button-disabled rules below so the keyboard
   // path can't fire when the slot isn't ready.

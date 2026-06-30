@@ -5,6 +5,7 @@ import * as pty from 'node-pty'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
+import type { HandheldSendRecipe } from '../src/lib/handheld-tag-iterate.js'
 import {
   grantAdminSession,
   isAdminSender,
@@ -429,6 +430,20 @@ app.whenReady().then(() => {
       const handler = handheldHandlers.get(p)
       if (handler) {
         await handler.sendEpcs(tags, delayMs, verbose)
+      } else {
+        broadcastToAllWindows('handheld-complete', p, 'No server running on port ' + p)
+      }
+    }
+  )
+
+  ipcMain.on(
+    'handheld-send-recipe',
+    async (_event, port: number, recipe: unknown, delayMs: number, verboseProgress?: boolean) => {
+      const p = typeof port === 'number' ? port : 10472
+      const verbose = verboseProgress !== false
+      const handler = handheldHandlers.get(p)
+      if (handler) {
+        await handler.sendFromRecipe(recipe as HandheldSendRecipe, delayMs, verbose)
       } else {
         broadcastToAllWindows('handheld-complete', p, 'No server running on port ' + p)
       }

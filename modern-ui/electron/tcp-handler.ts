@@ -4,6 +4,11 @@
 import { Socket, Server, createServer } from 'net'
 import { formatTcpTagMessage, type TcpTagPayload } from '../src/lib/tcp-wire-format.js'
 import { formatHandheldBroadcastPayload, type HandheldTagPayload } from '../src/lib/handheld-wire-format.js'
+import {
+  countHandheldRecipeTags,
+  iterateHandheldTags,
+  type HandheldSendRecipe,
+} from '../src/lib/handheld-tag-iterate.js'
 import { broadcastToAllWindows } from './window-broadcast.js'
 
 /** Yields to the event loop and honours cancel; avoids long sleeps before stop takes effect. */
@@ -293,6 +298,18 @@ export class HandheldServerHandler {
     return next
   }
 
+  /** Expand and send from slot text in main process — avoids shipping millions of tags over IPC. */
+  async sendFromRecipe(
+    recipe: HandheldSendRecipe,
+    delayMs: number,
+    verboseProgress: boolean = true,
+  ): Promise<void> {
+    const run = () => this.runSendFromRecipe(recipe, delayMs, verboseProgress)
+    const next = this.sendSerial.then(run, run)
+    this.sendSerial = next.catch(() => {})
+    return next
+  }
+
   private async runSendEpcs(
     tags: { epc: string; tid?: string; rssi?: string }[],
     delayMs: number,
@@ -345,6 +362,68 @@ export class HandheldServerHandler {
       if (delayMs > 0 && i < tags.length - 1) {
         await delayCancellable(delayMs, () => this.cancelRequested)
       }
+    }
+
+    this.sendToRenderer('handheld-complete', `Broadcasted ${sentTotal} EPC(s) to handheld clients`)
+  }
+
+  private async runSendFromRecipe(
+    recipe: HandheldSendRecipe,
+    delayMs: number,
+    verboseProgress: boolean,
+  ): Promise<void> {
+    console.log(
+      `Handheld: sendFromRecipe - running: ${this.serverRunning}, clients: ${this.connectedClients.length}`,
+    )
+    if (!this.serverRunning || this.connectedClients.length === 0) {
+      const msg = `No handheld connected on port ${this.port} (Server running: ${this.serverRunning}, Connected clients: ${this.connectedClients.length})`
+      console.log(`Handheld: ${msg}`)
+      this.sendToRenderer('handheld-complete', msg)
+      return
+    }
+
+    const total = countHandheldRecipeTags(recipe)
+    if (total === 0) {
+      this.sendToRenderer('handheld-complete', 'No EPCs to send')
+      return
+    }
+
+    let sentTotal = 0
+    this.cancelRequested = false
+    this.lastHandheldProgressAt = 0
+
+    let i = 0
+    for (const tag of iterateHandheldTags(recipe)) {
+      if (this.cancelRequested) {
+        this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
+        return
+      }
+
+      const batchResult = await this.broadcastBatch([tag])
+      if (batchResult < 0) {
+        this.sendToRenderer('handheld-complete', 'Stopped: Cancelled by user')
+        return
+      }
+      sentTotal += batchResult
+
+      if (verboseProgress) {
+        const now = Date.now()
+        if (
+          i === 0 ||
+          i === total - 1 ||
+          now - this.lastHandheldProgressAt >= 120 ||
+          (i + 1) % 50 === 0
+        ) {
+          this.lastHandheldProgressAt = now
+          const rssiVal = this.handheldJsonRssi(tag)
+          this.sendToRenderer('handheld-progress', `Sent (${i + 1}/${total}): ${tag.epc} @rssi=${rssiVal}`)
+        }
+      }
+
+      if (delayMs > 0 && i < total - 1) {
+        await delayCancellable(delayMs, () => this.cancelRequested)
+      }
+      i++
     }
 
     this.sendToRenderer('handheld-complete', `Broadcasted ${sentTotal} EPC(s) to handheld clients`)
