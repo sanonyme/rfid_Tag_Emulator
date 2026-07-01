@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   handheldStop: (port: number) => ipcRenderer.send('handheld-stop', port),
   handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) =>
     ipcRenderer.send('handheld-send-epcs', port, tags, delayMs, verboseProgress !== false),
+  handheldSendRecipe: (port: number, recipe: unknown, delayMs: number, verboseProgress?: boolean) =>
+    ipcRenderer.send('handheld-send-recipe', port, recipe, delayMs, verboseProgress !== false),
   handheldCancelSend: (port: number) => ipcRenderer.send('handheld-cancel-send', port),
   handheldIsRunning: (port: number) => ipcRenderer.invoke('handheld-is-running', port),
   
@@ -123,6 +125,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbDeleteRows: (database: string, table: string, rows: Record<string, any>[]) =>
     ipcRenderer.invoke('db-delete-rows', database, table, rows),
   dbExportTable: (database: string, table: string) => ipcRenderer.invoke('db-export-table', database, table),
+  dbExportDatabaseSql: (database: string) => ipcRenderer.invoke('db-export-database-sql', database),
+  dbSaveExportTable: (database: string, table: string, format: 'csv' | 'sql') =>
+    ipcRenderer.invoke('db-save-export-table', database, table, format),
+  dbSaveExportDatabaseSql: (database: string) => ipcRenderer.invoke('db-save-export-database-sql', database),
+  dbSaveExportDatabaseCsv: (database: string) => ipcRenderer.invoke('db-save-export-database-csv', database),
+  onDbExportProgress: (callback: (progress: import('../src/lib/db-export-progress.js').DbExportProgressPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => {
+      callback(progress as import('../src/lib/db-export-progress.js').DbExportProgressPayload)
+    }
+    ipcRenderer.on('db-export-progress', listener)
+    return () => {
+      ipcRenderer.removeListener('db-export-progress', listener)
+    }
+  },
+  dbImportRows: (database: string, table: string, rows: Record<string, any>[]) =>
+    ipcRenderer.invoke('db-import-rows', database, table, rows),
   dbGetDatabaseSchema: (database: string) => ipcRenderer.invoke('db-get-database-schema', database),
 
   sftpConnect: (host: string, port: number, username: string, password: string) =>

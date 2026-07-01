@@ -27,6 +27,9 @@ function truncateEpc(epc: string, max = 28): string {
   return `${epc.slice(0, 14)}…${epc.slice(-10)}`
 }
 
+/** Max EPC rows shown in the "View all" preview dialog. */
+const UPC_EPC_PREVIEW_DIALOG_LIMIT = 500
+
 export function UpcEpcPreview({
   upcList,
   startSerial,
@@ -45,9 +48,9 @@ export function UpcEpcPreview({
   const validation = useMemo(() => validateTagList(debouncedUpcList, 'upc'), [debouncedUpcList])
 
   const fullPreview = useMemo(() => {
-    if (!open) return null
-    return buildUpcEpcPreview(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines)
-  }, [open, debouncedUpcList, startSerial, serialContinuesAcrossUpcLines])
+    if (!open || preview.count > UPC_EPC_PREVIEW_DIALOG_LIMIT) return null
+    return { ...buildUpcEpcPreview(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines), truncated: false }
+  }, [open, preview.count, debouncedUpcList, startSerial, serialContinuesAcrossUpcLines])
 
   if (preview.count === 0) return null
 
@@ -57,6 +60,7 @@ export function UpcEpcPreview({
       : 0
 
   const handleCopyAll = async () => {
+    if (preview.count > UPC_EPC_PREVIEW_DIALOG_LIMIT) return
     const tags = fullPreview?.tags ?? buildUpcEpcPreview(debouncedUpcList, startSerial, serialContinuesAcrossUpcLines).tags
     const text = tags.map((t) => t.epc).join('\n')
     try {
@@ -116,7 +120,7 @@ export function UpcEpcPreview({
               </p>
             )}
           </div>
-          {preview.count > 1 && (
+          {preview.count > 1 && preview.count <= UPC_EPC_PREVIEW_DIALOG_LIMIT && (
             <Button
               type="button"
               variant="outline"

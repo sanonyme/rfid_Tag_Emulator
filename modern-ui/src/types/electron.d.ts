@@ -85,6 +85,7 @@ export interface ElectronAPI {
   handheldStart: (port: number) => void
   handheldStop: (port: number) => void
   handheldSendEpcs: (port: number, tags: any[], delayMs: number, verboseProgress?: boolean) => void
+  handheldSendRecipe: (port: number, recipe: import('@/lib/handheld-tag-iterate').HandheldSendRecipe, delayMs: number, verboseProgress?: boolean) => void
   handheldIsRunning: (port: number) => Promise<boolean>
   handheldCancelSend: (port: number) => void
   
@@ -206,6 +207,38 @@ export interface ElectronAPI {
     database: string,
     table: string
   ) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+  dbExportDatabaseSql: (
+    database: string
+  ) => Promise<{ ok: true; sql: string } | { ok: false; error: string }>
+  dbSaveExportTable: (
+    database: string,
+    table: string,
+    format: 'csv' | 'sql'
+  ) => Promise<
+    | { ok: true; total: number; filePath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  dbSaveExportDatabaseSql: (
+    database: string
+  ) => Promise<
+    | { ok: true; tableCount: number; totalRows: number; filePath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  dbSaveExportDatabaseCsv: (
+    database: string
+  ) => Promise<
+    | { ok: true; tableCount: number; totalRows: number; folderPath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  onDbExportProgress: (callback: (progress: import('@/lib/db-export-progress').DbExportProgressPayload) => void) => () => void
+  dbImportRows: (
+    database: string,
+    table: string,
+    rows: Record<string, any>[]
+  ) => Promise<{ ok: true; inserted: number; skipped: number } | { ok: false; error: string }>
   dbGetDatabaseSchema: (
     database: string
   ) => Promise<

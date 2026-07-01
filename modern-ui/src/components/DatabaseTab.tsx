@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type ReactNode, type MouseEventHandler } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
@@ -38,11 +38,19 @@ import {
   CheckSquare,
   Square,
   Network,
+  Upload,
+  Wand2,
+  FileSearch,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
+import { prettifySql } from '@/lib/sql-format'
+import { buildExplainSql } from '@/lib/sql-explain'
+import { coerceImportValue, parseImportFile, type ParsedImport } from '@/lib/db-import-parse'
+import { formatSqlTableDump } from '@/lib/db-export-format'
+import { formatDbExportProgressMessage } from '@/lib/db-export-progress'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { sql, MySQL } from '@codemirror/lang-sql'
@@ -103,6 +111,8 @@ function quoteIdent(name: string): string {
 }
 
 const NEW_DB_NAME_RE = /^[a-zA-Z0-9$_-]{1,64}$/
+const NEW_TABLE_NAME_RE = NEW_DB_NAME_RE
+const DEFAULT_CREATE_TABLE_COLUMNS = 'id INT NOT NULL AUTO_INCREMENT PRIMARY KEY'
 
 const HISTORY_KEY = 'db-query-history'
 function loadQueryHistory(): QueryHistoryEntry[] {
@@ -131,15 +141,7 @@ function exportToJson(columns: string[], rows: any[]): string {
 }
 
 function exportToSql(table: string, columns: string[], rows: any[]): string {
-  return rows.map((r) => {
-    const vals = columns.map((c) => {
-      const v = r[c]
-      if (v === null || v === undefined) return 'NULL'
-      if (typeof v === 'number') return String(v)
-      return `'${String(v).replace(/'/g, "''")}'`
-    })
-    return `INSERT INTO \`${table}\` (\`${columns.join('`, `')}\`) VALUES (${vals.join(', ')});`
-  }).join('\n')
+  return formatSqlTableDump(table, columns, rows)
 }
 
 function downloadFile(content: string, filename: string, mime: string) {
@@ -153,6 +155,138 @@ function downloadFile(content: string, filename: string, mime: string) {
 }
 
 const DB_CREDS_KEY = 'db-credentials'
+
+function FlippedContextMenu({
+  x,
+  y,
+  className,
+  children,
+  onClick,
+  onContextMenu,
+}: {
+  x: number
+  y: number
+  className?: string
+  children: ReactNode
+  onClick?: MouseEventHandler<HTMLDivElement>
+  onContextMenu?: MouseEventHandler<HTMLDivElement>
+}) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState({ left: x, top: y })
+
+  useLayoutEffect(() => {
+    const el = menuRef.current
+    if (!el) return
+    const margin = 8
+    const { width, height } = el.getBoundingClientRect()
+    let left = x
+    let top = y
+    if (top + height > window.innerHeight - margin) top = y - height
+    if (top < margin) top = margin
+    if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin
+    if (left < margin) left = margin
+    setPosition({ left, top })
+  }, [x, y, children])
+
+  return (
+    <div
+      ref={menuRef}
+      className={className}
+      style={{ left: position.left, top: position.top }}
+      onClick={onClick}
+      onContextMenu={onContextMenu}
+    >
+      {children}
+    </div>
+  )
+}
+
+function PortaledAnchoredMenu({
+  anchorRef,
+  open,
+  className,
+  children,
+  onClick,
+}: {
+  anchorRef: React.RefObject<HTMLElement | null>
+  open: boolean
+  className?: string
+  children: ReactNode
+  onClick?: MouseEventHandler<HTMLDivElement>
+}) {
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [position, setPosition] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null)
+      return
+    }
+    const anchor = anchorRef.current
+    const menu = menuRef.current
+    if (!anchor || !menu) return
+    const margin = 8
+    const gap = 4
+    const rect = anchor.getBoundingClientRect()
+    const menuWidth = menu.offsetWidth
+    let left = rect.right - menuWidth
+    if (left < margin) left = margin
+    if (left + menuWidth > window.innerWidth - margin) left = window.innerWidth - menuWidth - margin
+
+    const spaceBelow = window.innerHeight - margin - rect.bottom - gap
+    const spaceAbove = rect.top - margin - gap
+    const openUp = spaceAbove > spaceBelow
+
+    let top: number
+    let maxHeight: number
+    if (openUp) {
+      maxHeight = Math.min(256, Math.max(120, spaceAbove))
+      const menuHeight = Math.min(menu.scrollHeight, maxHeight)
+      top = Math.max(margin, rect.top - gap - menuHeight)
+      if (rect.top - gap - menuHeight < margin) maxHeight = rect.top - margin - gap
+    } else {
+      top = rect.bottom + gap
+      maxHeight = Math.min(256, Math.max(120, spaceBelow))
+    }
+
+    setPosition({ left, top, maxHeight })
+  }, [open, anchorRef, children])
+
+  if (!open) return null
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      className={cn('fixed z-[9999] overflow-auto', className)}
+      style={
+        position
+          ? { left: position.left, top: position.top, maxHeight: position.maxHeight }
+          : { visibility: 'hidden', left: 0, top: 0 }
+      }
+      onClick={onClick}
+    >
+      {children}
+    </div>,
+    document.body,
+  )
+}
+
+function SubtleModal({ className, children }: { className?: string; children: ReactNode }) {
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 animate-in fade-in-0 duration-150">
+      <div
+        className={cn(
+          'rounded-xl border border-border bg-popover shadow-2xl p-5 w-full mx-4',
+          'animate-in fade-in-0 zoom-in-[0.98] slide-in-from-bottom-1 duration-200 ease-out',
+          className,
+        )}
+      >
+        {children}
+      </div>
+    </div>,
+    document.body,
+  )
+}
 
 export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps) {
   const tourIx = useTourInteractionOptional()
@@ -218,6 +352,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
 
   type SidebarCtx =
+    | { x: number; y: number; kind: 'pane' }
     | { x: number; y: number; kind: 'database'; dbName: string }
     | { x: number; y: number; kind: 'table'; dbName: string; tableName: string }
   const [sidebarCtx, setSidebarCtx] = useState<SidebarCtx | null>(null)
@@ -230,6 +365,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const [createDbOpen, setCreateDbOpen] = useState(false)
   const [createDbName, setCreateDbName] = useState('')
+  const [createTableOpen, setCreateTableOpen] = useState(false)
+  const [createTableDb, setCreateTableDb] = useState('')
+  const [createTableName, setCreateTableName] = useState('')
+  const [createTableColumnSql, setCreateTableColumnSql] = useState(DEFAULT_CREATE_TABLE_COLUMNS)
   const [schemaBusy, setSchemaBusy] = useState(false)
 
   const [primaryKeys, setPrimaryKeys] = useState<string[]>([])
@@ -275,6 +414,12 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [exporting, setExporting] = useState(false)
 
+  // Import
+  const importInputRef = useRef<HTMLInputElement>(null)
+  const [importPreview, setImportPreview] = useState<ParsedImport | null>(null)
+  const [importFilename, setImportFilename] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+
   // Refresh
   const [refreshing, setRefreshing] = useState(false)
   const [autoRefresh, setAutoRefresh] = useState(false)
@@ -292,6 +437,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const editorRef = useRef<HTMLDivElement>(null)
+  const historyBtnRef = useRef<HTMLButtonElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const runQueryRef = useRef<(sqlOverride?: string) => void>(() => {})
   const selectedDbRef = useRef(selectedDb)
@@ -523,6 +669,27 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'database', dbName })
   }, [dbConnected])
 
+  const openPaneSidebarMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (!dbConnected) return
+    setSidebarCtx({ x: e.clientX, y: e.clientY, kind: 'pane' })
+  }, [dbConnected])
+
+  const openCreateDatabaseDialog = useCallback(() => {
+    setSidebarCtx(null)
+    setCreateDbName('')
+    setCreateDbOpen(true)
+  }, [])
+
+  const openCreateTableDialog = useCallback((dbName: string) => {
+    setSidebarCtx(null)
+    setCreateTableDb(dbName)
+    setCreateTableName('')
+    setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+    setCreateTableOpen(true)
+  }, [])
+
   const openTableSidebarMenu = useCallback((e: React.MouseEvent, dbName: string, tableName: string) => {
     e.preventDefault()
     e.stopPropagation()
@@ -598,6 +765,42 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       await refreshDatabases()
     }
   }, [createDbName, executeMutationSql, refreshDatabases])
+
+  const handleCreateTableSubmit = useCallback(async () => {
+    const name = createTableName.trim()
+    const dbName = createTableDb.trim()
+    const columns = createTableColumnSql.trim()
+    if (!dbName) return
+    if (!NEW_TABLE_NAME_RE.test(name)) {
+      toast.error('Invalid table name (letters, digits, _, $, - only; max 64).')
+      return
+    }
+    if (!columns) {
+      toast.error('Add at least one column definition.')
+      return
+    }
+    const sql = `CREATE TABLE ${quoteIdent(name)} (${columns}) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+    const ok = await executeMutationSql(sql, dbName)
+    if (!ok) return
+
+    setCreateTableOpen(false)
+    setCreateTableName('')
+    setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+
+    if (window.electronAPI) {
+      setDatabases((prev) =>
+        prev.map((d) => (d.name === dbName ? { ...d, expanded: true, loading: true } : d)),
+      )
+      const result = await window.electronAPI.dbGetTables(dbName)
+      setDatabases((prev) =>
+        prev.map((d) => {
+          if (d.name !== dbName) return d
+          if (result.ok) return { ...d, tables: result.tables, loading: false }
+          return { ...d, loading: false }
+        }),
+      )
+    }
+  }, [createTableName, createTableDb, createTableColumnSql, executeMutationSql])
 
   const handleSelectTable = useCallback(async (dbName: string, tableName: string) => {
     setTableLoading(true)
@@ -709,6 +912,101 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   runQueryRef.current = handleRunQuery
 
+  const getEditorQuery = useCallback((): string => {
+    if (!viewRef.current) return ''
+    const view = viewRef.current
+    const selection = view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
+    return (selection.trim() || view.state.doc.toString().trim())
+  }, [])
+
+  const handlePrettifySql = useCallback(() => {
+    if (!viewRef.current) return
+    const query = viewRef.current.state.doc.toString()
+    if (!query.trim()) return
+    const formatted = prettifySql(query)
+    viewRef.current.dispatch({
+      changes: { from: 0, to: viewRef.current.state.doc.length, insert: formatted },
+    })
+    saveCurrentTabContent()
+    toast.success('SQL formatted')
+  }, [saveCurrentTabContent])
+
+  const handleExplainQuery = useCallback(() => {
+    const query = getEditorQuery()
+    if (!query) return
+    const built = buildExplainSql(query)
+    if (!built.ok) {
+      toast.error(built.error)
+      return
+    }
+    if (built.note) toast.info(built.note)
+    executeQuery(built.sql)
+  }, [getEditorQuery, executeQuery])
+
+  const handleImportFilePick = useCallback(() => {
+    if (readOnly) {
+      toast.error('Disable read-only mode to import rows')
+      return
+    }
+    if (!selectedDb || !selectedTable) {
+      toast.error('Select a table first')
+      return
+    }
+    importInputRef.current?.click()
+  }, [readOnly, selectedDb, selectedTable])
+
+  const handleImportFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    try {
+      const text = await file.text()
+      const parsed = parseImportFile(text, file.name)
+      if (parsed.rows.length === 0) {
+        toast.error('File contains no data rows')
+        return
+      }
+      setImportFilename(file.name)
+      setImportPreview(parsed)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not parse import file')
+    }
+  }, [])
+
+  const handleConfirmImport = useCallback(async () => {
+    if (!importPreview || !window.electronAPI || !selectedDb || !selectedTable) return
+    setImportBusy(true)
+    try {
+      const tableColSet = new Set(tableColumns)
+      const rows = importPreview.rows.map((row) => {
+        const out: Record<string, string | number | null> = {}
+        for (const col of importPreview.columns) {
+          if (!tableColSet.has(col)) continue
+          out[col] = coerceImportValue(row[col] ?? '')
+        }
+        return out
+      }).filter((row) => Object.keys(row).length > 0)
+
+      if (rows.length === 0) {
+        toast.error('No import columns match this table')
+        return
+      }
+
+      const result = await window.electronAPI.dbImportRows(selectedDb, selectedTable, rows)
+      if (result.ok) {
+        toast.success(`Imported ${result.inserted} row(s)${result.skipped ? ` (${result.skipped} skipped)` : ''}`)
+        setImportPreview(null)
+        setImportFilename('')
+        await loadPage(selectedDb, selectedTable, currentPage, pageSize)
+        await refreshDatabases()
+      } else {
+        toast.error(result.error)
+      }
+    } finally {
+      setImportBusy(false)
+    }
+  }, [importPreview, selectedDb, selectedTable, tableColumns, loadPage, currentPage, pageSize, refreshDatabases])
+
   const clearQueryResults = useCallback(() => {
     setQueryColumns([])
     setQueryRows([])
@@ -740,21 +1038,123 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     else if (format === 'sql') downloadFile(exportToSql(selectedTable, cols, rows), `${name}.sql`, 'text/sql')
   }, [tableColumns, selectedRowIdxs, selectedDb, selectedTable])
 
-  const handleExportAll = useCallback(async (format: 'csv' | 'json') => {
+  const handleExportAll = useCallback(async (format: 'csv' | 'json' | 'sql') => {
     if (!window.electronAPI) return
     setShowExportMenu(false)
+    if (format === 'json') {
+      setExporting(true)
+      try {
+        const result = await window.electronAPI.dbExportTable(selectedDb, selectedTable)
+        if (result.ok) {
+          const name = `${selectedDb}_${selectedTable}_all`
+          downloadFile(exportToJson(result.columns, result.rows), `${name}.json`, 'application/json')
+        } else {
+          setError(result.error)
+          setTimeout(() => setError(''), 3000)
+        }
+      } finally {
+        setExporting(false)
+      }
+      return
+    }
+
+    const toastId = toast.loading(`Choose where to save ${selectedTable}…`)
     setExporting(true)
-    const result = await window.electronAPI.dbExportTable(selectedDb, selectedTable)
-    setExporting(false)
-    if (result.ok) {
-      const name = `${selectedDb}_${selectedTable}_all`
-      if (format === 'csv') downloadFile(exportToCsv(result.columns, result.rows), `${name}.csv`, 'text/csv')
-      else downloadFile(exportToJson(result.columns, result.rows), `${name}.json`, 'application/json')
-    } else {
-      setError(result.error)
-      setTimeout(() => setError(''), 3000)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      const result = await window.electronAPI.dbSaveExportTable(
+        selectedDb,
+        selectedTable,
+        format === 'csv' ? 'csv' : 'sql',
+      )
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(`Exported ${result.total.toLocaleString()} row(s) to file`, { id: toastId })
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
     }
   }, [selectedDb, selectedTable])
+
+  const exportTableFromSidebar = useCallback(async (dbName: string, tableName: string, format: 'csv' | 'sql') => {
+    if (!window.electronAPI?.dbSaveExportTable) return
+    setSidebarCtx(null)
+    const toastId = toast.loading(`Choose where to save ${tableName}…`)
+    setExporting(true)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      const result = await window.electronAPI.dbSaveExportTable(dbName, tableName, format)
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(`Exported ${result.total.toLocaleString()} row(s) from ${tableName}`, { id: toastId })
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
+    }
+  }, [])
+
+  const exportDatabaseFromSidebar = useCallback(async (dbName: string, format: 'sql' | 'csv') => {
+    if (!window.electronAPI) return
+    setSidebarCtx(null)
+    const toastId = toast.loading(
+      format === 'sql' ? `Choose where to save ${dbName} SQL dump…` : `Choose folder for ${dbName} CSV files…`,
+    )
+    setExporting(true)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      if (format === 'sql') {
+        const result = await window.electronAPI.dbSaveExportDatabaseSql(dbName)
+        if ('cancelled' in result && result.cancelled) {
+          toast.dismiss(toastId)
+          return
+        }
+        if (result.ok) {
+          toast.success(
+            `Exported ${dbName} (${result.tableCount} tables, ${result.totalRows.toLocaleString()} rows)`,
+            { id: toastId },
+          )
+        } else if ('error' in result) {
+          toast.error(result.error, { id: toastId })
+        }
+        return
+      }
+
+      const result = await window.electronAPI.dbSaveExportDatabaseCsv(dbName)
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(
+          `Exported ${result.tableCount} table(s), ${result.totalRows.toLocaleString()} rows to folder`,
+          { id: toastId },
+        )
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
+    }
+  }, [])
 
   const handleExportQueryResults = useCallback((format: 'csv' | 'json') => {
     if (format === 'csv') downloadFile(exportToCsv(queryColumns, queryRows), 'query_results.csv', 'text/csv')
@@ -1300,8 +1700,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           </div>
         </div>
 
-        <ScrollArea className="flex-1 w-full">
-          <div className="p-1.5 space-y-0.5 overflow-hidden">
+        <ScrollArea className="flex-1 w-full" onContextMenu={openPaneSidebarMenu}>
+          <div className="p-1.5 space-y-0.5 overflow-hidden min-h-full" onContextMenu={openPaneSidebarMenu}>
             {databases.map((db) => (
               <div key={db.name}>
                 <button
@@ -1315,7 +1715,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   <span className="truncate font-medium text-left">{db.name}</span>
                 </button>
                 {db.expanded && db.tables && (
-                  <div className="ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5">
+                  <div
+                    className="ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5"
+                    onContextMenu={(e) => openDatabaseSidebarMenu(e, db.name)}
+                  >
                     {db.tables.length === 0 ? (
                       <p className="text-xs text-muted-foreground px-2 py-1 italic">No tables</p>
                     ) : db.tables.map((t) => (
@@ -1416,6 +1819,17 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                     </div>
 
                     <div className={cn('relative', tableView !== 'data' && 'invisible')}>
+                      <button
+                        onClick={handleImportFilePick}
+                        disabled={readOnly}
+                        className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-40"
+                        title={readOnly ? 'Read-only mode' : 'Import CSV or JSON'}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className={cn('relative', tableView !== 'data' && 'invisible')}>
                       <button onClick={() => setShowExportMenu(!showExportMenu)} disabled={exporting}
                         className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title="Export">
                         {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
@@ -1439,6 +1853,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                           <div className="px-3 py-1 text-[10px] text-muted-foreground">All rows ({tableTotal.toLocaleString()})</div>
                           <button onClick={() => handleExportAll('csv')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All CSV</button>
                           <button onClick={() => handleExportAll('json')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All JSON</button>
+                          <button onClick={() => handleExportAll('sql')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All SQL</button>
                         </div>
                       )}
                     </div>
@@ -1693,29 +2108,37 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
               {queryTime > 0 && <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" />{queryTime}ms</span>}
               {selectedDb && <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">{selectedDb}</span>}
               <div className="relative">
-                <button onClick={() => setShowHistory(!showHistory)} className={cn('p-1 rounded transition-colors', showHistory ? 'text-blue-500 dark:text-blue-400 bg-blue-500/15' : 'text-muted-foreground hover:text-foreground hover:bg-white/10')} title="Query history">
+                <button
+                  ref={historyBtnRef}
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={cn('p-1 rounded transition-colors', showHistory ? 'text-blue-500 dark:text-blue-400 bg-blue-500/15' : 'text-muted-foreground hover:text-foreground hover:bg-white/10')}
+                  title="Query history"
+                >
                   <History className="w-3.5 h-3.5" />
                 </button>
-                {showHistory && (
-                  <div className="absolute right-0 top-full mt-1 z-50 w-80 max-h-64 overflow-auto rounded-lg border border-border bg-popover shadow-xl">
-                    <div className="px-3 py-2 border-b border-border/50 text-xs font-medium flex items-center justify-between">
-                      <span>Query History</span>
-                      {queryHistory.length > 0 && <button onClick={() => { setQueryHistory([]); saveQueryHistory([]) }} className="text-[10px] text-muted-foreground hover:text-destructive transition-colors">Clear</button>}
-                    </div>
-                    {queryHistory.length === 0 ? (
-                      <div className="px-3 py-4 text-xs text-muted-foreground text-center">No queries yet</div>
-                    ) : queryHistory.map((h, i) => (
-                      <button key={i} onClick={() => { setShowHistory(false); if (viewRef.current) viewRef.current.dispatch({ changes: { from: 0, to: viewRef.current.state.doc.length, insert: h.sql } }) }}
-                        className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors border-b border-border/30 last:border-0">
-                        <div className="text-[11px] font-mono truncate">{h.sql}</div>
-                        <div className="text-[9px] text-muted-foreground mt-0.5 flex items-center gap-2">
-                          <span>{new Date(h.timestamp).toLocaleString()}</span>
-                          {h.database && <span className="bg-muted/60 px-1 rounded">{h.database}</span>}
-                        </div>
-                      </button>
-                    ))}
+                <PortaledAnchoredMenu
+                  anchorRef={historyBtnRef}
+                  open={showHistory}
+                  className="w-80 rounded-lg border border-border bg-popover shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-3 py-2 border-b border-border/50 text-xs font-medium flex items-center justify-between">
+                    <span>Query History</span>
+                    {queryHistory.length > 0 && <button onClick={() => { setQueryHistory([]); saveQueryHistory([]) }} className="text-[10px] text-muted-foreground hover:text-destructive transition-colors">Clear</button>}
                   </div>
-                )}
+                  {queryHistory.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-muted-foreground text-center">No queries yet</div>
+                  ) : queryHistory.map((h, i) => (
+                    <button key={i} onClick={() => { setShowHistory(false); if (viewRef.current) viewRef.current.dispatch({ changes: { from: 0, to: viewRef.current.state.doc.length, insert: h.sql } }) }}
+                      className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors border-b border-border/30 last:border-0">
+                      <div className="text-[11px] font-mono truncate">{h.sql}</div>
+                      <div className="text-[9px] text-muted-foreground mt-0.5 flex items-center gap-2">
+                        <span>{new Date(h.timestamp).toLocaleString()}</span>
+                        {h.database && <span className="bg-muted/60 px-1 rounded">{h.database}</span>}
+                      </div>
+                    </button>
+                  ))}
+                </PortaledAnchoredMenu>
               </div>
               {queryColumns.length > 0 && showQueryResults && (
                 <button onClick={() => handleExportQueryResults('csv')} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors" title="Export query results as CSV">
@@ -1731,6 +2154,21 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
+              <button
+                onClick={handlePrettifySql}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors"
+                title="Prettify SQL"
+              >
+                <Wand2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={handleExplainQuery}
+                disabled={queryRunning}
+                className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-white/10 transition-colors disabled:opacity-40"
+                title="Explain query (EXPLAIN …)"
+              >
+                <FileSearch className="w-3.5 h-3.5" />
+              </button>
               <Button size="sm" className="h-5 gap-1 px-2 text-[10px]" onClick={() => handleRunQuery()} disabled={queryRunning}>
                 {queryRunning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />}
                 Run
@@ -1838,43 +2276,107 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
       {/* Sidebar tree context menu */}
       {sidebarCtx && createPortal(
-        <div
+        <FlippedContextMenu
+          x={sidebarCtx.x}
+          y={sidebarCtx.y}
           className="fixed z-[9999] min-w-[200px] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 animate-in fade-in-0 zoom-in-95"
-          style={{ left: sidebarCtx.x, top: sidebarCtx.y }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {sidebarCtx.kind === 'database' ? (
+          {sidebarCtx.kind === 'pane' || sidebarCtx.kind === 'database' ? (
             <>
-              <button
-                type="button"
-                onClick={() => {
-                  setSidebarCtx(null)
-                  setCreateDbName('')
-                  setCreateDbOpen(true)
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
-              >
-                <PlusCircle className="w-3.5 h-3.5 text-green-500" />
-                New database…
-              </button>
-              <div className="border-t border-border/50 my-1" />
-              <button
-                type="button"
-                disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
-                title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be dropped from here' : undefined}
-                onClick={() => {
-                  setSidebarCtx(null)
-                  setSchemaConfirm({ kind: 'dropDatabase', db: sidebarCtx.dbName })
-                }}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive disabled:opacity-40 disabled:pointer-events-none"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                Delete database…
-              </button>
+              {sidebarCtx.kind === 'database' && (
+                <>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => void exportDatabaseFromSidebar(sidebarCtx.dbName, 'sql')}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-500" />
+                    Export database as SQL…
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => void exportDatabaseFromSidebar(sidebarCtx.dbName, 'csv')}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-500" />
+                    Export all tables as CSV…
+                  </button>
+                  <div className="border-t border-border/50 my-1" />
+                  <button
+                    type="button"
+                    disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
+                    title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be modified from here' : undefined}
+                    onClick={() => openCreateTableDialog(sidebarCtx.dbName)}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Table2 className="w-3.5 h-3.5 text-blue-500" />
+                    New table…
+                  </button>
+                  <div className="border-t border-border/50 my-1" />
+                </>
+              )}
+              {sidebarCtx.kind === 'database' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={openCreateDatabaseDialog}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-green-500" />
+                    New database…
+                  </button>
+                  <div className="border-t border-border/50 my-1" />
+                  <button
+                    type="button"
+                    disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
+                    title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be dropped from here' : undefined}
+                    onClick={() => {
+                      setSidebarCtx(null)
+                      setSchemaConfirm({ kind: 'dropDatabase', db: sidebarCtx.dbName })
+                    }}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left text-destructive disabled:opacity-40 disabled:pointer-events-none"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Delete database…
+                  </button>
+                </>
+              )}
+              {sidebarCtx.kind === 'pane' && (
+                <button
+                  type="button"
+                  onClick={openCreateDatabaseDialog}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-green-500" />
+                  New database…
+                </button>
+              )}
             </>
           ) : (
             <>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void exportTableFromSidebar(sidebarCtx.dbName, sidebarCtx.tableName, 'csv')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-500" />
+                Export table as CSV…
+              </button>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void exportTableFromSidebar(sidebarCtx.dbName, sidebarCtx.tableName, 'sql')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-500" />
+                Export table as SQL…
+              </button>
+              <div className="border-t border-border/50 my-1" />
               <button
                 type="button"
                 onClick={() => {
@@ -1907,7 +2409,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
               </button>
             </>
           )}
-        </div>,
+        </FlippedContextMenu>,
         document.body,
       )}
 
@@ -1957,39 +2459,75 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         document.body,
       )}
 
-      {createDbOpen && createPortal(
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".csv,.json,text/csv,application/json"
+        className="hidden"
+        onChange={(e) => void handleImportFileChange(e)}
+      />
+
+      {importPreview && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
-          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-sm w-full mx-4">
+          <div className="rounded-xl border border-border bg-popover shadow-2xl p-5 max-w-lg w-full mx-4">
             <div className="flex items-center gap-2 mb-3">
-              <Database className="w-5 h-5 text-amber-500" />
-              <span className="font-semibold">New database</span>
+              <Upload className="w-5 h-5 text-blue-500" />
+              <span className="font-semibold">Import rows</span>
             </div>
-            <p className="text-xs text-muted-foreground mb-2">Name: letters, digits, _, $, - (max 64).</p>
-            <Input
-              value={createDbName}
-              onChange={(e) => setCreateDbName(e.target.value)}
-              placeholder="my_database"
-              className="font-mono text-sm mb-4"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleCreateDatabaseSubmit()
-              }}
-            />
+            <p className="text-sm text-muted-foreground mb-2">
+              Import into <span className="font-mono text-foreground">{selectedDb}.{selectedTable}</span> from{' '}
+              <span className="font-mono">{importFilename}</span>
+            </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              {importPreview.rows.length.toLocaleString()} row(s), {importPreview.columns.length} column(s).
+              Only columns that exist on the table are inserted. Empty cells and <code className="font-mono bg-muted/50 px-1 rounded">NULL</code> become SQL NULL.
+            </p>
+            <div className="rounded-lg border border-border/50 overflow-auto max-h-40 mb-4">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr>
+                    {importPreview.columns.slice(0, 6).map((col) => (
+                      <th key={col} className="px-2 py-1 text-left font-medium text-muted-foreground">
+                        {col}
+                        {!tableColumns.includes(col) && (
+                          <span className="ml-1 text-amber-500" title="Not on target table">!</span>
+                        )}
+                      </th>
+                    ))}
+                    {importPreview.columns.length > 6 && (
+                      <th className="px-2 py-1 text-left text-muted-foreground">…</th>
+                    )}
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.rows.slice(0, 5).map((row, i) => (
+                    <tr key={i} className="border-t border-border/30">
+                      {importPreview.columns.slice(0, 6).map((col) => (
+                        <td key={col} className="px-2 py-1 font-mono truncate max-w-[120px]">
+                          {row[col] || <span className="text-muted-foreground/50 italic">NULL</span>}
+                        </td>
+                      ))}
+                      {importPreview.columns.length > 6 && <td className="px-2 py-1 text-muted-foreground">…</td>}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
             <div className="flex justify-end gap-2">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setCreateDbOpen(false)
-                  setCreateDbName('')
+                  setImportPreview(null)
+                  setImportFilename('')
                 }}
-                disabled={schemaBusy}
+                disabled={importBusy}
               >
                 Cancel
               </Button>
-              <Button size="sm" className="gap-1" onClick={() => void handleCreateDatabaseSubmit()} disabled={schemaBusy}>
-                {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                Create
+              <Button size="sm" className="gap-1" onClick={() => void handleConfirmImport()} disabled={importBusy}>
+                {importBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                Import {importPreview.rows.length.toLocaleString()} row(s)
               </Button>
             </div>
           </div>
@@ -1997,17 +2535,120 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         document.body,
       )}
 
+      {createTableOpen && (
+        <SubtleModal className="max-w-md">
+          <div className="flex items-center gap-2 mb-3">
+            <Table2 className="w-5 h-5 text-blue-500" />
+            <span className="font-semibold">New table</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Create in <span className="font-mono text-foreground">{createTableDb}</span>
+          </p>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Table name</label>
+              <Input
+                value={createTableName}
+                onChange={(e) => setCreateTableName(e.target.value)}
+                placeholder="my_table"
+                className="font-mono text-sm"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void handleCreateTableSubmit()
+                }}
+              />
+              <p className="text-[10px] text-muted-foreground">Letters, digits, _, $, - only; max 64.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">Column definitions</label>
+              <textarea
+                value={createTableColumnSql}
+                onChange={(e) => setCreateTableColumnSql(e.target.value)}
+                rows={4}
+                spellCheck={false}
+                className="w-full rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500/40 resize-y min-h-[88px]"
+              />
+              <p className="text-[10px] text-muted-foreground">
+                SQL inside the parentheses, e.g. <code className="font-mono bg-muted/50 px-1 rounded">name VARCHAR(255) NOT NULL</code>
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCreateTableOpen(false)
+                setCreateTableName('')
+                setCreateTableColumnSql(DEFAULT_CREATE_TABLE_COLUMNS)
+              }}
+              disabled={schemaBusy}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" className="gap-1" onClick={() => void handleCreateTableSubmit()} disabled={schemaBusy}>
+              {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Create table
+            </Button>
+          </div>
+        </SubtleModal>
+      )}
+
+      {createDbOpen && (
+        <SubtleModal className="max-w-sm">
+          <div className="flex items-center gap-2 mb-3">
+            <Database className="w-5 h-5 text-amber-500" />
+            <span className="font-semibold">New database</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">Name: letters, digits, _, $, - (max 64).</p>
+          <Input
+            value={createDbName}
+            onChange={(e) => setCreateDbName(e.target.value)}
+            placeholder="my_database"
+            className="font-mono text-sm mb-4"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void handleCreateDatabaseSubmit()
+            }}
+          />
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setCreateDbOpen(false)
+                setCreateDbName('')
+              }}
+              disabled={schemaBusy}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" className="gap-1" onClick={() => void handleCreateDatabaseSubmit()} disabled={schemaBusy}>
+              {schemaBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              Create
+            </Button>
+          </div>
+        </SubtleModal>
+      )}
+
       {/* Right-click Context Menu */}
       {ctxMenu && createPortal(
-        <div className="fixed z-[9999] min-w-[180px] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 animate-in fade-in-0 zoom-in-95" style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+        <FlippedContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          className="fixed z-[9999] min-w-[180px] rounded-lg border border-border bg-popover text-popover-foreground shadow-xl py-1 animate-in fade-in-0 zoom-in-95"
+        >
           <button onClick={handleCtxRunAll} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left">
             <Play className="w-3.5 h-3.5 text-green-500" />Run All<kbd className="ml-auto text-[10px] text-muted-foreground">Ctrl+Enter</kbd>
           </button>
           {ctxMenu.hasSelection && <button onClick={handleCtxRunSelected} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Play className="w-3.5 h-3.5 text-blue-500" />Run Selected</button>}
           <div className="border-t border-border/50 my-1" />
+          <button onClick={() => { setCtxMenu(null); handlePrettifySql() }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Wand2 className="w-3.5 h-3.5" />Prettify SQL</button>
+          <button onClick={() => { setCtxMenu(null); handleExplainQuery() }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><FileSearch className="w-3.5 h-3.5" />Explain</button>
+          <div className="border-t border-border/50 my-1" />
           <button onClick={() => { setCtxMenu(null); if (viewRef.current) navigator.clipboard.writeText(viewRef.current.state.doc.toString()) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"><Copy className="w-3.5 h-3.5" />Copy All</button>
           {queryTabs.length > 1 && <button onClick={() => { setCtxMenu(null); removeQueryTab(activeTabId) }} className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 text-destructive transition-colors text-left"><Trash2 className="w-3.5 h-3.5" />Close Tab</button>}
-        </div>, document.body
+        </FlippedContextMenu>, document.body
       )}
     </div>
   )

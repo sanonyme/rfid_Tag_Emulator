@@ -1,6 +1,7 @@
 import mysql from 'mysql2/promise'
 import type { Connection } from 'mysql2/promise'
 import { assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
+import { formatSqlInserts } from '../src/lib/db-export-format.js'
 
 let connection: Connection | null = null
 let currentDatabase: string | null = null
@@ -422,12 +423,61 @@ export async function dbExportTable(
       for (const r of batchArr) {
         allRows.push(sanitizeRow(r))
       }
-      offset += batchSize
+      offset += batchArr.length
     }
 
     return { ok: true, columns, rows: allRows, total }
   } catch (err: any) {
     return { ok: false, error: err.message || 'Export failed' }
+  }
+}
+
+/** Full database dump: CREATE TABLE statements + INSERT rows for every table. */
+export async function dbExportDatabaseSql(
+  database: string,
+): Promise<{ ok: true; sql: string } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  const safeDb = assertSafeSqlIdentifier(database)
+  if (!safeDb) return { ok: false, error: 'Invalid database name' }
+  try {
+    await selectDatabase(safeDb)
+    const tablesResult = await dbGetTables(safeDb)
+    if (!tablesResult.ok) return { ok: false, error: 'Failed to list tables' }
+
+    const chunks: string[] = []
+    const ts = new Date().toISOString()
+    chunks.push(`-- MySQL dump generated ${ts}\n-- Database: \`${safeDb}\`\n\n`)
+    chunks.push(`CREATE DATABASE IF NOT EXISTS \`${safeDb}\`;\nUSE \`${safeDb}\`;\n\n`)
+    chunks.push('SET FOREIGN_KEY_CHECKS=0;\n\n')
+
+    for (const { name: tableName } of tablesResult.tables) {
+      const safeTable = assertSafeSqlIdentifier(tableName)
+      if (!safeTable) continue
+
+      const [createResult] = await connection.query(`SHOW CREATE TABLE \`${safeTable}\``)
+      const createRow = (createResult as any[])[0] as Record<string, string> | undefined
+      const createSql = createRow?.['Create Table'] ?? createRow?.['Create View']
+      if (!createSql) continue
+
+      chunks.push(`--\n-- Table structure for table \`${safeTable}\`\n--\n\n`)
+      chunks.push(`DROP TABLE IF EXISTS \`${safeTable}\`;\n`)
+      chunks.push(`${createSql};\n\n`)
+
+      const data = await dbExportTable(safeDb, safeTable)
+      if (!data.ok) {
+        return { ok: false, error: data.error }
+      }
+      if (data.rows.length > 0) {
+        chunks.push(`--\n-- Dumping data for table \`${safeTable}\`\n--\n\n`)
+        chunks.push(formatSqlInserts(safeTable, data.columns, data.rows))
+        chunks.push('\n\n')
+      }
+    }
+
+    chunks.push('SET FOREIGN_KEY_CHECKS=1;\n')
+    return { ok: true, sql: chunks.join('') }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Database export failed' }
   }
 }
 
@@ -525,6 +575,64 @@ export async function dbGetDatabaseSchema(
   }
 }
 
+const DB_IMPORT_MAX_ROWS = 10_000
+
+export async function dbImportRows(
+  database: string,
+  table: string,
+  rows: Record<string, any>[],
+): Promise<{ ok: true; inserted: number; skipped: number } | { ok: false; error: string }> {
+  if (!connection) return { ok: false, error: 'Not connected' }
+  const safeDb = assertSafeSqlIdentifier(database)
+  const safeTable = assertSafeSqlIdentifier(table)
+  if (!safeDb || !safeTable) return { ok: false, error: 'Invalid database or table name' }
+  if (!Array.isArray(rows) || rows.length === 0) return { ok: false, error: 'No rows to import' }
+  if (rows.length > DB_IMPORT_MAX_ROWS) {
+    return { ok: false, error: `Import limited to ${DB_IMPORT_MAX_ROWS} rows per batch` }
+  }
+
+  try {
+    await selectDatabase(safeDb)
+
+    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``)
+    const validCols = new Set((colRows as any[]).map((r) => String(r.Field)))
+
+    let inserted = 0
+    let skipped = 0
+    const conn = connection
+
+    await conn.beginTransaction()
+    try {
+      for (const row of rows) {
+        const entries = Object.entries(row).filter(([k, v]) => validCols.has(k) && v !== undefined)
+        if (entries.length === 0) {
+          skipped++
+          continue
+        }
+        const colList = entries.map(([k]) => `\`${k}\``).join(', ')
+        const placeholders = entries.map(() => '?').join(', ')
+        const sql = `INSERT INTO \`${safeTable}\` (${colList}) VALUES (${placeholders})`
+        const params = entries.map(([, v]) => v)
+        await conn.query(sql, params)
+        inserted++
+      }
+      await conn.commit()
+    } catch (err) {
+      await conn.rollback()
+      throw err
+    }
+
+    return { ok: true, inserted, skipped }
+  } catch (err: any) {
+    return { ok: false, error: err.message || 'Import failed' }
+  }
+}
+
 export function dbIsConnected(): boolean {
   return connection !== null
+}
+
+/** Exposes the active connection for streaming export helpers in main process. */
+export function getDbConnection(): Connection | null {
+  return connection
 }

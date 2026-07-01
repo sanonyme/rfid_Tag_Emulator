@@ -1,5 +1,5 @@
 import { EPCDecoder } from './decoder'
-
+import { iterateSourceLines } from './tag-list-lines'
 export type UpcCheckDigitStatus =
   | { kind: 'none' }
   | { kind: 'hint13'; calculatedCheck: string }
@@ -58,14 +58,20 @@ export function getLineAtIndex(text: string, lineIndex: number): string {
   return lines[lineIndex - 1] ?? ''
 }
 
+/** Max non-blank lines scanned for live check-digit hints (avoids UI freeze on huge lists). */
+export const UPC_CHECK_DIGIT_SCAN_LIMIT = 500
+
 /** Per-line check-digit analysis for a UPC tag list (blank lines omitted). */
-export function analyzeUpcListCheckDigits(text: string): UpcLineCheckDigit[] {
+export function analyzeUpcListCheckDigits(
+  text: string,
+  maxLines: number = UPC_CHECK_DIGIT_SCAN_LIMIT,
+): UpcLineCheckDigit[] {
   const out: UpcLineCheckDigit[] = []
-  let lineNumber = 0
-  for (const sourceLine of text.split(/\r?\n/)) {
-    lineNumber++
-    const trimmed = sourceLine.trim()
+  let scanned = 0
+  for (const { lineNumber, trimmed } of iterateSourceLines(text)) {
     if (!trimmed) continue
+    scanned++
+    if (scanned > maxLines) break
     const upcDigits = extractUpcDigitsFromLine(trimmed)
     const status = analyzeUpcDigits(upcDigits)
     if (status.kind === 'none') continue

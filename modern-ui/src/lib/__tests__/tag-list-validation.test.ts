@@ -7,6 +7,7 @@ describe('validateTagList (UPC)', () => {
     expect(result.totalTags).toBe(0)
     expect(result.validLines).toBe(0)
     expect(result.invalidLines).toBe(0)
+    expect(result.nonBlankLines).toBe(0)
     expect(result.lines).toEqual([])
   })
 
@@ -19,7 +20,8 @@ describe('validateTagList (UPC)', () => {
 
   it('skips blank lines but does not penalise them', () => {
     const result = validateTagList('\n00012345678905,5\n\n\n00012345678906,3\n', 'upc')
-    expect(result.lines).toHaveLength(2)
+    expect(result.nonBlankLines).toBe(2)
+    expect(result.lines).toHaveLength(0)
     expect(result.totalTags).toBe(8)
   })
 
@@ -56,9 +58,10 @@ describe('validateTagList (UPC)', () => {
 
   it('numbers lines from the source text, not the trimmed list', () => {
     const result = validateTagList('\nGOOD\n00012345678905,5\n', 'upc')
-    // Lines: 1=blank (skipped), 2="GOOD" (line 2), 3=valid (line 3)
+    // Lines: 1=blank (skipped), 2="GOOD" (line 2, invalid), 3=valid (line 3)
+    expect(result.lines).toHaveLength(1)
     expect(result.lines[0].lineNumber).toBe(2)
-    expect(result.lines[1].lineNumber).toBe(3)
+    expect(result.validLines).toBe(1)
   })
 })
 

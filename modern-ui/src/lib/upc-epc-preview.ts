@@ -61,8 +61,9 @@ export function buildUpcEpcPreviewSummary(
       lastStart += lines[i].count
     }
   }
-  const lastEpcs = EPCGenerator.generateFromUpc(lastLine.upc, lastLine.count, lastStart)
-  const lastEpc = lastEpcs[lastEpcs.length - 1] ?? null
+  // Only encode the final serial — never materialize the whole quantity for preview.
+  const lastSerial = lastStart + lastLine.count - 1
+  const lastEpc = EPCGenerator.generateFromUpc(lastLine.upc, 1, lastSerial)[0] ?? null
 
   return { count, firstEpc, lastEpc }
 }

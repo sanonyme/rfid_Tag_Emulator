@@ -19,6 +19,8 @@
  * users (matching what a code editor would show).
  */
 
+import { iterateSourceLines } from './tag-list-lines'
+
 export type TagListKind = 'upc' | 'epc'
 
 export interface ValidLine {
@@ -38,6 +40,11 @@ export interface InvalidLine {
 
 export type ValidationLine = ValidLine | InvalidLine
 
+export interface ValidateTagListOptions {
+  /** Cap stored invalid rows (summary UI only needs errors). Default 500. */
+  maxInvalidLines?: number
+}
+
 export interface TagListValidation {
   kind: TagListKind
   /** Total tags that will be emitted across all valid lines. */
@@ -46,8 +53,12 @@ export interface TagListValidation {
   validLines: number
   /** Count of invalid lines (skipped at send time). */
   invalidLines: number
-  /** Per-line entries, in source order (blank lines omitted). */
-  lines: ValidationLine[]
+  /** Non-blank source lines (blank lines omitted). */
+  nonBlankLines: number
+  /** Invalid lines only, in source order — capped for huge lists. */
+  lines: InvalidLine[]
+  /** True when more invalid lines exist than were stored. */
+  invalidLinesTruncated: boolean
 }
 
 const HEX_RE = /^[0-9a-fA-F]+$/
@@ -95,36 +106,63 @@ function validateEpcLine(raw: string, lineNumber: number): ValidationLine {
   return { ok: true, lineNumber, raw, count: 1 }
 }
 
-export function validateTagList(text: string, kind: TagListKind): TagListValidation {
-  const lines: ValidationLine[] = []
+export function validateTagList(
+  text: string,
+  kind: TagListKind,
+  options?: ValidateTagListOptions,
+): TagListValidation {
+  const maxInvalidLines = options?.maxInvalidLines ?? 500
+  const lines: InvalidLine[] = []
   const raw = text ?? ''
-  let lineNumber = 0
   let totalTags = 0
   let validLines = 0
   let invalidLines = 0
+  let nonBlankLines = 0
+  let invalidLinesTruncated = false
 
-  for (const sourceLine of raw.split(/\r?\n/)) {
-    lineNumber++
-    const trimmed = sourceLine.trim()
+  for (const { lineNumber, trimmed } of iterateSourceLines(raw)) {
     if (!trimmed) continue
+    nonBlankLines++
 
     const result = kind === 'upc'
       ? validateUpcLine(trimmed, lineNumber)
       : validateEpcLine(trimmed, lineNumber)
 
-    lines.push(result)
     if (result.ok) {
       validLines++
       totalTags += result.count
     } else {
       invalidLines++
+      if (lines.length < maxInvalidLines) {
+        lines.push(result)
+      } else {
+        invalidLinesTruncated = true
+      }
     }
   }
 
-  return { kind, totalTags, validLines, invalidLines, lines }
+  return {
+    kind,
+    totalTags,
+    validLines,
+    invalidLines,
+    nonBlankLines,
+    lines,
+    invalidLinesTruncated,
+  }
 }
 
 /** Convenience: just the count of EPCs the list will produce. */
 export function countEmittedTags(text: string, kind: TagListKind): number {
-  return validateTagList(text, kind).totalTags
+  const raw = text ?? ''
+  if (!raw.trim()) return 0
+  let total = 0
+  for (const { lineNumber, trimmed } of iterateSourceLines(raw)) {
+    if (!trimmed) continue
+    const result = kind === 'upc'
+      ? validateUpcLine(trimmed, lineNumber)
+      : validateEpcLine(trimmed, lineNumber)
+    if (result.ok) total += result.count
+  }
+  return total
 }
