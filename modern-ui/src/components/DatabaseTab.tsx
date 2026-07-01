@@ -47,7 +47,10 @@ import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
 import { prettifySql } from '@/lib/sql-format'
+import { buildExplainSql } from '@/lib/sql-explain'
 import { coerceImportValue, parseImportFile, type ParsedImport } from '@/lib/db-import-parse'
+import { formatSqlTableDump } from '@/lib/db-export-format'
+import { formatDbExportProgressMessage } from '@/lib/db-export-progress'
 import { EditorView, keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorState, Prec } from '@codemirror/state'
 import { sql, MySQL } from '@codemirror/lang-sql'
@@ -138,15 +141,7 @@ function exportToJson(columns: string[], rows: any[]): string {
 }
 
 function exportToSql(table: string, columns: string[], rows: any[]): string {
-  return rows.map((r) => {
-    const vals = columns.map((c) => {
-      const v = r[c]
-      if (v === null || v === undefined) return 'NULL'
-      if (typeof v === 'number') return String(v)
-      return `'${String(v).replace(/'/g, "''")}'`
-    })
-    return `INSERT INTO \`${table}\` (\`${columns.join('`, `')}\`) VALUES (${vals.join(', ')});`
-  }).join('\n')
+  return formatSqlTableDump(table, columns, rows)
 }
 
 function downloadFile(content: string, filename: string, mime: string) {
@@ -939,8 +934,13 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const handleExplainQuery = useCallback(() => {
     const query = getEditorQuery()
     if (!query) return
-    const explainSql = /^\s*explain\b/i.test(query) ? query : `EXPLAIN ${query.replace(/;\s*$/, '')}`
-    executeQuery(explainSql)
+    const built = buildExplainSql(query)
+    if (!built.ok) {
+      toast.error(built.error)
+      return
+    }
+    if (built.note) toast.info(built.note)
+    executeQuery(built.sql)
   }, [getEditorQuery, executeQuery])
 
   const handleImportFilePick = useCallback(() => {
@@ -1038,21 +1038,123 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     else if (format === 'sql') downloadFile(exportToSql(selectedTable, cols, rows), `${name}.sql`, 'text/sql')
   }, [tableColumns, selectedRowIdxs, selectedDb, selectedTable])
 
-  const handleExportAll = useCallback(async (format: 'csv' | 'json') => {
+  const handleExportAll = useCallback(async (format: 'csv' | 'json' | 'sql') => {
     if (!window.electronAPI) return
     setShowExportMenu(false)
+    if (format === 'json') {
+      setExporting(true)
+      try {
+        const result = await window.electronAPI.dbExportTable(selectedDb, selectedTable)
+        if (result.ok) {
+          const name = `${selectedDb}_${selectedTable}_all`
+          downloadFile(exportToJson(result.columns, result.rows), `${name}.json`, 'application/json')
+        } else {
+          setError(result.error)
+          setTimeout(() => setError(''), 3000)
+        }
+      } finally {
+        setExporting(false)
+      }
+      return
+    }
+
+    const toastId = toast.loading(`Choose where to save ${selectedTable}…`)
     setExporting(true)
-    const result = await window.electronAPI.dbExportTable(selectedDb, selectedTable)
-    setExporting(false)
-    if (result.ok) {
-      const name = `${selectedDb}_${selectedTable}_all`
-      if (format === 'csv') downloadFile(exportToCsv(result.columns, result.rows), `${name}.csv`, 'text/csv')
-      else downloadFile(exportToJson(result.columns, result.rows), `${name}.json`, 'application/json')
-    } else {
-      setError(result.error)
-      setTimeout(() => setError(''), 3000)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      const result = await window.electronAPI.dbSaveExportTable(
+        selectedDb,
+        selectedTable,
+        format === 'csv' ? 'csv' : 'sql',
+      )
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(`Exported ${result.total.toLocaleString()} row(s) to file`, { id: toastId })
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
     }
   }, [selectedDb, selectedTable])
+
+  const exportTableFromSidebar = useCallback(async (dbName: string, tableName: string, format: 'csv' | 'sql') => {
+    if (!window.electronAPI?.dbSaveExportTable) return
+    setSidebarCtx(null)
+    const toastId = toast.loading(`Choose where to save ${tableName}…`)
+    setExporting(true)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      const result = await window.electronAPI.dbSaveExportTable(dbName, tableName, format)
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(`Exported ${result.total.toLocaleString()} row(s) from ${tableName}`, { id: toastId })
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
+    }
+  }, [])
+
+  const exportDatabaseFromSidebar = useCallback(async (dbName: string, format: 'sql' | 'csv') => {
+    if (!window.electronAPI) return
+    setSidebarCtx(null)
+    const toastId = toast.loading(
+      format === 'sql' ? `Choose where to save ${dbName} SQL dump…` : `Choose folder for ${dbName} CSV files…`,
+    )
+    setExporting(true)
+    const stopProgress = window.electronAPI.onDbExportProgress((p) => {
+      toast.loading(formatDbExportProgressMessage(p), { id: toastId })
+    })
+    try {
+      if (format === 'sql') {
+        const result = await window.electronAPI.dbSaveExportDatabaseSql(dbName)
+        if ('cancelled' in result && result.cancelled) {
+          toast.dismiss(toastId)
+          return
+        }
+        if (result.ok) {
+          toast.success(
+            `Exported ${dbName} (${result.tableCount} tables, ${result.totalRows.toLocaleString()} rows)`,
+            { id: toastId },
+          )
+        } else if ('error' in result) {
+          toast.error(result.error, { id: toastId })
+        }
+        return
+      }
+
+      const result = await window.electronAPI.dbSaveExportDatabaseCsv(dbName)
+      if ('cancelled' in result && result.cancelled) {
+        toast.dismiss(toastId)
+        return
+      }
+      if (result.ok) {
+        toast.success(
+          `Exported ${result.tableCount} table(s), ${result.totalRows.toLocaleString()} rows to folder`,
+          { id: toastId },
+        )
+      } else if ('error' in result) {
+        toast.error(result.error, { id: toastId })
+      }
+    } finally {
+      stopProgress()
+      setExporting(false)
+    }
+  }, [])
 
   const handleExportQueryResults = useCallback((format: 'csv' | 'json') => {
     if (format === 'csv') downloadFile(exportToCsv(queryColumns, queryRows), 'query_results.csv', 'text/csv')
@@ -1751,6 +1853,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                           <div className="px-3 py-1 text-[10px] text-muted-foreground">All rows ({tableTotal.toLocaleString()})</div>
                           <button onClick={() => handleExportAll('csv')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All CSV</button>
                           <button onClick={() => handleExportAll('json')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All JSON</button>
+                          <button onClick={() => handleExportAll('sql')} className="w-full px-3 py-1.5 text-xs text-left hover:bg-white/10 transition-colors">Export All SQL</button>
                         </div>
                       )}
                     </div>
@@ -2186,6 +2289,25 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                 <>
                   <button
                     type="button"
+                    disabled={exporting}
+                    onClick={() => void exportDatabaseFromSidebar(sidebarCtx.dbName, 'sql')}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-500" />
+                    Export database as SQL…
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exporting}
+                    onClick={() => void exportDatabaseFromSidebar(sidebarCtx.dbName, 'csv')}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+                  >
+                    <Download className="w-3.5 h-3.5 text-sky-500" />
+                    Export all tables as CSV…
+                  </button>
+                  <div className="border-t border-border/50 my-1" />
+                  <button
+                    type="button"
                     disabled={SYSTEM_DATABASES.has(sidebarCtx.dbName)}
                     title={SYSTEM_DATABASES.has(sidebarCtx.dbName) ? 'System databases cannot be modified from here' : undefined}
                     onClick={() => openCreateTableDialog(sidebarCtx.dbName)}
@@ -2197,16 +2319,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   <div className="border-t border-border/50 my-1" />
                 </>
               )}
-              <button
-                type="button"
-                onClick={openCreateDatabaseDialog}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
-              >
-                <PlusCircle className="w-3.5 h-3.5 text-green-500" />
-                New database…
-              </button>
               {sidebarCtx.kind === 'database' && (
                 <>
+                  <button
+                    type="button"
+                    onClick={openCreateDatabaseDialog}
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+                  >
+                    <PlusCircle className="w-3.5 h-3.5 text-green-500" />
+                    New database…
+                  </button>
                   <div className="border-t border-border/50 my-1" />
                   <button
                     type="button"
@@ -2223,9 +2345,38 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                   </button>
                 </>
               )}
+              {sidebarCtx.kind === 'pane' && (
+                <button
+                  type="button"
+                  onClick={openCreateDatabaseDialog}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left"
+                >
+                  <PlusCircle className="w-3.5 h-3.5 text-green-500" />
+                  New database…
+                </button>
+              )}
             </>
           ) : (
             <>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void exportTableFromSidebar(sidebarCtx.dbName, sidebarCtx.tableName, 'csv')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-500" />
+                Export table as CSV…
+              </button>
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() => void exportTableFromSidebar(sidebarCtx.dbName, sidebarCtx.tableName, 'sql')}
+                className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-white/10 transition-colors text-left disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5 text-sky-500" />
+                Export table as SQL…
+              </button>
+              <div className="border-t border-border/50 my-1" />
               <button
                 type="button"
                 onClick={() => {

@@ -207,6 +207,33 @@ export interface ElectronAPI {
     database: string,
     table: string
   ) => Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }>
+  dbExportDatabaseSql: (
+    database: string
+  ) => Promise<{ ok: true; sql: string } | { ok: false; error: string }>
+  dbSaveExportTable: (
+    database: string,
+    table: string,
+    format: 'csv' | 'sql'
+  ) => Promise<
+    | { ok: true; total: number; filePath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  dbSaveExportDatabaseSql: (
+    database: string
+  ) => Promise<
+    | { ok: true; tableCount: number; totalRows: number; filePath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  dbSaveExportDatabaseCsv: (
+    database: string
+  ) => Promise<
+    | { ok: true; tableCount: number; totalRows: number; folderPath: string }
+    | { ok: false; cancelled: true }
+    | { ok: false; error: string }
+  >
+  onDbExportProgress: (callback: (progress: import('@/lib/db-export-progress').DbExportProgressPayload) => void) => () => void
   dbImportRows: (
     database: string,
     table: string,

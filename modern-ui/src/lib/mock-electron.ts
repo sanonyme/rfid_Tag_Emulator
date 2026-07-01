@@ -1,4 +1,5 @@
 import { ElectronAPI, type NetScanStartPayload, type ReaderDiscoveryPayload, type ReaderVendor } from '../types/electron';
+import type { DbExportProgressPayload } from './db-export-progress';
 
 class MockElectronAPI implements ElectronAPI {
   platform = 'win32'; // Mock platform
@@ -427,6 +428,21 @@ class MockElectronAPI implements ElectronAPI {
   }
   async dbExportTable(_database: string, _table: string) {
     return { ok: false as const, error: 'Not connected' }
+  }
+  async dbExportDatabaseSql(_database: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbSaveExportTable(_database: string, _table: string, _format: 'csv' | 'sql') {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbSaveExportDatabaseSql(_database: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  async dbSaveExportDatabaseCsv(_database: string) {
+    return { ok: false as const, error: 'Not connected' }
+  }
+  onDbExportProgress(_callback: (progress: DbExportProgressPayload) => void) {
+    return () => {}
   }
   async dbImportRows(_database: string, _table: string, _rows: Record<string, any>[]) {
     return { ok: false as const, error: 'Not connected' }

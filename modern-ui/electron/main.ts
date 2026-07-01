@@ -26,9 +26,17 @@ import {
   dbInsertRow,
   dbDeleteRows,
   dbExportTable,
+  dbExportDatabaseSql,
   dbGetDatabaseSchema,
+  getDbConnection,
   dbImportRows,
 } from './db-handler.js'
+import {
+  streamDatabaseCsvToFolder,
+  streamDatabaseSqlToFile,
+  streamTableExportToFile,
+  type DbExportProgress,
+} from './db-export-stream.js'
 import {
   sftpConnect,
   sftpDisconnect,
@@ -539,6 +547,70 @@ app.whenReady().then(() => {
   ipcMain.handle('db-export-table', async (_event, database: string, table: string) => {
     console.log(`DB: Export table ${database}.${table}`)
     return dbExportTable(database, table)
+  })
+
+  ipcMain.handle('db-export-database-sql', async (_event, database: string) => {
+    console.log(`DB: Export database SQL ${database}`)
+    return dbExportDatabaseSql(database)
+  })
+
+  ipcMain.handle(
+    'db-save-export-table',
+    async (event, database: string, table: string, format: 'csv' | 'sql') => {
+      const conn = getDbConnection()
+      if (!conn) return { ok: false as const, error: 'Not connected' }
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const ext = format === 'csv' ? 'csv' : 'sql'
+      const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
+        defaultPath: `${database}_${table}.${ext}`,
+        filters: [{ name: ext.toUpperCase(), extensions: [ext] }],
+      })
+      if (canceled || !filePath) return { ok: false as const, cancelled: true as const }
+
+      const emit = (progress: DbExportProgress) => event.sender.send('db-export-progress', progress)
+      emit({ message: `Preparing ${table}…` })
+      const result = await streamTableExportToFile(conn, database, table, filePath, format, emit)
+      return result.ok
+        ? { ok: true as const, total: result.total, filePath }
+        : result
+    },
+  )
+
+  ipcMain.handle('db-save-export-database-sql', async (event, database: string) => {
+    const conn = getDbConnection()
+    if (!conn) return { ok: false as const, error: 'Not connected' }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
+      defaultPath: `${database}_dump.sql`,
+      filters: [{ name: 'SQL', extensions: ['sql'] }],
+    })
+    if (canceled || !filePath) return { ok: false as const, cancelled: true as const }
+
+    const emit = (progress: DbExportProgress) => event.sender.send('db-export-progress', progress)
+    emit({ message: `Preparing ${database} dump…` })
+    const result = await streamDatabaseSqlToFile(conn, database, filePath, dbGetTables, emit)
+    return result.ok
+      ? { ok: true as const, tableCount: result.tableCount, totalRows: result.totalRows, filePath }
+      : result
+  })
+
+  ipcMain.handle('db-save-export-database-csv', async (event, database: string) => {
+    const conn = getDbConnection()
+    if (!conn) return { ok: false as const, error: 'Not connected' }
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
+      title: `Choose folder for ${database} CSV exports`,
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const folderPath = filePaths?.[0]
+    if (canceled || !folderPath) return { ok: false as const, cancelled: true as const }
+
+    const emit = (progress: DbExportProgress) => event.sender.send('db-export-progress', progress)
+    emit({ message: `Exporting tables from ${database}…` })
+    const result = await streamDatabaseCsvToFolder(conn, database, folderPath, dbGetTables, emit)
+    return result.ok
+      ? { ok: true as const, tableCount: result.tableCount, totalRows: result.totalRows, folderPath }
+      : result
   })
 
   ipcMain.handle('db-import-rows', async (_event, database: string, table: string, rows: Record<string, any>[]) => {
