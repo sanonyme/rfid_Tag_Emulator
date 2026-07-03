@@ -19,6 +19,11 @@ export const fadeInUp: Variants = {
   show: { opacity: 1, y: 0, transition: { duration: 0.35, ease: easeOut } },
 }
 
+/** Tab panel entrance — matches prod `tabSlideIn` (Electron + Tauri / WebView2). */
+export const tabEnterFrom = { opacity: 0, y: 6, scale: 0.995 }
+export const tabEnterTo = { opacity: 1, y: 0, scale: 1 }
+export const tabEnterTransition: Transition = { duration: 0.28, ease: easeOut }
+
 /** Spring used by the active-tab indicator and other layout transitions. */
 export const indicatorSpring: Transition = {
   type: "spring",

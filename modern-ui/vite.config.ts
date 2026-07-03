@@ -21,10 +21,15 @@ const embedSecondReleaseRepo = (process.env.ZEUS_SECOND_RELEASE_REPO ?? '').trim
 const embedAleUsername = (process.env.ZEUS_ALE_USERNAME ?? process.env.VITE_ALE_USERNAME ?? '').trim()
 const embedAlePassword = (process.env.ZEUS_ALE_PASSWORD ?? process.env.VITE_ALE_PASSWORD ?? '').trim()
 
+const isTauri = Boolean(process.env.TAURI_ENV)
+
 export default defineConfig({
   plugins: [
     react(),
-    electron({
+    ...(isTauri
+      ? []
+      : [
+          electron({
       main: {
         entry: 'electron/main.ts',
         vite: {
@@ -57,6 +62,7 @@ export default defineConfig({
       // Ensure renderer process handling is correct
       renderer: {},
     }),
+        ]),
   ],
   resolve: {
     alias: {

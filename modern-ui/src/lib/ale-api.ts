@@ -42,31 +42,26 @@ export class AleApiClient {
   }
 
   async authenticate(host: string, port: string = '80'): Promise<string> {
-    const creds = await getAleEnvCredentials()
-    if (!creds) {
-      throw new Error(ALE_ENV_MISSING_MSG)
-    }
-
     if (window.electronAPI?.aleRequest) {
       const url = `http://${host}:${port}/ALE/api/auth`
       try {
         const response = await window.electronAPI.aleRequest(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                username: 'use_env_vars',
-                password: 'use_env_vars',
-            }),
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: 'use_env_vars',
+            password: 'use_env_vars',
+          }),
         })
 
         if (!response.ok) {
-            throw new Error(`Auth failed: ${response.statusText}`)
+          throw new Error(`Auth failed: ${response.statusText}`)
         }
 
         if (response.headers && response.headers['set-cookie']) {
-            this.cookies = response.headers['set-cookie']
+          this.cookies = response.headers['set-cookie']
         }
 
         const data = response.data || ''
@@ -86,6 +81,11 @@ export class AleApiClient {
         console.error('ALE Auth Error:', error)
         throw error
       }
+    }
+
+    const creds = await getAleEnvCredentials()
+    if (!creds) {
+      throw new Error(ALE_ENV_MISSING_MSG)
     }
 
     const url = `http://${host}:${port}/ALE/api/auth`

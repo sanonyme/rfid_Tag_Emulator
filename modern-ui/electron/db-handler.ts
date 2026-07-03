@@ -2,6 +2,7 @@ import mysql from 'mysql2/promise'
 import type { Connection } from 'mysql2/promise'
 import { assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
 import { formatSqlInserts } from '../src/lib/db-export-format.js'
+import { prepareReadQuery } from '../src/lib/sql-statement-start.js'
 
 let connection: Connection | null = null
 let currentDatabase: string | null = null
@@ -211,11 +212,7 @@ export async function dbExecuteQuery(
       await selectDatabase(database)
     }
 
-    let sql = query.trim()
-    const isSelect = /^\s*(select|show|describe|desc|explain)\b/i.test(sql)
-    if (isSelect && !/\blimit\b/i.test(sql)) {
-      sql = `${sql.replace(/;\s*$/, '')} LIMIT ${DB_QUERY_MAX_ROWS}`
-    }
+    let sql = prepareReadQuery(query, DB_QUERY_MAX_ROWS)
 
     const [result, fields] = await connection.query(sql)
 

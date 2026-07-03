@@ -463,18 +463,19 @@ button, a, input, select, textarea {
   contain-intrinsic-size: auto 2rem;
 }
 
-/* Page transition - fade + subtle lift when a tab becomes active */
-[data-state="active"].tab-content-animate {
-  animation: tabSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+/* Tab panel slide — inner shell only (TabSlideEnter.tsx); restarted on each visit */
+.tab-content-animate.tab-content-enter {
+  animation: tabSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
+  backface-visibility: hidden;
 }
 @keyframes tabSlideIn {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.995);
+    transform: translate3d(0, 6px, 0) scale(0.995);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
 }
 
@@ -486,16 +487,17 @@ button, a, input, select, textarea {
 @keyframes revealItem {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate3d(0, 10px, 0);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate3d(0, 0, 0);
   }
 }
 .reveal-item,
 .stagger-children > * {
   animation: revealItem 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  backface-visibility: hidden;
 }
 .stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
 .stagger-children > *:nth-child(2) { animation-delay: 0.06s; }
@@ -513,20 +515,33 @@ button, a, input, select, textarea {
 /* Interactive card: smooth hover lift + press, theme-aware shadow */
 .hover-lift-card {
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
-  will-change: transform;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
 }
 .hover-lift-card:hover {
-  transform: translateY(-3px);
+  transform: translate3d(0, -3px, 0);
   box-shadow: var(--shadow-lg);
 }
 .hover-lift-card:active {
-  transform: translateY(-1px);
+  transform: translate3d(0, -1px, 0);
   box-shadow: var(--shadow-md);
+}
+
+/* Button hover lift + press — single transform chain avoids frame stepping */
+.btn-lift {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+.btn-lift:hover:not(:disabled) {
+  transform: translate3d(0, -1px, 0);
+}
+.btn-lift:active:not(:disabled) {
+  transform: translate3d(0, 0, 0) scale(0.97);
 }
 
 /* Honor reduced-motion: disable the larger entrance/transition motion. */
 @media (prefers-reduced-motion: reduce) {
-  [data-state="active"].tab-content-animate,
+  .tab-content-animate.tab-content-enter,
   .reveal-item,
   .stagger-children > * {
     animation: none !important;
@@ -536,6 +551,10 @@ button, a, input, select, textarea {
   }
   .hover-lift-card:hover,
   .hover-lift-card:active {
+    transform: none;
+  }
+  .btn-lift:hover,
+  .btn-lift:active {
     transform: none;
   }
 }

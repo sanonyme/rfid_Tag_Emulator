@@ -432,7 +432,8 @@ interface NetScanTabProps {
 type ScanMode = 'cidr' | 'range' | 'allSubnets'
 
 /** Usable host bounds for a network CIDR (matches backend enumerateCidr). */
-function cidrHostBounds(networkCidr: string): { start: string; end: string } | null {
+function cidrHostBounds(networkCidr: string | undefined): { start: string; end: string } | null {
+  if (!networkCidr?.trim()) return null
   const m = networkCidr.trim().match(/^(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\/(\d{1,2})$/)
   if (!m) return null
   const prefix = parseInt(m[2]!, 10)
@@ -483,8 +484,12 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
       if (r.ok && r.interfaces?.length) {
         setIfaces(r.interfaces)
         const first = r.interfaces[0]!
-        setCidr(first.networkCidr)
-        const b = cidrHostBounds(first.networkCidr)
+        const networkCidr =
+          first.networkCidr ??
+          (first as { network_cidr?: string }).network_cidr ??
+          '192.168.1.0/24'
+        setCidr(networkCidr)
+        const b = cidrHostBounds(networkCidr)
         if (b) {
           setRangeStart(b.start)
           setRangeEnd(b.end)
@@ -1040,14 +1045,16 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           </Label>
           <div className="flex flex-wrap gap-1.5">
             {ifaces.map((i) => {
-              const bounds = cidrHostBounds(i.networkCidr)
+              const networkCidr =
+                i.networkCidr ?? (i as { network_cidr?: string }).network_cidr
+              const bounds = cidrHostBounds(networkCidr)
               const rangeMatch =
                 bounds != null &&
                 rangeStart.trim() === bounds.start &&
                 rangeEnd.trim() === bounds.end
               const chipActive =
                 scanMode === 'cidr'
-                  ? cidr === i.networkCidr
+                  ? cidr === networkCidr
                   : scanMode === 'range'
                     ? rangeMatch
                     : false
@@ -1060,14 +1067,14 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   className="h-8 font-mono text-[11px]"
                   disabled={scanning || scanMode === 'allSubnets'}
                   onClick={() => {
-                    if (scanMode === 'cidr') setCidr(i.networkCidr)
+                    if (scanMode === 'cidr' && networkCidr) setCidr(networkCidr)
                     else if (scanMode === 'range' && bounds) {
                       setRangeStart(bounds.start)
                       setRangeEnd(bounds.end)
                     }
                   }}
                 >
-                  {i.name}: {i.networkCidr}
+                  {i.name}: {networkCidr ?? '—'}
                 </Button>
               )
             })}

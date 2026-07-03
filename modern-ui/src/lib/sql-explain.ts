@@ -1,5 +1,6 @@
-const EXPLAINABLE =
-  /^\s*(?:EXPLAIN\s+(?:ANALYZE\s+)?)?(SELECT|INSERT|UPDATE|DELETE|REPLACE)\b/i
+import { sqlExplainTarget, sqlStatementStart } from './sql-statement-start'
+
+const EXPLAINABLE = /^(SELECT|INSERT|UPDATE|DELETE|REPLACE)\b/i
 
 const CREATE_TABLE =
   /^\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?((?:`[^`]+`)|(?:[\w$]+))/i
@@ -14,13 +15,13 @@ function stripTrailingSemicolon(sql: string): string {
 
 /** Extract table identifier from a CREATE TABLE statement. */
 export function extractCreateTableName(sql: string): string | null {
-  const match = stripTrailingSemicolon(sql.trim()).match(CREATE_TABLE)
+  const match = sqlStatementStart(stripTrailingSemicolon(sql.trim())).match(CREATE_TABLE)
   return match?.[1] ?? null
 }
 
 /** Whether MariaDB/MySQL can run EXPLAIN on this statement as-is. */
 export function isDirectlyExplainable(sql: string): boolean {
-  return EXPLAINABLE.test(stripTrailingSemicolon(sql.trim()))
+  return EXPLAINABLE.test(sqlExplainTarget(sql))
 }
 
 /**
@@ -34,12 +35,14 @@ export function buildExplainSql(query: string): BuildExplainResult {
   }
 
   const sql = stripTrailingSemicolon(trimmed)
+  const stmt = sqlStatementStart(sql)
+  const target = sqlExplainTarget(sql)
 
-  if (/^\s*explain\b/i.test(sql)) {
+  if (/^\s*explain\b/i.test(stmt)) {
     if (isDirectlyExplainable(sql)) {
-      return { ok: true, sql }
+      return { ok: true, sql: `EXPLAIN ${target}` }
     }
-    const createTable = extractCreateTableName(sql.replace(/^\s*EXPLAIN\s+(?:ANALYZE\s+)?/i, ''))
+    const createTable = extractCreateTableName(target)
     if (createTable) {
       return {
         ok: false,
@@ -53,10 +56,10 @@ export function buildExplainSql(query: string): BuildExplainResult {
   }
 
   if (isDirectlyExplainable(sql)) {
-    return { ok: true, sql: `EXPLAIN ${sql}` }
+    return { ok: true, sql: `EXPLAIN ${target}` }
   }
 
-  const tableName = extractCreateTableName(sql)
+  const tableName = extractCreateTableName(stmt)
   if (tableName) {
     return {
       ok: true,
@@ -65,7 +68,7 @@ export function buildExplainSql(query: string): BuildExplainResult {
     }
   }
 
-  if (/^\s*(CREATE|ALTER|DROP|TRUNCATE|RENAME|GRANT|REVOKE|USE|SHOW|DESCRIBE|DESC)\b/i.test(sql)) {
+  if (/^\s*(CREATE|ALTER|DROP|TRUNCATE|RENAME|GRANT|REVOKE|USE|SHOW|DESCRIBE|DESC)\b/i.test(stmt)) {
     return {
       ok: false,
       error: 'EXPLAIN only works on SELECT, INSERT, UPDATE, DELETE, and REPLACE queries.',

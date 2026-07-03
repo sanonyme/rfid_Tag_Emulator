@@ -24,6 +24,7 @@ import { MobileConnectionSheet } from './components/mobile/MobileConnectionSheet
 import { SettingsDialog } from './components/SettingsDialog'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
+import { TabSlideEnter } from './components/TabSlideEnter'
 
 function AppMobile() {
   const { settings, setSettings } = useSettings()
@@ -310,7 +311,9 @@ function AppMobile() {
         />
 
         <main className="flex-1 overflow-y-auto overflow-x-hidden">
-          {renderTabContent()}
+          <TabSlideEnter active tabId={activeTab}>
+            {renderTabContent()}
+          </TabSlideEnter>
         </main>
 
         <MobileBottomNav

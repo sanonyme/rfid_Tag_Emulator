@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { motion, LayoutGroup } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { TabsList, TabsTrigger } from './ui/tabs'
 import {
   Radio,
@@ -22,6 +22,13 @@ import { IS_MOBILE } from '@/lib/platform'
 import { useWorkspaceStatus, type ServiceStatus } from '@/lib/workspace-status'
 import { PopOutButton } from './PopOutButton'
 import { isPopoutableTab } from '@/lib/popout-tabs'
+import { preloadTabModule } from '@/lib/tab-modules'
+import {
+  indicatorSpring,
+  prefersReducedMotion,
+  SLIDE_TAB_ATTR,
+  useSlidingIndicator,
+} from '@/lib/motion'
 
 const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'fixed', label: 'Fixed', icon: Radio },
@@ -108,24 +115,42 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
     return out
   }, [statusMap])
 
+  const reduced = prefersReducedMotion()
+  const { containerRef, rect, ready } = useSlidingIndicator(value)
+
   return (
-    <LayoutGroup id="tab-nav-bar">
-      <div className={cn('flex items-center justify-center gap-1 overflow-x-auto', className)}>
-        <TabsList
-          className="inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full"
-          data-tour="tour-tab-nav"
-        >
-          {TAB_ITEMS.map((item) => {
+    <div className={cn('flex items-center justify-center gap-1 overflow-x-auto', className)}>
+      <TabsList
+        ref={containerRef}
+        className="relative inline-flex h-auto flex-shrink-0 flex-wrap justify-center gap-0 overflow-visible bg-background/80 border border-border/50 py-1.5 px-1.5 rounded-full"
+        data-tour="tour-tab-nav"
+      >
+        {ready && (
+          <motion.div
+            aria-hidden
+            className="pointer-events-none absolute rounded-full -z-10 overflow-visible"
+            initial={false}
+            animate={rect}
+            transition={reduced ? { duration: 0 } : indicatorSpring}
+          >
+            <div className="absolute inset-0 rounded-full bg-primary/20 transition-colors duration-200 dark:bg-white/15" />
+            <div className="absolute -top-1.5 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_6px_hsl(var(--primary))] transition-colors duration-200 dark:bg-white dark:shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
+            <div className="absolute -top-2.5 left-1/2 h-10 w-10 -translate-x-1/2 rounded-full bg-primary/15 blur-lg transition-colors duration-200 dark:bg-white/20" />
+          </motion.div>
+        )}
+        {TAB_ITEMS.map((item) => {
           const Icon = item.icon
-          const isActive = value === item.value
           const status = tabStatus[item.value]
 
           return (
             <TabsTrigger
               key={item.value}
               value={item.value}
+              {...{ [SLIDE_TAB_ATTR]: item.value }}
+              onMouseEnter={() => void preloadTabModule(item.value)}
+              onFocus={() => void preloadTabModule(item.value)}
               className={cn(
-                'relative cursor-pointer text-sm font-semibold px-4 py-2 rounded-full transition-colors border-0',
+                'relative z-[1] cursor-pointer text-sm font-semibold px-4 py-2 rounded-full transition-colors border-0',
                 'outline-none focus:outline-none focus-visible:outline-none',
                 'ring-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0',
                 'shadow-none data-[state=active]:shadow-none',
@@ -145,36 +170,18 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                 </span>
               )}
               <StatusDot status={status} />
-              {isActive && (
-                <motion.div
-                  layoutId="tab-nav-indicator"
-                  layout="position"
-                  className="absolute inset-0 rounded-full -z-10"
-                  initial={false}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 300,
-                    damping: 30,
-                  }}
-                >
-                  <div className="absolute inset-0 rounded-full bg-primary/20 transition-colors duration-200 dark:bg-white/15" />
-                  <div className="absolute -top-1.5 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_6px_hsl(var(--primary))] transition-colors duration-200 dark:bg-white dark:shadow-[0_0_6px_rgba(255,255,255,0.6)]" />
-                  <div className="absolute -top-2.5 left-1/2 h-10 w-10 -translate-x-1/2 rounded-full bg-primary/15 blur-lg transition-colors duration-200 dark:bg-white/20" />
-                </motion.div>
-              )}
             </TabsTrigger>
           )
         })}
-        </TabsList>
-        {onPopOut && isPopoutableTab(value) && (
-          <PopOutButton
-            tabId={value}
-            onPopOut={onPopOut}
-            isPoppedOut={poppedOutTabs?.has(value)}
-          />
-        )}
-      </div>
-    </LayoutGroup>
+      </TabsList>
+      {onPopOut && isPopoutableTab(value) && (
+        <PopOutButton
+          tabId={value}
+          onPopOut={onPopOut}
+          isPoppedOut={poppedOutTabs?.has(value)}
+        />
+      )}
+    </div>
   )
 }
 

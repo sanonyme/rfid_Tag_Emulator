@@ -59,6 +59,7 @@ export function SftpFindDialog({
   const [includeFolders, setIncludeFolders] = useState(false)
 
   const [searching, setSearching] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const [results, setResults] = useState<SftpFindMatchRow[]>([])
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [progress, setProgress] = useState({
@@ -79,8 +80,14 @@ export function SftpFindDialog({
   }, [open, defaultRootPath])
 
   const cancelSearch = useCallback(async () => {
-    await sftp?.findCancel()
-  }, [sftp])
+    if (!sftp?.findCancel || stopping) return
+    setStopping(true)
+    try {
+      await sftp.findCancel()
+    } finally {
+      // searching clears when the backend find call returns
+    }
+  }, [sftp, stopping])
 
   const startSearch = useCallback(async () => {
     if (!sftp?.findFiles) {
@@ -95,6 +102,7 @@ export function SftpFindDialog({
     const operationId = `find-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     operationIdRef.current = operationId
     setSearching(true)
+    setStopping(false)
     setResults([])
     setSelectedPath(null)
     setProgress({ scannedDirs: 0, matchCount: 0, currentDir: trimmedRoot, limitReached: false })
@@ -144,6 +152,7 @@ export function SftpFindDialog({
       if (operationIdRef.current === operationId) {
         operationIdRef.current = null
         setSearching(false)
+        setStopping(false)
       }
     }
   }, [
@@ -257,7 +266,7 @@ export function SftpFindDialog({
               {searching ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-3 h-3 animate-spin shrink-0" />
-                  Scanning {progress.currentDir} — {progress.matchCount} match(es),{' '}
+                  {stopping ? 'Stopping…' : 'Scanning'} {progress.currentDir} — {progress.matchCount} match(es),{' '}
                   {progress.scannedDirs} folder(s)
                 </span>
               ) : (
@@ -327,8 +336,8 @@ export function SftpFindDialog({
 
         <DialogFooter className="px-6 pb-6 pt-2 gap-2 sm:gap-2 flex-wrap">
           {searching ? (
-            <Button variant="outline" onClick={() => void cancelSearch()}>
-              Stop
+            <Button variant="outline" disabled={stopping} onClick={() => void cancelSearch()}>
+              {stopping ? 'Stopping…' : 'Stop'}
             </Button>
           ) : (
             <Button onClick={() => void startSearch()} className="gap-1.5">

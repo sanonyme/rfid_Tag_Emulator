@@ -657,6 +657,9 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       }
       toast.error(result.error)
       return false
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+      return false
     } finally {
       setSchemaBusy(false)
     }
@@ -873,22 +876,31 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setShowQueryResults(true)
 
     const start = performance.now()
-    const result = await window.electronAPI.dbExecuteQuery(sqlText.trim(), selectedDbRef.current || undefined)
-    setQueryTime(Math.round(performance.now() - start))
+    try {
+      const result = await window.electronAPI.dbExecuteQuery(sqlText.trim(), selectedDbRef.current || undefined)
+      setQueryTime(Math.round(performance.now() - start))
 
-    if (result.ok) {
-      setQueryColumns(result.columns)
-      setQueryRows(result.rows)
-      setQueryMessage(result.message || `${result.rows.length} row(s) returned`)
-      setQueryError('')
-    } else {
+      if (result.ok) {
+        setQueryColumns(result.columns)
+        setQueryRows(result.rows)
+        setQueryMessage(result.message || `${result.rows.length} row(s) returned`)
+        setQueryError('')
+      } else {
+        setQueryColumns([])
+        setQueryRows([])
+        setQueryMessage('')
+        setQueryError(result.error)
+      }
+    } catch (err) {
+      setQueryTime(Math.round(performance.now() - start))
       setQueryColumns([])
       setQueryRows([])
       setQueryMessage('')
-      setQueryError(result.error)
+      setQueryError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setQueryRunning(false)
+      tourIx?.markDbQueryRan()
     }
-    setQueryRunning(false)
-    tourIx?.markDbQueryRan()
 
     const entry: QueryHistoryEntry = { sql: sqlText.trim(), timestamp: Date.now(), database: selectedDbRef.current || undefined }
     setQueryHistory((prev) => {

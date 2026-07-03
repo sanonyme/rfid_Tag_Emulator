@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { motion, LayoutGroup } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { TabsList, TabsTrigger } from './ui/tabs'
 import {
   Radio,
@@ -26,6 +26,13 @@ import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
 import { PopOutButton } from './PopOutButton'
 import { isPopoutableTab } from '@/lib/popout-tabs'
+import { preloadTabModule } from '@/lib/tab-modules'
+import {
+  indicatorSpring,
+  prefersReducedMotion,
+  SLIDE_TAB_ATTR,
+  useSlidingIndicator,
+} from '@/lib/motion'
 
 type TabItem = { value: string; label: string; icon: LucideIcon; badge?: string }
 type TabGroup = { id: string; label: string; items: TabItem[] }
@@ -108,6 +115,9 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
     }))
     .filter((g) => g.items.length > 0)
 
+  const reduced = prefersReducedMotion()
+  const { containerRef, rect, ready } = useSlidingIndicator(value)
+
   const ToggleButton = (
     <button
       type="button"
@@ -130,18 +140,17 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
   )
 
   return (
-    <LayoutGroup id="tab-sidebar">
-      <aside
-        data-tour="tour-tab-nav"
-        aria-label="Admin navigation"
-        className={cn(
-          'relative flex flex-col shrink-0 border-r border-border/50',
-          'bg-gradient-to-b from-background/85 to-background/60 backdrop-blur-sm',
-          'transition-[width] duration-300 ease-out overflow-hidden',
-          expanded ? 'w-56' : 'w-[3.5rem]',
-          className,
-        )}
-      >
+    <aside
+      data-tour="tour-tab-nav"
+      aria-label="Admin navigation"
+      className={cn(
+        'relative flex flex-col shrink-0 border-r border-border/50',
+        'bg-gradient-to-b from-background/85 to-background/60 backdrop-blur-sm',
+        'transition-[width] duration-300 ease-out overflow-hidden',
+        expanded ? 'w-56' : 'w-[3.5rem]',
+        className,
+      )}
+    >
         {/* Header: Admin brand + expand/collapse toggle */}
         <div
           className={cn(
@@ -168,12 +177,25 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
 
         {/* Navigation list */}
         <TabsList
+          ref={containerRef}
           className={cn(
-            'flex-1 flex flex-col items-stretch gap-0 bg-transparent h-auto rounded-none',
+            'relative flex-1 flex flex-col items-stretch gap-0 bg-transparent h-auto rounded-none',
             'overflow-y-auto overflow-x-hidden py-2',
             expanded ? 'px-2' : 'px-2',
           )}
         >
+          {ready && (
+            <motion.div
+              aria-hidden
+              className="pointer-events-none absolute rounded-lg"
+              initial={false}
+              animate={rect}
+              transition={reduced ? { duration: 0 } : indicatorSpring}
+            >
+              <span className="absolute inset-0 rounded-lg bg-primary/12 dark:bg-white/10" />
+              <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
+            </motion.div>
+          )}
           {groups.map((group, gIdx) => (
             <div key={group.id} className="flex flex-col">
               {/* Group separator */}
@@ -195,7 +217,6 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
               <div className={cn('flex flex-col', expanded ? 'gap-0.5' : 'gap-1 items-center')}>
                 {group.items.map((item) => {
                   const Icon = item.icon
-                  const isActive = value === item.value
                   const canPopOut = Boolean(onPopOut && isPopoutableTab(item.value))
                   return (
                     <div
@@ -204,9 +225,12 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                     >
                     <TabsTrigger
                       value={item.value}
+                      {...{ [SLIDE_TAB_ATTR]: item.value }}
                       title={!expanded ? item.label : undefined}
+                      onMouseEnter={() => void preloadTabModule(item.value)}
+                      onFocus={() => void preloadTabModule(item.value)}
                       className={cn(
-                        'group relative cursor-pointer flex items-center rounded-lg text-sm font-medium',
+                        'group relative z-[1] cursor-pointer flex items-center rounded-lg text-sm font-medium',
                         'border-0 bg-transparent shadow-none',
                         'outline-none focus:outline-none focus-visible:outline-none',
                         'ring-0 focus:ring-0 focus-visible:ring-0 focus-visible:ring-offset-0',
@@ -220,22 +244,7 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                       )}
                     >
                       {/* Hover wash (inactive only) */}
-                      {!isActive && (
-                        <span className="absolute inset-0 rounded-lg bg-foreground/0 group-hover:bg-foreground/5 transition-colors pointer-events-none" />
-                      )}
-                      {/* Active indicator — soft tint + left accent bar */}
-                      {isActive && (
-                        <motion.div
-                          layoutId="tab-sidebar-indicator"
-                          layout="position"
-                          className="absolute inset-0 rounded-lg pointer-events-none"
-                          initial={false}
-                          transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                        >
-                          <span className="absolute inset-0 rounded-lg bg-primary/12 dark:bg-white/10" />
-                          <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-primary shadow-[0_0_8px_hsl(var(--primary))]" />
-                        </motion.div>
-                      )}
+                      <span className="absolute inset-0 rounded-lg bg-foreground/0 group-hover:bg-foreground/5 group-data-[state=active]:bg-transparent transition-colors pointer-events-none" />
                       <Icon
                         className={cn(
                           'relative z-10 shrink-0',
@@ -287,6 +296,5 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
           ))}
         </TabsList>
       </aside>
-    </LayoutGroup>
   )
 }

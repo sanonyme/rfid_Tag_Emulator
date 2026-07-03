@@ -34,6 +34,8 @@ import { PopoutTitleBar } from './components/PopoutTitleBar'
 import { PopOutPlaceholder } from './components/PopOutPlaceholder'
 import { getPopoutTabFromHash, getPopoutTabLabel, isPopoutableTab } from './lib/popout-tabs'
 import { applyPopoutInitState } from './lib/apply-popout-state'
+import { preloadTabModule, preloadLaunchTabModules, useTabModuleReady } from './lib/tab-modules'
+import { TabSlideEnter } from './components/TabSlideEnter'
 
 const FixedTab = React.lazy(() => import('./components/FixedTab').then((m) => ({ default: m.FixedTab })))
 const HandheldTab = React.lazy(() => import('./components/HandheldTab').then((m) => ({ default: m.HandheldTab })))
@@ -54,46 +56,8 @@ const SystemLogAnalyzerTab = React.lazy(() =>
 )
 const LogAggregatorTab = React.lazy(() => import('./components/LogAggregatorTab').then((m) => ({ default: m.LogAggregatorTab })))
 
-/** Warm tab JS chunks in the background so first click rarely hits Suspense. */
-const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
-  fixed: () => import('./components/FixedTab'),
-  handheld: () => import('./components/HandheldTab'),
-  ocr: () => import('./components/OCRTab'),
-  custom: () => import('./components/CustomTab'),
-  api: () => import('./components/Api'),
-  edge: () => import('./components/EdgeTab'),
-  decoder: () => import('./components/DecoderTab'),
-  automation: () => import('./components/AutomationTab'),
-  generator: () => import('./components/BarcodeGenerator'),
-  database: () => import('./components/DatabaseTab'),
-  sftp: () => import('./components/SftpTab'),
-  netscan: () => import('./components/NetScanTab'),
-  link2uid: () => import('./components/LinkToUidTab'),
-  terminal: () => import('./components/AdminTerminalTab'),
-  logs: () => import('./components/SystemLogAnalyzerTab'),
-  logagg: () => import('./components/LogAggregatorTab'),
-}
-
-function preloadTabModules(): void {
-  const loaders = [
-    TAB_MODULE_LOADERS.fixed,
-    TAB_MODULE_LOADERS.handheld,
-    TAB_MODULE_LOADERS.ocr,
-    TAB_MODULE_LOADERS.edge,
-    TAB_MODULE_LOADERS.api,
-    TAB_MODULE_LOADERS.automation,
-    TAB_MODULE_LOADERS.database,
-  ]
-  const run = () => loaders.forEach((load) => void load())
-  if (typeof requestIdleCallback !== 'undefined') {
-    requestIdleCallback(run, { timeout: 2000 })
-  } else {
-    window.setTimeout(run, 100)
-  }
-}
-
 const TAB_PANEL_CLASS =
-  'h-full mt-0 rounded-xl border border-border/50 tab-content-animate data-[state=inactive]:hidden bg-background data-[state=active]:bg-background/95 data-[state=active]:backdrop-blur-sm'
+  'h-full mt-0 rounded-xl border border-border/50 bg-background data-[state=active]:relative data-[state=active]:bg-background/95 data-[state=inactive]:pointer-events-none data-[state=inactive]:absolute data-[state=inactive]:left-0 data-[state=inactive]:top-0 data-[state=inactive]:w-full data-[state=inactive]:-z-10 data-[state=inactive]:overflow-hidden data-[state=inactive]:[visibility:hidden]'
 
 /** Tabs that unmount when inactive (e.g. terminal shell). */
 const UNMOUNT_ON_LEAVE = new Set(['terminal'])
@@ -109,21 +73,34 @@ function TabLoadingFallback() {
 function TabPanel({
   tabId,
   visited,
+  active,
   className,
   children,
 }: {
   tabId: string
   visited: boolean
+  active: boolean
   className?: string
   children: React.ReactNode
 }) {
+  const persist = (visited || active) && !UNMOUNT_ON_LEAVE.has(tabId)
+  const shouldLoad = active || persist
+  const moduleReady = useTabModuleReady(tabId, shouldLoad)
   return (
     <TabsContent
       value={tabId}
-      forceMount={visited && !UNMOUNT_ON_LEAVE.has(tabId) ? true : undefined}
-      className={className}
+      forceMount={persist ? true : undefined}
+      className={cn(className, 'data-[state=inactive]:!block')}
     >
-      <Suspense fallback={<TabLoadingFallback />}>{children}</Suspense>
+      {moduleReady ? (
+        <Suspense fallback={<TabLoadingFallback />}>
+          <TabSlideEnter active={active} tabId={tabId}>
+            {children}
+          </TabSlideEnter>
+        </Suspense>
+      ) : (
+        <TabLoadingFallback />
+      )}
     </TabsContent>
   )
 }
@@ -200,14 +177,15 @@ function App() {
 
   /** Mark visited in the same tick as the tab change so forceMount does not flip after Suspense starts. */
   const switchTab = useCallback((tab: string) => {
-    void TAB_MODULE_LOADERS[tab]?.()
+    void preloadTabModule(tab)
     setActiveTab(tab)
     setVisitedTabs((prev) => (prev.has(tab) ? prev : new Set([...prev, tab])))
   }, [])
 
   React.useEffect(() => {
-    preloadTabModules()
+    preloadLaunchTabModules()
   }, [])
+
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -734,7 +712,7 @@ function App() {
               </div>
             )}
 
-            <div className="flex-1 min-h-0 overflow-hidden">
+            <div className="relative flex-1 min-h-0 overflow-hidden">
             {tabContentHidden ? (
               <PopOutPlaceholder
                 tabId={activeTab}
@@ -745,7 +723,7 @@ function App() {
             <>
             <TabPanel
               tabId="fixed"
-              visited={visitedTabs.has('fixed')}
+              visited={visitedTabs.has('fixed')} active={effectiveActiveTab === 'fixed'}
               className={cn(
                 TAB_PANEL_CLASS,
                 'flex flex-col min-h-0',
@@ -784,7 +762,7 @@ function App() {
               />
             </TabPanel>
 
-            <TabPanel tabId="handheld" visited={visitedTabs.has('handheld')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="handheld" visited={visitedTabs.has('handheld')} active={effectiveActiveTab === 'handheld'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <HandheldTab 
                 slots={handheldSlots}
                 setSlots={setHandheldSlots}
@@ -794,7 +772,7 @@ function App() {
               />
             </TabPanel>
 
-            <TabPanel tabId="ocr" visited={visitedTabs.has('ocr')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="ocr" visited={visitedTabs.has('ocr')} active={effectiveActiveTab === 'ocr'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <OCRTab 
                 host={host} 
                 connected={connected} 
@@ -804,7 +782,7 @@ function App() {
               />
             </TabPanel>
 
-            <TabPanel tabId="custom" visited={visitedTabs.has('custom')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="custom" visited={visitedTabs.has('custom')} active={effectiveActiveTab === 'custom'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <CustomTab 
                 host={host} 
                 message={customMessage}
@@ -814,19 +792,19 @@ function App() {
               />
             </TabPanel>
 
-            <TabPanel tabId="api" visited={visitedTabs.has('api')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="api" visited={visitedTabs.has('api')} active={effectiveActiveTab === 'api'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <ApiTab base64Open={base64Open} onBase64OpenChange={setBase64Open} />
             </TabPanel>
 
-            <TabPanel tabId="edge" visited={visitedTabs.has('edge')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden flex flex-col')}>
+            <TabPanel tabId="edge" visited={visitedTabs.has('edge')} active={effectiveActiveTab === 'edge'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden flex flex-col')}>
               <EdgeTab onSwitchTab={switchTab} edgeTabActive={effectiveActiveTab === 'edge'} />
             </TabPanel>
 
-            <TabPanel tabId="decoder" visited={visitedTabs.has('decoder')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="decoder" visited={visitedTabs.has('decoder')} active={effectiveActiveTab === 'decoder'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <DecoderTab />
             </TabPanel>
 
-            <TabPanel tabId="automation" visited={visitedTabs.has('automation')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+            <TabPanel tabId="automation" visited={visitedTabs.has('automation')} active={effectiveActiveTab === 'automation'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
@@ -841,34 +819,34 @@ function App() {
               />
             </TabPanel>
 
-            <TabPanel tabId="generator" visited={visitedTabs.has('generator')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+            <TabPanel tabId="generator" visited={visitedTabs.has('generator')} active={effectiveActiveTab === 'generator'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <BarcodeGenerator />
             </TabPanel>
 
-            <TabPanel tabId="database" visited={visitedTabs.has('database')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+            <TabPanel tabId="database" visited={visitedTabs.has('database')} active={effectiveActiveTab === 'database'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <DatabaseTab host={host} connected={connected} active={effectiveActiveTab === 'database'} />
             </TabPanel>
 
-            <TabPanel tabId="sftp" visited={visitedTabs.has('sftp')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+            <TabPanel tabId="sftp" visited={visitedTabs.has('sftp')} active={effectiveActiveTab === 'sftp'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <SftpTab host={host} setHost={setHost} />
             </TabPanel>
 
-            <TabPanel tabId="netscan" visited={visitedTabs.has('netscan')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+            <TabPanel tabId="netscan" visited={visitedTabs.has('netscan')} active={effectiveActiveTab === 'netscan'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
               <NetScanTab host={host} setHost={setHost} />
             </TabPanel>
 
             {isAdmin && (
               <>
-                <TabPanel tabId="link2uid" visited={visitedTabs.has('link2uid')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+                <TabPanel tabId="link2uid" visited={visitedTabs.has('link2uid')} active={effectiveActiveTab === 'link2uid'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <LinkToUidTab />
                 </TabPanel>
-                <TabPanel tabId="terminal" visited={visitedTabs.has('terminal')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+                <TabPanel tabId="terminal" visited={visitedTabs.has('terminal')} active={effectiveActiveTab === 'terminal'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
                   <AdminTerminalTab active={effectiveActiveTab === 'terminal'} />
                 </TabPanel>
-                <TabPanel tabId="logs" visited={visitedTabs.has('logs')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+                <TabPanel tabId="logs" visited={visitedTabs.has('logs')} active={effectiveActiveTab === 'logs'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <SystemLogAnalyzerTab />
                 </TabPanel>
-                <TabPanel tabId="logagg" visited={visitedTabs.has('logagg')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
+                <TabPanel tabId="logagg" visited={visitedTabs.has('logagg')} active={effectiveActiveTab === 'logagg'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
                   <LogAggregatorTab />
                 </TabPanel>
               </>

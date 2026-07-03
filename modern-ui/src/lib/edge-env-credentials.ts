@@ -8,12 +8,24 @@ export async function getAleEnvCredentials(): Promise<{
 } | null> {
   if (window.electronAPI?.aleGetCredentialMeta) {
     const meta = await window.electronAPI.aleGetCredentialMeta()
-    if (!meta.ok || !meta.username) return null
-    return {
-      username: meta.username,
-      password: '',
-      passwordIsHashed: meta.passwordIsHashed ?? false,
+    if (meta.ok && meta.username) {
+      return {
+        username: meta.username,
+        password: '',
+        passwordIsHashed: meta.passwordIsHashed ?? false,
+      }
     }
+    if (window.electronAPI.aleGetBasicAuthHeader) {
+      const hdr = await window.electronAPI.aleGetBasicAuthHeader()
+      if (hdr.ok && hdr.username) {
+        return {
+          username: hdr.username,
+          password: '',
+          passwordIsHashed: true,
+        }
+      }
+    }
+    return null
   }
 
   const username = import.meta.env.VITE_ALE_USERNAME as string | undefined
