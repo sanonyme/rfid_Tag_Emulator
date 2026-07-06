@@ -41,6 +41,7 @@ import {
   Upload,
   Wand2,
   FileSearch,
+  LayoutTemplate,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
@@ -48,6 +49,7 @@ import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
 import { prettifySql } from '@/lib/sql-format'
 import { buildExplainSql } from '@/lib/sql-explain'
+import { getQueryFormatsForDatabase, type DbQueryFormat } from '@/lib/db-query-formats'
 import { coerceImportValue, parseImportFile, type ParsedImport } from '@/lib/db-import-parse'
 import { formatSqlTableDump } from '@/lib/db-export-format'
 import { formatDbExportProgressMessage } from '@/lib/db-export-progress'
@@ -401,6 +403,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   // Query history
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>(loadQueryHistory)
   const [showHistory, setShowHistory] = useState(false)
+  const [showFormats, setShowFormats] = useState(false)
 
   // Insert row
   const [showInsertRow, setShowInsertRow] = useState(false)
@@ -438,6 +441,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const editorRef = useRef<HTMLDivElement>(null)
   const historyBtnRef = useRef<HTMLButtonElement>(null)
+  const formatsBtnRef = useRef<HTMLButtonElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const runQueryRef = useRef<(sqlOverride?: string) => void>(() => {})
   const selectedDbRef = useRef(selectedDb)
@@ -1314,11 +1318,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [ctxMenu, sidebarCtx])
 
   useEffect(() => {
-    if (!showExportMenu && !showHistory && !showAutoRefreshMenu) return
-    const close = () => { setShowExportMenu(false); setShowHistory(false); setShowAutoRefreshMenu(false) }
+    if (!showExportMenu && !showHistory && !showFormats && !showAutoRefreshMenu) return
+    const close = () => {
+      setShowExportMenu(false)
+      setShowHistory(false)
+      setShowFormats(false)
+      setShowAutoRefreshMenu(false)
+    }
     const timer = setTimeout(() => window.addEventListener('click', close), 0)
     return () => { clearTimeout(timer); window.removeEventListener('click', close) }
-  }, [showExportMenu, showHistory, showAutoRefreshMenu])
+  }, [showExportMenu, showHistory, showFormats, showAutoRefreshMenu])
 
   useEffect(() => {
     if (!active || !autoRefresh || !dbConnected) return
@@ -1340,6 +1349,23 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     }
     return schema
   }, [databases, tableColumns, selectedTable])
+
+  const availableDbNames = useMemo(() => databases.map((db) => db.name), [databases])
+  const queryFormats = useMemo(
+    () => getQueryFormatsForDatabase(availableDbNames),
+    [availableDbNames],
+  )
+
+  const applyQueryFormat = useCallback((format: DbQueryFormat) => {
+    setShowFormats(false)
+    if (format.database) setSelectedDb(format.database)
+    if (viewRef.current) {
+      viewRef.current.dispatch({
+        changes: { from: 0, to: viewRef.current.state.doc.length, insert: `${format.sql.trim()}\n` },
+      })
+      viewRef.current.focus()
+    }
+  }, [])
 
   // -- Editor Lifecycle --
   const mountEditor = useCallback((content: string) => {
@@ -2107,6 +2133,45 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             <div className="flex items-center gap-2 px-3 shrink-0">
               {queryTime > 0 && <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="w-3 h-3" />{queryTime}ms</span>}
               {selectedDb && <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full">{selectedDb}</span>}
+              <div className="relative">
+                <button
+                  ref={formatsBtnRef}
+                  onClick={() => setShowFormats(!showFormats)}
+                  className={cn('p-1 rounded transition-colors', showFormats ? 'text-blue-500 dark:text-blue-400 bg-blue-500/15' : 'text-muted-foreground hover:text-foreground hover:bg-white/10')}
+                  title="Query formats"
+                >
+                  <LayoutTemplate className="w-3.5 h-3.5" />
+                </button>
+                <PortaledAnchoredMenu
+                  anchorRef={formatsBtnRef}
+                  open={showFormats}
+                  className="w-80 rounded-lg border border-border bg-popover shadow-xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="px-3 py-2 border-b border-border/50 text-xs font-medium">
+                    Query Formats
+                  </div>
+                  {queryFormats.length === 0 ? (
+                    <div className="px-3 py-4 text-xs text-muted-foreground text-center">No formats available</div>
+                  ) : queryFormats.map((format) => (
+                    <button
+                      key={format.id}
+                      onClick={() => applyQueryFormat(format)}
+                      className="w-full px-3 py-2 text-left hover:bg-white/5 transition-colors border-b border-border/30 last:border-0"
+                    >
+                      <div className="text-[11px] font-medium">{format.name}</div>
+                      {format.description && (
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{format.description}</div>
+                      )}
+                      {format.database && (
+                        <div className="text-[9px] text-muted-foreground mt-1">
+                          <span className="bg-muted/60 px-1 rounded font-mono">{format.database}</span>
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </PortaledAnchoredMenu>
+              </div>
               <div className="relative">
                 <button
                   ref={historyBtnRef}
