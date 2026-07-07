@@ -84,12 +84,6 @@ import {
   type ReaderDiscoveryPayload,
 } from './reader-discovery-handler.js'
 import {
-  getInstallRegistryStatus,
-  getInstallRegistryEnabled,
-  setInstallRegistryEnabled,
-  sendInstallRegistry,
-} from './install-registry.js'
-import {
   getAppPreferences,
   setAutoUpdateEnabled,
   AUTO_UPDATE_CHECK_INTERVAL_MS,
@@ -307,17 +301,6 @@ app.whenReady().then(() => {
     })
     registerPopoutIpc()
   }
-
-  ipcMain.handle('install-registry-get-status', () => getInstallRegistryStatus())
-  ipcMain.handle('install-registry-set-enabled', (_e, enabled: boolean) => {
-    setInstallRegistryEnabled(Boolean(enabled))
-    return getInstallRegistryEnabled()
-  })
-  ipcMain.handle('install-registry-send-now', async () => sendInstallRegistry({ force: true }))
-
-  setTimeout(() => {
-    sendInstallRegistry().catch((err) => console.warn('[install-registry]', err))
-  }, 5000)
 
   // Window control IPC handlers
   ipcMain.on('window-minimize', () => {

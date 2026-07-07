@@ -25,7 +25,6 @@ import {
 import { Switch } from './ui/switch'
 import { BackupRestoreDialog } from './BackupRestoreDialog'
 import { downloadBackup, readBackupFile, type BackupFile } from '@/lib/backup'
-import { InstallRegistryPanel } from './InstallRegistryPanel'
 import { cn } from '@/lib/utils'
 import {
   SETTINGS_HIGHLIGHT_IDS,
@@ -484,8 +483,6 @@ export function SettingsDialog({
               </div>
             </div>
           </div>
-
-          <InstallRegistryPanel />
 
           {/* Connection */}
           <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">

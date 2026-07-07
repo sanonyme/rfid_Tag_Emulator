@@ -390,10 +390,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   safeStoreGet: (key: string) => ipcRenderer.invoke('safe-store-get', key),
   safeStoreDelete: (key: string) => ipcRenderer.invoke('safe-store-delete', key),
 
-  installRegistryGetStatus: () => ipcRenderer.invoke('install-registry-get-status'),
-  installRegistrySetEnabled: (enabled: boolean) => ipcRenderer.invoke('install-registry-set-enabled', enabled),
-  installRegistrySendNow: () => ipcRenderer.invoke('install-registry-send-now'),
-
   adminLogin: (username: string, password: string) =>
     ipcRenderer.invoke('admin-login', username, password) as Promise<{ ok: boolean; error?: string }>,
   adminLogout: () => ipcRenderer.invoke('admin-logout') as Promise<{ ok: boolean }>,

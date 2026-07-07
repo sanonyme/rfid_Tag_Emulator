@@ -12,8 +12,6 @@ const __dirname = path.dirname(__filename)
 dotenv.config({ path: path.join(__dirname, '.env') })
 
 /** Baked into the Electron main bundle so packaged installs work without `.env` beside the .exe. */
-const embedInstallRegistryUrl = (process.env.INSTALL_REGISTRY_URL ?? '').trim()
-const embedRegistryToken = (process.env.REGISTRY_TOKEN ?? '').trim()
 const embedReleaseOwner = (process.env.ZEUS_RELEASE_OWNER ?? '').trim()
 const embedReleaseRepo = (process.env.ZEUS_RELEASE_REPO ?? '').trim()
 const embedSecondReleaseOwner = (process.env.ZEUS_SECOND_RELEASE_OWNER ?? '').trim()
@@ -29,8 +27,6 @@ export default defineConfig({
         entry: 'electron/main.ts',
         vite: {
           define: {
-            __ZEUS_EMBED_INSTALL_REGISTRY_URL__: JSON.stringify(embedInstallRegistryUrl),
-            __ZEUS_EMBED_REGISTRY_TOKEN__: JSON.stringify(embedRegistryToken),
             __ZEUS_EMBED_RELEASE_OWNER__: JSON.stringify(embedReleaseOwner),
             __ZEUS_EMBED_RELEASE_REPO__: JSON.stringify(embedReleaseRepo),
             __ZEUS_EMBED_SECOND_RELEASE_OWNER__: JSON.stringify(embedSecondReleaseOwner),
