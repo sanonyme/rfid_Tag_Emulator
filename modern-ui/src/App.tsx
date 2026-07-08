@@ -44,7 +44,7 @@ const CustomTab = React.lazy(() => import('./components/CustomTab').then((m) => 
 const ApiTab = React.lazy(() => import('./components/Api').then((m) => ({ default: m.ApiTab })))
 const EdgeTab = React.lazy(() => import('./components/EdgeTab').then((m) => ({ default: m.EdgeTab })))
 const BarcodeGenerator = React.lazy(() => import('./components/BarcodeGenerator').then((m) => ({ default: m.BarcodeGenerator })))
-const DatabaseTab = React.lazy(() => import('./components/DatabaseTab').then((m) => ({ default: m.DatabaseTab })))
+const DatabaseTab = React.lazy(() => import('./components/database/DatabaseTab').then((m) => ({ default: m.DatabaseTab })))
 const SftpTab = React.lazy(() => import('./components/SftpTab').then((m) => ({ default: m.SftpTab })))
 const NetScanTab = React.lazy(() => import('./components/NetScanTab').then((m) => ({ default: m.NetScanTab })))
 const LinkToUidTab = React.lazy(() => import('./components/LinkToUidTab').then((m) => ({ default: m.LinkToUidTab })))
@@ -65,7 +65,7 @@ const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
   decoder: () => import('./components/DecoderTab'),
   automation: () => import('./components/AutomationTab'),
   generator: () => import('./components/BarcodeGenerator'),
-  database: () => import('./components/DatabaseTab'),
+  database: () => import('./components/database/DatabaseTab'),
   sftp: () => import('./components/SftpTab'),
   netscan: () => import('./components/NetScanTab'),
   link2uid: () => import('./components/LinkToUidTab'),
