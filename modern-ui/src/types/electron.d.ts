@@ -116,10 +116,15 @@ export interface ElectronAPI {
     headers?: Record<string, string>
   }[]>
 
-  // Inditex API (header/key persisted in userData)
-  getApiConfig: () => Promise<{ headerName: string; key: string }>
-  saveApiConfig: (headerName: string, key: string) => Promise<void>
-  itxApiRequest: (url: string, body: string) => Promise<{
+  // ITX API (url/header/key persisted in userData on Save)
+  getApiConfig: () => Promise<{ url: string; headerName: string; key: string }>
+  saveApiConfig: (url: string, headerName: string, key: string) => Promise<void>
+  itxApiRequest: (
+    url: string,
+    body: string,
+    headerName: string,
+    apiKey: string,
+  ) => Promise<{
     ok: boolean
     status: number
     statusText: string

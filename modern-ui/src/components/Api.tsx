@@ -467,8 +467,6 @@ function JsonHighlight({ json }: { json: string }) {
   )
 }
 
-const DEFAULT_URL = 'https://api.product.inditex.com/icdmrfidre/api/v1/rfid/box-readings'
-//const DEFAULT_BODY = '{\n  "ou i i a i": "67 67 67 67"\n}'
 
 interface ApiTabProps {
   base64Open?: boolean
@@ -476,10 +474,10 @@ interface ApiTabProps {
 }
 
 export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
-  const [url, setUrl] = useState(DEFAULT_URL)
+  const [url, setUrl] = useState('')
   const [body, setBody] = useState('')
   const [method] = useState<'POST'>('POST')
-  const [headerName, setHeaderName] = useState('itx-apiKey')
+  const [headerName, setHeaderName] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [saved, setSaved] = useState(false)
   const [sending, setSending] = useState(false)
@@ -507,8 +505,9 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   useEffect(() => {
     window.electronAPI?.getApiConfig?.().then((config) => {
       if (config) {
-        setHeaderName(config.headerName || 'itx-apiKey')
-        setApiKey(config.key || '')
+        if (config.url) setUrl(config.url)
+        if (config.headerName) setHeaderName(config.headerName)
+        if (config.key) setApiKey(config.key)
       }
     })
   }, [])
@@ -539,7 +538,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
     const start = performance.now()
 
     try {
-      const res = await window.electronAPI.itxApiRequest(url, body)
+      const res = await window.electronAPI.itxApiRequest(url, body, headerName, apiKey)
       const durationMs = Math.round(performance.now() - start)
       setResponse({
         ...res,
@@ -602,7 +601,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
   }
 
   const handleSaveConfig = async () => {
-    await window.electronAPI?.saveApiConfig?.(headerName, apiKey)
+    await window.electronAPI?.saveApiConfig?.(url, headerName, apiKey)
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
@@ -899,7 +898,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
     setBulkRows((prev) => prev.map((r, i) => (i === idx ? { ...r, status: 'sending' } : r)))
     const start = performance.now()
     try {
-      const res = await window.electronAPI.itxApiRequest(url, row.decoded)
+      const res = await window.electronAPI.itxApiRequest(url, row.decoded, headerName, apiKey)
       const durationMs = Math.round(performance.now() - start)
       setBulkRows((prev) =>
         prev.map((r, i) =>
@@ -985,7 +984,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
               <div className="min-w-0 space-y-1">
                 <CardTitle className="text-base font-semibold tracking-tight">Inditex RFID box readings</CardTitle>
                 <CardDescription className="text-xs leading-relaxed">
-                  POST JSON through the desktop bridge. Header name and key are saved locally.
+                  POST JSON through the desktop bridge. URL, header name, and key are saved locally when you click Save.
                 </CardDescription>
               </div>
             </div>
@@ -1013,7 +1012,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                 id="api-url"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://api.product.inditex.com/..."
+                placeholder="https://…"
                 disabled={sending}
                 className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
               />
@@ -1030,7 +1029,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                 id="api-header"
                 value={headerName}
                 onChange={(e) => setHeaderName(e.target.value)}
-                placeholder="itx-apiKey"
+                placeholder="Auth header name"
                 disabled={sending}
                 className="h-10 rounded-lg border-border/50 font-mono text-sm shadow-none"
               />
@@ -1054,7 +1053,7 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                   size="icon"
                   onClick={handleSaveConfig}
                   disabled={sending}
-                  title="Save (persists across restarts)"
+                  title="Save URL, header name, and API key (persists across restarts)"
                   className="h-10 w-10 shrink-0 rounded-lg border-border/60 bg-muted/20 shadow-none hover:bg-muted/40"
                 >
                   {saved ? <Check className="h-4 w-4 text-green-600 dark:text-green-400" /> : <Save className="h-4 w-4" />}

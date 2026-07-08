@@ -103,8 +103,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Inditex API (header/key from persisted config)
   getApiConfig: () => ipcRenderer.invoke('get-api-config'),
-  saveApiConfig: (headerName: string, key: string) => ipcRenderer.invoke('save-api-config', headerName, key),
-  itxApiRequest: (url: string, body: string) => ipcRenderer.invoke('itx-api-request', url, body),
+  saveApiConfig: (url: string, headerName: string, key: string) =>
+    ipcRenderer.invoke('save-api-config', url, headerName, key),
+  itxApiRequest: (url: string, body: string, headerName: string, apiKey: string) =>
+    ipcRenderer.invoke('itx-api-request', url, body, headerName, apiKey),
 
   // Database
   dbConnect: (host: string, user: string, password: string) => ipcRenderer.invoke('db-connect', host, user, password),

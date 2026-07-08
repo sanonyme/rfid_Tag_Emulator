@@ -1089,59 +1089,79 @@ app.whenReady().then(() => {
   // API config path (persisted in userData)
   const getApiConfigPath = () => path.join(app.getPath('userData'), 'api-config.json')
 
-  // Inditex API - POST with header/key from persisted config
+  // ITX API — url/header/key persisted in userData only when user clicks Save
   ipcMain.handle('get-api-config', () => {
     try {
       const configPath = getApiConfigPath()
       if (fs.existsSync(configPath)) {
         const raw = fs.readFileSync(configPath, 'utf-8')
-        const config = JSON.parse(raw)
-        return { headerName: config.headerName || 'itx-apiKey', key: config.key || '' }
+        const config = JSON.parse(raw) as { url?: string; headerName?: string; key?: string }
+        return {
+          url: config.url ?? '',
+          headerName: config.headerName ?? '',
+          key: config.key ?? '',
+        }
       }
     } catch (e) {
       console.error('Failed to read API config:', e)
     }
-    return { headerName: 'itx-apiKey', key: '' }
+    return { url: '', headerName: '', key: '' }
   })
 
-  ipcMain.handle('save-api-config', (_event, headerName: string, key: string) => {
-    try {
-      const configPath = getApiConfigPath()
-      fs.writeFileSync(configPath, JSON.stringify({ headerName: headerName || 'itx-apiKey', key }), 'utf-8')
-    } catch (e) {
-      console.error('Failed to save API config:', e)
-    }
-  })
-
-  ipcMain.handle('itx-api-request', async (_event, url: string, body: string) => {
-    let headerName = 'itx-apiKey'
-    let apiKey = ''
-    try {
-      const configPath = getApiConfigPath()
-      if (fs.existsSync(configPath)) {
-        const raw = fs.readFileSync(configPath, 'utf-8')
-        const config = JSON.parse(raw)
-        headerName = config.headerName || 'itx-apiKey'
-        apiKey = config.key || ''
+  ipcMain.handle(
+    'save-api-config',
+    (_event, url: string, headerName: string, key: string) => {
+      try {
+        const configPath = getApiConfigPath()
+        fs.writeFileSync(
+          configPath,
+          JSON.stringify({ url: url.trim(), headerName: headerName.trim(), key }),
+          'utf-8',
+        )
+      } catch (e) {
+        console.error('Failed to save API config:', e)
       }
-    } catch (e) {
-      console.error('Failed to read API config:', e)
+    },
+  )
+
+  ipcMain.handle(
+    'itx-api-request',
+    async (_event, url: string, body: string, headerName: string, apiKey: string) => {
+    const trimmedUrl = url.trim()
+    const trimmedHeader = headerName.trim()
+    if (!trimmedUrl) {
+      return {
+        ok: false,
+        status: 0,
+        statusText: 'Missing URL',
+        data: 'Enter the request URL above.',
+        headers: {},
+      }
     }
-    if (!apiKey) {
+    if (!trimmedHeader) {
+      return {
+        ok: false,
+        status: 0,
+        statusText: 'Missing header name',
+        data: 'Enter the auth header name above.',
+        headers: {},
+      }
+    }
+    if (!apiKey.trim()) {
       return {
         ok: false,
         status: 0,
         statusText: 'Missing API key',
-        data: 'Enter your API key in the header section above and click Save.',
-        headers: {}
+        data: 'Enter your API key above.',
+        headers: {},
       }
     }
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        [headerName]: apiKey,
+        [trimmedHeader]: apiKey,
       }
-      const response = await fetch(url, {
+      const response = await fetch(trimmedUrl, {
         method: 'POST',
         headers,
         body: body || '{}',
