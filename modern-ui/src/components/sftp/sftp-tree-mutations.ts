@@ -1,4 +1,5 @@
 import type { SftpFileNode } from './SftpFileTree'
+import { posixJoin } from './sftp-path-utils'
 
 export function setNodeLoading(nodes: SftpFileNode[], target: string, loading: boolean): SftpFileNode[] {
   return nodes.map((n) => {
@@ -38,4 +39,71 @@ export function getDirectChildPaths(nodes: SftpFileNode[], dir: string): string[
   const parent = findNode(nodes, dir)
   if (!parent?.children?.length) return []
   return parent.children.map((c) => c.path)
+}
+
+/** Reload root and re-fetch children for previously expanded folders. */
+export async function rebuildSftpTreeWithExpanded(
+  loadDir: (remotePath: string) => Promise<SftpFileNode[]>,
+  expandedPaths: ReadonlySet<string>,
+): Promise<{ tree: SftpFileNode[]; expandedPaths: Set<string> }> {
+  let tree = await loadDir('/')
+  const nextExpanded = new Set<string>()
+
+  const paths = [...expandedPaths]
+    .filter((p) => p !== '/')
+    .sort((a, b) => a.split('/').filter(Boolean).length - b.split('/').filter(Boolean).length)
+
+  for (const targetPath of paths) {
+    const segments = targetPath.split('/').filter(Boolean)
+    let parentPath = '/'
+    let reached = true
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i]!
+      const fullPath = posixJoin(parentPath, segment)
+
+      if (parentPath !== '/') {
+        const parentNode = findNode(tree, parentPath)
+        if (!parentNode?.loaded) {
+          try {
+            tree = setChildrenAtPath(tree, parentPath, await loadDir(parentPath))
+            nextExpanded.add(parentPath)
+          } catch {
+            reached = false
+            break
+          }
+        } else {
+          nextExpanded.add(parentPath)
+        }
+      }
+
+      const siblings = parentPath === '/' ? tree : findNode(tree, parentPath)?.children
+      const folder = siblings?.find((n) => n.name === segment)
+      if (!folder || folder.type !== 'folder') {
+        reached = false
+        break
+      }
+
+      const isTarget = i === segments.length - 1
+      if (isTarget || !folder.loaded) {
+        try {
+          tree = setChildrenAtPath(tree, fullPath, await loadDir(fullPath))
+          nextExpanded.add(fullPath)
+        } catch {
+          reached = false
+          break
+        }
+      } else {
+        nextExpanded.add(fullPath)
+      }
+
+      parentPath = fullPath
+    }
+
+    if (!reached) {
+      nextExpanded.delete(targetPath)
+    }
+  }
+
+  return { tree, expandedPaths: nextExpanded }
 }

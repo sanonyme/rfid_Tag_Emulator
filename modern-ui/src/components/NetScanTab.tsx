@@ -6,6 +6,8 @@ import { ScrollArea } from './ui/scroll-area'
 import { Tabs, TabsContent } from './ui/tabs'
 import { Radar, Play, Square, Monitor, Loader2, Copy, Check, Radio, Trash2, Send, Search, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { mono, monoInput, monoXs, pageContent, pageShell, pageToolbar } from '@/lib/ui-tokens'
+import { EmptyState, ListSkeleton } from './EmptyState'
 import { SegmentedTabs } from './SegmentedTabs'
 import { toast } from 'sonner'
 import type { NetScanStartPayload, ReaderDiscoveryPayload, ReaderVendor } from '../types/electron'
@@ -600,20 +602,17 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
   if (!hasApi) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6" data-tour="tour-netscan-root">
-        <Monitor className="w-12 h-12 text-muted-foreground" />
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">LAN scan</h2>
-          <p className="text-sm text-muted-foreground mt-2 max-w-md">
-            Network scanning runs in the desktop Electron app (ICMP ping). Use a packaged or dev desktop build.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        data-tour="tour-netscan-root"
+        icon={Monitor}
+        title="LAN scan"
+        description="Network scanning runs in the desktop Electron app (ICMP ping). Use a packaged or dev desktop build."
+      />
     )
   }
 
   return (
-    <div className="stagger-children flex h-full min-h-0 flex-col gap-3" data-tour="tour-netscan-root">
+    <div className={pageShell} data-tour="tour-netscan-root">
       <Tabs value={lanMode} onValueChange={(v) => setLanMode(v as typeof lanMode)} className="flex h-full min-h-0 flex-col">
         <SegmentedTabs
           value={lanMode}
@@ -642,13 +641,13 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-end gap-3 rounded-xl border border-border/40 bg-muted/15 p-3 ring-1 ring-border/20">
+          <div className={cn(pageToolbar, 'items-end gap-3 p-3')}>
             <div className="space-y-1.5 w-28">
               <Label className="text-xs text-muted-foreground">Local port</Label>
               <Input
                 value={udp.localPort}
                 onChange={(e) => udp.setLocalPort(e.target.value.replace(/\D/g, ''))}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, 'h-9')}
                 placeholder="7000"
                 disabled={udp.listening}
               />
@@ -658,7 +657,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={udp.duration}
                 onChange={(e) => udp.setDuration(e.target.value.replace(/\D/g, ''))}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, 'h-9')}
                 placeholder="60"
                 disabled={udp.listening}
               />
@@ -701,7 +700,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={udp.probeIp}
                 onChange={(e) => udp.setProbeIp(e.target.value)}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 placeholder="255.255.255.255"
                 disabled={!udp.listening}
               />
@@ -711,7 +710,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={udp.remotePort}
                 onChange={(e) => udp.setRemotePort(e.target.value.replace(/\D/g, ''))}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 placeholder="23"
                 disabled={!udp.listening}
               />
@@ -721,7 +720,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={udp.probeMessage}
                 onChange={(e) => udp.setProbeMessage(e.target.value)}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 placeholder="discovery payload…"
                 disabled={!udp.listening}
               />
@@ -741,7 +740,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           {udp.listening && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground shrink-0">
               <Loader2 className="w-3 h-3 animate-spin text-primary" />
-              <span>Listening on UDP port <span className="font-mono text-foreground">{udp.localPort}</span>…</span>
+              <span>Listening on UDP port <span className="font-mono [font-family:var(--font-mono)] text-foreground">{udp.localPort}</span>…</span>
               <span className="text-emerald-600 font-medium">{udp.devices.length}</span> device(s) found
             </div>
           )}
@@ -765,7 +764,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           </div>
 
           {/* Discovered devices table */}
-          <div className="flex-1 min-h-0 rounded-xl border border-border/50 bg-background/40 overflow-hidden">
+          <div className={pageContent}>
             <ScrollArea className="h-[min(100%,calc(100vh-420px))] max-h-[calc(100vh-380px)]">
               {!udp.showRaw ? (
                 <div className="min-w-[600px]">
@@ -778,19 +777,20 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                     <div className="w-20 text-right pr-2">Action</div>
                   </div>
                   {udp.devices.length === 0 && !udp.listening && (
-                    <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-                      Start listening to discover edge devices on the network.
-                    </p>
+                    <EmptyState
+                      className="py-10 min-h-0"
+                      icon={Radio}
+                      title="No devices yet"
+                      description="Start listening to discover edge devices on the network."
+                    />
                   )}
                   {udp.devices.length === 0 && udp.listening && (
-                    <p className="px-4 py-8 text-sm text-muted-foreground text-center">
-                      Waiting for heartbeat broadcasts…
-                    </p>
+                    <ListSkeleton rows={5} cols={5} className="py-4" />
                   )}
                   {udp.devices.map((d) => (
                     <div
                       key={d.mac || d.ip}
-                      className="flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono text-sm bg-emerald-500/5"
+                      className={cn('flex items-center gap-2 px-3 py-2 border-b border-border/20 text-sm bg-emerald-500/5', mono)}
                     >
                       <div className="w-36 truncate">{d.ip}</div>
                       <div className="w-14 truncate">{d.port || '—'}</div>
@@ -814,7 +814,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   ))}
                 </div>
               ) : (
-                <div className="p-3 space-y-2 font-mono text-xs">
+                <div className="p-3 space-y-2 font-mono [font-family:var(--font-mono)] text-xs">
                   {udp.rawMessages.length === 0 && (
                     <p className="text-muted-foreground text-center py-4">No raw messages yet.</p>
                   )}
@@ -873,7 +873,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={readers.cidr}
                 onChange={(e) => readers.setCidr(e.target.value)}
-                className="font-mono text-sm h-9 max-w-md"
+                className={cn(monoInput, "h-9 max-w-md")}
                 placeholder="192.168.1.0/24"
                 disabled={readers.scanning}
               />
@@ -885,7 +885,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   <Input
                     value={readers.startIp}
                     onChange={(e) => readers.setStartIp(e.target.value)}
-                    className="font-mono text-sm h-9"
+                    className={cn(monoInput, "h-9")}
                     placeholder="192.168.1.1"
                     disabled={readers.scanning}
                   />
@@ -895,7 +895,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   <Input
                     value={readers.endIp}
                     onChange={(e) => readers.setEndIp(e.target.value)}
-                    className="font-mono text-sm h-9"
+                    className={cn(monoInput, "h-9")}
                     placeholder="192.168.1.254"
                     disabled={readers.scanning}
                   />
@@ -915,7 +915,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={readers.concurrency}
                 onChange={(e) => readers.setConcurrency(e.target.value.replace(/\D/g, '') || '48')}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 disabled={readers.scanning}
               />
             </div>
@@ -924,7 +924,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={readers.timeoutMs}
                 onChange={(e) => readers.setTimeoutMs(e.target.value.replace(/\D/g, '') || '1200')}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 disabled={readers.scanning}
               />
             </div>
@@ -943,7 +943,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
           {readers.progress.total > 0 && (
             <div className="space-y-1 shrink-0">
-              <div className="flex justify-between text-xs text-muted-foreground font-mono">
+              <div className="flex justify-between text-xs text-muted-foreground font-mono [font-family:var(--font-mono)]">
                 <span className="flex items-center gap-1">
                   {readers.scanning ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3 text-emerald-600" />}
                   Reader scan
@@ -982,7 +982,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   <div
                     key={r.ip}
                     className={cn(
-                      'flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono text-sm',
+                      'flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono [font-family:var(--font-mono)] text-sm',
                       vendorBadgeClass(r.vendor),
                     )}
                   >
@@ -1057,7 +1057,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
                   type="button"
                   variant={chipActive ? 'secondary' : 'outline'}
                   size="sm"
-                  className="h-8 font-mono text-[11px]"
+                  className={cn(monoXs, "h-8")}
                   disabled={scanning || scanMode === 'allSubnets'}
                   onClick={() => {
                     if (scanMode === 'cidr') setCidr(i.networkCidr)
@@ -1095,7 +1095,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           <Input
             value={cidr}
             onChange={(e) => setCidr(e.target.value)}
-            className="font-mono text-sm h-9 max-w-md"
+            className={cn(monoInput, "h-9 max-w-md")}
             placeholder="192.168.1.0/24"
             disabled={scanning}
           />
@@ -1110,7 +1110,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={rangeStart}
                 onChange={(e) => setRangeStart(e.target.value)}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 placeholder="192.168.1.1"
                 disabled={scanning}
               />
@@ -1120,7 +1120,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <Input
                 value={rangeEnd}
                 onChange={(e) => setRangeEnd(e.target.value)}
-                className="font-mono text-sm h-9"
+                className={cn(monoInput, "h-9")}
                 placeholder="192.168.1.254"
                 disabled={scanning}
               />
@@ -1141,7 +1141,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
           <Input
             value={concurrency}
             onChange={(e) => setConcurrency(e.target.value.replace(/\D/g, '') || '40')}
-            className="font-mono text-sm h-9"
+            className={cn(monoInput, "h-9")}
             disabled={scanning}
           />
         </div>
@@ -1171,7 +1171,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
       {scanning && progress.total > 0 && (
         <div className="space-y-1 shrink-0">
-          <div className="flex justify-between text-xs text-muted-foreground font-mono">
+          <div className="flex justify-between text-xs text-muted-foreground font-mono [font-family:var(--font-mono)]">
             <span className="flex items-center gap-1">
               <Loader2 className="w-3 h-3 animate-spin" />
               Scanning…
@@ -1230,7 +1230,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
               <div
                 key={r.ip}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono text-sm',
+                  'flex items-center gap-2 px-3 py-2 border-b border-border/20 font-mono [font-family:var(--font-mono)] text-sm',
                   r.alive ? 'bg-emerald-500/5' : 'opacity-70',
                 )}
               >
@@ -1268,7 +1268,7 @@ export function NetScanTab({ host, setHost }: NetScanTabProps) {
 
       {host && (
         <p className="text-xs text-muted-foreground shrink-0">
-          Current host: <span className="font-mono text-foreground">{host}</span>
+          Current host: <span className="font-mono [font-family:var(--font-mono)] text-foreground">{host}</span>
         </p>
       )}
     </div>

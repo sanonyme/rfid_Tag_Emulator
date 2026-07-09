@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Button } from '../ui/button'
 import { cn } from '@/lib/utils'
 import {
@@ -12,6 +12,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  MoreHorizontal,
   Network,
   Pencil,
   Plus,
@@ -51,10 +52,47 @@ function ViewSwitcher({ view, onChange }: { view: TableView; onChange: (v: Table
           )}
         >
           <Icon className="w-3 h-3" />
-          {label}
+          <span className="hidden sm:inline">{label}</span>
         </button>
       ))}
     </div>
+  )
+}
+
+function ExportMenuItems({
+  selectedCount,
+  tableTotal,
+  onExportPage,
+  onExportSelected,
+  onExportAll,
+}: {
+  selectedCount: number
+  tableTotal: number
+  onExportPage: (f: ExportFormat) => void
+  onExportSelected: (f: ExportFormat) => void
+  onExportAll: (f: ExportFormat) => void
+}) {
+  return (
+    <>
+      {selectedCount > 0 && (
+        <>
+          <MenuLabel>Selected ({selectedCount})</MenuLabel>
+          <MenuItem onClick={() => onExportSelected('csv')}>CSV</MenuItem>
+          <MenuItem onClick={() => onExportSelected('json')}>JSON</MenuItem>
+          <MenuItem onClick={() => onExportSelected('sql')}>SQL INSERT</MenuItem>
+          <MenuSeparator />
+        </>
+      )}
+      <MenuLabel>Current page</MenuLabel>
+      <MenuItem onClick={() => onExportPage('csv')}>CSV</MenuItem>
+      <MenuItem onClick={() => onExportPage('json')}>JSON</MenuItem>
+      <MenuItem onClick={() => onExportPage('sql')}>SQL INSERT</MenuItem>
+      <MenuSeparator />
+      <MenuLabel>All rows ({tableTotal.toLocaleString()})</MenuLabel>
+      <MenuItem onClick={() => onExportAll('csv')}>Export all as CSV…</MenuItem>
+      <MenuItem onClick={() => onExportAll('json')}>Export all as JSON</MenuItem>
+      <MenuItem onClick={() => onExportAll('sql')}>Export all as SQL…</MenuItem>
+    </>
   )
 }
 
@@ -109,6 +147,26 @@ export function DbTableToolbar({
   tableSearch,
   onTableSearchChange,
 }: DbTableToolbarProps) {
+  const [showActionsMenu, setShowActionsMenu] = useState(false)
+
+  useEffect(() => {
+    if (!showActionsMenu) return
+    const close = () => setShowActionsMenu(false)
+    const timer = setTimeout(() => window.addEventListener('click', close), 0)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('click', close)
+    }
+  }, [showActionsMenu])
+
+  const exportMenuProps = {
+    selectedCount,
+    tableTotal,
+    onExportPage,
+    onExportSelected,
+    onExportAll,
+  }
+
   return (
     <div className="flex items-center justify-between pl-4 pr-2.5 py-2 border-b border-border/50 shrink-0 gap-2 bg-muted/20">
       {/* Title / breadcrumb */}
@@ -121,7 +179,7 @@ export function DbTableToolbar({
               <span className="text-muted-foreground/70"> · schema</span>
             </span>
             {schemaData && (
-              <span className="text-[11px] text-muted-foreground bg-muted/60 ring-1 ring-border/30 px-2 py-0.5 rounded-full shrink-0">
+              <span className="text-[11px] text-muted-foreground bg-muted/60 ring-1 ring-border/30 px-2 py-0.5 rounded-full shrink-0 hidden sm:inline-flex">
                 {schemaData.tables.length} tables
                 {schemaData.foreignKeys.length > 0 && ` · ${schemaData.foreignKeys.length} FK`}
               </span>
@@ -142,7 +200,7 @@ export function DbTableToolbar({
             {hasPrimaryKey && (
               <span
                 className={cn(
-                  'text-[10px] flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 ring-1',
+                  'text-[10px] flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 ring-1 hidden md:inline-flex',
                   readOnly
                     ? 'text-amber-500 bg-amber-500/10 ring-amber-500/20'
                     : 'text-emerald-500 bg-emerald-500/10 ring-emerald-500/20',
@@ -155,7 +213,7 @@ export function DbTableToolbar({
             )}
             {!hasPrimaryKey && (
               <span
-                className="text-[10px] flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 text-muted-foreground bg-muted/40 ring-1 ring-border/30"
+                className="text-[10px] flex items-center gap-1 shrink-0 rounded-full px-2 py-0.5 text-muted-foreground bg-muted/40 ring-1 ring-border/30 hidden md:inline-flex"
                 title="No primary key — rows cannot be edited or deleted from the grid"
               >
                 <KeyRound className="w-2.5 h-2.5" />
@@ -170,64 +228,96 @@ export function DbTableToolbar({
       <div className="flex items-center gap-1 shrink-0">
         {tableView === 'data' && (
           <>
-            {canEdit && (
+            {/* Wide: individual import / export buttons */}
+            <div className="hidden lg:flex items-center gap-1">
+              {canEdit && (
+                <IconAction
+                  icon={PlusCircle}
+                  label="Insert row"
+                  active={showInsertRow}
+                  activeClassName="text-emerald-500 bg-emerald-500/10"
+                  onClick={onToggleInsertRow}
+                />
+              )}
               <IconAction
-                icon={PlusCircle}
-                label="Insert row"
-                active={showInsertRow}
-                activeClassName="text-emerald-500 bg-emerald-500/10"
-                onClick={onToggleInsertRow}
+                icon={Upload}
+                label={readOnly ? 'Import (disabled in read-only mode)' : 'Import rows from CSV or JSON'}
+                disabled={readOnly}
+                onClick={onImportPick}
               />
-            )}
-            <IconAction
-              icon={Upload}
-              label={readOnly ? 'Import (disabled in read-only mode)' : 'Import rows from CSV or JSON'}
-              disabled={readOnly}
-              onClick={onImportPick}
-            />
-            <div className="relative">
+              <div className="relative">
+                <IconAction
+                  icon={Download}
+                  label="Export…"
+                  spinning={exporting}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setShowActionsMenu(false)
+                    onToggleExportMenu()
+                  }}
+                />
+                {showExportMenu && (
+                  <div className="absolute right-0 top-full mt-1 z-50 min-w-[190px] rounded-xl border border-border/70 bg-popover/95 backdrop-blur-sm shadow-2xl p-1 animate-in fade-in-0 zoom-in-95 duration-100">
+                    <ExportMenuItems {...exportMenuProps} />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Narrow: collapse import/export into Actions */}
+            <div className="relative lg:hidden">
               <IconAction
-                icon={Download}
-                label="Export…"
+                icon={MoreHorizontal}
+                label="Actions"
                 spinning={exporting}
+                active={showActionsMenu || showExportMenu}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onToggleExportMenu()
+                  setShowActionsMenu((v) => !v)
                 }}
               />
-              {showExportMenu && (
+              {showActionsMenu && (
                 <div
-                  className="absolute right-0 top-full mt-1 z-50 min-w-[190px] rounded-xl border border-border/70 bg-popover/95 backdrop-blur-sm shadow-2xl p-1 animate-in fade-in-0 zoom-in-95 duration-100"
+                  className="absolute right-0 top-full mt-1 z-50 min-w-[200px] rounded-xl border border-border/70 bg-popover/95 backdrop-blur-sm shadow-2xl p-1 animate-in fade-in-0 zoom-in-95 duration-100"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  {selectedCount > 0 && (
-                    <>
-                      <MenuLabel>Selected ({selectedCount})</MenuLabel>
-                      <MenuItem onClick={() => onExportSelected('csv')}>CSV</MenuItem>
-                      <MenuItem onClick={() => onExportSelected('json')}>JSON</MenuItem>
-                      <MenuItem onClick={() => onExportSelected('sql')}>SQL INSERT</MenuItem>
-                      <MenuSeparator />
-                    </>
+                  {canEdit && (
+                    <MenuItem
+                      icon={PlusCircle}
+                      iconClassName="text-emerald-500"
+                      onClick={() => {
+                        setShowActionsMenu(false)
+                        onToggleInsertRow()
+                      }}
+                    >
+                      {showInsertRow ? 'Hide insert form' : 'Insert row'}
+                    </MenuItem>
                   )}
-                  <MenuLabel>Current page</MenuLabel>
-                  <MenuItem onClick={() => onExportPage('csv')}>CSV</MenuItem>
-                  <MenuItem onClick={() => onExportPage('json')}>JSON</MenuItem>
-                  <MenuItem onClick={() => onExportPage('sql')}>SQL INSERT</MenuItem>
+                  <MenuItem
+                    icon={Upload}
+                    disabled={readOnly}
+                    onClick={() => {
+                      setShowActionsMenu(false)
+                      onImportPick()
+                    }}
+                  >
+                    Import CSV / JSON…
+                  </MenuItem>
                   <MenuSeparator />
-                  <MenuLabel>All rows ({tableTotal.toLocaleString()})</MenuLabel>
-                  <MenuItem onClick={() => onExportAll('csv')}>Export all as CSV…</MenuItem>
-                  <MenuItem onClick={() => onExportAll('json')}>Export all as JSON</MenuItem>
-                  <MenuItem onClick={() => onExportAll('sql')}>Export all as SQL…</MenuItem>
+                  <MenuLabel>Export</MenuLabel>
+                  <ExportMenuItems {...exportMenuProps} />
                 </div>
               )}
             </div>
+
             <div className="relative ml-0.5">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <input
                 type="text"
                 value={tableSearch}
                 onChange={(e) => onTableSearchChange(e.target.value)}
-                placeholder="Filter page…"
-                className="h-7 pl-8 pr-6 text-[11px] rounded-lg border border-border/50 bg-background/50 focus:outline-none focus:ring-1 focus:ring-primary/40 w-36 transition-shadow"
+                placeholder="Search table…"
+                className="h-7 pl-8 pr-6 text-[11px] rounded-lg border border-border/50 bg-background/50 focus:outline-none focus:ring-1 focus:ring-primary/40 w-28 sm:w-36 transition-shadow"
               />
               {tableSearch && (
                 <button

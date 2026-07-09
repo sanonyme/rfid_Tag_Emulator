@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FolderInput, Plus, X, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { pageShell } from '@/lib/ui-tokens'
+import { EmptyState } from './EmptyState'
 import { SftpSessionPanel } from './sftp/SftpSessionPanel'
 
 type SftpConnectionTab = {
@@ -95,23 +97,19 @@ export function SftpTab({ host }: SftpTabProps) {
 
   if (!hasSftp) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6" data-tour="tour-sftp">
-        <Monitor className="w-12 h-12 text-muted-foreground" />
-        <div>
-          <h2 className="text-lg font-semibold text-foreground">SFTP explorer</h2>
-          <p className="text-sm text-muted-foreground mt-2 max-w-md">
-            SFTP is only available in the desktop Electron app. Run the packaged or dev desktop build to
-            connect over SSH and browse remote files.
-          </p>
-        </div>
-      </div>
+      <EmptyState
+        data-tour="tour-sftp"
+        icon={Monitor}
+        title="SFTP explorer"
+        description="SFTP is only available in the desktop Electron app. Run the packaged or dev desktop build to connect over SSH and browse remote files."
+      />
     )
   }
 
   if (!activeTab) return null
 
   return (
-    <div className="stagger-children flex h-full min-h-0 flex-col gap-2">
+    <div className={cn(pageShell, 'gap-2')}>
       <div
         className="flex shrink-0 items-center gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted/20 px-1 py-1"
         role="tablist"

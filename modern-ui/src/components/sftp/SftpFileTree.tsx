@@ -297,7 +297,9 @@ function FileItem({
   const [isHovered, setIsHovered] = useState(false)
 
   const isFolder = node.type === 'folder'
-  const isOpen = expandedPaths.has(node.path)
+  const isMarkedExpanded = expandedPaths.has(node.path)
+  const isOpen =
+    isMarkedExpanded && (!isFolder || node.loaded === true || node.loading === true)
   const childList = useMemo(
     () => sortChildren(node.children ?? [], sortKey, sortDir, foldersFirst),
     [node.children, sortKey, sortDir, foldersFirst],

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
+import { indicatorSpring, motionSafeTransition } from '@/lib/motion'
 import { useWorkspaceStatus, type ServiceStatus } from '@/lib/workspace-status'
 import { PopOutButton } from './PopOutButton'
 import { isPopoutableTab } from '@/lib/popout-tabs'
@@ -151,11 +152,7 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                   layout="position"
                   className="absolute inset-0 rounded-full -z-10"
                   initial={false}
-                  transition={{
-                    type: 'spring',
-                    stiffness: 300,
-                    damping: 30,
-                  }}
+                  transition={motionSafeTransition(indicatorSpring)}
                 >
                   <div className="absolute inset-0 rounded-full bg-primary/20 transition-colors duration-200 dark:bg-white/15" />
                   <div className="absolute -top-1.5 left-1/2 h-0.5 w-6 -translate-x-1/2 rounded-full bg-primary shadow-[0_0_6px_hsl(var(--primary))] transition-colors duration-200 dark:bg-white dark:shadow-[0_0_6px_rgba(255,255,255,0.6)]" />

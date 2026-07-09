@@ -402,11 +402,26 @@ class MockElectronAPI implements ElectronAPI {
   async dbGetTables(_database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
     return { ok: false as const, error: 'Not connected' }
   }
-  async dbGetTableData(_database: string, _table: string, _limit?: number, _offset?: number) {
+  async dbGetTableData(
+    _database: string,
+    _table: string,
+    _limit?: number,
+    _offset?: number,
+    _filter?: { search?: string; sortColumn?: string; sortDir?: 'asc' | 'desc' },
+  ) {
     return { ok: false as const, error: 'Not connected' }
   }
   async dbExecuteQuery(_query: string, _database?: string) {
     return { ok: false as const, error: 'Not connected' }
+  }
+  async automationRunScript(_payload: unknown) {
+    return { ok: false as const, error: 'Run Script requires the desktop app (admin)' }
+  }
+  async automationOpenScriptsFolder() {
+    return { ok: false as const, error: 'Not available in browser' }
+  }
+  async automationGetScriptsDir() {
+    return { ok: false as const, error: 'Not available in browser' }
   }
   async dbGetPrimaryKeys(_database: string, _table: string) {
     return [] as string[]

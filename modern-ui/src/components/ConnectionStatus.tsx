@@ -188,7 +188,7 @@ export function ConnectionStatus({
                             onChange={(e) => setLocalHost(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter') handleConnect() }}
                             placeholder="192.168.1.100"
-                            className="h-8 font-mono text-sm"
+                            className="h-8 font-mono [font-family:var(--font-mono)] text-sm"
                         />
                         <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/25 px-2.5 py-1.5">
                             <Label
@@ -204,7 +204,7 @@ export function ConnectionStatus({
                                 value={localAlePort}
                                 onChange={(e) => commitAlePort(e.target.value)}
                                 placeholder="80"
-                                className="h-6 w-11 shrink-0 border-0 bg-transparent px-0 text-center text-xs font-mono shadow-none focus-visible:ring-0"
+                                className="h-6 w-11 shrink-0 border-0 bg-transparent px-0 text-center text-xs font-mono [font-family:var(--font-mono)] shadow-none focus-visible:ring-0"
                                 title="Port for ALE API (often 80 or 8080)"
                             />
                             <div className="ml-auto flex gap-0.5">
@@ -213,7 +213,7 @@ export function ConnectionStatus({
                                         key={preset}
                                         type="button"
                                         className={cn(
-                                            'rounded px-1.5 py-0.5 text-[10px] font-mono tabular-nums transition-colors',
+                                            'rounded px-1.5 py-0.5 text-[10px] font-mono [font-family:var(--font-mono)] tabular-nums transition-colors',
                                             localAlePort === preset
                                                 ? 'bg-primary/15 text-primary'
                                                 : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground',
@@ -258,7 +258,7 @@ export function ConnectionStatus({
                                             <Star className="w-3 h-3 fill-current" />
                                         </button>
                                         <button
-                                            className="flex-1 rounded text-left text-xs font-mono text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                                            className="flex-1 rounded text-left text-xs font-mono [font-family:var(--font-mono)] text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={() => connectTo(h)}
                                         >
                                             {h}
@@ -288,7 +288,7 @@ export function ConnectionStatus({
                                             <Star className="w-3 h-3" />
                                         </button>
                                         <button
-                                            className="flex-1 rounded text-left text-xs font-mono text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                                            className="flex-1 rounded text-left text-xs font-mono [font-family:var(--font-mono)] text-foreground truncate outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                                             onClick={() => connectTo(h)}
                                         >
                                             {h}

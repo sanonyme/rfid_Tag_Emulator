@@ -162,7 +162,7 @@ export function ExpandableTagField({
                 onKeyDown={onKeyDown}
                 {...textareaHandlers}
                 className={cn(
-                  'font-mono text-sm',
+                  'font-mono [font-family:var(--font-mono)] text-sm',
                   'min-h-[min(58vh,560px)] w-full resize-y rounded-lg',
                   'border border-border bg-background shadow-inner',
                 )}

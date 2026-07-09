@@ -23,6 +23,7 @@ import { publishStatus } from './lib/workspace-status'
 import { TabNavBar } from './components/TabNavBar'
 import { TabSidebar } from './components/TabSidebar'
 import { CommandPalette } from './components/CommandPalette'
+import { TabLoadingSkeleton } from './components/EmptyState'
 import { KeyboardShortcutsDialog } from './components/KeyboardShortcutsDialog'
 import { BottomMenu } from './components/BottomMenu'
 import { TooltipProvider } from './components/ui/tooltip'
@@ -99,11 +100,7 @@ const TAB_PANEL_CLASS =
 const UNMOUNT_ON_LEAVE = new Set(['terminal'])
 
 function TabLoadingFallback() {
-  return (
-    <div className="flex h-full min-h-[12rem] items-center justify-center text-sm text-muted-foreground">
-      Loading…
-    </div>
-  )
+  return <TabLoadingSkeleton />
 }
 
 function TabPanel({
@@ -888,6 +885,7 @@ function App() {
       open={paletteOpen}
       onOpenChange={setPaletteOpen}
       onSwitchTab={switchTab}
+      activeTab={effectiveActiveTab}
       connected={connected}
       onConnect={handlePaletteConnect}
       onDisconnect={handlePaletteDisconnect}
@@ -896,6 +894,8 @@ function App() {
       onOpenSettings={() => handleOpenSettings()}
       onOpenProfiles={() => setProfilesOpen(true)}
       onOpenBase64={handleOpenBase64}
+      onOpenShortcuts={() => setShortcutsOpen(true)}
+      onPopOutTab={handlePopOut}
       host={host}
       isAdmin={isAdmin}
       onAdminLogin={handleAdminLogin}

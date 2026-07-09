@@ -29,7 +29,7 @@ export function DbNoHostScreen() {
         </div>
       </div>
       <div className="text-center space-y-1">
-        <p className="text-lg font-semibold text-foreground">No reader connected</p>
+        <p className="text-lg font-semibold text-foreground">Not Connected</p>
         <p className="text-sm max-w-sm">
           Connect to an IP with the connection button above, then come back here to browse the MySQL database on that host.
         </p>

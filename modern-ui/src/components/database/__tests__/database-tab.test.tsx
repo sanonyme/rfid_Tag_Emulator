@@ -83,7 +83,7 @@ function installElectronApiMock() {
 describe('DatabaseTab (revamped)', () => {
   it('shows the no-reader screen when the emulator is not connected', () => {
     render({ host: '', connected: false })
-    expect(screen.getByText(/No reader connected/i)).toBeInTheDocument()
+    expect(screen.getByText(/Not Connected/i)).toBeInTheDocument()
   })
 
   it('shows the MySQL login card and connects through electronAPI', async () => {
@@ -126,6 +126,18 @@ describe('DatabaseTab (revamped)', () => {
     expect(await screen.findByText('UPC-0001')).toBeInTheDocument()
     expect(screen.getByText('UPC-0002')).toBeInTheDocument()
     expect(screen.getByText('read-only')).toBeInTheDocument()
+
+    const searchInput = screen.getByPlaceholderText(/Search table/i)
+    fireEvent.change(searchInput, { target: { value: 'UPC-0001' } })
+    await waitFor(() => {
+      expect(api.dbGetTableData).toHaveBeenLastCalledWith(
+        'zeus',
+        'items',
+        100,
+        0,
+        expect.objectContaining({ search: 'UPC-0001' }),
+      )
+    })
 
     // Structure view
     fireEvent.click(screen.getByRole('button', { name: /Structure/i }))

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -25,13 +25,32 @@ type SchemaTableNodeData = {
   columns: (DbSchemaColumn & { isFk: boolean })[]
 }
 
-function SchemaTableNode({ data }: NodeProps<Node<SchemaTableNodeData>>) {
+const SchemaSelectCtx = createContext<(tableName: string) => void>(() => {})
+
+function SchemaTableNode({ data, id }: NodeProps<Node<SchemaTableNodeData>>) {
+  const onSelectTable = useContext(SchemaSelectCtx)
+
+  const openTable = useCallback(() => {
+    onSelectTable(id)
+  }, [onSelectTable, id])
+
   return (
-    <div className="rounded-lg border border-border bg-popover shadow-md min-w-[200px] max-w-[260px] text-xs">
+    <div
+      className="rounded-lg border border-border bg-popover shadow-md min-w-[200px] max-w-[260px] text-xs"
+      onDoubleClick={openTable}
+    >
       <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-2 !bg-blue-500" />
-      <div className="px-2 py-1.5 font-semibold border-b border-border bg-muted/60 text-foreground truncate">
+      <button
+        type="button"
+        className="nodrag nopan w-full px-2 py-1.5 font-semibold border-b border-border bg-muted/60 text-foreground truncate text-left cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors"
+        title="Open table"
+        onClick={(e) => {
+          e.stopPropagation()
+          openTable()
+        }}
+      >
         {data.label}
-      </div>
+      </button>
       <div className="max-h-[280px] overflow-y-auto">
         {data.columns.map((c) => (
           <div
@@ -58,7 +77,7 @@ function SchemaTableNode({ data }: NodeProps<Node<SchemaTableNodeData>>) {
 }
 
 const nodeTypes: NodeTypes = {
-  schemaTable: memo(SchemaTableNode),
+  schemaTable: SchemaTableNode,
 }
 
 function layoutGrid(tables: DbSchemaTable[]): Map<string, { x: number; y: number }> {
@@ -85,7 +104,15 @@ function buildFkColumnSet(fks: DbSchemaForeignKey[]): Map<string, Set<string>> {
   return map
 }
 
-function SchemaFlowInner({ tables, foreignKeys }: { tables: DbSchemaTable[]; foreignKeys: DbSchemaForeignKey[] }) {
+function SchemaFlowInner({
+  tables,
+  foreignKeys,
+  onSelectTable,
+}: {
+  tables: DbSchemaTable[]
+  foreignKeys: DbSchemaForeignKey[]
+  onSelectTable?: (tableName: string) => void
+}) {
   const colorMode = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   const fkCols = useMemo(() => buildFkColumnSet(foreignKeys), [foreignKeys])
 
@@ -130,33 +157,42 @@ function SchemaFlowInner({ tables, foreignKeys }: { tables: DbSchemaTable[]; for
     setEdges(initialEdges)
   }, [initialNodes, initialEdges, setNodes, setEdges])
 
+  const handleSelectTable = useCallback(
+    (tableName: string) => {
+      onSelectTable?.(tableName)
+    },
+    [onSelectTable],
+  )
+
   return (
-    <ReactFlow
-      className="h-full w-full bg-muted/20"
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onEdgesChange={onEdgesChange}
-      nodeTypes={nodeTypes}
-      colorMode={colorMode}
-      fitView
-      fitViewOptions={{ padding: 0.15 }}
-      onInit={(rf) => {
-        queueMicrotask(() => rf.fitView({ padding: 0.15, duration: 0 }))
-      }}
-      minZoom={0.1}
-      maxZoom={2.5}
-      proOptions={{ hideAttribution: true }}
-      panOnDrag
-      zoomOnScroll
-      zoomOnPinch
-      zoomOnDoubleClick
-      preventScrolling
-      nodesDraggable
-      nodesConnectable={false}
-      elementsSelectable={false}
-      selectNodesOnDrag={false}
-    >
+    <SchemaSelectCtx.Provider value={handleSelectTable}>
+      <ReactFlow
+        className="h-full w-full bg-muted/20"
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={nodeTypes}
+        colorMode={colorMode}
+        fitView
+        fitViewOptions={{ padding: 0.15 }}
+        onInit={(rf) => {
+          queueMicrotask(() => rf.fitView({ padding: 0.15, duration: 0 }))
+        }}
+        onNodeClick={(_e, node) => onSelectTable?.(node.id)}
+        minZoom={0.1}
+        maxZoom={2.5}
+        proOptions={{ hideAttribution: true }}
+        panOnDrag
+        zoomOnScroll
+        zoomOnPinch
+        zoomOnDoubleClick={false}
+        preventScrolling
+        nodesDraggable
+        nodesConnectable={false}
+        elementsSelectable={false}
+        selectNodesOnDrag={false}
+      >
       <Background gap={20} size={1} className="!bg-muted/30" />
       <Controls className="!bg-popover !border-border !shadow-md [&_button]:!border-border [&_button:hover]:!bg-muted" />
       <MiniMap
@@ -166,11 +202,20 @@ function SchemaFlowInner({ tables, foreignKeys }: { tables: DbSchemaTable[]; for
         zoomable
         pannable
       />
-    </ReactFlow>
+      </ReactFlow>
+    </SchemaSelectCtx.Provider>
   )
 }
 
-export function DatabaseSchemaGraph({ tables, foreignKeys }: { tables: DbSchemaTable[]; foreignKeys: DbSchemaForeignKey[] }) {
+export function DatabaseSchemaGraph({
+  tables,
+  foreignKeys,
+  onSelectTable,
+}: {
+  tables: DbSchemaTable[]
+  foreignKeys: DbSchemaForeignKey[]
+  onSelectTable?: (tableName: string) => void
+}) {
   if (tables.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground min-h-[320px]">
@@ -183,7 +228,7 @@ export function DatabaseSchemaGraph({ tables, foreignKeys }: { tables: DbSchemaT
     <div className="relative h-full min-h-[400px] w-full flex-1 rounded-lg border border-border/50 bg-muted/20 overflow-hidden [&_.react-flow__attribution]:hidden">
       <ReactFlowProvider>
         <div className="absolute inset-0 min-h-[320px]">
-          <SchemaFlowInner tables={tables} foreignKeys={foreignKeys} />
+          <SchemaFlowInner tables={tables} foreignKeys={foreignKeys} onSelectTable={onSelectTable} />
         </div>
       </ReactFlowProvider>
     </div>

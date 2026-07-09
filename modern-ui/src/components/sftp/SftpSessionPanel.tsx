@@ -58,6 +58,7 @@ import {
   setChildrenAtPath,
   findNode,
   getDirectChildPaths,
+  rebuildSftpTreeWithExpanded,
 } from './sftp-tree-mutations'
 
 const SFTP_CREDS_KEY = 'sftp-creds'
@@ -201,6 +202,7 @@ export function SftpSessionPanel({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<SftpFileNode[]>([])
+  const expandedPathsRef = useRef(expandedPaths)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: SftpFileNode } | null>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
   const [propertiesNode, setPropertiesNode] = useState<SftpFileNode | null>(null)
@@ -210,6 +212,10 @@ export function SftpSessionPanel({
   useEffect(() => {
     treeRef.current = tree
   }, [tree])
+
+  useEffect(() => {
+    expandedPathsRef.current = expandedPaths
+  }, [expandedPaths])
 
   useEffect(() => {
     if (!ctxMenu) return
@@ -290,8 +296,12 @@ export function SftpSessionPanel({
     async (silent?: boolean) => {
       if (!connected || !sftp?.readdir) return
       try {
-        const nodes = await loadDir('/')
-        setTree(nodes)
+        const { tree: nextTree, expandedPaths: nextExpanded } = await rebuildSftpTreeWithExpanded(
+          loadDir,
+          expandedPathsRef.current,
+        )
+        setTree(nextTree)
+        setExpandedPaths(nextExpanded)
         if (!silent) toast.success('Refreshed')
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'Refresh failed')
@@ -304,20 +314,23 @@ export function SftpSessionPanel({
     async (dirPath: string, silent?: boolean) => {
       if (!connected || !sftp?.readdir) return
       try {
-        const nodes = await loadDir(dirPath)
-        const prev = treeRef.current
         if (dirPath === '/') {
-          setTree(nodes)
-          if (!silent) toast.success('Updated')
+          await refreshRoot(silent)
           return
         }
+        const nodes = await loadDir(dirPath)
+        const prev = treeRef.current
         if (findNode(prev, dirPath)) {
           setTree(setChildrenAtPath(prev, dirPath, nodes))
           if (!silent) toast.success('Updated')
           return
         }
-        const rootNodes = await loadDir('/')
-        setTree(rootNodes)
+        const { tree: nextTree, expandedPaths: nextExpanded } = await rebuildSftpTreeWithExpanded(
+          loadDir,
+          expandedPathsRef.current,
+        )
+        setTree(nextTree)
+        setExpandedPaths(nextExpanded)
         if (!silent) {
           toast.message('Refreshed root listing', {
             description: `Could not merge ${dirPath} into the open tree.`,
@@ -327,7 +340,7 @@ export function SftpSessionPanel({
         toast.error(e instanceof Error ? e.message : 'Refresh failed')
       }
     },
-    [connected, sftp, loadDir],
+    [connected, sftp, loadDir, refreshRoot],
   )
 
   const migrateTarget =

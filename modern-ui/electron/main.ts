@@ -38,6 +38,11 @@ import {
   type DbExportProgress,
 } from './db-export-stream.js'
 import {
+  ensureScriptsDir,
+  openScriptsFolder,
+  runAutomationScript,
+} from './automation-blocks-handler.js'
+import {
   sftpConnect,
   sftpDisconnect,
   sftpDisconnectAll,
@@ -489,9 +494,16 @@ app.whenReady().then(() => {
     return dbGetTables(database)
   })
 
-  ipcMain.handle('db-get-table-data', async (_event, database: string, table: string, limit?: number, offset?: number) => {
+  ipcMain.handle('db-get-table-data', async (
+    _event,
+    database: string,
+    table: string,
+    limit?: number,
+    offset?: number,
+    filter?: { search?: string; sortColumn?: string; sortDir?: 'asc' | 'desc' },
+  ) => {
     console.log(`DB: Get data for ${database}.${table}`)
-    return dbGetTableData(database, table, limit, offset)
+    return dbGetTableData(database, table, limit, offset, filter)
   })
 
   ipcMain.handle('db-execute-query', async (_event, query: string, database?: string) => {
@@ -920,6 +932,29 @@ app.whenReady().then(() => {
 
   ipcMain.handle('admin-is-authenticated', (event) => {
     return { ok: isAdminSender(event.sender) }
+  })
+
+  // Automation building blocks (script)
+  ipcMain.handle('automation-run-script', async (event, payload) => {
+    if (!isAdminSender(event.sender)) {
+      return { ok: false as const, error: 'Admin login required to run scripts' }
+    }
+    return runAutomationScript(payload)
+  })
+  ipcMain.handle('automation-open-scripts-folder', async () => {
+    const info = openScriptsFolder()
+    if (!info.ok) return info
+    ensureScriptsDir()
+    const err = await shell.openPath(info.path)
+    if (err) return { ok: false as const, error: err }
+    return { ok: true as const, path: info.path }
+  })
+  ipcMain.handle('automation-get-scripts-dir', () => {
+    try {
+      return { ok: true as const, path: ensureScriptsDir() }
+    } catch (e: any) {
+      return { ok: false as const, error: e?.message || String(e) }
+    }
   })
 
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)

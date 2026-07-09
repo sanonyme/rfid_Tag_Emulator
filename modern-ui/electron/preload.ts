@@ -113,8 +113,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbDisconnect: () => ipcRenderer.invoke('db-disconnect'),
   dbListDatabases: () => ipcRenderer.invoke('db-list-databases'),
   dbGetTables: (database: string) => ipcRenderer.invoke('db-get-tables', database),
-  dbGetTableData: (database: string, table: string, limit?: number, offset?: number) =>
-    ipcRenderer.invoke('db-get-table-data', database, table, limit, offset),
+  dbGetTableData: (
+    database: string,
+    table: string,
+    limit?: number,
+    offset?: number,
+    filter?: { search?: string; sortColumn?: string; sortDir?: 'asc' | 'desc' },
+  ) => ipcRenderer.invoke('db-get-table-data', database, table, limit, offset, filter),
   dbExecuteQuery: (query: string, database?: string) => ipcRenderer.invoke('db-execute-query', query, database),
   dbGetPrimaryKeys: (database: string, table: string) => ipcRenderer.invoke('db-get-primary-keys', database, table),
   dbUpdateCell: (database: string, table: string, primaryKeys: Record<string, any>, column: string, value: any) =>
@@ -144,6 +149,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   dbImportRows: (database: string, table: string, rows: Record<string, any>[]) =>
     ipcRenderer.invoke('db-import-rows', database, table, rows),
   dbGetDatabaseSchema: (database: string) => ipcRenderer.invoke('db-get-database-schema', database),
+
+  // Automation building blocks
+  automationRunScript: (payload: {
+    scriptPath?: string
+    inline?: boolean
+    inlineScript?: string
+    args?: string[]
+    env?: Record<string, string>
+    timeoutMs?: number
+    cwd?: string
+  }) => ipcRenderer.invoke('automation-run-script', payload),
+  automationOpenScriptsFolder: () => ipcRenderer.invoke('automation-open-scripts-folder'),
+  automationGetScriptsDir: () => ipcRenderer.invoke('automation-get-scripts-dir'),
 
   sftpConnect: (host: string, port: number, username: string, password: string) =>
     ipcRenderer.invoke('sftp-connect', host, port, username, password),

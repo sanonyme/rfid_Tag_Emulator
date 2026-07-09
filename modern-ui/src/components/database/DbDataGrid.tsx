@@ -248,10 +248,12 @@ export function DbDataGrid({
                           <X className="w-3 h-3" />
                         </button>
                       </div>
-                    ) : (
-                      <span className={cn(row[col] === null && 'text-muted-foreground/50 italic')}>
-                        {row[col] === null ? 'NULL' : String(row[col])}
+                    ) : row[col] === null || row[col] === undefined ? (
+                      <span className="inline-flex items-center rounded px-1 py-px text-[10px] font-medium italic tracking-wide text-muted-foreground/70 bg-muted/50 ring-1 ring-border/40">
+                        NULL
                       </span>
+                    ) : (
+                      <span>{String(row[col])}</span>
                     )}
                   </td>
                 )
@@ -277,7 +279,7 @@ export function DbDataGrid({
               >
                 <div className="flex flex-col items-center gap-2 text-muted-foreground">
                   <Table2 className="w-8 h-8 opacity-20" />
-                  <span className="text-sm">{tableSearch ? 'No rows match your filter' : 'Table is empty'}</span>
+                  <span className="text-sm">{tableSearch ? 'No rows match your search' : 'Table is empty'}</span>
                 </div>
               </td>
             </tr>

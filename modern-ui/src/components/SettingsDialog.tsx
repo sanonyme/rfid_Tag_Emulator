@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash, Package, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from './ui/button'
 import {
@@ -444,6 +444,36 @@ export function SettingsDialog({
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">Older entries are trimmed when limit is reached.</p>
+            </div>
+          </div>
+
+          {/* Building blocks */}
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <Package className="w-4 h-4 text-primary" />
+              Automation building blocks
+            </h4>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Automation includes Set Variable, Database Query, and Run Script (PowerShell/shell). Use template variables like host or custom names to pass values between steps. Run Script needs admin login and only executes files under the user scripts folder.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={async () => {
+                  const r = await window.electronAPI?.automationOpenScriptsFolder?.()
+                  if (!r) {
+                    toast.error('Desktop app required')
+                    return
+                  }
+                  if (!r.ok) toast.error(r.error)
+                  else toast.success(r.path)
+                }}
+              >
+                <FolderOpen className="w-4 h-4" />
+                Open scripts folder
+              </Button>
             </div>
           </div>
 

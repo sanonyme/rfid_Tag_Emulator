@@ -522,6 +522,46 @@ export function DecoderTab() {
     }
   }
 
+  useEffect(() => {
+    const onClipboard = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ text?: string }>).detail
+      const text = (detail?.text || '').trim()
+      if (!text) {
+        toast.error('Clipboard is empty')
+        return
+      }
+      setEpcInput(text)
+      window.setTimeout(() => {
+        void (async () => {
+          setDecoding(true)
+          setDecodeError(null)
+          try {
+            const cleanHex = text.replace(/[^0-9A-Fa-f]/g, '')
+            const sgtin = cleanHex.length === 24 ? EPCDecoder.decodeSgtin96(cleanHex) : { error: 'Not 24 hex chars' }
+            setSgtinResult(sgtin.error ? null : sgtin)
+            const r = await tdtDecode(text, { scheme: forcedScheme || undefined })
+            if (!r.ok) {
+              setTdtResult(null)
+              setDecodeError(r.error)
+              toast.error(r.error)
+              return
+            }
+            setTdtResult(r.result)
+            toast.success(`Decoded as ${r.result.scheme}`)
+          } catch (e) {
+            const msg = (e as Error).message || 'Decoding failed'
+            setDecodeError(msg)
+            toast.error(msg)
+          } finally {
+            setDecoding(false)
+          }
+        })()
+      }, 50)
+    }
+    window.addEventListener('zeus:decode-clipboard', onClipboard)
+    return () => window.removeEventListener('zeus:decode-clipboard', onClipboard)
+  }, [forcedScheme])
+
   const handleSchemeChange = (scheme: string) => {
     setForcedScheme(scheme)
     if (epcInput.trim()) {

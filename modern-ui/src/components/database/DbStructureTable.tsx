@@ -1,5 +1,6 @@
-import { Loader2, KeyRound, Fingerprint, Link2 } from 'lucide-react'
+import { KeyRound, Fingerprint, Link2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '../ui/skeleton'
 import type { ColumnInfo } from './db-tab-shared'
 
 function KeyBadge({ keyType }: { keyType: string }) {
@@ -27,6 +28,25 @@ function KeyBadge({ keyType }: { keyType: string }) {
   return <span className="text-muted-foreground/40">–</span>
 }
 
+function StructureSkeleton() {
+  return (
+    <div className="flex-1 overflow-hidden px-3 py-2 space-y-1.5" aria-busy>
+      <div className="flex gap-2 pb-1.5">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <Skeleton key={i} className="h-5 flex-1 rounded-md opacity-80" />
+        ))}
+      </div>
+      {Array.from({ length: 8 }).map((_, r) => (
+        <div key={r} className="flex gap-2" style={{ opacity: Math.max(0.25, 1 - r * 0.08) }}>
+          {Array.from({ length: 7 }).map((_, c) => (
+            <Skeleton key={c} className="h-6 flex-1 rounded-md" />
+          ))}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export function DbStructureTable({
   structure,
   loading,
@@ -34,13 +54,7 @@ export function DbStructureTable({
   structure: ColumnInfo[]
   loading: boolean
 }) {
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
+  if (loading) return <StructureSkeleton />
 
   return (
     <div className="flex-1 overflow-auto">
@@ -73,7 +87,13 @@ export function DbStructureTable({
                 <KeyBadge keyType={col.key} />
               </td>
               <td className="px-3 py-1.5 text-xs font-mono">
-                {col.defaultValue ?? <span className="text-muted-foreground/50 italic">NULL</span>}
+                {col.defaultValue === null || col.defaultValue === undefined ? (
+                  <span className="inline-flex items-center rounded px-1 py-px text-[10px] font-medium italic tracking-wide text-muted-foreground/70 bg-muted/50 ring-1 ring-border/40">
+                    NULL
+                  </span>
+                ) : (
+                  col.defaultValue
+                )}
               </td>
               <td className="px-3 py-1.5 text-xs text-muted-foreground">{col.extra || '–'}</td>
               <td className="px-3 py-1.5 text-xs text-muted-foreground">{col.comment || '–'}</td>

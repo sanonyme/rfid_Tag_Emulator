@@ -136,11 +136,13 @@ export function SftpToolbar({
 }: SftpToolbarProps) {
   const [newOpen, setNewOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
   const newRef = useRef<HTMLDivElement>(null)
   const moreRef = useRef<HTMLDivElement>(null)
+  const actionsRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!newOpen && !moreOpen) return
+    if (!newOpen && !moreOpen && !actionsOpen) return
     const close = (e: MouseEvent) => {
       if (newOpen && newRef.current && !newRef.current.contains(e.target as Node)) {
         setNewOpen(false)
@@ -148,10 +150,13 @@ export function SftpToolbar({
       if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) {
         setMoreOpen(false)
       }
+      if (actionsOpen && actionsRef.current && !actionsRef.current.contains(e.target as Node)) {
+        setActionsOpen(false)
+      }
     }
     window.addEventListener('mousedown', close)
     return () => window.removeEventListener('mousedown', close)
-  }, [newOpen, moreOpen])
+  }, [newOpen, moreOpen, actionsOpen])
 
   const hasSelection = Boolean(selectedNode)
   const canDelete = selectMode ? selectedPathsCount > 0 : Boolean(selectedPath)
@@ -166,7 +171,7 @@ export function SftpToolbar({
             className="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/60 pl-2.5 pr-1 py-0.5 shrink-0"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden />
-            <span className="font-mono text-[11px] text-muted-foreground truncate max-w-[160px]">
+            <span className="font-mono [font-family:var(--font-mono)] text-[11px] text-muted-foreground truncate max-w-[160px]">
               {host}:{sftpPort}
             </span>
             <Tooltip>
@@ -319,6 +324,8 @@ export function SftpToolbar({
               {selectMode ? `Selected (${selectedPathsCount})` : 'Selected item'}
             </span>
             <ToolbarSep />
+          {/* Wide: individual action icons */}
+          <div className="hidden lg:contents">
             <IconAction
               icon={Download}
               label="Download"
@@ -369,6 +376,52 @@ export function SftpToolbar({
               disabled={!canDelete}
               destructive
             />
+          </div>
+
+          {/* Narrow: collapse file actions into Actions menu */}
+          <div className="relative lg:hidden" ref={actionsRef}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 gap-1 px-2.5 text-xs"
+              onClick={() => setActionsOpen((v) => !v)}
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+              Actions
+            </Button>
+            {actionsOpen && (
+              <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border/60 bg-popover py-1 shadow-lg animate-in fade-in-0 zoom-in-95">
+                {[
+                  { label: 'Download', onClick: onDownload, disabled: !hasSelection },
+                  { label: 'Rename', onClick: onRename, disabled: !hasSelection },
+                  { label: 'Edit', onClick: onEdit, disabled: !hasSelection || selectedNode?.type !== 'file' },
+                  { label: 'Duplicate', onClick: onDuplicate, disabled: !hasSelection || selectedNode?.type !== 'file' },
+                  { label: 'Move to…', onClick: onMove, disabled: !hasSelection },
+                  { label: 'Properties', onClick: onProperties, disabled: !hasSelection },
+                  { label: 'Delete', onClick: onDelete, disabled: !canDelete, destructive: true },
+                ].map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    disabled={item.disabled}
+                    className={cn(
+                      'w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left disabled:opacity-40',
+                      item.destructive
+                        ? 'text-destructive hover:bg-destructive/10'
+                        : 'hover:bg-accent',
+                    )}
+                    onClick={() => {
+                      setActionsOpen(false)
+                      item.onClick()
+                    }}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           </div>
         )}
       </div>

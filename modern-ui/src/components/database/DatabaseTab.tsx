@@ -7,8 +7,11 @@ import {
   type ChangeEvent,
   type MouseEvent as ReactMouseEvent,
 } from 'react'
-import { AlertCircle, Loader2 } from 'lucide-react'
+import {
+  AlertCircle,
+} from 'lucide-react'
 import { toast } from 'sonner'
+import { Skeleton } from '../ui/skeleton'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
 import { prettifySql } from '@/lib/sql-format'
@@ -47,15 +50,20 @@ import {
   DANGEROUS_SQL,
   DB_CREDS_KEY,
   DEFAULT_CREATE_TABLE_COLUMNS,
+  loadSqlPanelHeight,
   NEW_DB_NAME_RE,
   NEW_TABLE_NAME_RE,
+  saveSqlPanelHeight,
+  sqlPanelHeightForResults,
   downloadFile,
   exportToCsv,
   exportToJson,
   exportToSql,
+  initialQueryTabState,
   loadQueryHistory,
   quoteIdent,
   saveQueryHistory,
+  saveQueryTabs,
   type ColumnInfo,
   type DbNode,
   type ExportFormat,
@@ -122,19 +130,32 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [tableSearch, setTableSearch] = useState('')
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDir, setSortDir] = useState<SortDir>(null)
+  const tableSearchRef = useRef(tableSearch)
+  const sortColumnRef = useRef(sortColumn)
+  const sortDirRef = useRef(sortDir)
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  tableSearchRef.current = tableSearch
+  sortColumnRef.current = sortColumn
+  sortDirRef.current = sortDir
 
-  const [editorHeight, setEditorHeight] = useState(240)
+  const [editorHeight, setEditorHeight] = useState(loadSqlPanelHeight)
+  const editorHeightRef = useRef(editorHeight)
+  editorHeightRef.current = editorHeight
+  const [sqlCollapsed, setSqlCollapsed] = useState(() => {
+    try { return localStorage.getItem('db-sql-collapsed') === 'true' } catch { return false }
+  })
   const isDragging = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  /** tableName → column names, filled from schema / structure for SQL autocomplete */
+  const [autocompleteColumns, setAutocompleteColumns] = useState<Record<string, string[]>>({})
 
   const [sidebarWidth, setSidebarWidth] = useState(256)
   const isSidebarDragging = useRef(false)
 
-  const [queryTabs, setQueryTabs] = useState<QueryTab[]>([
-    { id: crypto.randomUUID(), name: 'Query 1', content: '-- Write your SQL query here\nSELECT * FROM ' },
-  ])
-  const [activeTabId, setActiveTabId] = useState(() => queryTabs[0]?.id || '')
-  const tabCounter = useRef(1)
+  const initialTabs = useMemo(() => initialQueryTabState(), [])
+  const [queryTabs, setQueryTabs] = useState<QueryTab[]>(initialTabs.tabs)
+  const [activeTabId, setActiveTabId] = useState(initialTabs.activeTabId)
+  const tabCounter = useRef(initialTabs.tabCounter)
 
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; hasSelection: boolean } | null>(null)
   const [sidebarCtx, setSidebarCtx] = useState<SidebarCtx | null>(null)
@@ -251,8 +272,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const saveCurrentTabContent = useCallback(() => {
     if (!viewRef.current) return
     const content = viewRef.current.state.doc.toString()
-    setQueryTabs((prev) => prev.map((t) => (t.id === activeTabId ? { ...t, content } : t)))
+    setQueryTabs((prev) => {
+      const next = prev.map((t) => (t.id === activeTabId ? { ...t, content } : t))
+      saveQueryTabs(next, activeTabId)
+      return next
+    })
   }, [activeTabId])
+
+  useEffect(() => {
+    saveQueryTabs(queryTabs, activeTabId)
+  }, [queryTabs, activeTabId])
 
   const persistCreds = useCallback(async () => {
     const payload = JSON.stringify({ user: dbUser, pass: dbPass })
@@ -305,6 +334,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setSchemaData(null)
     setSchemaError('')
     setTableView('data')
+    setAutocompleteColumns({})
   }, [])
 
   const toggleDatabase = useCallback(async (dbName: string) => {
@@ -335,13 +365,24 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setEditingCell(null)
     setSelectedRowIdxs(new Set())
 
-    const result = await window.electronAPI.dbGetTableData(dbName, tableName, size, page * size)
+    const search = tableSearchRef.current.trim()
+    const sortCol = sortColumnRef.current
+    const sortDirection = sortDirRef.current
+
+    const result = await window.electronAPI.dbGetTableData(dbName, tableName, size, page * size, {
+      search: search || undefined,
+      sortColumn: sortCol ?? undefined,
+      sortDir: sortCol && sortDirection ? sortDirection : undefined,
+    })
     if (result.ok) {
       setTableColumns(result.columns)
       setTableRows(result.rows)
       setTableTotal(result.total)
       setColumnTypes(result.columnTypes || {})
       setPrimaryKeys(result.primaryKeys ?? [])
+      if (result.columns.length > 0) {
+        setAutocompleteColumns((prev) => ({ ...prev, [tableName]: result.columns }))
+      }
     } else {
       setTableColumns([])
       setTableRows([])
@@ -352,15 +393,26 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setTableLoading(false)
   }, [])
 
-  const loadSchema = useCallback(async () => {
+  const loadSchema = useCallback(async (opts?: { silent?: boolean }) => {
     if (!window.electronAPI || !selectedDb) return
-    setSchemaLoading(true)
-    setSchemaError('')
+    if (!opts?.silent) {
+      setSchemaLoading(true)
+      setSchemaError('')
+    }
     const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
-    setSchemaLoading(false)
+    if (!opts?.silent) setSchemaLoading(false)
     if (res.ok) {
-      setSchemaData({ tables: res.tables, foreignKeys: res.foreignKeys })
-    } else {
+      if (!opts?.silent) {
+        setSchemaData({ tables: res.tables, foreignKeys: res.foreignKeys })
+      }
+      setAutocompleteColumns((prev) => {
+        const next = { ...prev }
+        for (const t of res.tables) {
+          next[t.name] = t.columns.map((c) => c.name)
+        }
+        return next
+      })
+    } else if (!opts?.silent) {
       setSchemaError(res.error)
       setSchemaData(null)
     }
@@ -578,6 +630,13 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setSortColumn(null)
     setSortDir(null)
     setTableSearch('')
+    tableSearchRef.current = ''
+    sortColumnRef.current = null
+    sortDirRef.current = null
+    if (searchDebounceRef.current) {
+      clearTimeout(searchDebounceRef.current)
+      searchDebounceRef.current = null
+    }
     setCurrentPage(0)
     setTableView('data')
     setShowInsertRow(false)
@@ -609,6 +668,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     const result = await window.electronAPI.dbGetTableStructure(selectedDb, selectedTable)
     if (result.ok) {
       setTableStructure(result.columns)
+      setAutocompleteColumns((prev) => ({
+        ...prev,
+        [selectedTable]: result.columns.map((c) => c.name),
+      }))
     }
     setStructureLoading(false)
   }, [selectedDb, selectedTable])
@@ -625,6 +688,37 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     loadSchema()
   }, [tableView, selectedDb, loadSchema])
 
+  /** Prefetch column names for SQL autocomplete when a database is selected. */
+  useEffect(() => {
+    if (!dbConnected || !selectedDb) return
+    void loadSchema({ silent: true })
+  }, [dbConnected, selectedDb, loadSchema])
+
+  const toggleSqlCollapsed = useCallback(() => {
+    setSqlCollapsed((prev) => {
+      const next = !prev
+      try { localStorage.setItem('db-sql-collapsed', String(next)) } catch { /* ignore */ }
+      return next
+    })
+  }, [])
+
+  const expandSqlPanelForResults = useCallback(() => {
+    setSqlCollapsed((collapsed) => {
+      if (collapsed) {
+        try { localStorage.setItem('db-sql-collapsed', 'false') } catch { /* ignore */ }
+        return false
+      }
+      return collapsed
+    })
+    const container = containerRef.current
+    const target = sqlPanelHeightForResults(container?.clientHeight ?? 720)
+    setEditorHeight((h) => {
+      const next = Math.max(h, target)
+      saveSqlPanelHeight(next)
+      return next
+    })
+  }, [])
+
   const executeQuery = useCallback(async (sqlText: string) => {
     if (!window.electronAPI || !sqlText.trim()) return
 
@@ -632,6 +726,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       setQueryError('Blocked: Read-only mode is active. Disable it to run write queries.')
       setQueryMessage('')
       setShowQueryResults(true)
+      expandSqlPanelForResults()
       tourIx?.markDbQueryRan()
       return
     }
@@ -640,6 +735,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setQueryError('')
     setQueryMessage('')
     setShowQueryResults(true)
+    expandSqlPanelForResults()
 
     const start = performance.now()
     const result = await window.electronAPI.dbExecuteQuery(sqlText.trim(), selectedDbRef.current || undefined)
@@ -665,7 +761,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       saveQueryHistory(next)
       return next
     })
-  }, [readOnly, tourIx])
+  }, [readOnly, tourIx, expandSqlPanelForResults])
 
   const handleRunQuery = useCallback((sqlOverride?: string) => {
     if (sqlOverride) {
@@ -970,6 +1066,22 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const sortedRowsRef = useRef<any[]>([])
 
+  const handleTableSearchChange = useCallback((value: string) => {
+    setTableSearch(value)
+    tableSearchRef.current = value
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+    searchDebounceRef.current = setTimeout(() => {
+      if (!selectedDb || !selectedTable) return
+      setCurrentPage(0)
+      setSelectedRowIdxs(new Set())
+      loadPage(selectedDb, selectedTable, 0, pageSize)
+    }, 350)
+  }, [selectedDb, selectedTable, pageSize, loadPage])
+
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current)
+  }, [])
+
   // -- Bulk Delete --
   const handleBulkDelete = useCallback(async () => {
     if (!window.electronAPI || primaryKeys.length === 0 || selectedRowIdxs.size === 0) return
@@ -1095,11 +1207,11 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [active, autoRefresh, autoRefreshSec, dbConnected, refreshDatabases])
 
   const schemaForAutocomplete = useMemo(() => {
-    const schema: Record<string, string[]> = {}
+    const schema: Record<string, string[]> = { ...autocompleteColumns }
     databases.forEach((db) => {
       if (db.tables) {
         db.tables.forEach((t) => {
-          schema[t.name] = []
+          if (!(t.name in schema)) schema[t.name] = []
         })
       }
     })
@@ -1107,7 +1219,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       schema[selectedTable] = tableColumns
     }
     return schema
-  }, [databases, tableColumns, selectedTable])
+  }, [databases, tableColumns, selectedTable, autocompleteColumns])
 
   // -- Editor Lifecycle --
   const mountEditor = useCallback((content: string) => {
@@ -1146,7 +1258,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         EditorView.lineWrapping,
         EditorView.theme({
           '&': { fontSize: '13px', height: '100%' },
-          '.cm-scroller': { overflow: 'auto', fontFamily: '"JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, monospace' },
+          '.cm-scroller': { overflow: 'auto', fontFamily: 'var(--font-mono)' },
           '.cm-content': { padding: '8px 0' },
         }),
         EditorView.domEventHandlers({
@@ -1184,7 +1296,9 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       const delta = startY - ev.clientY
       const container = containerRef.current
       const maxH = container ? container.clientHeight - 80 : 600
-      setEditorHeight(Math.max(120, Math.min(maxH, startHeight + delta)))
+      const next = Math.max(120, Math.min(maxH, startHeight + delta))
+      editorHeightRef.current = next
+      setEditorHeight(next)
     }
 
     const handleMouseUp = () => {
@@ -1193,6 +1307,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       document.removeEventListener('mouseup', handleMouseUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      saveSqlPanelHeight(editorHeightRef.current)
     }
 
     document.body.style.cursor = 'row-resize'
@@ -1228,14 +1343,27 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [sidebarWidth])
 
   const handleSort = useCallback((col: string) => {
+    let nextCol: string | null = col
+    let nextDir: SortDir = 'asc'
     if (sortColumn === col) {
-      setSortDir((d) => (d === 'asc' ? 'desc' : d === 'desc' ? null : 'asc'))
-      if (sortDir === 'desc') setSortColumn(null)
-    } else {
-      setSortColumn(col)
-      setSortDir('asc')
+      if (sortDir === 'asc') nextDir = 'desc'
+      else if (sortDir === 'desc') {
+        nextCol = null
+        nextDir = null
+      } else {
+        nextDir = 'asc'
+      }
     }
-  }, [sortColumn, sortDir])
+    sortColumnRef.current = nextCol
+    sortDirRef.current = nextDir
+    setSortColumn(nextCol)
+    setSortDir(nextDir)
+    setCurrentPage(0)
+    setSelectedRowIdxs(new Set())
+    if (selectedDb && selectedTable) {
+      loadPage(selectedDb, selectedTable, 0, pageSize)
+    }
+  }, [sortColumn, sortDir, selectedDb, selectedTable, pageSize, loadPage])
 
   const editingRowRef = useRef<any>(null)
 
@@ -1281,28 +1409,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     }
   }, [editingCell, editValue, primaryKeys, selectedDb, selectedTable])
 
-  const filteredRows = useMemo(() => {
-    if (!tableSearch) return tableRows
-    const q = tableSearch.toLowerCase()
-    return tableRows.filter((row) =>
-      Object.values(row).some((v) => String(v ?? '').toLowerCase().includes(q)),
-    )
-  }, [tableRows, tableSearch])
-
-  const sortedRows = useMemo(() => {
-    if (!sortColumn || !sortDir) return filteredRows
-    return [...filteredRows].sort((a, b) => {
-      const va = a[sortColumn!]
-      const vb = b[sortColumn!]
-      if (va == null && vb == null) return 0
-      if (va == null) return sortDir === 'asc' ? -1 : 1
-      if (vb == null) return sortDir === 'asc' ? 1 : -1
-      if (typeof va === 'number' && typeof vb === 'number') return sortDir === 'asc' ? va - vb : vb - va
-      return sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va))
-    })
-  }, [filteredRows, sortColumn, sortDir])
-
-  sortedRowsRef.current = sortedRows
+  sortedRowsRef.current = tableRows
 
   const canEdit = !readOnly && primaryKeys.length > 0
 
@@ -1393,7 +1500,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                 onExportSelected={handleExportSelected}
                 onExportAll={handleExportAll}
                 tableSearch={tableSearch}
-                onTableSearchChange={setTableSearch}
+                onTableSearchChange={handleTableSearchChange}
               />
 
               {showInsertRow && tableView === 'data' && !readOnly && (
@@ -1417,8 +1524,19 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
               {tableView === 'schema' ? (
                 schemaLoading ? (
-                  <div className="flex-1 flex items-center justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <div className="flex-1 overflow-hidden p-3 space-y-3" aria-busy>
+                    <Skeleton className="h-3 w-2/3 max-w-md rounded-md opacity-70" />
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 flex-1">
+                      {Array.from({ length: 6 }).map((_, i) => (
+                        <div key={i} className="rounded-lg border border-border/40 p-2 space-y-1.5" style={{ opacity: Math.max(0.35, 1 - i * 0.1) }}>
+                          <Skeleton className="h-6 w-full rounded-md" />
+                          <Skeleton className="h-3 w-4/5 rounded-md" />
+                          <Skeleton className="h-3 w-3/5 rounded-md" />
+                          <Skeleton className="h-3 w-2/3 rounded-md" />
+                          <Skeleton className="h-3 w-1/2 rounded-md" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : schemaError ? (
                   <div className="flex-1 flex items-center justify-center px-4">
@@ -1430,10 +1548,14 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                 ) : schemaData ? (
                   <div className="flex-1 min-h-0 flex flex-col p-2 gap-1">
                     <p className="text-[10px] text-muted-foreground px-2 shrink-0">
-                      Arrows run from child table → referenced table. Scroll wheel zooms; drag empty canvas to pan; drag table cards to rearrange.
+                      Arrows run from child table → referenced table. Click a table name to open it. Double-click anywhere on a card also works.
                     </p>
                     <div className="relative flex-1 min-h-[420px] min-w-0">
-                      <DatabaseSchemaGraph tables={schemaData.tables} foreignKeys={schemaData.foreignKeys} />
+                      <DatabaseSchemaGraph
+                        tables={schemaData.tables}
+                        foreignKeys={schemaData.foreignKeys}
+                        onSelectTable={(tableName) => handleSelectTable(selectedDb, tableName)}
+                      />
                     </div>
                   </div>
                 ) : (
@@ -1444,7 +1566,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
               ) : (
                 <DbDataGrid
                   columns={tableColumns}
-                  rows={sortedRows}
+                  rows={tableRows}
                   columnTypes={columnTypes}
                   primaryKeys={primaryKeys}
                   pageStart={pageStart}
@@ -1497,12 +1619,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         </div>
 
         {/* Editor resize handle */}
-        <div onMouseDown={handleDragStart} className="shrink-0 flex h-3 select-none items-center justify-center cursor-row-resize group">
-          <div className="h-0.5 w-8 rounded-full bg-border/40 transition-colors group-hover:bg-primary/40 group-active:bg-primary/60" />
-        </div>
+        {!sqlCollapsed && (
+          <div onMouseDown={handleDragStart} className="shrink-0 flex h-3 select-none items-center justify-center cursor-row-resize group">
+            <div className="h-0.5 w-8 rounded-full bg-border/40 transition-colors group-hover:bg-primary/40 group-active:bg-primary/60" />
+          </div>
+        )}
 
         <DbSqlPanel
           height={editorHeight}
+          collapsed={sqlCollapsed}
+          onToggleCollapsed={toggleSqlCollapsed}
           editorRef={editorRef}
           queryTabs={queryTabs}
           activeTabId={activeTabId}

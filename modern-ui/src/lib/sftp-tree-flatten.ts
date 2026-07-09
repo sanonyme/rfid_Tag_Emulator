@@ -51,6 +51,7 @@ export function flattenVisibleSftpRows(
     for (const node of sortChildren(list, sortKey, sortDir, foldersFirst)) {
       out.push({ node, depth })
       if (node.type === 'folder' && expandedPaths.has(node.path)) {
+        if (!node.loaded && !node.loading) continue
         if (node.loading && (!node.children || node.children.length === 0)) {
           continue
         }

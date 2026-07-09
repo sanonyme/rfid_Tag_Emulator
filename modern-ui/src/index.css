@@ -4,6 +4,9 @@
 
 @layer base {
   :root {
+    /* Technical monospace for EPCs, IPs, SQL, hex */
+    --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
     /* Light mode - Terracotta Palette */
     /* Primary - Terracotta (#c15f3c) -> hsl(16, 53%, 50%) */
     --primary: 16 53% 50%;
@@ -528,16 +531,35 @@ button, a, input, select, textarea {
 @media (prefers-reduced-motion: reduce) {
   [data-state="active"].tab-content-animate,
   .reveal-item,
-  .stagger-children > * {
+  .stagger-children > *,
+  .animate-slide-in-up,
+  .animate-slide-in-down,
+  .animate-fade-in,
+  .animate-scale-in,
+  .animate-float,
+  .animate-float-reverse,
+  .animate-pulse-slow,
+  .animate-glow,
+  .animate-gradient,
+  .animate-log-new,
+  .animate-button-ripple {
     animation: none !important;
   }
-  .hover-lift-card {
+  .hover-lift-card,
+  .card-3d {
     transition: none;
   }
   .hover-lift-card:hover,
-  .hover-lift-card:active {
+  .hover-lift-card:active,
+  .card-3d:hover {
     transform: none;
   }
+}
+
+/* Utility: apply shared mono stack (also available via ui-tokens `mono`). */
+.font-tech {
+  font-family: var(--font-mono);
+  font-variant-ligatures: none;
 }
 
 /* 3D card hover effect - 2D only to avoid hit-testing/click issues */

@@ -150,11 +150,48 @@ export async function dbGetTables(database: string): Promise<{ ok: true; tables:
   }
 }
 
+export type DbTableDataFilter = {
+  search?: string
+  sortColumn?: string
+  sortDir?: 'asc' | 'desc'
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
+function buildTableDataClauses(
+  columnNames: string[],
+  filter?: DbTableDataFilter,
+): { whereClause: string; orderClause: string; whereParams: string[] } {
+  const search = filter?.search?.trim()
+  let whereClause = ''
+  const whereParams: string[] = []
+
+  if (search) {
+    const like = `%${escapeLikePattern(search)}%`
+    const parts = columnNames.map((c) => `CAST(\`${c}\` AS CHAR) LIKE ?`)
+    whereClause = ` WHERE (${parts.join(' OR ')})`
+    whereParams.push(...columnNames.map(() => like))
+  }
+
+  let orderClause = ''
+  if (filter?.sortColumn && filter.sortDir) {
+    const safeCol = assertSafeSqlIdentifier(filter.sortColumn)
+    if (safeCol && columnNames.includes(safeCol)) {
+      orderClause = ` ORDER BY \`${safeCol}\` ${filter.sortDir === 'desc' ? 'DESC' : 'ASC'}`
+    }
+  }
+
+  return { whereClause, orderClause, whereParams }
+}
+
 export async function dbGetTableData(
   database: string,
   table: string,
   limit = 1000,
-  offset = 0
+  offset = 0,
+  filter?: DbTableDataFilter,
 ): Promise<
   | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string>; primaryKeys: string[] }
   | { ok: false; error: string }
@@ -168,24 +205,35 @@ export async function dbGetTableData(
 
     const cacheKey = tableMetaKey(safeDb, safeTable)
     const cached = tableMetaCache.get(cacheKey)
-
-    const dataPromise = connection.query(
-      `SELECT * FROM \`${safeTable}\` LIMIT ? OFFSET ?`,
-      [limit, offset],
-    )
-    const metaPromise = cached ? Promise.resolve(cached) : fetchTableMeta(safeDb, safeTable)
-
-    const [[rows, fields], meta] = await Promise.all([dataPromise, metaPromise])
+    const meta = cached ?? await fetchTableMeta(safeDb, safeTable)
     if (!cached) tableMetaCache.set(cacheKey, meta)
+
+    const columnNames = Object.keys(meta.columnTypes)
+    const { whereClause, orderClause, whereParams } = buildTableDataClauses(columnNames, filter)
+    const searchActive = Boolean(filter?.search?.trim())
+
+    const dataSql = `SELECT * FROM \`${safeTable}\`${whereClause}${orderClause} LIMIT ? OFFSET ?`
+    const dataParams = [...whereParams, limit, offset]
+
+    const countPromise = searchActive
+      ? connection.query(`SELECT COUNT(*) AS cnt FROM \`${safeTable}\`${whereClause}`, whereParams)
+      : Promise.resolve(null)
+
+    const [[rows, fields], countResult] = await Promise.all([
+      connection.query(dataSql, dataParams),
+      countPromise,
+    ])
 
     const rowArr = rows as any[]
     const columns = (fields as any[]).map((f: any) => f.name)
 
-    let total = meta.rowEstimate
-    if (rowArr.length < limit) {
+    let total: number
+    if (searchActive && countResult) {
+      total = parseInt(String((countResult[0] as any[])[0]?.cnt), 10) || 0
+    } else if (rowArr.length < limit) {
       total = offset + rowArr.length
     } else {
-      total = Math.max(total, offset + limit + 1)
+      total = Math.max(meta.rowEstimate, offset + limit + 1)
     }
 
     return {
@@ -204,7 +252,7 @@ export async function dbGetTableData(
 export async function dbExecuteQuery(
   query: string,
   database?: string
-): Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; message?: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; insertId?: number | string; message?: string } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
     if (database) {
@@ -232,12 +280,14 @@ export async function dbExecuteQuery(
     }
 
     const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    const insertId = sanitizeValue((result as any).insertId)
     return {
       ok: true,
       columns: [],
       rows: [],
       affectedRows: affected,
-      message: `Query OK, ${affected} row(s) affected`,
+      ...(insertId !== null && insertId !== undefined && insertId !== 0 ? { insertId } : {}),
+      message: `OK — ${affected} row(s) affected${insertId ? `, insertId ${insertId}` : ''}`,
     }
   } catch (err: any) {
     return { ok: false, error: err.message }
