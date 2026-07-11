@@ -63,6 +63,24 @@ import {
   Network,
   Braces,
   ChevronRight,
+  Code2,
+  ShieldCheck,
+  Timer,
+  Ban,
+  Sparkles,
+  StickyNote,
+  Wand2,
+  Bell,
+  Repeat2,
+  Split,
+  Shuffle,
+  Undo2,
+  Redo2,
+  Maximize,
+  Grid,
+  Magnet,
+  AlignHorizontalJustifyCenter,
+  AlignVerticalJustifyCenter,
 } from 'lucide-react'
 import { useEdgeSession } from '@/contexts/EdgeSessionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
@@ -86,11 +104,10 @@ import { Switch } from './ui/switch'
 import type { AutomationStep, AutomationSequence, AutomationEdge, ActionType } from '@/lib/automation-types'
 import {
   normalizeSequences,
-  migrateStepsToSequences,
+  parseWorkflowSequences,
   deriveLinearEdges,
   DEFAULT_STEP_NAMES,
   defaultParamsForType,
-  ALL_ACTION_TYPES,
   CONDITION_OPS,
 } from '@/lib/automation-types'
 import {
@@ -98,6 +115,10 @@ import {
   applyTemplate,
   captureEpcsToVars,
   evaluateCondition,
+  parseListItems,
+  switchHandle,
+  pickWeightedIndex,
+  AutomationStopSignal,
   STANDARD_AUTOMATION_VARS,
   type AutomationVars,
 } from '@/lib/automation-template'
@@ -107,9 +128,17 @@ import {
   executeRunScript,
   executeSetVariable,
   executeHttpRequest,
+  executeCode,
+  executeAssert,
+  executeWaitUntil,
+  executeStop,
+  executeGenerate,
+  executeComment,
+  executeTransform,
 } from '@/lib/automation-blocks'
 import { NodeConfigDialog } from './NodeConfigDialog'
-import { PortaledAnchoredMenu } from './ui/portaled-anchored-menu'
+import { NodePalette } from './NodePalette'
+import { DEMO_WORKFLOW } from '@/lib/automation-demo-workflow'
 
 interface AutomationTabProps {
   emulator: TCPEmulatorClient
@@ -167,6 +196,10 @@ function makeRssiPicker(params: AutomationStep['params']): () => string {
 // Sized to comfortably fit a 2-line node name plus a 2-line description without clipping.
 const NODE_WIDTH = 220
 const NODE_HEIGHT = 138
+/** Canvas grid pitch (px) for the dotted background and optional snapping. */
+const GRID_SIZE = 20
+/** Offset applied to pasted/duplicated nodes so they don't stack exactly. */
+const PASTE_OFFSET = 32
 /** Guards graph execution against runaway loops (cyclic edges, incl. self-loops). */
 const MAX_GRAPH_STEPS = 10000
 /** Max nesting depth for Call Sequence (guards against runaway sub-routine chains). */
@@ -174,21 +207,70 @@ const MAX_CALL_DEPTH = 20
 /** How far a self-loop arc dips below its node. */
 const SELF_LOOP_DROP = 46
 
-/** Vertical offsets (px, relative to node top) of each connection port. */
-const PORT_Y = {
-  input: NODE_HEIGHT / 2,
-  out: NODE_HEIGHT / 2,
-  /** CONDITION true branch (upper-right) */
-  true: NODE_HEIGHT * 0.32,
-  /** CONDITION false branch (lower-right) */
-  false: NODE_HEIGHT * 0.68,
-} as const
+/** Vertical offset (px, relative to node top) of the single input port. */
+const INPUT_PORT_Y = NODE_HEIGHT / 2
 
-/** Y offset of a source port for a given handle. */
-function sourcePortY(handle: string | undefined): number {
-  if (handle === 'true') return PORT_Y.true
-  if (handle === 'false') return PORT_Y.false
-  return PORT_Y.out
+interface NodeOutput {
+  handle: string
+  label?: string
+  /** Tailwind bg class for the port dot. */
+  color: string
+}
+
+/**
+ * The ordered set of output ports a node exposes. Most nodes have one (`out`);
+ * CONDITION has true/false; SWITCH has one port per case (+ default); RANDOM has
+ * one per weighted branch. Driven by params so ports update live as the node is
+ * configured.
+ */
+function getNodeOutputs(step: AutomationStep): NodeOutput[] {
+  switch (step.type) {
+    case 'CONDITION':
+      return [
+        { handle: 'true', label: 'T', color: 'bg-green-500' },
+        { handle: 'false', label: 'F', color: 'bg-red-500' },
+      ]
+    case 'SWITCH': {
+      const cases = step.params.switchCases ?? []
+      const outs: NodeOutput[] = cases.map((c, i) => ({
+        handle: `case-${i}`,
+        label: (c.label?.trim() || c.value?.trim() || `${i + 1}`).slice(0, 7),
+        color: 'bg-sky-500',
+      }))
+      if (step.params.switchHasDefault !== false) {
+        outs.push({ handle: 'default', label: 'def', color: 'bg-stone-400' })
+      }
+      return outs.length > 0 ? outs : [{ handle: 'default', label: 'def', color: 'bg-stone-400' }]
+    }
+    case 'RANDOM': {
+      const branches = step.params.randomBranches ?? []
+      const outs: NodeOutput[] = branches.map((b, i) => ({
+        handle: `branch-${i}`,
+        label: (b.label?.trim() || `w${b.weight ?? 1}`).slice(0, 7),
+        color: 'bg-purple-500',
+      }))
+      return outs.length > 0 ? outs : [{ handle: 'branch-0', label: '1', color: 'bg-purple-500' }]
+    }
+    default:
+      return [{ handle: 'out', color: 'bg-primary' }]
+  }
+}
+
+/** Vertical center (px from node top) of output port `index` of `count` total. */
+function outputPortTop(index: number, count: number): number {
+  if (count <= 1) return NODE_HEIGHT / 2
+  const pad = 22
+  const span = NODE_HEIGHT - pad * 2
+  return pad + (span * index) / (count - 1)
+}
+
+/** Y offset of a source port for a given handle on a given node. */
+function sourcePortY(step: AutomationStep | undefined, handle: string | undefined): number {
+  if (!step) return NODE_HEIGHT / 2
+  const outs = getNodeOutputs(step)
+  const idx = outs.findIndex((o) => o.handle === (handle ?? 'out'))
+  if (idx < 0) return NODE_HEIGHT / 2
+  return outputPortTop(idx, outs.length)
 }
 
 const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: string; label: string }> = {
@@ -205,8 +287,20 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   RUN_SCRIPT: { border: 'border-lime-400/40', bg: 'bg-lime-400/10', icon: 'text-lime-400', label: 'SCRIPT' },
   HTTP_REQUEST: { border: 'border-rose-400/40', bg: 'bg-rose-400/10', icon: 'text-rose-400', label: 'HTTP' },
   CALL_SEQUENCE: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'CALL' },
+  CODE: { border: 'border-yellow-400/40', bg: 'bg-yellow-400/10', icon: 'text-yellow-400', label: 'CODE' },
   CONDITION: { border: 'border-fuchsia-400/40', bg: 'bg-fuchsia-400/10', icon: 'text-fuchsia-400', label: 'IF' },
+  ASSERT: { border: 'border-red-400/40', bg: 'bg-red-400/10', icon: 'text-red-400', label: 'ASSERT' },
+  WAIT_UNTIL: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400', label: 'WAIT' },
+  FOR_EACH: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'LOOP' },
+  STOP: { border: 'border-stone-400/40', bg: 'bg-stone-400/10', icon: 'text-stone-400', label: 'STOP' },
+  GENERATE: { border: 'border-amber-400/40', bg: 'bg-amber-400/10', icon: 'text-amber-400', label: 'GEN' },
+  COMMENT: { border: 'border-border/60', bg: 'bg-muted/20', icon: 'text-muted-foreground', label: 'NOTE' },
   LOG: { border: 'border-sky-400/40', bg: 'bg-sky-400/10', icon: 'text-sky-400', label: 'LOG' },
+  TRANSFORM: { border: 'border-teal-400/40', bg: 'bg-teal-400/10', icon: 'text-teal-400', label: 'MAP' },
+  NOTIFY: { border: 'border-sky-400/40', bg: 'bg-sky-400/10', icon: 'text-sky-400', label: 'TOAST' },
+  LOOP_N: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'LOOP' },
+  SWITCH: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400', label: 'SWITCH' },
+  RANDOM: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'RAND' },
 }
 
 function StepTypeIcon({ type, className }: { type: ActionType; className?: string }) {
@@ -224,8 +318,20 @@ function StepTypeIcon({ type, className }: { type: ActionType; className?: strin
     case 'RUN_SCRIPT': return <FileCode2 className={className} />
     case 'HTTP_REQUEST': return <Globe className={className} />
     case 'CALL_SEQUENCE': return <Network className={className} />
+    case 'CODE': return <Code2 className={className} />
     case 'CONDITION': return <GitBranch className={className} />
+    case 'ASSERT': return <ShieldCheck className={className} />
+    case 'WAIT_UNTIL': return <Timer className={className} />
+    case 'FOR_EACH': return <Repeat className={className} />
+    case 'STOP': return <Ban className={className} />
+    case 'GENERATE': return <Sparkles className={className} />
+    case 'COMMENT': return <StickyNote className={className} />
     case 'LOG': return <FileText className={className} />
+    case 'TRANSFORM': return <Wand2 className={className} />
+    case 'NOTIFY': return <Bell className={className} />
+    case 'LOOP_N': return <Repeat2 className={className} />
+    case 'SWITCH': return <Split className={className} />
+    case 'RANDOM': return <Shuffle className={className} />
     default: return null
   }
 }
@@ -237,13 +343,15 @@ const WorkflowNode = memo(function WorkflowNode({
   style,
   isDragging,
   isActive,
-  isSelected: _isSelected,
+  isSelected,
   isRunning,
   isLinkTarget,
+  groupDelta,
   onDragStart,
   onDrag,
   onDragEnd,
   onConfigure,
+  onSelect,
   onDelete,
   onStartLink,
 }: {
@@ -257,22 +365,30 @@ const WorkflowNode = memo(function WorkflowNode({
   isRunning: boolean
   /** True while a link is being dragged and this node can receive it (input port pulses) */
   isLinkTarget: boolean
+  /** Live offset applied while this node is part of a group being dragged by another node */
+  groupDelta: { x: number; y: number } | null
   onDragStart: (id: string) => void
   onDrag: (id: string, x: number, y: number) => void
   onDragEnd: (id: string, x: number, y: number) => void
   onConfigure: (id: string) => void
+  onSelect: (id: string, additive: boolean) => void
   onDelete: (id: string) => void
   onStartLink: (id: string, handle: string, e: React.PointerEvent) => void
 }) {
   const x = useMotionValue(pos.x)
   const y = useMotionValue(pos.y)
 
+  // Follow a group drag live: when another selected node is being dragged, this
+  // node shifts by the same delta (committed to real positions on drop).
+  const gdx = groupDelta && isSelected && !isDragging ? groupDelta.x : 0
+  const gdy = groupDelta && isSelected && !isDragging ? groupDelta.y : 0
+
   useEffect(() => {
     if (!isDragging) {
-      x.set(pos.x)
-      y.set(pos.y)
+      x.set(pos.x + gdx)
+      y.set(pos.y + gdy)
     }
-  }, [pos.x, pos.y, isDragging, x, y])
+  }, [pos.x, pos.y, isDragging, x, y, gdx, gdy])
 
   const handleGripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation()
@@ -322,7 +438,11 @@ const WorkflowNode = memo(function WorkflowNode({
         const delayLabel = step.params.tagDelay?.trim()
         return delayLabel ? `${tagList} · ${delayLabel}ms` : tagList
       }
-      case 'HANDHELD_TAG': return step.params.epcList || step.params.upcList ? 'Tag list' : 'Configure'
+      case 'HANDHELD_TAG': {
+        const tagList = step.params.epcList || step.params.upcList ? 'Tag list' : 'Configure'
+        const delayLabel = step.params.tagDelay?.trim()
+        return delayLabel ? `${tagList} · ${delayLabel}ms` : tagList
+      }
       case 'CUSTOM_MESSAGE': return step.params.message ? `Send ${(step.params.message || '').length} chars` : 'Configure'
       case 'EDGE_BLOCK': return step.params.edgeBlockName || 'Select block'
       case 'EDGE_PROCESS': {
@@ -335,6 +455,7 @@ const WorkflowNode = memo(function WorkflowNode({
       case 'RUN_SCRIPT': return step.params.scriptInline ? 'Inline script' : (step.params.scriptPath || 'Configure')
       case 'HTTP_REQUEST': return step.params.httpUrl ? `${step.params.httpMethod || 'GET'} ${step.params.httpUrl}` : 'Configure'
       case 'CALL_SEQUENCE': return step.params.callSequenceId ? 'Run sub-sequence' : 'Select sequence'
+      case 'CODE': return 'JavaScript'
       case 'CONDITION': {
         const opMeta = CONDITION_OPS.find((o) => o.value === (step.params.condOp ?? 'eq'))
         const left = step.params.condLeft || '?'
@@ -342,12 +463,35 @@ const WorkflowNode = memo(function WorkflowNode({
           ? `${left} ${opMeta.label}`
           : `${left} ${opMeta?.label ?? '='} ${step.params.condRight ?? ''}`
       }
+      case 'ASSERT': {
+        const opMeta = CONDITION_OPS.find((o) => o.value === (step.params.condOp ?? 'eq'))
+        return `Assert ${step.params.condLeft || '?'} ${opMeta?.label ?? ''}`
+      }
+      case 'WAIT_UNTIL': return `Wait ≤${step.params.waitTimeoutMs ?? 10000}ms`
+      case 'FOR_EACH': return step.params.forEachSource ? `Each ${step.params.forEachItemAs || 'item'}` : 'Configure'
+      case 'STOP': return step.params.stopScope === 'run' ? 'End whole run' : 'End sequence'
+      case 'GENERATE': return `${step.params.generateKind ?? 'uuid'} → ${step.params.generateSaveAs || '?'}`
+      case 'COMMENT': return step.params.commentText ? step.params.commentText.slice(0, 44) : 'Note'
       case 'LOG': return step.params.logMessage ? step.params.logMessage.slice(0, 44) : 'Configure'
+      case 'TRANSFORM': {
+        const op = step.params.transformOp ?? 'trim'
+        return `${op} → ${step.params.transformSaveAs || '?'}`
+      }
+      case 'NOTIFY': return step.params.notifyMessage ? step.params.notifyMessage.slice(0, 44) : 'Configure'
+      case 'LOOP_N': return step.params.loopSequenceId ? `×${step.params.loopCount || '?'}` : 'Configure'
+      case 'SWITCH': {
+        const n = step.params.switchCases?.length ?? 0
+        return `${n} case${n !== 1 ? 's' : ''}${step.params.switchHasDefault !== false ? ' + default' : ''}`
+      }
+      case 'RANDOM': {
+        const n = step.params.randomBranches?.length ?? 0
+        return `${n} branch${n !== 1 ? 'es' : ''}`
+      }
       default: return ''
     }
   }
 
-  const isCondition = step.type === 'CONDITION'
+  const outputs = getNodeOutputs(step)
 
   // Small circular connection port. Pointer-down starts dragging a new link.
   const OutputPort = ({ handle, top, color, label }: { handle: string; top: number; color: string; label?: string }) => (
@@ -366,7 +510,7 @@ const WorkflowNode = memo(function WorkflowNode({
         )}
       />
       {label && (
-        <span className="pointer-events-none ml-1 text-[8px] font-bold uppercase tracking-wide text-foreground/60">{label}</span>
+        <span className="pointer-events-none ml-1 max-w-[68px] truncate rounded bg-background/70 px-0.5 text-[8px] font-bold uppercase tracking-wide text-foreground/70">{label}</span>
       )}
     </div>
   )
@@ -386,22 +530,36 @@ const WorkflowNode = memo(function WorkflowNode({
           'absolute z-20 h-3.5 w-3.5 rounded-full border-2 border-background bg-muted-foreground/70 shadow',
           isLinkTarget && 'bg-primary ring-2 ring-primary/40 animate-pulse',
         )}
-        style={{ left: -7, top: PORT_Y.input - 7 }}
+        style={{ left: -7, top: INPUT_PORT_Y - 7 }}
         title="Input"
       />
-      {/* Output port(s) (right) */}
-      {isCondition ? (
-        <>
-          <OutputPort handle="true" top={PORT_Y.true} color="bg-green-500" label="T" />
-          <OutputPort handle="false" top={PORT_Y.false} color="bg-red-500" label="F" />
-        </>
-      ) : (
-        <OutputPort handle="out" top={PORT_Y.out} color="bg-primary" />
-      )}
+      {/* Output port(s) (right) — one per branch for CONDITION/SWITCH/RANDOM */}
+      {outputs.map((o, i) => (
+        <OutputPort
+          key={o.handle}
+          handle={o.handle}
+          top={outputPortTop(i, outputs.length)}
+          color={o.color}
+          label={o.label}
+        />
+      ))}
 
       <Card
-        className={`group/node relative flex h-full w-full flex-col overflow-hidden rounded-xl border ${style.border} ${style.bg} bg-background/70 p-3 ${isDragging ? '' : 'backdrop-blur'} transition-shadow hover:shadow-lg cursor-pointer select-none focus:outline-none ${isDragging ? 'shadow-xl ring-2 ring-primary/50' : ''} ${isActive ? 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]' : ''}`}
-        onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('button')) { e.preventDefault(); onConfigure(step.id) } }}
+        className={cn(
+          'group/node relative flex h-full w-full flex-col overflow-hidden rounded-xl border bg-background/70 p-3 transition-shadow hover:shadow-lg cursor-pointer select-none focus:outline-none',
+          style.border, style.bg,
+          !isDragging && 'backdrop-blur',
+          isDragging && 'shadow-xl ring-2 ring-primary/50',
+          isSelected && !isDragging && 'ring-2 ring-primary/70 shadow-[0_0_0_2px_hsl(var(--primary)/0.15)]',
+          isActive && 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]',
+        )}
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('button')) return
+          e.preventDefault()
+          onSelect(step.id, e.shiftKey || e.metaKey || e.ctrlKey)
+        }}
+        onDoubleClick={(e) => { e.stopPropagation(); onConfigure(step.id) }}
+        title="Click to select · double-click to configure"
       >
         <div className="relative space-y-1.5">
           <div className="flex items-center gap-2">
@@ -486,9 +644,9 @@ const WorkflowEdge = memo(function WorkflowEdge({
       : (toStep.position ?? { x: 0, y: 0 })
 
   const startX = fromPos.x + NODE_WIDTH
-  const startY = fromPos.y + sourcePortY(edge.sourceHandle)
+  const startY = fromPos.y + sourcePortY(fromStep, edge.sourceHandle)
   const endX = toPos.x
-  const endY = toPos.y + PORT_Y.input
+  const endY = toPos.y + INPUT_PORT_Y
 
   let path: string
   let midX: number
@@ -510,9 +668,15 @@ const WorkflowEdge = memo(function WorkflowEdge({
     midY = (startY + endY) / 2
   }
 
+  const handle = edge.sourceHandle ?? 'out'
   const branchColor = isSelfLoop
     ? 'text-amber-500'
-    : edge.sourceHandle === 'true' ? 'text-green-500' : edge.sourceHandle === 'false' ? 'text-red-500' : 'text-foreground'
+    : handle === 'true' ? 'text-green-500'
+    : handle === 'false' ? 'text-red-500'
+    : handle === 'default' ? 'text-stone-400'
+    : handle.startsWith('case-') ? 'text-sky-500'
+    : handle.startsWith('branch-') ? 'text-purple-500'
+    : 'text-foreground'
 
   return (
     <g className="group/edge">
@@ -576,6 +740,62 @@ const STANDARD_VAR_DESCRIPTIONS: Record<string, string> = Object.fromEntries(
 )
 
 /**
+ * Shared variable rows for the inline inspector and expanded dialog.
+ */
+function VariableListBody({
+  vars,
+  size = 'sm',
+}: {
+  vars: AutomationVars
+  size?: 'sm' | 'md'
+}) {
+  const entries = Object.entries(vars)
+  const standard = entries
+    .filter(([k]) => STANDARD_VAR_NAMES.has(k))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+  const custom = entries
+    .filter(([k]) => !STANDARD_VAR_NAMES.has(k))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+  const textSize = size === 'sm' ? 'text-[11px]' : 'text-sm'
+  const nameWidth = size === 'sm' ? 'max-w-[42%]' : 'max-w-[36%]'
+
+  const Row = ([name, value]: [string, string]) => (
+    <div key={name} className="flex items-start gap-2 rounded px-2 py-1 hover:bg-accent/40">
+      <code
+        className={cn('shrink-0 truncate font-mono font-semibold text-primary', nameWidth, textSize)}
+        title={STANDARD_VAR_DESCRIPTIONS[name] ? `${name} — ${STANDARD_VAR_DESCRIPTIONS[name]}` : name}
+      >
+        {name}
+      </code>
+      <span
+        className={cn('min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-foreground/80', textSize)}
+        title={value}
+      >
+        {value === '' ? <span className="italic text-muted-foreground/60">empty</span> : value}
+      </span>
+    </div>
+  )
+
+  if (entries.length === 0) {
+    return (
+      <p className={cn('px-2 py-3 text-center text-muted-foreground', textSize)}>
+        No variables yet. Run a workflow to capture values.
+      </p>
+    )
+  }
+
+  return (
+    <>
+      {standard.map(Row)}
+      {custom.length > 0 && standard.length > 0 && (
+        <div className="my-1 border-t border-border/50" />
+      )}
+      {custom.map(Row)}
+    </>
+  )
+}
+
+/**
  * Live variable inspector — surfaces the run context that already flows between
  * nodes. Standard app variables are listed first (with descriptions), custom /
  * captured variables after. Updates live as a workflow runs.
@@ -585,35 +805,17 @@ const VariableInspector = memo(function VariableInspector({
   open,
   onToggle,
   onReset,
+  onExpand,
   isRunning,
 }: {
   vars: AutomationVars
   open: boolean
   onToggle: () => void
   onReset: () => void
+  onExpand: () => void
   isRunning: boolean
 }) {
   const entries = Object.entries(vars)
-  const standard = entries
-    .filter(([k]) => STANDARD_VAR_NAMES.has(k))
-    .sort((a, b) => a[0].localeCompare(b[0]))
-  const custom = entries
-    .filter(([k]) => !STANDARD_VAR_NAMES.has(k))
-    .sort((a, b) => a[0].localeCompare(b[0]))
-
-  const Row = ([name, value]: [string, string]) => (
-    <div key={name} className="flex items-start gap-2 rounded px-2 py-1 hover:bg-accent/40">
-      <code
-        className="shrink-0 max-w-[42%] truncate font-mono text-[11px] font-semibold text-primary"
-        title={STANDARD_VAR_DESCRIPTIONS[name] ? `${name} — ${STANDARD_VAR_DESCRIPTIONS[name]}` : name}
-      >
-        {name}
-      </code>
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80" title={value}>
-        {value === '' ? <span className="italic text-muted-foreground/60">empty</span> : value}
-      </span>
-    </div>
-  )
 
   return (
     <div className="shrink-0 rounded-xl border border-border/50 bg-muted/10 overflow-hidden">
@@ -649,23 +851,53 @@ const VariableInspector = memo(function VariableInspector({
         </Tooltip>
       </div>
       {open && (
-        <ScrollArea className="max-h-[180px]">
-          <div className="space-y-0.5 px-1 pb-2">
-            {entries.length === 0 ? (
-              <p className="px-2 py-3 text-center text-[11px] text-muted-foreground">
-                No variables yet. Run a workflow to capture values.
-              </p>
-            ) : (
-              <>
-                {standard.map(Row)}
-                {custom.length > 0 && standard.length > 0 && (
-                  <div className="my-1 border-t border-border/50" />
-                )}
-                {custom.map(Row)}
-              </>
-            )}
+        <div
+          className={cn(
+            'group/expand relative border-t border-border/40 transition-shadow',
+            'ring-1 ring-transparent hover:ring-border/80 hover:shadow-sm',
+          )}
+        >
+          <div className="max-h-[min(32vh,220px)] overflow-y-auto overscroll-contain">
+            <div className="space-y-0.5 px-1 py-1 pb-2 pr-11">
+              <VariableListBody vars={vars} />
+            </div>
           </div>
-        </ScrollArea>
+          <div
+            className={cn(
+              'pointer-events-none absolute right-1.5 top-1.5 z-10 flex flex-row items-start gap-1',
+              'opacity-60 sm:scale-95 sm:opacity-0',
+              'sm:group-hover/expand:scale-100 sm:group-hover/expand:opacity-100',
+              'transition-all duration-200 ease-out',
+            )}
+          >
+            <Tooltip delayDuration={400}>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className={cn(
+                    'pointer-events-auto h-8 w-8 shrink-0 rounded-md',
+                    'border border-border/60 bg-background/90 shadow-sm backdrop-blur-sm',
+                    'hover:bg-accent hover:text-accent-foreground',
+                    'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  )}
+                  aria-label="Expand variables"
+                  onClick={(e) => {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    onExpand()
+                  }}
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left" className="max-w-[14rem] text-xs">
+                Expand variables
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -688,7 +920,7 @@ export function AutomationTab({
   const sortedSeqs = useMemo(() => [...sequences].sort((a, b) => a.order - b.order), [sequences])
   const [selectedSequenceId, setSelectedSequenceId] = useState<string | null>(sortedSeqs[0]?.id ?? null)
   const selectedSequence = sortedSeqs.find(s => s.id === selectedSequenceId)
-  const steps = selectedSequence?.steps ?? []
+  const steps = useMemo<AutomationStep[]>(() => selectedSequence?.steps ?? [], [selectedSequence])
   // Connections for the selected sequence. Legacy sequences (edges === undefined)
   // fall back to a derived linear chain until the migration effect materializes them.
   const edges = useMemo<AutomationEdge[]>(
@@ -720,6 +952,8 @@ export function AutomationTab({
   const [log, setLog] = useState<string[]>([])
   const [logExpandedOpen, setLogExpandedOpen] = useState(false)
   const [logCopied, setLogCopied] = useState(false)
+  const [varsExpandedOpen, setVarsExpandedOpen] = useState(false)
+  const [varsCopied, setVarsCopied] = useState(false)
   const [fullActivityLog, setFullActivityLog] = useState(() => getAutomationFullActivityLog())
   const fullActivityLogRef = useRef(fullActivityLog)
   fullActivityLogRef.current = fullActivityLog
@@ -779,6 +1013,29 @@ export function AutomationTab({
   useEffect(() => {
     if (!logExpandedOpen) setLogCopied(false)
   }, [logExpandedOpen])
+
+  const formatVarsForCopy = useCallback((vars: AutomationVars) => {
+    return Object.entries(vars)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
+  }, [])
+
+  const handleCopyVars = useCallback(async () => {
+    const text = formatVarsForCopy(runVars)
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setVarsCopied(true)
+      setTimeout(() => setVarsCopied(false), 2000)
+    } catch {
+      toast.error('Could not copy variables')
+    }
+  }, [runVars, formatVarsForCopy])
+
+  useEffect(() => {
+    if (!varsExpandedOpen) setVarsCopied(false)
+  }, [varsExpandedOpen])
 
   const updateStepsForSequence = useCallback((seqId: string, updater: (steps: AutomationStep[]) => AutomationStep[]) => {
     setSequences(prev => prev.map(seq =>
@@ -842,7 +1099,22 @@ export function AutomationTab({
   const [dragPreview, setDragPreview] = useState<{ nodeId: string; x: number; y: number } | null>(null)
   const [canvasPan, setCanvasPan] = useState({ x: 0, y: 0 })
   const [canvasZoom, setCanvasZoom] = useState(1)
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
   const panStartRef = useRef<{ x: number; y: number; startPanX: number; startPanY: number } | null>(null)
+
+  // --- Selection, grid, clipboard, group-drag (canvas editor UX) ---
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [showGrid, setShowGrid] = useState(true)
+  const [snapToGrid, setSnapToGrid] = useState(false)
+  const [marquee, setMarquee] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  const [groupDrag, setGroupDrag] = useState<{ anchor: string; dx: number; dy: number } | null>(null)
+  const clipboardRef = useRef<{ steps: AutomationStep[]; edges: AutomationEdge[] } | null>(null)
+  // Live position lookup for group-drag delta math (avoids stale closures).
+  const stepPosRef = useRef<Map<string, { x: number; y: number }>>(new Map())
+  const selectedIdsRef = useRef(selectedIds); selectedIdsRef.current = selectedIds
+  const snapToGridRef = useRef(snapToGrid); snapToGridRef.current = snapToGrid
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
+  const marqueeRectRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
 
   // --- Manual linking (drag from an output port to a target node) ---
   const [linking, setLinking] = useState<{ from: string; handle: string } | null>(null)
@@ -857,8 +1129,32 @@ export function AutomationTab({
     return { width: maxX + 50, height: maxY + 50 }
   })
 
+  // Track the canvas viewport size for the minimap's viewport rectangle.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      setCanvasSize({ w: el.clientWidth, h: el.clientHeight })
+    })
+    ro.observe(el)
+    setCanvasSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [])
+
+  // Keep a live id→position map for group-drag delta math.
+  useEffect(() => {
+    const m = new Map<string, { x: number; y: number }>()
+    for (const s of steps) m.set(s.id, s.position ?? { x: 0, y: 0 })
+    stepPosRef.current = m
+  }, [steps])
+
   const handleDragStart = useCallback((nodeId: string) => {
     setDraggingNodeId(nodeId)
+    // Grabbing a node that isn't in the current selection selects it alone, so a
+    // drag never silently moves a stale group.
+    if (!selectedIdsRef.current.has(nodeId)) {
+      setSelectedIds(new Set([nodeId]))
+    }
   }, [])
 
   const handleDrag = useCallback((nodeId: string, x: number, y: number) => {
@@ -866,13 +1162,19 @@ export function AutomationTab({
     if (dragPreviewRafRef.current != null) return
     dragPreviewRafRef.current = requestAnimationFrame(() => {
       dragPreviewRafRef.current = null
-      if (pendingDragPreviewRef.current) {
-        setDragPreview(pendingDragPreviewRef.current)
+      const pending = pendingDragPreviewRef.current
+      if (!pending) return
+      setDragPreview(pending)
+      // Drive the live group offset when more than one node is selected.
+      const sel = selectedIdsRef.current
+      if (sel.size > 1 && sel.has(pending.nodeId)) {
+        const start = stepPosRef.current.get(pending.nodeId) ?? { x: 0, y: 0 }
+        setGroupDrag({ anchor: pending.nodeId, dx: pending.x - start.x, dy: pending.y - start.y })
       }
     })
   }, [])
 
-  const handleDragEnd = useCallback((nodeId: string, newX: number, newY: number) => {
+  const handleDragEnd = useCallback((nodeId: string, rawX: number, rawY: number) => {
     if (dragPreviewRafRef.current != null) {
       cancelAnimationFrame(dragPreviewRafRef.current)
       dragPreviewRafRef.current = null
@@ -880,21 +1182,247 @@ export function AutomationTab({
     pendingDragPreviewRef.current = null
     setDragPreview(null)
     setDraggingNodeId(null)
+    setGroupDrag(null)
 
     if (!selectedSequenceId) return
 
-    // Only update position; connections are explicit edges now, so array order
-    // no longer affects the flow — keep it stable to avoid node reshuffling.
+    const doSnap = snapToGridRef.current
+    const snapV = (v: number) => (doSnap ? Math.round(v / GRID_SIZE) * GRID_SIZE : v)
+    const newX = Math.max(0, snapV(rawX))
+    const newY = Math.max(0, snapV(rawY))
+    const start = stepPosRef.current.get(nodeId) ?? { x: newX, y: newY }
+    const dx = newX - start.x
+    const dy = newY - start.y
+
+    const sel = selectedIdsRef.current
+    const groupMove = sel.size > 1 && sel.has(nodeId)
+
+    // Explicit edges mean array order no longer affects flow — keep order stable
+    // to avoid node reshuffling; only positions change.
     updateStepsForSequence(selectedSequenceId, (prev) =>
-      prev.map((s) =>
-        s.id === nodeId ? { ...s, position: { x: newX, y: newY } } : { ...s, position: s.position ?? { x: 0, y: 0 } },
-      ),
+      prev.map((s) => {
+        const base = s.position ?? { x: 0, y: 0 }
+        if (s.id === nodeId) return { ...s, position: { x: newX, y: newY } }
+        if (groupMove && sel.has(s.id)) {
+          return { ...s, position: { x: Math.max(0, base.x + dx), y: Math.max(0, base.y + dy) } }
+        }
+        return { ...s, position: base }
+      }),
     )
     setContentSize((prev) => ({
       width: Math.max(prev.width, newX + NODE_WIDTH + 50),
       height: Math.max(prev.height, newY + NODE_HEIGHT + 50),
     }))
   }, [selectedSequenceId, updateStepsForSequence])
+
+  // --- Selection ---------------------------------------------------------
+  const handleSelectNode = useCallback((id: string, additive: boolean) => {
+    canvasRef.current?.focus()
+    setSelectedIds((prev) => {
+      if (additive) {
+        const next = new Set(prev)
+        next.has(id) ? next.delete(id) : next.add(id)
+        return next
+      }
+      return new Set([id])
+    })
+  }, [])
+
+  const handleSelectAll = useCallback(() => setSelectedIds(new Set(steps.map((s) => s.id))), [steps])
+
+  // --- Undo / redo (observes the selected sequence's steps + edges) ------
+  type SeqSnapshot = { steps: AutomationStep[]; edges: AutomationEdge[] }
+  const historyRef = useRef<{ past: SeqSnapshot[]; future: SeqSnapshot[] }>({ past: [], future: [] })
+  const applyingHistoryRef = useRef(false)
+  const lastSnapRef = useRef<string>('')
+  const [canUndo, setCanUndo] = useState(false)
+  const [canRedo, setCanRedo] = useState(false)
+
+  // Reset history when the active sequence changes.
+  useEffect(() => {
+    const seq = sortedSeqs.find((s) => s.id === selectedSequenceId)
+    historyRef.current = { past: [], future: [] }
+    lastSnapRef.current = seq ? JSON.stringify({ steps: seq.steps, edges: seq.edges ?? [] }) : ''
+    setCanUndo(false)
+    setCanRedo(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSequenceId])
+
+  // Record every structural change (add/move/link/config) as a history entry.
+  useEffect(() => {
+    if (!selectedSequence) return
+    const snap = JSON.stringify({ steps: selectedSequence.steps, edges: selectedSequence.edges ?? [] })
+    if (applyingHistoryRef.current) {
+      applyingHistoryRef.current = false
+      lastSnapRef.current = snap
+      return
+    }
+    if (snap === lastSnapRef.current) return
+    if (lastSnapRef.current) {
+      historyRef.current.past.push(JSON.parse(lastSnapRef.current) as SeqSnapshot)
+      if (historyRef.current.past.length > 120) historyRef.current.past.shift()
+      historyRef.current.future = []
+      setCanUndo(true)
+      setCanRedo(false)
+    }
+    lastSnapRef.current = snap
+  }, [selectedSequence])
+
+  const applySnapshot = useCallback((snapshot: SeqSnapshot) => {
+    if (!selectedSequenceId) return
+    applyingHistoryRef.current = true
+    lastSnapRef.current = JSON.stringify(snapshot)
+    setSequences((seqs) =>
+      seqs.map((s) => (s.id === selectedSequenceId ? { ...s, steps: snapshot.steps, edges: snapshot.edges } : s)),
+    )
+  }, [selectedSequenceId, setSequences])
+
+  const handleUndo = useCallback(() => {
+    if (isRunning) return
+    const h = historyRef.current
+    if (h.past.length === 0) return
+    const prev = h.past.pop()!
+    if (lastSnapRef.current) h.future.push(JSON.parse(lastSnapRef.current) as SeqSnapshot)
+    applySnapshot(prev)
+    setCanUndo(h.past.length > 0)
+    setCanRedo(true)
+  }, [isRunning, applySnapshot])
+
+  const handleRedo = useCallback(() => {
+    if (isRunning) return
+    const h = historyRef.current
+    if (h.future.length === 0) return
+    const next = h.future.pop()!
+    if (lastSnapRef.current) h.past.push(JSON.parse(lastSnapRef.current) as SeqSnapshot)
+    applySnapshot(next)
+    setCanUndo(true)
+    setCanRedo(h.future.length > 0)
+  }, [isRunning, applySnapshot])
+
+  // --- Delete / duplicate / copy / paste ---------------------------------
+  const handleDeleteSelected = useCallback(() => {
+    if (isRunning || !selectedSequenceId) return
+    const ids = selectedIdsRef.current
+    if (ids.size === 0) return
+    setSequences((prev) => prev.map((seq) => {
+      if (seq.id !== selectedSequenceId) return seq
+      const seqEdges = seq.edges ?? deriveLinearEdges(seq.steps)
+      return {
+        ...seq,
+        steps: seq.steps.filter((s) => !ids.has(s.id)),
+        edges: seqEdges.filter((e) => !ids.has(e.from) && !ids.has(e.to)),
+      }
+    }))
+    if (selectedStepId && ids.has(selectedStepId)) {
+      setSelectedStepId(null)
+      setConfigDialogOpen(false)
+    }
+    setSelectedIds(new Set())
+  }, [isRunning, selectedSequenceId, setSequences, selectedStepId])
+
+  const insertClones = useCallback((srcSteps: AutomationStep[], srcEdges: AutomationEdge[], offset: number) => {
+    if (!selectedSequenceId || srcSteps.length === 0) return
+    const idMap = new Map<string, string>()
+    const clones: AutomationStep[] = srcSteps.map((s) => {
+      const nid = crypto.randomUUID()
+      idMap.set(s.id, nid)
+      const base = s.position ?? { x: 0, y: 0 }
+      return {
+        ...s,
+        id: nid,
+        params: JSON.parse(JSON.stringify(s.params)),
+        position: { x: base.x + offset, y: base.y + offset },
+      }
+    })
+    const clonedEdges: AutomationEdge[] = srcEdges
+      .filter((e) => idMap.has(e.from) && idMap.has(e.to))
+      .map((e) => ({ id: crypto.randomUUID(), from: idMap.get(e.from)!, to: idMap.get(e.to)!, sourceHandle: e.sourceHandle }))
+    setSequences((prev) => prev.map((seq) => seq.id === selectedSequenceId
+      ? {
+          ...seq,
+          steps: [...seq.steps, ...clones],
+          edges: [...(seq.edges ?? deriveLinearEdges(seq.steps)), ...clonedEdges],
+        }
+      : seq))
+    setSelectedIds(new Set(clones.map((c) => c.id)))
+  }, [selectedSequenceId, setSequences])
+
+  const handleDuplicateSelected = useCallback(() => {
+    if (isRunning) return
+    const ids = selectedIdsRef.current
+    if (ids.size === 0) return
+    insertClones(
+      steps.filter((s) => ids.has(s.id)),
+      edges.filter((e) => ids.has(e.from) && ids.has(e.to)),
+      PASTE_OFFSET,
+    )
+  }, [isRunning, steps, edges, insertClones])
+
+  const handleCopyNodes = useCallback(() => {
+    const ids = selectedIdsRef.current
+    if (ids.size === 0) return
+    clipboardRef.current = {
+      steps: steps.filter((s) => ids.has(s.id)).map((s) => JSON.parse(JSON.stringify(s)) as AutomationStep),
+      edges: edges.filter((e) => ids.has(e.from) && ids.has(e.to)).map((e) => ({ ...e })),
+    }
+    toast.success(`Copied ${ids.size} node${ids.size !== 1 ? 's' : ''}`)
+  }, [steps, edges])
+
+  const handlePasteNodes = useCallback(() => {
+    if (isRunning) return
+    const clip = clipboardRef.current
+    if (!clip || clip.steps.length === 0) return
+    insertClones(clip.steps, clip.edges, PASTE_OFFSET)
+  }, [isRunning, insertClones])
+
+  // --- Alignment ----------------------------------------------------------
+  const alignSelected = useCallback((mode: 'left' | 'right' | 'hcenter' | 'top' | 'bottom' | 'vcenter') => {
+    if (isRunning || !selectedSequenceId) return
+    const ids = selectedIdsRef.current
+    if (ids.size < 2) return
+    const sel = steps.filter((s) => ids.has(s.id))
+    const xs = sel.map((s) => s.position?.x ?? 0)
+    const ys = sel.map((s) => s.position?.y ?? 0)
+    const minX = Math.min(...xs), maxX = Math.max(...xs)
+    const minY = Math.min(...ys), maxY = Math.max(...ys)
+    const cX = (minX + maxX) / 2, cY = (minY + maxY) / 2
+    updateStepsForSequence(selectedSequenceId, (prev) => prev.map((s) => {
+      const p = s.position ?? { x: 0, y: 0 }
+      if (!ids.has(s.id)) return { ...s, position: p }
+      const np =
+        mode === 'left' ? { x: minX, y: p.y }
+        : mode === 'right' ? { x: maxX, y: p.y }
+        : mode === 'hcenter' ? { x: cX, y: p.y }
+        : mode === 'top' ? { x: p.x, y: minY }
+        : mode === 'bottom' ? { x: p.x, y: maxY }
+        : { x: p.x, y: cY }
+      return { ...s, position: np }
+    }))
+  }, [isRunning, selectedSequenceId, steps, updateStepsForSequence])
+
+  // --- Fit to view --------------------------------------------------------
+  const handleFitView = useCallback(() => {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    if (steps.length === 0) {
+      setCanvasZoom(1)
+      setCanvasPan({ x: 0, y: 0 })
+      return
+    }
+    const minX = Math.min(...steps.map((s) => s.position?.x ?? 0))
+    const minY = Math.min(...steps.map((s) => s.position?.y ?? 0))
+    const maxX = Math.max(...steps.map((s) => (s.position?.x ?? 0) + NODE_WIDTH))
+    const maxY = Math.max(...steps.map((s) => (s.position?.y ?? 0) + NODE_HEIGHT))
+    const pad = 60
+    const w = maxX - minX + pad * 2
+    const h = maxY - minY + pad * 2
+    const zoom = Math.min(1.5, Math.max(0.25, Math.min(rect.width / w, rect.height / h)))
+    setCanvasZoom(zoom)
+    setCanvasPan({
+      x: rect.width / 2 - (minX + (maxX - minX) / 2) * zoom,
+      y: rect.height / 2 - (minY + (maxY - minY) / 2) * zoom,
+    })
+  }, [steps])
 
   /** Convert a client (screen) point to canvas content coordinates. */
   const clientToContent = useCallback((clientX: number, clientY: number) => {
@@ -1000,6 +1528,12 @@ export function AutomationTab({
       setSelectedStepId(null)
       setConfigDialogOpen(false)
     }
+    setSelectedIds((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
   }
 
   /** Reconnect all nodes into a left-to-right chain based on their X position. */
@@ -1105,10 +1639,20 @@ export function AutomationTab({
   }
 
   const handleCanvasPanStart = useCallback((e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).hasAttribute('data-pan-background')) {
+    if (!(e.target as HTMLElement).hasAttribute('data-pan-background')) return
+    canvasRef.current?.focus()
+    // Shift + drag on empty canvas draws a marquee selection; a plain drag pans
+    // and clears the current selection.
+    if (e.shiftKey) {
+      const p = clientToContent(e.clientX, e.clientY)
+      marqueeStartRef.current = p
+      marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+      setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
+    } else {
+      setSelectedIds(new Set())
       panStartRef.current = { x: e.clientX, y: e.clientY, startPanX: canvasPan.x, startPanY: canvasPan.y }
     }
-  }, [canvasPan])
+  }, [canvasPan, clientToContent])
 
   const handleCanvasWheel = useCallback((e: React.WheelEvent) => {
     if (!canvasRef.current?.contains(e.target as Node)) return
@@ -1121,14 +1665,60 @@ export function AutomationTab({
   const handleZoomOut = () => setCanvasZoom(z => Math.max(0.25, z - 0.25))
   const handleZoomReset = () => setCanvasZoom(1)
 
+  /** Canvas-scoped keyboard shortcuts (only fire while the canvas has focus). */
+  const handleCanvasKeyDown = (e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable) {
+      return
+    }
+    const mod = e.ctrlKey || e.metaKey
+    const k = e.key.toLowerCase()
+    if (e.key === 'Escape') { setSelectedIds(new Set()); return }
+    if (k === 'f' && !mod) { e.preventDefault(); handleFitView(); return }
+    if (e.key === 'Tab') { e.preventDefault(); setPaletteOpen(true); return }
+    if (mod && k === 'a') { e.preventDefault(); handleSelectAll(); return }
+    if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? handleRedo() : handleUndo(); return }
+    if (mod && k === 'y') { e.preventDefault(); handleRedo(); return }
+    if (mod && k === 'c') { e.preventDefault(); handleCopyNodes(); return }
+    if (mod && k === 'v') { e.preventDefault(); handlePasteNodes(); return }
+    if (mod && k === 'd') { e.preventDefault(); handleDuplicateSelected(); return }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (selectedIdsRef.current.size > 0) { e.preventDefault(); handleDeleteSelected() }
+      return
+    }
+  }
+
   useEffect(() => {
-    const onMouseUp = () => panStartRef.current = null
+    const onMouseUp = () => {
+      if (marqueeStartRef.current && marqueeRectRef.current) {
+        const r = marqueeRectRef.current
+        const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1)
+        const y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1)
+        // Ignore tiny drags (treated as a click that just clears selection).
+        if (Math.abs(x1 - x0) > 4 || Math.abs(y1 - y0) > 4) {
+          const hit = new Set<string>()
+          for (const [id, p] of stepPosRef.current) {
+            if (p.x < x1 && p.x + NODE_WIDTH > x0 && p.y < y1 && p.y + NODE_HEIGHT > y0) hit.add(id)
+          }
+          setSelectedIds(hit)
+        }
+      }
+      panStartRef.current = null
+      marqueeStartRef.current = null
+      marqueeRectRef.current = null
+      setMarquee(null)
+    }
     const onMouseMove = (e: MouseEvent) => {
       if (panStartRef.current) {
         setCanvasPan({
           x: panStartRef.current.startPanX + e.clientX - panStartRef.current.x,
           y: panStartRef.current.startPanY + e.clientY - panStartRef.current.y,
         })
+      } else if (marqueeStartRef.current) {
+        const p = clientToContent(e.clientX, e.clientY)
+        const rect = { x0: marqueeStartRef.current.x, y0: marqueeStartRef.current.y, x1: p.x, y1: p.y }
+        marqueeRectRef.current = rect
+        setMarquee(rect)
       }
     }
     window.addEventListener('mouseup', onMouseUp)
@@ -1137,7 +1727,7 @@ export function AutomationTab({
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('mousemove', onMouseMove)
     }
-  }, [])
+  }, [clientToContent])
 
   const executeStep = async (step: AutomationStep, signal: AbortSignal) => {
     if (signal.aborted) throw new Error('Aborted')
@@ -1348,9 +1938,10 @@ export function AutomationTab({
         }
 
         const hhVerbose = getHandheldFullActivityLog()
+        const hhDelayMs = parseInt(step.params.tagDelay?.trim() || handheldDelay, 10) || 20
         await handheldServer.sendEpcs(
           allHhTags,
-          parseInt(handheldDelay, 10) || 20,
+          hhDelayMs,
           (msg) => {
             if (hhVerbose) addLog(`HH: ${msg}`)
           },
@@ -1422,6 +2013,41 @@ export function AutomationTab({
       case 'HTTP_REQUEST':
         await executeHttpRequest(step, runVarsRef.current, addLog)
         break
+      case 'CODE':
+        await executeCode(step, runVarsRef.current, addLog)
+        break
+      case 'ASSERT':
+        await executeAssert(step, runVarsRef.current, addLog)
+        break
+      case 'WAIT_UNTIL':
+        await executeWaitUntil(step, runVarsRef.current, addLog, signal)
+        break
+      case 'STOP':
+        await executeStop(step, runVarsRef.current, addLog)
+        break
+      case 'GENERATE':
+        await executeGenerate(step, runVarsRef.current, addLog)
+        break
+      case 'TRANSFORM':
+        await executeTransform(step, runVarsRef.current, addLog)
+        break
+      case 'COMMENT':
+        await executeComment(step, runVarsRef.current, addLog)
+        break
+
+      case 'NOTIFY': {
+        const level = step.params.notifyLevel ?? 'info'
+        const title = applyTemplate(step.params.notifyTitle || '', runVarsRef.current).trim()
+        const message = applyTemplate(step.params.notifyMessage || '', runVarsRef.current)
+        const opts = title ? { description: message } : undefined
+        const text = title || message
+        if (level === 'success') toast.success(text, opts)
+        else if (level === 'warning') toast.warning(text, opts)
+        else if (level === 'error') toast.error(text, opts)
+        else toast(text, opts)
+        addLog(`🔔 ${title ? `${title}: ` : ''}${message}`)
+        break
+      }
 
       case 'LOG': {
         const level = step.params.logLevel ?? 'info'
@@ -1434,10 +2060,13 @@ export function AutomationTab({
         break
       }
 
-      // CONDITION (routing) and CALL_SEQUENCE (recursion) are handled by the graph
-      // runner itself, not here — they need access to edges / other sequences.
+      // Branch / loop nodes are routed by the graph runner, not executed here.
       case 'CONDITION':
+      case 'SWITCH':
+      case 'RANDOM':
       case 'CALL_SEQUENCE':
+      case 'FOR_EACH':
+      case 'LOOP_N':
         break
     }
   }
@@ -1493,6 +2122,26 @@ export function AutomationTab({
           const pass = evaluateCondition(current.params, runVarsRef.current)
           addLog(`◇ ${current.name}: ${pass ? 'TRUE' : 'FALSE'} → ${pass ? 'true' : 'false'} branch`)
           handle = pass ? 'true' : 'false'
+        } else if (current.type === 'SWITCH') {
+          handle = switchHandle(current.params, runVarsRef.current)
+          const val = applyTemplate(current.params.switchValue || '', runVarsRef.current)
+          const label = handle === 'default'
+            ? 'default'
+            : (() => {
+                const idx = parseInt(handle.slice('case-'.length), 10)
+                const c = current.params.switchCases?.[idx]
+                return c?.label?.trim() || c?.value || handle
+              })()
+          addLog(`⌥ ${current.name}: "${val}" → ${label}`)
+        } else if (current.type === 'RANDOM') {
+          const branches = current.params.randomBranches ?? []
+          const weights = branches.map((b) => b.weight ?? 1)
+          const idx = branches.length > 0 ? pickWeightedIndex(weights, Math.random()) : 0
+          handle = `branch-${idx}`
+          const label = branches[idx]?.label?.trim() || `branch ${idx + 1}`
+          const saveAs = (current.params.randomSaveAs || '').trim()
+          if (saveAs) runVarsRef.current[saveAs] = String(idx)
+          addLog(`🎲 ${current.name}: → ${label}`)
         } else if (current.type === 'CALL_SEQUENCE') {
           try {
             const target = sortedSeqs.find(s => s.id === current!.params.callSequenceId)
@@ -1502,6 +2151,77 @@ export function AutomationTab({
             if (signal.aborted) return
             addLog(`↩ Return from "${target.name}"`)
           } catch (error: any) {
+            if (error instanceof AutomationStopSignal) {
+              if (error.scope === 'run') throw error
+              return
+            }
+            addLog(`Error at "${current.name}": ${error.message}`)
+            if (error.message === 'Aborted') return
+            throw error
+          }
+        } else if (current.type === 'FOR_EACH') {
+          try {
+            const source = applyTemplate(current.params.forEachSource || '', runVarsRef.current)
+            const items = parseListItems(source)
+            const itemAs = (current.params.forEachItemAs || 'item').trim() || 'item'
+            const indexAs = (current.params.forEachIndexAs || 'index').trim() || 'index'
+            const max = Math.max(1, current.params.forEachMax ?? 500)
+            const target = sortedSeqs.find(s => s.id === current!.params.forEachSequenceId)
+            if (!target) throw new Error('For Each: no target sequence selected (or it was deleted)')
+            if (items.length === 0) {
+              addLog(`For Each: empty list — skipped`)
+            } else {
+              const slice = items.slice(0, max)
+              if (items.length > max) addLog(`For Each: capped at ${max} of ${items.length} items`)
+              addLog(`For Each: ${slice.length} item(s) → "${target.name}"`)
+              for (let i = 0; i < slice.length; i++) {
+                if (signal.aborted) return
+                runVarsRef.current[itemAs] = slice[i]!
+                runVarsRef.current[indexAs] = String(i)
+                setRunVars({ ...runVarsRef.current })
+                addLog(`  [${i + 1}/${slice.length}] ${itemAs}=${slice[i]}`)
+                await runSequenceGraph(target, signal, stack)
+              }
+              addLog(`↩ For Each done`)
+            }
+          } catch (error: any) {
+            if (error instanceof AutomationStopSignal) {
+              if (error.scope === 'run') throw error
+              return
+            }
+            addLog(`Error at "${current.name}": ${error.message}`)
+            if (error.message === 'Aborted') return
+            throw error
+          }
+        } else if (current.type === 'LOOP_N') {
+          try {
+            const rawCount = applyTemplate(current.params.loopCount || '', runVarsRef.current).trim()
+            const parsed = Math.floor(Number(rawCount))
+            const requested = Number.isFinite(parsed) ? parsed : 0
+            const cap = Math.max(1, current.params.loopMax ?? 1000)
+            const count = Math.min(Math.max(0, requested), cap)
+            const indexAs = (current.params.loopIndexAs || 'i').trim() || 'i'
+            const target = sortedSeqs.find(s => s.id === current!.params.loopSequenceId)
+            if (!target) throw new Error('Loop N: no target sequence selected (or it was deleted)')
+            if (count <= 0) {
+              addLog(`Loop N: count is ${requested} — skipped`)
+            } else {
+              if (requested > cap) addLog(`Loop N: capped at ${cap} of ${requested} iterations`)
+              addLog(`Loop N: ${count}× → "${target.name}"`)
+              for (let i = 0; i < count; i++) {
+                if (signal.aborted) return
+                runVarsRef.current[indexAs] = String(i + 1)
+                setRunVars({ ...runVarsRef.current })
+                addLog(`  [${i + 1}/${count}]`)
+                await runSequenceGraph(target, signal, stack)
+              }
+              addLog(`↩ Loop N done`)
+            }
+          } catch (error: any) {
+            if (error instanceof AutomationStopSignal) {
+              if (error.scope === 'run') throw error
+              return
+            }
             addLog(`Error at "${current.name}": ${error.message}`)
             if (error.message === 'Aborted') return
             throw error
@@ -1510,6 +2230,10 @@ export function AutomationTab({
           try {
             await executeStep(current, signal)
           } catch (error: any) {
+            if (error instanceof AutomationStopSignal) {
+              if (error.scope === 'run') throw error
+              return
+            }
             addLog(`Error at "${current.name}": ${error.message}`)
             if (error.message === 'Aborted') return
             throw error
@@ -1558,6 +2282,8 @@ export function AutomationTab({
     for (const s of sortedSeqs) {
       for (const st of s.steps) {
         if (st.type === 'CALL_SEQUENCE' && st.params.callSequenceId) calledIds.add(st.params.callSequenceId)
+        if (st.type === 'FOR_EACH' && st.params.forEachSequenceId) calledIds.add(st.params.forEachSequenceId)
+        if (st.type === 'LOOP_N' && st.params.loopSequenceId) calledIds.add(st.params.loopSequenceId)
       }
     }
     const topLevelSeqs = sortedSeqs.filter(s => !calledIds.has(s.id))
@@ -1584,7 +2310,9 @@ export function AutomationTab({
       }
       addLog('Automation completed successfully')
     } catch (error: any) {
-      if (error.message !== 'Aborted') {
+      if (error instanceof AutomationStopSignal) {
+        addLog(`Automation stopped by Stop node (${error.scope === 'run' ? 'end run' : 'end sequence'})`)
+      } else if (error.message !== 'Aborted') {
         addLog(`Automation failed: ${error.message}`)
         toast.error('Automation failed')
       } else {
@@ -1636,53 +2364,13 @@ export function AutomationTab({
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const raw = JSON.parse(reader.result as string)
-        let seqs: AutomationSequence[] = []
-        if (raw.sequences && Array.isArray(raw.sequences)) {
-          seqs = raw.sequences
-        } else if (Array.isArray(raw)) {
-          seqs = raw
-        } else if (raw.steps && Array.isArray(raw.steps)) {
-          seqs = migrateStepsToSequences(raw.steps)
-        } else {
+        const normalized = parseWorkflowSequences(JSON.parse(reader.result as string))
+        if (!normalized) {
           toast.error('Invalid workflow file format')
           return
         }
-        const validTypes: ActionType[] = [...ALL_ACTION_TYPES]
-        const normalized = normalizeSequences(seqs.map((s: any) => {
-          // Regenerate step ids, tracking old→new so we can re-point any edges.
-          const idMap = new Map<string, string>()
-          const steps: AutomationStep[] = (s.steps || []).map((st: any) => {
-            const newId = crypto.randomUUID()
-            if (typeof st.id === 'string') idMap.set(st.id, newId)
-            return {
-              id: newId,
-              type: validTypes.includes(st.type) ? st.type : 'DELAY',
-              name: String(st.name || 'Step').slice(0, 100),
-              position: Array.isArray(st.position) ? { x: st.position[0] ?? 0, y: st.position[1] ?? 0 } : (st.position && typeof st.position.x === 'number' ? st.position : { x: 0, y: 0 }),
-              params: typeof st.params === 'object' && st.params !== null ? st.params : {},
-            }
-          })
-          // Preserve saved connections when present; otherwise let normalize derive a linear chain.
-          const edges: AutomationEdge[] | undefined = Array.isArray(s.edges)
-            ? s.edges
-                .filter((e: any) => e && idMap.has(e.from) && idMap.has(e.to))
-                .map((e: any) => ({
-                  id: crypto.randomUUID(),
-                  from: idMap.get(e.from)!,
-                  to: idMap.get(e.to)!,
-                  sourceHandle: typeof e.sourceHandle === 'string' ? e.sourceHandle : 'out',
-                }))
-            : undefined
-          return {
-            id: crypto.randomUUID(),
-            name: String(s.name || 'Imported').slice(0, 100),
-            order: typeof s.order === 'number' ? s.order : 0,
-            steps,
-            edges,
-          }
-        }))
         setSequences(prev => [...prev, ...normalized])
+        setSelectedSequenceId(normalized[0]?.id ?? null)
         toast.success(`Imported ${normalized.length} sequence(s)`)
       } catch (err) {
         console.error('Import failed:', err)
@@ -1692,18 +2380,15 @@ export function AutomationTab({
     reader.readAsText(file, 'UTF-8')
   }
 
-  const [addMenuOpen, setAddMenuOpen] = useState(false)
-  const addNodeBtnRef = useRef<HTMLButtonElement>(null)
+  const handleLoadDemo = () => {
+    const normalized = parseWorkflowSequences(DEMO_WORKFLOW)
+    if (!normalized) return
+    setSequences(prev => [...prev, ...normalized])
+    setSelectedSequenceId(normalized[0]?.id ?? null)
+    toast.success(`Loaded ${normalized.length} demo sequence(s) — press ▶ Start on “1 · Basics”`)
+  }
 
-  useEffect(() => {
-    if (!addMenuOpen) return
-    const close = () => setAddMenuOpen(false)
-    const timer = setTimeout(() => window.addEventListener('click', close), 0)
-    return () => {
-      clearTimeout(timer)
-      window.removeEventListener('click', close)
-    }
-  }, [addMenuOpen])
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   return (
     <div className="stagger-children h-full flex flex-col gap-0 overflow-hidden">
@@ -1715,85 +2400,11 @@ export function AutomationTab({
           </span>
           <span className="font-semibold text-sm tracking-wide text-muted-foreground">WORKFLOW BUILDER</span>
         </div>
-        <div className="relative">
-          <Button
-            ref={addNodeBtnRef}
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation()
-              setAddMenuOpen((open) => !open)
-            }}
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            ADD NODE
-            <ChevronDown className="w-4 h-4 ml-1" />
-          </Button>
-          <PortaledAnchoredMenu
-            anchorRef={addNodeBtnRef}
-            open={addMenuOpen}
-            fitContent
-            className="py-1 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg min-w-[200px]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DELAY'); setAddMenuOpen(false) }}>
-              <Clock className="w-4 h-4 text-amber-500" /> Delay
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('OCR'); setAddMenuOpen(false) }}>
-              <ScanLine className="w-4 h-4 text-pink-500" /> OCR
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('FIXED_TAG'); setAddMenuOpen(false) }}>
-              <Radio className="w-4 h-4 text-blue-500" /> Fixed Reader
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('HANDHELD_TAG'); setAddMenuOpen(false) }}>
-              <Smartphone className="w-4 h-4 text-emerald-500" /> Handheld
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CUSTOM_MESSAGE'); setAddMenuOpen(false) }}>
-              <Terminal className="w-4 h-4 text-violet-500" /> Custom Message
-            </button>
-            <div className="my-1 border-t border-border/60" />
-            <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Building blocks
-            </p>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('SET_VARIABLE'); setAddMenuOpen(false) }}>
-              <Variable className="w-4 h-4 text-orange-500" /> Set Variable
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DB_QUERY'); setAddMenuOpen(false) }}>
-              <Database className="w-4 h-4 text-indigo-500" /> Database Query
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('DB_EXEC'); setAddMenuOpen(false) }}>
-              <Server className="w-4 h-4 text-indigo-500" /> SQL Statement (any)
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('HTTP_REQUEST'); setAddMenuOpen(false) }}>
-              <Globe className="w-4 h-4 text-rose-500" /> HTTP Request
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('RUN_SCRIPT'); setAddMenuOpen(false) }}>
-              <FileCode2 className="w-4 h-4 text-lime-500" /> Run Script
-            </button>
-            <div className="my-1 border-t border-border/60" />
-            <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Flow control
-            </p>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CONDITION'); setAddMenuOpen(false) }}>
-              <GitBranch className="w-4 h-4 text-fuchsia-500" /> Condition (if / branch)
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('CALL_SEQUENCE'); setAddMenuOpen(false) }}>
-              <Network className="w-4 h-4 text-purple-500" /> Call Sequence
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('LOG'); setAddMenuOpen(false) }}>
-              <FileText className="w-4 h-4 text-sky-500" /> Log Message
-            </button>
-            <div className="my-1 border-t border-border/60" />
-            <p className="px-4 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Edge API
-            </p>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_BLOCK'); setAddMenuOpen(false) }}>
-              <Box className="w-4 h-4 text-cyan-500" /> Invoke block
-            </button>
-            <button className="w-full px-4 py-2 text-left text-sm hover:bg-accent flex items-center gap-2 focus:outline-none select-none" onClick={() => { handleAddStep('EDGE_PROCESS'); setAddMenuOpen(false) }}>
-              <Workflow className="w-4 h-4 text-teal-500" /> Start / stop process
-            </button>
-          </PortaledAnchoredMenu>
-        </div>
+        <Button size="sm" onClick={() => setPaletteOpen(true)}>
+          <Plus className="w-4 h-4 mr-2" />
+          ADD NODE
+          <kbd className="ml-2 hidden rounded border border-primary-foreground/30 px-1 text-[10px] font-medium sm:inline">Tab</kbd>
+        </Button>
       </div>
 
       {/* Main: Sequence list + Canvas + Execution */}
@@ -1812,6 +2423,14 @@ export function AutomationTab({
                 onChange={handleImportWorkflow}
                 className="hidden"
               />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={handleLoadDemo}>
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Load demo workflows (every node type)</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => importInputRef.current?.click()}>
@@ -1951,36 +2570,108 @@ export function AutomationTab({
 
         {/* Workflow Canvas */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
-          {/* Link tools (top-left) */}
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={handleAutoLink}
-                  disabled={isRunning || steps.length < 2}
-                >
-                  <Spline className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Auto-link nodes left-to-right</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={handleClearLinks}
-                  disabled={isRunning || edges.length === 0}
-                >
-                  <Link2Off className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Clear all links</TooltipContent>
-            </Tooltip>
+          {/* Editor toolbar (top-left) */}
+          <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-1">
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleUndo} disabled={isRunning || !canUndo}>
+                    <Undo2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Undo (Ctrl+Z)</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleRedo} disabled={isRunning || !canRedo}>
+                    <Redo2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Redo (Ctrl+Shift+Z)</TooltipContent>
+              </Tooltip>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleAutoLink} disabled={isRunning || steps.length < 2}>
+                    <Spline className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Auto-link nodes left-to-right</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleClearLinks} disabled={isRunning || edges.length === 0}>
+                    <Link2Off className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Clear all links</TooltipContent>
+              </Tooltip>
+            </div>
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className={cn('h-7 w-7', showGrid && 'text-primary')} onClick={() => setShowGrid((v) => !v)}>
+                    <Grid className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{showGrid ? 'Hide grid' : 'Show grid'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className={cn('h-7 w-7', snapToGrid && 'text-primary')} onClick={() => setSnapToGrid((v) => !v)}>
+                    <Magnet className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">{snapToGrid ? 'Snapping on' : 'Snap to grid'}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleFitView} disabled={steps.length === 0}>
+                    <Maximize className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Fit to view (F)</TooltipContent>
+              </Tooltip>
+            </div>
+            {/* Alignment — only while a multi-selection is active */}
+            {selectedIds.size >= 2 && !isRunning && (
+              <div className="flex items-center gap-0.5 rounded-lg border border-primary/40 bg-card/90 px-1 py-1 shadow-sm">
+                <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-primary">{selectedIds.size}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => alignSelected('hcenter')}>
+                      <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Align horizontal centers</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => alignSelected('vcenter')}>
+                      <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Align vertical centers</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleDuplicateSelected}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Duplicate (Ctrl+D)</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={handleDeleteSelected}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Delete selected (Del)</TooltipContent>
+                </Tooltip>
+              </div>
+            )}
           </div>
           {/* Zoom controls */}
           <div className="absolute bottom-3 right-3 z-10 flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
@@ -2010,15 +2701,76 @@ export function AutomationTab({
               <TooltipContent side="top">Reset zoom</TooltipContent>
             </Tooltip>
           </div>
+          {/* Minimap (bottom-left) — overview + click/drag to navigate */}
+          {steps.length > 0 && (() => {
+            const MM_W = 176, MM_H = 116, PAD = 6
+            const cw = Math.max(contentSize.width, 1)
+            const ch = Math.max(contentSize.height, 1)
+            const scale = Math.min((MM_W - PAD * 2) / cw, (MM_H - PAD * 2) / ch)
+            const vp = {
+              x: -canvasPan.x / canvasZoom,
+              y: -canvasPan.y / canvasZoom,
+              w: (canvasSize.w || 1) / canvasZoom,
+              h: (canvasSize.h || 1) / canvasZoom,
+            }
+            const navigate = (e: React.MouseEvent) => {
+              e.stopPropagation()
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              const contentX = (e.clientX - rect.left - PAD) / scale
+              const contentY = (e.clientY - rect.top - PAD) / scale
+              setCanvasPan({
+                x: (canvasSize.w || 0) / 2 - contentX * canvasZoom,
+                y: (canvasSize.h || 0) / 2 - contentY * canvasZoom,
+              })
+            }
+            return (
+              <div
+                className="absolute bottom-3 left-3 z-10 overflow-hidden rounded-lg border border-border/50 bg-card/90 shadow-sm cursor-pointer"
+                style={{ width: MM_W, height: MM_H }}
+                onMouseDown={navigate}
+                onMouseMove={(e) => { if (e.buttons === 1) navigate(e) }}
+                title="Minimap — click to navigate"
+              >
+                <svg width={MM_W} height={MM_H} className="block">
+                  <g transform={`translate(${PAD},${PAD})`}>
+                    <rect
+                      x={vp.x * scale} y={vp.y * scale}
+                      width={vp.w * scale} height={vp.h * scale}
+                      className="fill-primary/10 stroke-primary/60"
+                      strokeWidth={1}
+                      rx={2}
+                    />
+                    {steps.map((s) => {
+                      const p = s.position ?? { x: 0, y: 0 }
+                      const active = currentRunningStepId === s.id
+                      const sel = selectedIds.has(s.id)
+                      return (
+                        <rect
+                          key={s.id}
+                          x={p.x * scale} y={p.y * scale}
+                          width={NODE_WIDTH * scale} height={NODE_HEIGHT * scale}
+                          rx={1.5}
+                          className={cn(
+                            active ? 'fill-green-500' : sel ? 'fill-primary' : 'fill-muted-foreground/50',
+                          )}
+                        />
+                      )
+                    })}
+                  </g>
+                </svg>
+              </div>
+            )
+          })()}
           <div
             ref={canvasRef}
-            className="relative flex-1 min-h-[400px] overflow-hidden rounded-xl border border-border/30 bg-background/40 cursor-grab active:cursor-grabbing"
+            className="relative flex-1 min-h-[400px] overflow-hidden rounded-xl border border-border/30 bg-background/40 cursor-grab active:cursor-grabbing focus:outline-none"
             data-tour="tour-automation-canvas"
             role="region"
             aria-label="Workflow canvas"
             tabIndex={0}
             onMouseDown={handleCanvasPanStart}
             onWheel={handleCanvasWheel}
+            onKeyDown={handleCanvasKeyDown}
             style={{ minHeight: 400 }}
           >
             <div
@@ -2029,12 +2781,31 @@ export function AutomationTab({
                 transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
               }}
             >
-              {/* Pan background - drag to pan canvas */}
+              {/* Pan background - drag to pan (Shift+drag = marquee select) */}
               <div
                 data-pan-background
                 className="absolute inset-0 z-0"
-                style={{ minWidth: contentSize.width, minHeight: contentSize.height }}
+                style={{
+                  minWidth: contentSize.width,
+                  minHeight: contentSize.height,
+                  backgroundImage: showGrid
+                    ? 'radial-gradient(circle, hsl(var(--muted-foreground) / 0.18) 1px, transparent 1px)'
+                    : undefined,
+                  backgroundSize: showGrid ? `${GRID_SIZE}px ${GRID_SIZE}px` : undefined,
+                }}
               />
+              {/* Marquee selection rectangle */}
+              {marquee && (
+                <div
+                  className="pointer-events-none absolute z-10 rounded-sm border border-primary/70 bg-primary/10"
+                  style={{
+                    left: Math.min(marquee.x0, marquee.x1),
+                    top: Math.min(marquee.y0, marquee.y1),
+                    width: Math.abs(marquee.x1 - marquee.x0),
+                    height: Math.abs(marquee.y1 - marquee.y0),
+                  }}
+                />
+              )}
               {steps.length === 0 && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                   <div className="text-center text-muted-foreground text-sm border-2 border-dashed border-border/50 rounded-xl p-8 bg-card/50 max-w-[280px]">
@@ -2083,7 +2854,7 @@ export function AutomationTab({
                   if (!fromStep) return null
                   const pos = fromStep.position ?? { x: 0, y: 0 }
                   const sx = pos.x + NODE_WIDTH
-                  const sy = pos.y + sourcePortY(linking.handle)
+                  const sy = pos.y + sourcePortY(fromStep, linking.handle)
                   const cp = Math.max(40, Math.abs(linkCursor.x - sx) * 0.5)
                   return (
                     <path
@@ -2108,8 +2879,9 @@ export function AutomationTab({
                   style={STEP_TYPE_STYLES[step.type]}
                   isDragging={draggingNodeId === step.id}
                   isActive={currentRunningStepId === step.id}
-                  isSelected={selectedStepId === step.id}
+                  isSelected={selectedIds.has(step.id)}
                   isRunning={isRunning}
+                  groupDelta={groupDrag && groupDrag.anchor !== step.id ? { x: groupDrag.dx, y: groupDrag.dy } : null}
                   // Every node's input pulses while linking — dropping back onto the
                   // source node itself is valid and creates a self-loop.
                   isLinkTarget={!!linking}
@@ -2117,6 +2889,7 @@ export function AutomationTab({
                   onDrag={handleDrag}
                   onDragEnd={handleDragEnd}
                   onConfigure={handleConfigureNode}
+                  onSelect={handleSelectNode}
                   onDelete={handleDeleteStep}
                   onStartLink={handleStartLink}
                 />
@@ -2215,6 +2988,7 @@ export function AutomationTab({
                 open={inspectorOpen}
                 onToggle={() => setInspectorOpen((o) => !o)}
                 onReset={handleResetVars}
+                onExpand={() => setVarsExpandedOpen(true)}
                 isRunning={isRunning}
               />
               <div className="flex items-center justify-between gap-2 shrink-0">
@@ -2309,9 +3083,42 @@ export function AutomationTab({
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-2 border-t border-border/50 bg-card/50 text-xs text-muted-foreground">
-        <span>• {sortedSeqs.length} SEQUENCES • {steps.length} NODES • {edges.length} LINKS</span>
-        <span>Drag a node's right dot to another node (or back onto itself to loop) to link • Click a link to remove it • ⋮⋮ Drag to move • Drag background to pan</span>
+        <span>• {sortedSeqs.length} SEQUENCES • {steps.length} NODES • {edges.length} LINKS{selectedIds.size > 0 ? ` • ${selectedIds.size} SELECTED` : ''}</span>
+        <span>Click to select · Shift-click to multi-select · Shift-drag empty canvas to marquee · double-click to configure · Tab adds a node · Ctrl+Z/Y undo/redo · Ctrl+D duplicate · Del removes</span>
       </div>
+
+      {/* Expanded variables */}
+      <Dialog open={varsExpandedOpen} onOpenChange={setVarsExpandedOpen}>
+        <DialogContent className="sm:max-w-4xl h-[90vh] max-h-[90vh] overflow-hidden flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-3 shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              <Braces className="w-5 h-5" />
+              Variables
+            </DialogTitle>
+            <DialogDescription>
+              {Object.keys(runVars).length} variable{Object.keys(runVars).length !== 1 ? 's' : ''}
+              {isRunning && ' — updating live during the run'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 mx-6 mb-4 border border-border/50 rounded-xl bg-muted/10 overflow-y-auto overscroll-contain">
+            <div className="space-y-0.5 p-4">
+              <VariableListBody vars={runVars} size="md" />
+            </div>
+          </div>
+          <DialogFooter className="px-6 pb-6 pt-0 shrink-0">
+            <Button
+              variant="outline"
+              onClick={handleCopyVars}
+              disabled={Object.keys(runVars).length === 0}
+              className="gap-1.5"
+            >
+              {varsCopied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+              {varsCopied ? 'Copied' : 'Copy'}
+            </Button>
+            <Button onClick={() => setVarsExpandedOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Expanded activity log */}
       <Dialog open={logExpandedOpen} onOpenChange={setLogExpandedOpen}>
@@ -2375,6 +3182,13 @@ export function AutomationTab({
         </DialogContent>
       </Dialog>
 
+      {/* Searchable node palette (⌘K / Tab) */}
+      <NodePalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        onSelect={handleAddStep}
+      />
+
       {/* Node config popup */}
       <NodeConfigDialog
         open={configDialogOpen}
@@ -2386,6 +3200,7 @@ export function AutomationTab({
         alePort={alePort}
         customPort={customPort}
         fixedTabDelay={delay}
+        handheldTabDelay={handheldDelay}
         sequences={sortedSeqs}
         currentSequenceId={selectedSequenceId}
       />

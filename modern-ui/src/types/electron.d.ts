@@ -157,6 +157,7 @@ export interface ElectronAPI {
     env?: Record<string, string>
     timeoutMs?: number
     cwd?: string
+    ext?: string
   }) => Promise<{ ok: true; stdout: string; stderr: string; exitCode: number } | { ok: false; error: string }>
   automationOpenScriptsFolder: () => Promise<{ ok: true; path: string } | { ok: false; error: string }>
   automationGetScriptsDir: () => Promise<{ ok: true; path: string } | { ok: false; error: string }>

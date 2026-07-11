@@ -1,6 +1,6 @@
 /** Template interpolation helpers for automation building blocks. */
 
-import type { ConditionOp } from './automation-types'
+import type { ConditionOp, VarType, SwitchCase } from './automation-types'
 
 export type AutomationVars = Record<string, string>
 
@@ -90,6 +90,84 @@ export function evaluateCondition(
     }
     default:
       return false
+  }
+}
+
+/**
+ * Resolve which output port a SWITCH node routes through. Compares the (templated)
+ * switch value against each (templated) case value by equality; the first match
+ * wins and returns `case-<i>`. No match returns `default`.
+ */
+export function switchHandle(
+  params: {
+    switchValue?: string
+    switchCases?: SwitchCase[]
+    switchCaseSensitive?: boolean
+  },
+  vars: AutomationVars,
+): string {
+  const caseSensitive = params.switchCaseSensitive === true
+  const norm = (s: string) => (caseSensitive ? s : s.toLowerCase())
+  const target = norm(applyTemplate(params.switchValue ?? '', vars))
+  const cases = params.switchCases ?? []
+  for (let i = 0; i < cases.length; i++) {
+    if (norm(applyTemplate(cases[i]?.value ?? '', vars)) === target) return `case-${i}`
+  }
+  return 'default'
+}
+
+/**
+ * Pick a weighted-random index. `r` is a random number in [0, 1) (injected for
+ * testability). Non-positive weights are treated as 0; an all-zero list picks the
+ * first branch.
+ */
+export function pickWeightedIndex(weights: number[], r: number): number {
+  if (weights.length === 0) return 0
+  const clamped = weights.map((w) => (Number.isFinite(w) && w > 0 ? w : 0))
+  const total = clamped.reduce((a, w) => a + w, 0)
+  if (total <= 0) return 0
+  const target = Math.min(Math.max(r, 0), 0.999999) * total
+  let acc = 0
+  for (let i = 0; i < clamped.length; i++) {
+    acc += clamped[i]
+    if (target < acc) return i
+  }
+  return clamped.length - 1
+}
+
+/**
+ * Split a templated list into items.
+ * Prefers JSON arrays; otherwise newlines; otherwise commas.
+ */
+export function parseListItems(raw: string): string[] {
+  const t = raw.trim()
+  if (!t) return []
+  if (t.startsWith('[')) {
+    try {
+      const arr = JSON.parse(t)
+      if (Array.isArray(arr)) {
+        return arr.map((x) => (x === null || x === undefined ? '' : String(x))).filter((s) => s !== '')
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  if (/\r?\n/.test(t)) {
+    return t.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+  }
+  return t.split(',').map((s) => s.trim()).filter(Boolean)
+}
+
+/**
+ * Soft stop signal from a STOP node — not a failure.
+ * `scope: 'sequence'` ends the current sequence; `'run'` ends the whole automation.
+ */
+export class AutomationStopSignal extends Error {
+  readonly scope: 'sequence' | 'run'
+  constructor(scope: 'sequence' | 'run', message?: string) {
+    super(message || 'Stopped')
+    this.name = 'AutomationStopSignal'
+    this.scope = scope
   }
 }
 
@@ -214,6 +292,94 @@ export function setVar(vars: AutomationVars, name: string, value: string): void 
     throw new Error(`Invalid variable name: ${name}`)
   }
   vars[key] = value
+}
+
+/** True when `name` is a valid variable identifier. */
+export function isValidVarName(name: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_.-]*$/.test(name.trim())
+}
+
+/**
+ * Validate and canonicalize a variable value for its declared type. Variables are
+ * always stored as strings (so templating stays simple), but numbers, booleans and
+ * JSON are normalized to a consistent string form and rejected when invalid.
+ */
+export function coerceToType(value: string, type?: VarType): string {
+  switch (type) {
+    case 'number': {
+      const n = Number(value.trim())
+      if (value.trim() === '' || !Number.isFinite(n)) {
+        throw new Error(`"${value}" is not a valid number`)
+      }
+      return String(n)
+    }
+    case 'integer': {
+      const n = Number(value.trim())
+      if (value.trim() === '' || !Number.isFinite(n) || !Number.isInteger(n)) {
+        throw new Error(`"${value}" is not a valid integer`)
+      }
+      return String(n)
+    }
+    case 'boolean': {
+      const v = value.trim().toLowerCase()
+      if (['true', '1', 'yes', 'on'].includes(v)) return 'true'
+      if (['false', '0', 'no', 'off', ''].includes(v)) return 'false'
+      throw new Error(`"${value}" is not a valid boolean`)
+    }
+    case 'array': {
+      // Accept a JSON array as-is, or split a plain comma/newline list into a string array.
+      const trimmed = value.trim()
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (Array.isArray(parsed)) return JSON.stringify(parsed)
+        } catch {
+          /* fall through to list parsing */
+        }
+      }
+      if (trimmed === '') return '[]'
+      const items = trimmed
+        .split(/\r?\n|,/)
+        .map((s) => s.trim())
+        .filter((s) => s !== '')
+      return JSON.stringify(items)
+    }
+    case 'object': {
+      try {
+        const parsed = JSON.parse(value)
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+          throw new Error('not an object')
+        }
+        return JSON.stringify(parsed)
+      } catch {
+        throw new Error('Value is not a valid JSON object')
+      }
+    }
+    case 'json': {
+      try {
+        return JSON.stringify(JSON.parse(value))
+      } catch {
+        throw new Error('Value is not valid JSON')
+      }
+    }
+    default:
+      return value
+  }
+}
+
+/** Canonical string form of any JS value for storing back into AutomationVars. */
+export function stringifyVarValue(v: unknown): string {
+  if (v === null || v === undefined) return ''
+  if (typeof v === 'boolean') return v ? 'true' : 'false'
+  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : ''
+  if (typeof v === 'object') {
+    try {
+      return JSON.stringify(v)
+    } catch {
+      return String(v)
+    }
+  }
+  return String(v)
 }
 
 /** Extract a cell from query result rows for variable capture. */

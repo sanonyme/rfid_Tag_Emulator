@@ -19,7 +19,12 @@ export type RunScriptPayload = {
   env?: Record<string, string>
   timeoutMs?: number
   cwd?: string
+  /** Extension for the inline temp file (selects the interpreter). Defaults per-platform. */
+  ext?: string
 }
+
+/** Extensions allowed for inline scripts (each maps to an interpreter below). */
+const ALLOWED_INLINE_EXTS = ['.ps1', '.psm1', '.sh', '.bash', '.bat', '.cmd', '.js', '.mjs', '.cjs', '.py', '.java']
 
 export type RunScriptResult =
   | { ok: true; stdout: string; stderr: string; exitCode: number }
@@ -64,7 +69,10 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
     if (!text.trim()) return { ok: false, error: 'Inline script is empty' }
     if (text.length > 64 * 1024) return { ok: false, error: 'Inline script too large' }
     const root = ensureScriptsDir()
-    const ext = process.platform === 'win32' ? '.ps1' : '.sh'
+    const reqExt = typeof payload.ext === 'string' ? payload.ext.toLowerCase() : ''
+    const ext = ALLOWED_INLINE_EXTS.includes(reqExt)
+      ? reqExt
+      : process.platform === 'win32' ? '.ps1' : '.sh'
     cleanup = path.join(root, `_inline_${Date.now()}${ext}`)
     fs.writeFileSync(cleanup, text, 'utf-8')
     fileToRun = cleanup
@@ -107,6 +115,13 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
       cmdArgs = [fileToRun, ...args]
     } else if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
       cmd = process.execPath
+      cmdArgs = [fileToRun, ...args]
+    } else if (ext === '.java') {
+      // JDK 11+ single-file source-code mode: compiles & runs in one step.
+      cmd = 'java'
+      cmdArgs = [fileToRun, ...args]
+    } else if (ext === '.py') {
+      cmd = isWin ? 'python' : 'python3'
       cmdArgs = [fileToRun, ...args]
     } else if (isWin) {
       cmd = process.env.COMSPEC || 'cmd.exe'

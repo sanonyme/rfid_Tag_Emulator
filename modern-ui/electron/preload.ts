@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     env?: Record<string, string>
     timeoutMs?: number
     cwd?: string
+    ext?: string
   }) => ipcRenderer.invoke('automation-run-script', payload),
   automationOpenScriptsFolder: () => ipcRenderer.invoke('automation-open-scripts-folder'),
   automationGetScriptsDir: () => ipcRenderer.invoke('automation-get-scripts-dir'),

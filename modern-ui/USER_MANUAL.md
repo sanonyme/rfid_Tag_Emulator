@@ -99,7 +99,12 @@ Click **ADD NODE** (top-right) and pick a node type:
 - **Custom Message** — Send a raw TCP message.
 
 **Building blocks**
-- **Set Variable** — Store a value (supports `{{variables}}`) for later nodes.
+- **Set Variable** — Store a value (supports `{{variables}}`) for later nodes. Pick a
+  **type** and the value is validated and normalized on set:
+  *String*, *Number* (Java `double`), *Integer* (`int`/`long`, rejects decimals),
+  *Boolean*, *Array* (a JSON array, or a comma/newline list that's converted to one),
+  *Object* (a JSON `Map`/object), or *JSON (any)*. Arrays and objects are stored as
+  compact JSON, so a **Code** node can `JSON.parse` them and write them back.
 - **Database Query** — Run a read query (SELECT) and capture a cell into a variable.
 - **SQL Statement (any)** — Run *any* SQL: INSERT, UPDATE, DELETE, CREATE/ALTER/DROP,
   CALL, etc. Captures the affected-row count and (for inserts) the new auto-increment
@@ -108,18 +113,25 @@ Click **ADD NODE** (top-right) and pick a node type:
   through the desktop app, so no CORS limits — the same engine the API tab uses).
   Templated URL, headers, and body; capture the status, response body, or a JSON field
   (via a dot path like `data.items.0.epc`) into variables. Bridges Automation ↔ API.
+- **Code (JavaScript)** — Write JS to manipulate variables in-process (instant, no install).
+  Receives a mutable `vars` object and `log()`; mutate `vars` and/or `return` an object.
+  Legacy Java Code nodes are no longer supported — use JavaScript or **Run Script**.
 - **Run Script** — Execute an inline or on-disk script (admin only).
+- **Generate Value** — Create a UUID, timestamp, random int/hex into a variable.
 
 **Flow control**
-- **Condition (if / branch)** — Compare two values and route the flow through a
-  **TRUE** or **FALSE** output port. Use it to branch on tag counts, OCR responses,
-  query results, script output, etc.
+- **Condition (if / branch)** — Compare two values and route through **TRUE** / **FALSE** ports.
+- **Assert** — Same comparisons as Condition, but **fails the run** when false (with a message).
+- **Wait Until** — Poll a condition until true, or timeout (fail or continue).
+- **For Each** — Split a list (`{{epcs}}`, JSON array, newlines, commas) and run another
+  sequence once per item (`{{item}}` / `{{index}}`).
 - **Call Sequence** — Run another sequence as a re-usable sub-routine, then continue.
-  Variables are **shared** between caller and callee, so you can factor common steps
-  (login, setup, cleanup) into one sequence and call it from many. Recursive calls are
-  detected and skipped; nesting is capped at 20 levels.
+  Variables are **shared** between caller and callee. Recursive calls are detected and
+  skipped; nesting is capped at 20 levels.
+- **Stop** — Soft-end the current sequence or the whole run (not a failure).
 - **Log Message** — Write a templated line to the activity log. At **Error** level it
-  can also abort the whole run — useful for failing a run when a bad path is hit.
+  can also abort the whole run.
+- **Comment** — Canvas note only; does nothing at runtime.
 
 **Edge API** — Invoke an Edge block, or start/stop an Edge process.
 
@@ -176,6 +188,12 @@ Nodes share a set of `{{variables}}`. Insert them anywhere you see the variable 
 `{{epcs}}`, `{{epcsSql}}`, `{{tagCount}}`, and `{{lastOcrResponse}}`; nodes that save
 results (SQL affected rows, HTTP status/body/JSON field, script stdout) add your own.
 Watch them all live in the **Variables** panel.
+
+Variables are stored as text, but the **Set Variable** node's *type* controls how a value
+is validated and normalized (a Number stores `3.5`, a Boolean stores `true`/`false`, a JSON
+value is stored as compact JSON). This keeps Condition comparisons and Code nodes
+predictable. In a **Code** node you can transform variables freely — e.g. parse a JSON
+variable, compute a value, and write new variables back.
 
 ### 7.6 Import / Export
 Use the **Import** / **Export** buttons above the sequence list to save or share entire

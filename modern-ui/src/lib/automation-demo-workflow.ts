@@ -1,0 +1,898 @@
+/**
+ * Bundled demo workflow used by the "Load demo" button in the Automation tab.
+ * Showcases every node type across a few themed sequences. Generated — edit
+ * examples/automation-node-showcase.json and re-run scripts/gen if you change it.
+ */
+export const DEMO_WORKFLOW = {
+  "version": 1,
+  "exportedAt": "2026-07-11T00:00:00.000Z",
+  "name": "Automation node showcase",
+  "sequences": [
+    {
+      "id": "seq-1-basics",
+      "name": "1 · Basics & Variables",
+      "order": 0,
+      "steps": [
+        {
+          "id": "b-note",
+          "type": "COMMENT",
+          "name": "Read me",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "params": {
+            "commentText": "Basics: variables, generation, transforms, delay, logging & a toast. Runs with no external connection — press ▶ Start."
+          }
+        },
+        {
+          "id": "b-set",
+          "type": "SET_VARIABLE",
+          "name": "Set SKU",
+          "position": {
+            "x": 40,
+            "y": 230
+          },
+          "params": {
+            "varName": "sku",
+            "varValue": "acme-1024",
+            "varType": "string"
+          }
+        },
+        {
+          "id": "b-gen",
+          "type": "GENERATE",
+          "name": "New run id",
+          "position": {
+            "x": 330,
+            "y": 230
+          },
+          "params": {
+            "generateKind": "uuid",
+            "generateSaveAs": "runId"
+          }
+        },
+        {
+          "id": "b-up",
+          "type": "TRANSFORM",
+          "name": "Uppercase SKU",
+          "position": {
+            "x": 620,
+            "y": 230
+          },
+          "params": {
+            "transformInput": "{{sku}}",
+            "transformOp": "upper",
+            "transformSaveAs": "skuUpper"
+          }
+        },
+        {
+          "id": "b-len",
+          "type": "TRANSFORM",
+          "name": "SKU length",
+          "position": {
+            "x": 910,
+            "y": 230
+          },
+          "params": {
+            "transformInput": "{{sku}}",
+            "transformOp": "length",
+            "transformSaveAs": "skuLen"
+          }
+        },
+        {
+          "id": "b-delay",
+          "type": "DELAY",
+          "name": "Pause 500ms",
+          "position": {
+            "x": 1200,
+            "y": 230
+          },
+          "params": {
+            "duration": 500
+          }
+        },
+        {
+          "id": "b-log",
+          "type": "LOG",
+          "name": "Log summary",
+          "position": {
+            "x": 1490,
+            "y": 230
+          },
+          "params": {
+            "logMessage": "SKU {{skuUpper}} ({{skuLen}} chars) · run {{runId}}",
+            "logLevel": "info"
+          }
+        },
+        {
+          "id": "b-toast",
+          "type": "NOTIFY",
+          "name": "Toast done",
+          "position": {
+            "x": 1780,
+            "y": 230
+          },
+          "params": {
+            "notifyTitle": "Basics demo",
+            "notifyMessage": "Prepared {{skuUpper}}",
+            "notifyLevel": "success"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e1",
+          "from": "b-note",
+          "to": "b-set",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e2",
+          "from": "b-set",
+          "to": "b-gen",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e3",
+          "from": "b-gen",
+          "to": "b-up",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e4",
+          "from": "b-up",
+          "to": "b-len",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e5",
+          "from": "b-len",
+          "to": "b-delay",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e6",
+          "from": "b-delay",
+          "to": "b-log",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e7",
+          "from": "b-log",
+          "to": "b-toast",
+          "sourceHandle": "out"
+        }
+      ]
+    },
+    {
+      "id": "seq-2-devices",
+      "name": "2 · Devices & I/O",
+      "order": 1,
+      "steps": [
+        {
+          "id": "d-note",
+          "type": "COMMENT",
+          "name": "Needs a host",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "params": {
+            "commentText": "These nodes talk to real devices. Connect a host/reader first, or just open each to see how it is configured."
+          }
+        },
+        {
+          "id": "d-fixed",
+          "type": "FIXED_TAG",
+          "name": "Fixed reader — 5 tags",
+          "position": {
+            "x": 40,
+            "y": 230
+          },
+          "params": {
+            "upcList": "0361100300001, 3\n0361100300002, 2",
+            "startSerial": 1,
+            "antenna": "1,2",
+            "rssi": "-52.0",
+            "rssiRandomize": false,
+            "driver": "llrp"
+          }
+        },
+        {
+          "id": "d-hh",
+          "type": "HANDHELD_TAG",
+          "name": "Handheld broadcast",
+          "position": {
+            "x": 330,
+            "y": 230
+          },
+          "params": {
+            "epcList": "{{epcs}}",
+            "tagDelay": ""
+          }
+        },
+        {
+          "id": "d-ocr",
+          "type": "OCR",
+          "name": "Send OCR payload",
+          "position": {
+            "x": 620,
+            "y": 230
+          },
+          "params": {
+            "message": "{\"sku\":\"{{sku}}\",\"tags\":{{tagCount}}}"
+          }
+        },
+        {
+          "id": "d-custom",
+          "type": "CUSTOM_MESSAGE",
+          "name": "Custom TCP message",
+          "position": {
+            "x": 910,
+            "y": 230
+          },
+          "params": {
+            "port": "",
+            "message": "{\"event\":\"demo\",\"epcCount\":{{tagCount}}}"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e8",
+          "from": "d-note",
+          "to": "d-fixed",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e9",
+          "from": "d-fixed",
+          "to": "d-hh",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e10",
+          "from": "d-hh",
+          "to": "d-ocr",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e11",
+          "from": "d-ocr",
+          "to": "d-custom",
+          "sourceHandle": "out"
+        }
+      ]
+    },
+    {
+      "id": "seq-3-branching",
+      "name": "3 · Branching (if / switch / random)",
+      "order": 2,
+      "steps": [
+        {
+          "id": "r-seed",
+          "type": "SET_VARIABLE",
+          "name": "Seed tagCount = 3",
+          "position": {
+            "x": 40,
+            "y": 260
+          },
+          "params": {
+            "varName": "tagCount",
+            "varValue": "3",
+            "varType": "integer"
+          }
+        },
+        {
+          "id": "r-if",
+          "type": "CONDITION",
+          "name": "Any tags?",
+          "position": {
+            "x": 330,
+            "y": 260
+          },
+          "params": {
+            "condLeft": "{{tagCount}}",
+            "condOp": "gt",
+            "condRight": "0"
+          }
+        },
+        {
+          "id": "r-stop",
+          "type": "STOP",
+          "name": "Stop — no tags",
+          "position": {
+            "x": 330,
+            "y": 470
+          },
+          "params": {
+            "stopScope": "sequence",
+            "stopMessage": "No tags — nothing to do"
+          }
+        },
+        {
+          "id": "r-switch",
+          "type": "SWITCH",
+          "name": "Route by count",
+          "position": {
+            "x": 640,
+            "y": 120
+          },
+          "params": {
+            "switchValue": "{{tagCount}}",
+            "switchCases": [
+              {
+                "value": "0",
+                "label": "none"
+              },
+              {
+                "value": "1",
+                "label": "one"
+              },
+              {
+                "value": "3",
+                "label": "few"
+              }
+            ],
+            "switchHasDefault": true,
+            "switchCaseSensitive": false
+          }
+        },
+        {
+          "id": "r-none",
+          "type": "LOG",
+          "name": "Count: none",
+          "position": {
+            "x": 1000,
+            "y": 20
+          },
+          "params": {
+            "logMessage": "switch → none"
+          }
+        },
+        {
+          "id": "r-one",
+          "type": "LOG",
+          "name": "Count: one",
+          "position": {
+            "x": 1000,
+            "y": 160
+          },
+          "params": {
+            "logMessage": "switch → one"
+          }
+        },
+        {
+          "id": "r-assert",
+          "type": "ASSERT",
+          "name": "Assert > 0",
+          "position": {
+            "x": 1000,
+            "y": 300
+          },
+          "params": {
+            "condLeft": "{{tagCount}}",
+            "condOp": "gt",
+            "condRight": "0",
+            "assertMessage": "expected tags but got {{tagCount}}"
+          }
+        },
+        {
+          "id": "r-many",
+          "type": "LOG",
+          "name": "Count: many",
+          "position": {
+            "x": 1000,
+            "y": 460
+          },
+          "params": {
+            "logMessage": "switch → many ({{tagCount}})"
+          }
+        },
+        {
+          "id": "r-rand",
+          "type": "RANDOM",
+          "name": "A/B split",
+          "position": {
+            "x": 1320,
+            "y": 300
+          },
+          "params": {
+            "randomBranches": [
+              {
+                "weight": 1,
+                "label": "A"
+              },
+              {
+                "weight": 1,
+                "label": "B"
+              }
+            ],
+            "randomSaveAs": "variant"
+          }
+        },
+        {
+          "id": "r-a",
+          "type": "LOG",
+          "name": "Variant A",
+          "position": {
+            "x": 1640,
+            "y": 220
+          },
+          "params": {
+            "logMessage": "random → A"
+          }
+        },
+        {
+          "id": "r-b",
+          "type": "LOG",
+          "name": "Variant B",
+          "position": {
+            "x": 1640,
+            "y": 380
+          },
+          "params": {
+            "logMessage": "random → B"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e12",
+          "from": "r-seed",
+          "to": "r-if",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e13",
+          "from": "r-if",
+          "to": "r-switch",
+          "sourceHandle": "true"
+        },
+        {
+          "id": "e14",
+          "from": "r-if",
+          "to": "r-stop",
+          "sourceHandle": "false"
+        },
+        {
+          "id": "e15",
+          "from": "r-switch",
+          "to": "r-none",
+          "sourceHandle": "case-0"
+        },
+        {
+          "id": "e16",
+          "from": "r-switch",
+          "to": "r-one",
+          "sourceHandle": "case-1"
+        },
+        {
+          "id": "e17",
+          "from": "r-switch",
+          "to": "r-assert",
+          "sourceHandle": "case-2"
+        },
+        {
+          "id": "e18",
+          "from": "r-switch",
+          "to": "r-many",
+          "sourceHandle": "default"
+        },
+        {
+          "id": "e19",
+          "from": "r-assert",
+          "to": "r-rand",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e20",
+          "from": "r-rand",
+          "to": "r-a",
+          "sourceHandle": "branch-0"
+        },
+        {
+          "id": "e21",
+          "from": "r-rand",
+          "to": "r-b",
+          "sourceHandle": "branch-1"
+        }
+      ]
+    },
+    {
+      "id": "seq-4-loops",
+      "name": "4 · Loops & sub-sequences",
+      "order": 3,
+      "steps": [
+        {
+          "id": "l-list",
+          "type": "SET_VARIABLE",
+          "name": "List of SKUs",
+          "position": {
+            "x": 40,
+            "y": 240
+          },
+          "params": {
+            "varName": "skuList",
+            "varValue": "apple\nbanana\ncherry",
+            "varType": "array"
+          }
+        },
+        {
+          "id": "l-each",
+          "type": "FOR_EACH",
+          "name": "For each SKU",
+          "position": {
+            "x": 330,
+            "y": 240
+          },
+          "params": {
+            "forEachSource": "{{skuList}}",
+            "forEachItemAs": "sku",
+            "forEachIndexAs": "idx",
+            "forEachSequenceId": "seq-6-foreach-body",
+            "forEachMax": 100
+          }
+        },
+        {
+          "id": "l-loop",
+          "type": "LOOP_N",
+          "name": "Repeat 3×",
+          "position": {
+            "x": 620,
+            "y": 240
+          },
+          "params": {
+            "loopCount": "3",
+            "loopIndexAs": "i",
+            "loopSequenceId": "seq-7-loop-body",
+            "loopMax": 100
+          }
+        },
+        {
+          "id": "l-call",
+          "type": "CALL_SEQUENCE",
+          "name": "Call shared routine",
+          "position": {
+            "x": 910,
+            "y": 240
+          },
+          "params": {
+            "callSequenceId": "seq-8-shared"
+          }
+        },
+        {
+          "id": "l-wait",
+          "type": "WAIT_UNTIL",
+          "name": "Wait for ready",
+          "position": {
+            "x": 1200,
+            "y": 240
+          },
+          "params": {
+            "condLeft": "{{ready}}",
+            "condOp": "isTrue",
+            "waitTimeoutMs": 2000,
+            "waitPollMs": 250,
+            "waitOnTimeout": "continue"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e22",
+          "from": "l-list",
+          "to": "l-each",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e23",
+          "from": "l-each",
+          "to": "l-loop",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e24",
+          "from": "l-loop",
+          "to": "l-call",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e25",
+          "from": "l-call",
+          "to": "l-wait",
+          "sourceHandle": "out"
+        }
+      ]
+    },
+    {
+      "id": "seq-5-integrations",
+      "name": "5 · Integrations (DB / HTTP / Code / Script / Edge)",
+      "order": 4,
+      "steps": [
+        {
+          "id": "x-note",
+          "type": "COMMENT",
+          "name": "Needs live services",
+          "position": {
+            "x": 40,
+            "y": 40
+          },
+          "params": {
+            "commentText": "These reach out to MySQL, the network, or the Edge API. Configure connections (Database / Edge tabs) then run, or inspect for reference."
+          }
+        },
+        {
+          "id": "x-epc",
+          "type": "SET_VARIABLE",
+          "name": "Seed EPC",
+          "position": {
+            "x": 40,
+            "y": 240
+          },
+          "params": {
+            "varName": "epc",
+            "varValue": "3034F5C0000000000000012A",
+            "varType": "string"
+          }
+        },
+        {
+          "id": "x-http",
+          "type": "HTTP_REQUEST",
+          "name": "GET health",
+          "position": {
+            "x": 330,
+            "y": 240
+          },
+          "params": {
+            "httpMethod": "GET",
+            "httpUrl": "http://{{host}}:8081/health",
+            "httpHeaders": "Accept: application/json",
+            "httpSaveStatusAs": "httpStatus",
+            "httpSaveBodyAs": "httpBody",
+            "httpFailOnError": false
+          }
+        },
+        {
+          "id": "x-code",
+          "type": "CODE",
+          "name": "Compute in JS",
+          "position": {
+            "x": 620,
+            "y": 240
+          },
+          "params": {
+            "codeLanguage": "javascript",
+            "codeSource": "// Derive values from the run variables.\nconst n = Number(vars.tagCount || 0)\nreturn { doubled: n * 2, note: `epc ${vars.epc}` }"
+          }
+        },
+        {
+          "id": "x-dbq",
+          "type": "DB_QUERY",
+          "name": "Lookup inventory",
+          "position": {
+            "x": 910,
+            "y": 240
+          },
+          "params": {
+            "dbSql": "SELECT COUNT(*) AS cnt FROM inventory WHERE epc = '{{epc}}'",
+            "dbSaveAs": "invCount",
+            "dbSaveColumn": "cnt",
+            "dbSaveRowIndex": 0
+          }
+        },
+        {
+          "id": "x-dbe",
+          "type": "DB_EXEC",
+          "name": "Touch last_seen",
+          "position": {
+            "x": 1200,
+            "y": 240
+          },
+          "params": {
+            "dbSql": "UPDATE inventory SET last_seen = NOW() WHERE epc = '{{epc}}'",
+            "dbSaveAffectedAs": "rowsAffected"
+          }
+        },
+        {
+          "id": "x-script",
+          "type": "RUN_SCRIPT",
+          "name": "Run script",
+          "position": {
+            "x": 1490,
+            "y": 240
+          },
+          "params": {
+            "scriptInline": true,
+            "scriptInlineText": "Write-Output \"epc=$env:ZEUS_EPC tags=$env:ZEUS_TAGCOUNT\"",
+            "scriptArgs": "",
+            "scriptTimeoutMs": 30000,
+            "scriptSaveStdoutAs": "scriptOut",
+            "scriptFailOnNonZero": false
+          }
+        },
+        {
+          "id": "x-block",
+          "type": "EDGE_BLOCK",
+          "name": "Invoke edge block",
+          "position": {
+            "x": 1780,
+            "y": 240
+          },
+          "params": {
+            "edgeBlockName": "",
+            "edgeParams": {},
+            "edgeParamOrder": []
+          }
+        },
+        {
+          "id": "x-proc",
+          "type": "EDGE_PROCESS",
+          "name": "Start edge process",
+          "position": {
+            "x": 2070,
+            "y": 240
+          },
+          "params": {
+            "edgeProcessName": "",
+            "edgeProcessAction": "start"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e26",
+          "from": "x-note",
+          "to": "x-epc",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e27",
+          "from": "x-epc",
+          "to": "x-http",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e28",
+          "from": "x-http",
+          "to": "x-code",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e29",
+          "from": "x-code",
+          "to": "x-dbq",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e30",
+          "from": "x-dbq",
+          "to": "x-dbe",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e31",
+          "from": "x-dbe",
+          "to": "x-script",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e32",
+          "from": "x-script",
+          "to": "x-block",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e33",
+          "from": "x-block",
+          "to": "x-proc",
+          "sourceHandle": "out"
+        }
+      ]
+    },
+    {
+      "id": "seq-6-foreach-body",
+      "name": "6 · (sub) Per-item body",
+      "order": 5,
+      "steps": [
+        {
+          "id": "p-log",
+          "type": "LOG",
+          "name": "Log item",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "params": {
+            "logMessage": "item #{{idx}} → {{sku}}"
+          }
+        },
+        {
+          "id": "p-up",
+          "type": "TRANSFORM",
+          "name": "Uppercase item",
+          "position": {
+            "x": 330,
+            "y": 120
+          },
+          "params": {
+            "transformInput": "{{sku}}",
+            "transformOp": "upper",
+            "transformSaveAs": "skuUp"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e34",
+          "from": "p-log",
+          "to": "p-up",
+          "sourceHandle": "out"
+        }
+      ]
+    },
+    {
+      "id": "seq-7-loop-body",
+      "name": "7 · (sub) Loop body",
+      "order": 6,
+      "steps": [
+        {
+          "id": "q-log",
+          "type": "LOG",
+          "name": "Iteration",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "params": {
+            "logMessage": "loop iteration {{i}}"
+          }
+        }
+      ],
+      "edges": []
+    },
+    {
+      "id": "seq-8-shared",
+      "name": "8 · (sub) Shared routine",
+      "order": 7,
+      "steps": [
+        {
+          "id": "s-ready",
+          "type": "SET_VARIABLE",
+          "name": "Mark ready",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "params": {
+            "varName": "ready",
+            "varValue": "true",
+            "varType": "boolean"
+          }
+        },
+        {
+          "id": "s-toast",
+          "type": "NOTIFY",
+          "name": "Routine ran",
+          "position": {
+            "x": 330,
+            "y": 120
+          },
+          "params": {
+            "notifyMessage": "Shared routine complete",
+            "notifyLevel": "info"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e35",
+          "from": "s-ready",
+          "to": "s-toast",
+          "sourceHandle": "out"
+        }
+      ]
+    }
+  ]
+} as const
