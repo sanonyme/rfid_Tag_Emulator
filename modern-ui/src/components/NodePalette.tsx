@@ -133,6 +133,7 @@ export function NodePalette({ open, onOpenChange, onSelect }: NodePaletteProps) 
     <AnimatePresence>
       {open && (
         <motion.div
+          data-node-palette
           className="fixed inset-0 z-[200] flex items-start justify-center bg-black/40 backdrop-blur-sm p-4 pt-[10vh]"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react'
-import { motion, Reorder, useMotionValue } from 'framer-motion'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, memo, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import { motion, AnimatePresence, Reorder, useMotionValue } from 'framer-motion'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -81,6 +82,17 @@ import {
   Magnet,
   AlignHorizontalJustifyCenter,
   AlignVerticalJustifyCenter,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  CornerDownRight,
+  MoveRight,
+  Hand,
+  MousePointer2,
+  Eye,
+  EyeOff,
+  Frame,
 } from 'lucide-react'
 import { useEdgeSession } from '@/contexts/EdgeSessionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
@@ -209,6 +221,67 @@ const SELF_LOOP_DROP = 46
 
 /** Vertical offset (px, relative to node top) of the single input port. */
 const INPUT_PORT_Y = NODE_HEIGHT / 2
+
+/** How connections are drawn between nodes (user-selectable, persisted). */
+export type EdgeStyle = 'curved' | 'step' | 'straight'
+
+export const EDGE_STYLE_META: Record<EdgeStyle, { label: string; hint: string }> = {
+  curved: { label: 'Curved', hint: 'Smooth bezier curves' },
+  step: { label: 'Step', hint: 'Right-angled elbows' },
+  straight: { label: 'Straight', hint: 'Direct straight lines' },
+}
+
+const EDGE_STYLE_ORDER: EdgeStyle[] = ['curved', 'step', 'straight']
+
+/**
+ * Canvas interaction tool. `select` = left-drag rubber-band selects (default);
+ * `pan` = left-drag moves the view like a hand tool. Space / middle-mouse always
+ * pan regardless of tool.
+ */
+export type EditorTool = 'select' | 'pan'
+
+/**
+ * Compute the SVG path for a connection plus the midpoint used for its delete
+ * affordance. `curved` is a horizontal bezier; `step` is a rounded orthogonal
+ * elbow; `straight` is a direct line. Self-loops are handled separately by the
+ * caller (they always arc below the node regardless of style).
+ */
+function buildEdgeGeometry(
+  sx: number,
+  sy: number,
+  ex: number,
+  ey: number,
+  style: EdgeStyle,
+): { d: string; midX: number; midY: number } {
+  if (style === 'straight') {
+    return { d: `M${sx},${sy} L${ex},${ey}`, midX: (sx + ex) / 2, midY: (sy + ey) / 2 }
+  }
+  if (style === 'step') {
+    const midX = Math.max(sx + 30, (sx + ex) / 2)
+    if (Math.abs(ey - sy) < 1) {
+      return { d: `M${sx},${sy} L${ex},${ey}`, midX: (sx + ex) / 2, midY: sy }
+    }
+    const dir = ey >= sy ? 1 : -1
+    const r = Math.min(12, Math.abs(ey - sy) / 2, Math.abs(midX - sx), Math.abs(ex - midX))
+    if (r < 2) {
+      return {
+        d: `M${sx},${sy} L${midX},${sy} L${midX},${ey} L${ex},${ey}`,
+        midX,
+        midY: (sy + ey) / 2,
+      }
+    }
+    const d = `M${sx},${sy} L${midX - r},${sy} Q${midX},${sy} ${midX},${sy + dir * r} L${midX},${ey - dir * r} Q${midX},${ey} ${midX + r},${ey} L${ex},${ey}`
+    return { d, midX, midY: (sy + ey) / 2 }
+  }
+  // curved (default)
+  const cp1X = sx + Math.max(40, Math.abs(ex - sx) * 0.5)
+  const cp2X = ex - Math.max(40, Math.abs(ex - sx) * 0.5)
+  return {
+    d: `M${sx},${sy} C${cp1X},${sy} ${cp2X},${ey} ${ex},${ey}`,
+    midX: (sx + ex) / 2,
+    midY: (sy + ey) / 2,
+  }
+}
 
 interface NodeOutput {
   handle: string
@@ -391,6 +464,8 @@ const WorkflowNode = memo(function WorkflowNode({
   }, [pos.x, pos.y, isDragging, x, y, gdx, gdy])
 
   const handleGripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Left button only — right/middle clicks bubble up for the context menu / pan.
+    if (e.button !== 0) return
     e.stopPropagation()
     e.preventDefault()
     const grip = e.currentTarget
@@ -404,9 +479,11 @@ const WorkflowNode = memo(function WorkflowNode({
 
     onDragStart(step.id)
 
+    // No lower clamp: nodes move freely anywhere on the canvas (incl. negative
+    // coordinates), so the workspace behaves like an infinite map.
     const onMove = (ev: PointerEvent) => {
-      const nx = Math.max(0, startX + (ev.clientX - startClientX) / zoom)
-      const ny = Math.max(0, startY + (ev.clientY - startClientY) / zoom)
+      const nx = startX + (ev.clientX - startClientX) / zoom
+      const ny = startY + (ev.clientY - startClientY) / zoom
       x.set(nx)
       y.set(ny)
       onDrag(step.id, nx, ny)
@@ -417,8 +494,8 @@ const WorkflowNode = memo(function WorkflowNode({
       grip.removeEventListener('pointermove', onMove)
       grip.removeEventListener('pointerup', onUp)
       grip.removeEventListener('pointercancel', onUp)
-      const nx = Math.max(0, startX + (ev.clientX - startClientX) / zoom)
-      const ny = Math.max(0, startY + (ev.clientY - startClientY) / zoom)
+      const nx = startX + (ev.clientX - startClientX) / zoom
+      const ny = startY + (ev.clientY - startClientY) / zoom
       x.set(nx)
       y.set(ny)
       onDragEnd(step.id, nx, ny)
@@ -492,6 +569,7 @@ const WorkflowNode = memo(function WorkflowNode({
   }
 
   const outputs = getNodeOutputs(step)
+  const disabled = step.params.disabled === true
 
   // Small circular connection port. Pointer-down starts dragging a new link.
   const OutputPort = ({ handle, top, color, label }: { handle: string; top: number; color: string; label?: string }) => (
@@ -518,7 +596,7 @@ const WorkflowNode = memo(function WorkflowNode({
   return (
     <motion.div
       style={{ x, y, width: NODE_WIDTH, height: NODE_HEIGHT, transformOrigin: '0 0' }}
-      className={cn('absolute', isDragging && 'z-50 cursor-grabbing')}
+      className={cn('absolute pointer-events-auto', isDragging && 'z-50 cursor-grabbing')}
       data-node-id={step.id}
       initial={false}
       whileHover={isDragging ? undefined : { scale: 1.02 }}
@@ -552,14 +630,17 @@ const WorkflowNode = memo(function WorkflowNode({
           isDragging && 'shadow-xl ring-2 ring-primary/50',
           isSelected && !isDragging && 'ring-2 ring-primary/70 shadow-[0_0_0_2px_hsl(var(--primary)/0.15)]',
           isActive && 'ring-2 ring-green-500 shadow-[0_0_12px_rgba(34,197,94,0.25)]',
+          disabled && 'opacity-55 saturate-[0.4]',
         )}
         onPointerDown={(e) => {
+          // Left click selects; right/middle bubble up for context menu / pan.
+          if (e.button !== 0) return
           if ((e.target as HTMLElement).closest('button')) return
           e.preventDefault()
           onSelect(step.id, e.shiftKey || e.metaKey || e.ctrlKey)
         }}
         onDoubleClick={(e) => { e.stopPropagation(); onConfigure(step.id) }}
-        title="Click to select · double-click to configure"
+        title="Click to select · drag the handle to move · right-click for actions"
       >
         <div className="relative space-y-1.5">
           <div className="flex items-center gap-2">
@@ -575,6 +656,11 @@ const WorkflowNode = memo(function WorkflowNode({
             <span className="min-w-0 flex-1 truncate text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
               {style.label}
             </span>
+            {disabled && (
+              <span className="flex shrink-0 items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-muted-foreground" title="Muted — skipped at run time">
+                <EyeOff className="h-2.5 w-2.5" /> Off
+              </span>
+            )}
             {/* Actions reveal on hover so they never crowd the name */}
             {!isRunning && (
               <div className="flex items-center gap-0.5 shrink-0 opacity-0 transition-opacity group-hover/node:opacity-100 focus-within:opacity-100">
@@ -620,12 +706,21 @@ const WorkflowEdge = memo(function WorkflowEdge({
   steps,
   dragPreview,
   isRunning,
+  edgeStyle,
+  isLinking,
+  isActive,
   onDelete,
 }: {
   edge: AutomationEdge
   steps: AutomationStep[]
   dragPreview: { nodeId: string; x: number; y: number } | null
   isRunning: boolean
+  /** How connections are drawn (curved / step / straight). */
+  edgeStyle: EdgeStyle
+  /** True while a link is being dragged — edges become drop targets. */
+  isLinking: boolean
+  /** True when this edge leaves the currently-executing node (animated flow). */
+  isActive: boolean
   onDelete: (edgeId: string) => void
 }) {
   const fromStep = steps.find((s) => s.id === edge.from)
@@ -661,12 +756,13 @@ const WorkflowEdge = memo(function WorkflowEdge({
     midX = fromPos.x + NODE_WIDTH / 2
     midY = bottomY
   } else {
-    const cp1X = startX + Math.max(40, Math.abs(endX - startX) * 0.5)
-    const cp2X = endX - Math.max(40, Math.abs(endX - startX) * 0.5)
-    path = `M${startX},${startY} C${cp1X},${startY} ${cp2X},${endY} ${endX},${endY}`
-    midX = (startX + endX) / 2
-    midY = (startY + endY) / 2
+    const geo = buildEdgeGeometry(startX, startY, endX, endY, edgeStyle)
+    path = geo.d
+    midX = geo.midX
+    midY = geo.midY
   }
+  // Active non-loop edges show a flowing dash; self-loops keep their static dash.
+  const flowing = isActive && !isSelfLoop
 
   const handle = edge.sourceHandle ?? 'out'
   const branchColor = isSelfLoop
@@ -685,11 +781,18 @@ const WorkflowEdge = memo(function WorkflowEdge({
         d={path}
         fill="none"
         stroke="currentColor"
-        strokeWidth={2}
+        strokeWidth={isActive ? 3 : 2}
         strokeLinecap="round"
+        strokeLinejoin="round"
         strokeDasharray={isSelfLoop ? '5,4' : undefined}
         markerEnd="url(#wf-arrow)"
-        className={cn(branchColor, 'opacity-50 transition-opacity group-hover/edge:opacity-90')}
+        className={cn(
+          branchColor,
+          'transition-[stroke-width,opacity]',
+          flowing && 'animate-edge-flow',
+          isActive ? 'opacity-100' : isLinking ? 'opacity-80' : 'opacity-50',
+          'group-hover/edge:opacity-90',
+        )}
       >
         {isSelfLoop && <title>Self-loop — repeats this node (up to {MAX_GRAPH_STEPS.toLocaleString()}× per run)</title>}
       </path>
@@ -702,32 +805,44 @@ const WorkflowEdge = memo(function WorkflowEdge({
           className={cn(branchColor, 'opacity-70 pointer-events-none')}
         />
       )}
-      {/* Wide invisible hit area + delete-on-click (disabled while running) */}
+      {/* Wide invisible hit area. While idle it reveals the delete affordance on
+          hover; while linking it's a drop target that routes a new connection to
+          this edge's own target node ("arrow → arrow → same node"). */}
       {!isRunning && (
         <>
           <path
             d={path}
             fill="none"
             stroke="transparent"
-            strokeWidth={18}
-            className="pointer-events-auto cursor-pointer"
-            onClick={(e) => { e.stopPropagation(); onDelete(edge.id) }}
+            strokeWidth={20}
+            strokeLinecap="round"
+            data-edge-hit="true"
+            data-edge-to={edge.to}
+            className={cn('pointer-events-auto', isLinking ? 'cursor-copy' : 'cursor-default')}
           >
-            <title>Click to remove this link</title>
+            <title>
+              {isLinking
+                ? 'Drop here to connect to the same node this arrow leads to'
+                : 'Hover, then click ✕ to remove this link'}
+            </title>
           </path>
-          <g
-            className="pointer-events-auto cursor-pointer opacity-0 transition-opacity group-hover/edge:opacity-100"
-            onClick={(e) => { e.stopPropagation(); onDelete(edge.id) }}
-          >
-            <circle cx={midX} cy={midY} r={9} className="fill-red-500" />
-            <path
-              d={`M${midX - 3},${midY - 3} L${midX + 3},${midY + 3} M${midX + 3},${midY - 3} L${midX - 3},${midY + 3}`}
-              stroke="white"
-              strokeWidth={1.6}
-              strokeLinecap="round"
-            />
-            <title>Remove link</title>
-          </g>
+          {/* Explicit delete button — only this removes the link (a stray click on
+              the line no longer deletes it). Hidden while linking. */}
+          {!isLinking && (
+            <g
+              className="pointer-events-auto cursor-pointer opacity-0 transition-opacity group-hover/edge:opacity-100"
+              onClick={(e) => { e.stopPropagation(); onDelete(edge.id) }}
+            >
+              <circle cx={midX} cy={midY} r={9} className="fill-red-500" />
+              <path
+                d={`M${midX - 3},${midY - 3} L${midX + 3},${midY + 3} M${midX + 3},${midY - 3} L${midX - 3},${midY + 3}`}
+                stroke="white"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+              />
+              <title>Remove link</title>
+            </g>
+          )}
         </>
       )}
     </g>
@@ -903,6 +1018,110 @@ const VariableInspector = memo(function VariableInspector({
   )
 })
 
+/** One entry in the canvas right-click menu. */
+type CtxItem =
+  | { separator: true }
+  | {
+      separator?: false
+      label: string
+      icon?: ReactNode
+      shortcut?: string
+      onClick: () => void
+      disabled?: boolean
+      danger?: boolean
+    }
+
+/**
+ * A lightweight right-click menu rendered at the cursor via a portal. Flips to
+ * stay on-screen, and closes on outside-click, Escape, or after an action runs.
+ */
+const CanvasContextMenu = memo(function CanvasContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number
+  y: number
+  items: CtxItem[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const m = 8
+    const w = el.offsetWidth
+    const h = el.offsetHeight
+    let left = x
+    let top = y
+    if (left + w > window.innerWidth - m) left = window.innerWidth - w - m
+    if (top + h > window.innerHeight - m) top = window.innerHeight - h - m
+    setPos({ left: Math.max(m, left), top: Math.max(m, top) })
+  }, [x, y, items])
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[300]"
+      onPointerDown={onClose}
+      onContextMenu={(e) => { e.preventDefault(); onClose() }}
+      onWheel={onClose}
+    >
+      <div
+        ref={ref}
+        role="menu"
+        className="fixed min-w-[13rem] overflow-hidden rounded-lg border border-border/70 bg-popover/95 p-1 text-popover-foreground shadow-2xl backdrop-blur"
+        style={pos ? { left: pos.left, top: pos.top } : { left: x, top: y, visibility: 'hidden' }}
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        {items.map((item, i) =>
+          item.separator ? (
+            <div key={`sep-${i}`} className="my-1 h-px bg-border/60" />
+          ) : (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              disabled={item.disabled}
+              onClick={() => {
+                if (item.disabled) return
+                item.onClick()
+                onClose()
+              }}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors focus:outline-none',
+                'disabled:pointer-events-none disabled:opacity-40',
+                item.danger
+                  ? 'text-destructive hover:bg-destructive/10'
+                  : 'hover:bg-accent hover:text-accent-foreground',
+              )}
+            >
+              <span className="flex h-4 w-4 shrink-0 items-center justify-center">{item.icon}</span>
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {item.shortcut && (
+                <kbd className="shrink-0 rounded border border-border/60 bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  {item.shortcut}
+                </kbd>
+              )}
+            </button>
+          ),
+        )}
+      </div>
+    </div>,
+    document.body,
+  )
+})
+
 export function AutomationTab({
   emulator,
   handheldServer,
@@ -948,7 +1167,113 @@ export function AutomationTab({
   const [loopCount, setLoopCount] = useState<string>('1')
   const [customLoopCount, setCustomLoopCount] = useState<string>('3')
   const [runMode, setRunMode] = useState<'loops' | 'duration'>('loops')
+  /** Which sequences Start will run: all top-level, the editor's current one, or checked ones. */
+  const [sequenceRunScope, setSequenceRunScope] = useState<'all' | 'current' | 'selected'>('all')
+  const [checkedSequenceIds, setCheckedSequenceIds] = useState<Set<string>>(() => new Set())
   const [runDurationSeconds, setRunDurationSeconds] = useState<string>('300')
+  /** Top-level sequence currently executing (highlights its row in the list). */
+  const [runningSeqId, setRunningSeqId] = useState<string | null>(null)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  // --- Layout: collapsible side panels + resizable sequence list ---
+  const SEQ_PANEL_DEFAULT_WIDTH = 288
+  const SEQ_PANEL_MIN_WIDTH = 220
+  const SEQ_PANEL_MAX_WIDTH = 520
+  const EXEC_PANEL_DEFAULT_WIDTH = 340
+  const EXEC_PANEL_MIN_WIDTH = 300
+  const EXEC_PANEL_MAX_WIDTH = 640
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(() => localStorage.getItem('automation-left-open') !== '0')
+  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(() => localStorage.getItem('automation-right-open') !== '0')
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem('automation-left-width') ?? '', 10)
+    return Number.isFinite(saved) ? Math.min(SEQ_PANEL_MAX_WIDTH, Math.max(SEQ_PANEL_MIN_WIDTH, saved)) : SEQ_PANEL_DEFAULT_WIDTH
+  })
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
+    const saved = parseInt(localStorage.getItem('automation-right-width') ?? '', 10)
+    return Number.isFinite(saved) ? Math.min(EXEC_PANEL_MAX_WIDTH, Math.max(EXEC_PANEL_MIN_WIDTH, saved)) : EXEC_PANEL_DEFAULT_WIDTH
+  })
+  const [isResizingLeft, setIsResizingLeft] = useState(false)
+  const [isResizingRight, setIsResizingRight] = useState(false)
+  // How connections are drawn on the canvas (persisted).
+  const [edgeStyle, setEdgeStyle] = useState<EdgeStyle>(() => {
+    const saved = localStorage.getItem('automation-edge-style')
+    return saved === 'step' || saved === 'straight' || saved === 'curved' ? saved : 'curved'
+  })
+  // Active canvas tool (persisted). Mirrored to a ref for the pointer handlers.
+  const [tool, setTool] = useState<EditorTool>(() =>
+    localStorage.getItem('automation-tool') === 'pan' ? 'pan' : 'select',
+  )
+  const toolRef = useRef(tool); toolRef.current = tool
+
+  useEffect(() => { localStorage.setItem('automation-left-open', leftPanelOpen ? '1' : '0') }, [leftPanelOpen])
+  useEffect(() => { localStorage.setItem('automation-right-open', rightPanelOpen ? '1' : '0') }, [rightPanelOpen])
+  useEffect(() => { localStorage.setItem('automation-left-width', String(leftPanelWidth)) }, [leftPanelWidth])
+  useEffect(() => { localStorage.setItem('automation-right-width', String(rightPanelWidth)) }, [rightPanelWidth])
+  useEffect(() => { localStorage.setItem('automation-edge-style', edgeStyle) }, [edgeStyle])
+  useEffect(() => { localStorage.setItem('automation-tool', tool) }, [tool])
+
+  const cycleEdgeStyle = useCallback(() => {
+    setEdgeStyle((prev) => {
+      const idx = EDGE_STYLE_ORDER.indexOf(prev)
+      return EDGE_STYLE_ORDER[(idx + 1) % EDGE_STYLE_ORDER.length]
+    })
+  }, [])
+
+  const handleLeftResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = leftPanelWidth
+    setIsResizingLeft(true)
+    const onMove = (ev: PointerEvent) => {
+      setLeftPanelWidth(Math.min(SEQ_PANEL_MAX_WIDTH, Math.max(SEQ_PANEL_MIN_WIDTH, startWidth + (ev.clientX - startX))))
+    }
+    const onUp = () => {
+      setIsResizingLeft(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [leftPanelWidth])
+
+  const handleRightResizeStart = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = rightPanelWidth
+    setIsResizingRight(true)
+    // Dragging the handle left widens the panel (it's docked on the right edge).
+    const onMove = (ev: PointerEvent) => {
+      setRightPanelWidth(Math.min(EXEC_PANEL_MAX_WIDTH, Math.max(EXEC_PANEL_MIN_WIDTH, startWidth + (startX - ev.clientX))))
+    }
+    const onUp = () => {
+      setIsResizingRight(false)
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+    }
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+  }, [rightPanelWidth])
+
+  // Toggle panels with [ / ], open node palette with Tab — only while this tab
+  // is visible and the user isn't typing in a field / dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.key !== '[' && e.key !== ']' && e.key !== 'Tab') return
+      if (!rootRef.current || rootRef.current.offsetParent === null) return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      // Let Tab/keys work normally inside open dialogs / menus / the node palette.
+      if (t?.closest('[role="dialog"], [data-radix-popper-content-wrapper], [data-node-palette]')) return
+      e.preventDefault()
+      if (e.key === '[') setLeftPanelOpen(o => !o)
+      else if (e.key === ']') setRightPanelOpen(o => !o)
+      else setPaletteOpen(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
   const [log, setLog] = useState<string[]>([])
   const [logExpandedOpen, setLogExpandedOpen] = useState(false)
   const [logCopied, setLogCopied] = useState(false)
@@ -985,6 +1310,16 @@ export function AutomationTab({
     if (selectedSequenceId && !sortedSeqs.find(s => s.id === selectedSequenceId)) {
       setSelectedSequenceId(sortedSeqs[0]?.id ?? null)
     }
+    setCheckedSequenceIds(prev => {
+      const valid = new Set(sortedSeqs.map(s => s.id))
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (valid.has(id)) next.add(id)
+        else changed = true
+      }
+      return changed ? next : prev
+    })
   }, [sortedSeqs, selectedSequenceId])
 
   const addLog = useCallback((msg: string) => {
@@ -993,9 +1328,11 @@ export function AutomationTab({
   }, [])
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // `block: 'nearest'` keeps the scroll contained to the log's own viewport so
+    // appending a line never nudges the surrounding panel/page layout.
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     if (logExpandedOpen) {
-      logExpandEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      logExpandEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
   }, [log, logExpandedOpen])
 
@@ -1115,6 +1452,19 @@ export function AutomationTab({
   const snapToGridRef = useRef(snapToGrid); snapToGridRef.current = snapToGrid
   const marqueeStartRef = useRef<{ x: number; y: number } | null>(null)
   const marqueeRectRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
+  // Marquee that started with a modifier adds to (rather than replaces) the
+  // existing selection; `base` is the selection snapshot at drag start.
+  const marqueeAdditiveRef = useRef(false)
+  const marqueeBaseRef = useRef<Set<string>>(new Set())
+  // Space-held (with the canvas focused) or middle-mouse drag pans; plain
+  // left-drag now rubber-band selects.
+  const spaceHeldRef = useRef(false)
+  const [spacePan, setSpacePan] = useState(false)
+  // Right-click context menu (screen coords + the node it targets, if any).
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; nodeId: string | null } | null>(null)
+  // When set, the next node added via the palette drops at this content position
+  // (used by the canvas right-click → "Add node" action).
+  const paletteAddPosRef = useRef<{ x: number; y: number } | null>(null)
 
   // --- Manual linking (drag from an output port to a target node) ---
   const [linking, setLinking] = useState<{ from: string; handle: string } | null>(null)
@@ -1188,8 +1538,9 @@ export function AutomationTab({
 
     const doSnap = snapToGridRef.current
     const snapV = (v: number) => (doSnap ? Math.round(v / GRID_SIZE) * GRID_SIZE : v)
-    const newX = Math.max(0, snapV(rawX))
-    const newY = Math.max(0, snapV(rawY))
+    // No clamping — nodes can live anywhere (including negative coordinates).
+    const newX = snapV(rawX)
+    const newY = snapV(rawY)
     const start = stepPosRef.current.get(nodeId) ?? { x: newX, y: newY }
     const dx = newX - start.x
     const dy = newY - start.y
@@ -1204,7 +1555,7 @@ export function AutomationTab({
         const base = s.position ?? { x: 0, y: 0 }
         if (s.id === nodeId) return { ...s, position: { x: newX, y: newY } }
         if (groupMove && sel.has(s.id)) {
-          return { ...s, position: { x: Math.max(0, base.x + dx), y: Math.max(0, base.y + dy) } }
+          return { ...s, position: { x: base.x + dx, y: base.y + dy } }
         }
         return { ...s, position: base }
       }),
@@ -1229,6 +1580,30 @@ export function AutomationTab({
   }, [])
 
   const handleSelectAll = useCallback(() => setSelectedIds(new Set(steps.map((s) => s.id))), [steps])
+
+  // Nudge the current selection by (dx, dy) content px (arrow keys).
+  const nudgeSelected = useCallback((dx: number, dy: number) => {
+    if (isRunning || !selectedSequenceId) return
+    const ids = selectedIdsRef.current
+    if (ids.size === 0) return
+    updateStepsForSequence(selectedSequenceId, (prev) =>
+      prev.map((s) => {
+        if (!ids.has(s.id)) return s
+        const base = s.position ?? { x: 0, y: 0 }
+        return { ...s, position: { x: base.x + dx, y: base.y + dy } }
+      }),
+    )
+  }, [isRunning, selectedSequenceId, updateStepsForSequence])
+
+  // Mute / un-mute the current selection (disabled nodes are skipped at run time).
+  const setDisabledForSelected = useCallback((disabled: boolean) => {
+    if (isRunning || !selectedSequenceId) return
+    const ids = selectedIdsRef.current
+    if (ids.size === 0) return
+    updateStepsForSequence(selectedSequenceId, (prev) =>
+      prev.map((s) => (ids.has(s.id) ? { ...s, params: { ...s.params, disabled } } : s)),
+    )
+  }, [isRunning, selectedSequenceId, updateStepsForSequence])
 
   // --- Undo / redo (observes the selected sequence's steps + edges) ------
   type SeqSnapshot = { steps: AutomationStep[]; edges: AutomationEdge[] }
@@ -1320,7 +1695,7 @@ export function AutomationTab({
     setSelectedIds(new Set())
   }, [isRunning, selectedSequenceId, setSequences, selectedStepId])
 
-  const insertClones = useCallback((srcSteps: AutomationStep[], srcEdges: AutomationEdge[], offset: number) => {
+  const insertClones = useCallback((srcSteps: AutomationStep[], srcEdges: AutomationEdge[], dx: number, dy: number) => {
     if (!selectedSequenceId || srcSteps.length === 0) return
     const idMap = new Map<string, string>()
     const clones: AutomationStep[] = srcSteps.map((s) => {
@@ -1331,7 +1706,7 @@ export function AutomationTab({
         ...s,
         id: nid,
         params: JSON.parse(JSON.stringify(s.params)),
-        position: { x: base.x + offset, y: base.y + offset },
+        position: { x: base.x + dx, y: base.y + dy },
       }
     })
     const clonedEdges: AutomationEdge[] = srcEdges
@@ -1355,6 +1730,7 @@ export function AutomationTab({
       steps.filter((s) => ids.has(s.id)),
       edges.filter((e) => ids.has(e.from) && ids.has(e.to)),
       PASTE_OFFSET,
+      PASTE_OFFSET,
     )
   }, [isRunning, steps, edges, insertClones])
 
@@ -1368,11 +1744,18 @@ export function AutomationTab({
     toast.success(`Copied ${ids.size} node${ids.size !== 1 ? 's' : ''}`)
   }, [steps, edges])
 
-  const handlePasteNodes = useCallback(() => {
+  const handlePasteNodes = useCallback((at?: { x: number; y: number }) => {
     if (isRunning) return
     const clip = clipboardRef.current
     if (!clip || clip.steps.length === 0) return
-    insertClones(clip.steps, clip.edges, PASTE_OFFSET)
+    if (at) {
+      // Land the pasted group's top-left corner at the cursor.
+      const minX = Math.min(...clip.steps.map((s) => s.position?.x ?? 0))
+      const minY = Math.min(...clip.steps.map((s) => s.position?.y ?? 0))
+      insertClones(clip.steps, clip.edges, at.x - minX, at.y - minY)
+    } else {
+      insertClones(clip.steps, clip.edges, PASTE_OFFSET, PASTE_OFFSET)
+    }
   }, [isRunning, insertClones])
 
   // --- Alignment ----------------------------------------------------------
@@ -1401,18 +1784,19 @@ export function AutomationTab({
   }, [isRunning, selectedSequenceId, steps, updateStepsForSequence])
 
   // --- Fit to view --------------------------------------------------------
-  const handleFitView = useCallback(() => {
+  /** Pan/zoom so the given nodes fill the viewport (empty list = reset to 100%). */
+  const fitToNodes = useCallback((list: AutomationStep[]) => {
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
-    if (steps.length === 0) {
+    if (list.length === 0) {
       setCanvasZoom(1)
       setCanvasPan({ x: 0, y: 0 })
       return
     }
-    const minX = Math.min(...steps.map((s) => s.position?.x ?? 0))
-    const minY = Math.min(...steps.map((s) => s.position?.y ?? 0))
-    const maxX = Math.max(...steps.map((s) => (s.position?.x ?? 0) + NODE_WIDTH))
-    const maxY = Math.max(...steps.map((s) => (s.position?.y ?? 0) + NODE_HEIGHT))
+    const minX = Math.min(...list.map((s) => s.position?.x ?? 0))
+    const minY = Math.min(...list.map((s) => s.position?.y ?? 0))
+    const maxX = Math.max(...list.map((s) => (s.position?.x ?? 0) + NODE_WIDTH))
+    const maxY = Math.max(...list.map((s) => (s.position?.y ?? 0) + NODE_HEIGHT))
     const pad = 60
     const w = maxX - minX + pad * 2
     const h = maxY - minY + pad * 2
@@ -1422,7 +1806,13 @@ export function AutomationTab({
       x: rect.width / 2 - (minX + (maxX - minX) / 2) * zoom,
       y: rect.height / 2 - (minY + (maxY - minY) / 2) * zoom,
     })
-  }, [steps])
+  }, [])
+
+  const handleFitView = useCallback(() => fitToNodes(steps), [fitToNodes, steps])
+  const handleZoomToSelection = useCallback(() => {
+    const sel = steps.filter((s) => selectedIdsRef.current.has(s.id))
+    fitToNodes(sel.length > 0 ? sel : steps)
+  }, [fitToNodes, steps])
 
   /** Convert a client (screen) point to canvas content coordinates. */
   const clientToContent = useCallback((clientX: number, clientY: number) => {
@@ -1449,9 +1839,17 @@ export function AutomationTab({
     const onMove = (ev: PointerEvent) => setLinkCursor(clientToContent(ev.clientX, ev.clientY))
     const onUp = (ev: PointerEvent) => {
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+      // Prefer dropping on a node; otherwise, dropping on an existing arrow routes
+      // the new connection to that arrow's own target node (arrow → arrow).
       const targetNode = el?.closest('[data-node-id]') as HTMLElement | null
       const targetId = targetNode?.getAttribute('data-node-id')
-      if (targetId) addEdge(linking.from, targetId, linking.handle)
+      if (targetId) {
+        addEdge(linking.from, targetId, linking.handle)
+      } else {
+        const edgeEl = el?.closest('[data-edge-to]') as HTMLElement | null
+        const edgeTo = edgeEl?.getAttribute('data-edge-to')
+        if (edgeTo) addEdge(linking.from, edgeTo, linking.handle)
+      }
       setLinking(null)
       setLinkCursor(null)
     }
@@ -1470,10 +1868,16 @@ export function AutomationTab({
       toast.error('Select a sequence first')
       return
     }
+    // If the palette was opened from a canvas right-click, drop the node there
+    // (centred on the cursor); otherwise place it to the right of the last node.
+    const at = paletteAddPosRef.current
+    paletteAddPosRef.current = null
     const last = steps[steps.length - 1]
-    const newPosition = last?.position
-      ? { x: last.position!.x + NODE_WIDTH + 70, y: last.position!.y }
-      : { x: 50, y: 100 }
+    const newPosition = at
+      ? { x: Math.round(at.x - NODE_WIDTH / 2), y: Math.round(at.y - NODE_HEIGHT / 2) }
+      : last?.position
+        ? { x: last.position!.x + NODE_WIDTH + 70, y: last.position!.y }
+        : { x: 50, y: 100 }
 
     const params = defaultParamsForType(type, { customPort })
     if (type === 'EDGE_BLOCK') {
@@ -1639,20 +2043,65 @@ export function AutomationTab({
   }
 
   const handleCanvasPanStart = useCallback((e: React.MouseEvent) => {
-    if (!(e.target as HTMLElement).hasAttribute('data-pan-background')) return
-    canvasRef.current?.focus()
-    // Shift + drag on empty canvas draws a marquee selection; a plain drag pans
-    // and clears the current selection.
-    if (e.shiftKey) {
-      const p = clientToContent(e.clientX, e.clientY)
-      marqueeStartRef.current = p
-      marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
-      setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
-    } else {
-      setSelectedIds(new Set())
+    const onBackground = (e.target as HTMLElement).hasAttribute('data-pan-background')
+    // Middle-mouse or Space+left-drag always pans (even over a node). In Pan tool
+    // mode, a plain left-drag on empty canvas pans too (Shift+drag still marquees).
+    const forcePan = e.button === 1 || (e.button === 0 && spaceHeldRef.current)
+    const toolPan = e.button === 0 && onBackground && toolRef.current === 'pan' && !e.shiftKey
+    if (forcePan || toolPan) {
+      e.preventDefault()
+      canvasRef.current?.focus()
       panStartRef.current = { x: e.clientX, y: e.clientY, startPanX: canvasPan.x, startPanY: canvasPan.y }
+      return
     }
+    // Otherwise a left-press on empty canvas starts a rubber-band selection.
+    if (e.button !== 0 || !onBackground) return
+    canvasRef.current?.focus()
+    // Shift/Ctrl/Cmd extends the current selection (Select tool only); in Pan tool,
+    // Shift+drag marquees a fresh selection.
+    const additive = toolRef.current === 'select' && (e.shiftKey || e.ctrlKey || e.metaKey)
+    marqueeAdditiveRef.current = additive
+    marqueeBaseRef.current = additive ? new Set(selectedIdsRef.current) : new Set()
+    if (!additive) setSelectedIds(new Set())
+    const p = clientToContent(e.clientX, e.clientY)
+    marqueeStartRef.current = p
+    marqueeRectRef.current = { x0: p.x, y0: p.y, x1: p.x, y1: p.y }
+    setMarquee({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
   }, [canvasPan, clientToContent])
+
+  // Right-click anywhere on the canvas opens a context menu. Right-clicking a
+  // node that isn't part of the current selection selects it first, so menu
+  // actions target what you clicked; right-clicking within a multi-selection
+  // keeps that selection so actions apply to the whole group.
+  const handleCanvasContextMenu = useCallback((e: React.MouseEvent) => {
+    const nodeEl = (e.target as HTMLElement).closest('[data-node-id]') as HTMLElement | null
+    const nodeId = nodeEl?.getAttribute('data-node-id') ?? null
+    if (nodeId && !selectedIdsRef.current.has(nodeId)) setSelectedIds(new Set([nodeId]))
+    e.preventDefault()
+    setCtxMenu({ x: e.clientX, y: e.clientY, nodeId })
+  }, [])
+
+  // Track Space (while the canvas is focused) to switch left-drag into panning.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || e.repeat) return
+      if (document.activeElement !== canvasRef.current) return
+      e.preventDefault()
+      spaceHeldRef.current = true
+      setSpacePan(true)
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== 'Space') return
+      spaceHeldRef.current = false
+      setSpacePan(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [])
 
   const handleCanvasWheel = useCallback((e: React.WheelEvent) => {
     if (!canvasRef.current?.contains(e.target as Node)) return
@@ -1673,9 +2122,21 @@ export function AutomationTab({
     }
     const mod = e.ctrlKey || e.metaKey
     const k = e.key.toLowerCase()
-    if (e.key === 'Escape') { setSelectedIds(new Set()); return }
-    if (k === 'f' && !mod) { e.preventDefault(); handleFitView(); return }
+    if (e.key === 'Escape') { setSelectedIds(new Set()); setCtxMenu(null); return }
+    if (k === 'v' && !mod) { e.preventDefault(); setTool('select'); return }
+    if (k === 'h' && !mod) { e.preventDefault(); setTool('pan'); return }
+    if (k === 'f' && !mod) { e.preventDefault(); e.shiftKey ? handleZoomToSelection() : handleFitView(); return }
     if (e.key === 'Tab') { e.preventDefault(); setPaletteOpen(true); return }
+    // Arrow keys nudge the selection (Shift = 1px fine; grid-aware otherwise).
+    if (e.key.startsWith('Arrow')) {
+      if (selectedIdsRef.current.size === 0) return
+      e.preventDefault()
+      const step = e.shiftKey ? 1 : (snapToGridRef.current ? GRID_SIZE : 10)
+      const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+      const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+      if (dx || dy) nudgeSelected(dx, dy)
+      return
+    }
     if (mod && k === 'a') { e.preventDefault(); handleSelectAll(); return }
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? handleRedo() : handleUndo(); return }
     if (mod && k === 'y') { e.preventDefault(); handleRedo(); return }
@@ -1689,19 +2150,20 @@ export function AutomationTab({
   }
 
   useEffect(() => {
+    // Compute which nodes fall inside the current marquee, unioned with the
+    // selection snapshot taken at drag start when the drag was additive.
+    const selectionForRect = (r: { x0: number; y0: number; x1: number; y1: number }) => {
+      const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1)
+      const y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1)
+      const hit = new Set<string>(marqueeAdditiveRef.current ? marqueeBaseRef.current : [])
+      for (const [id, p] of stepPosRef.current) {
+        if (p.x < x1 && p.x + NODE_WIDTH > x0 && p.y < y1 && p.y + NODE_HEIGHT > y0) hit.add(id)
+      }
+      return hit
+    }
     const onMouseUp = () => {
       if (marqueeStartRef.current && marqueeRectRef.current) {
-        const r = marqueeRectRef.current
-        const x0 = Math.min(r.x0, r.x1), x1 = Math.max(r.x0, r.x1)
-        const y0 = Math.min(r.y0, r.y1), y1 = Math.max(r.y0, r.y1)
-        // Ignore tiny drags (treated as a click that just clears selection).
-        if (Math.abs(x1 - x0) > 4 || Math.abs(y1 - y0) > 4) {
-          const hit = new Set<string>()
-          for (const [id, p] of stepPosRef.current) {
-            if (p.x < x1 && p.x + NODE_WIDTH > x0 && p.y < y1 && p.y + NODE_HEIGHT > y0) hit.add(id)
-          }
-          setSelectedIds(hit)
-        }
+        setSelectedIds(selectionForRect(marqueeRectRef.current))
       }
       panStartRef.current = null
       marqueeStartRef.current = null
@@ -1719,6 +2181,8 @@ export function AutomationTab({
         const rect = { x0: marqueeStartRef.current.x, y0: marqueeStartRef.current.y, x1: p.x, y1: p.y }
         marqueeRectRef.current = rect
         setMarquee(rect)
+        // Live highlight: update the selection as the box sweeps over nodes.
+        setSelectedIds(selectionForRect(rect))
       }
     }
     window.addEventListener('mouseup', onMouseUp)
@@ -2117,6 +2581,15 @@ export function AutomationTab({
           break
         }
         setCurrentRunningStepId(current.id)
+        // Disabled (muted) node: skip its action and pass straight through to its
+        // first (non-self) outgoing edge, whatever the handle. Keeps the flow intact
+        // without a muted self-loop spinning against the step guard.
+        if (current.params.disabled) {
+          addLog(`⃠ Skipped disabled node "${current.name}"`)
+          const passEdge = seqEdges.find((e) => e.from === current!.id && e.to !== current!.id)
+          current = passEdge ? byId.get(passEdge.to) ?? null : null
+          continue
+        }
         let handle = 'out'
         if (current.type === 'CONDITION') {
           const pass = evaluateCondition(current.params, runVarsRef.current)
@@ -2247,16 +2720,67 @@ export function AutomationTab({
     }
   }
 
-  const handleRun = async () => {
-    const allSteps = sortedSeqs.flatMap(s => s.steps)
-    if (allSteps.length === 0) {
-      toast.error('Add steps to sequences first')
+  const resolveTopLevelSequences = useCallback((all: AutomationSequence[]): AutomationSequence[] => {
+    // Sequences used purely as sub-routines (targets of Call Sequence / For Each / Loop N)
+    // don't auto-run at the top level — they run only when called. If that would leave
+    // nothing to run (e.g. mutually-calling sequences), fall back to running them all.
+    const calledIds = new Set<string>()
+    for (const s of all) {
+      for (const st of s.steps) {
+        if (st.type === 'CALL_SEQUENCE' && st.params.callSequenceId) calledIds.add(st.params.callSequenceId)
+        if (st.type === 'FOR_EACH' && st.params.forEachSequenceId) calledIds.add(st.params.forEachSequenceId)
+        if (st.type === 'LOOP_N' && st.params.loopSequenceId) calledIds.add(st.params.loopSequenceId)
+      }
+    }
+    const topLevelSeqs = all.filter(s => !calledIds.has(s.id))
+    return topLevelSeqs.length > 0 ? topLevelSeqs : all
+  }, [])
+
+  /** Start automation. Pass `onlyIds` to run specific sequence(s) regardless of the scope selector. */
+  const handleRun = async (onlyIds?: string[]) => {
+    let runnableSeqs: AutomationSequence[]
+    if (onlyIds && onlyIds.length > 0) {
+      const idSet = new Set(onlyIds)
+      runnableSeqs = sortedSeqs.filter(s => idSet.has(s.id))
+    } else if (sequenceRunScope === 'current') {
+      if (!selectedSequenceId) {
+        toast.error('Select a sequence first')
+        return
+      }
+      runnableSeqs = sortedSeqs.filter(s => s.id === selectedSequenceId)
+    } else if (sequenceRunScope === 'selected') {
+      if (checkedSequenceIds.size === 0) {
+        toast.error('Check one or more sequences to run')
+        return
+      }
+      runnableSeqs = sortedSeqs.filter(s => checkedSequenceIds.has(s.id))
+    } else {
+      runnableSeqs = resolveTopLevelSequences(sortedSeqs)
+    }
+
+    const stepsToRun = runnableSeqs.flatMap(s => s.steps)
+    if (runnableSeqs.length === 0) {
+      toast.error('No sequences to run')
+      return
+    }
+    if (stepsToRun.length === 0) {
+      toast.error('Add steps to the selected sequences first')
       return
     }
 
+    const scopeLabel = onlyIds
+      ? (onlyIds.length === 1
+          ? `sequence "${runnableSeqs[0]?.name ?? onlyIds[0]}"`
+          : `${onlyIds.length} sequences`)
+      : sequenceRunScope === 'current'
+        ? `current sequence "${runnableSeqs[0]?.name ?? ''}"`
+        : sequenceRunScope === 'selected'
+          ? `${runnableSeqs.length} selected sequence${runnableSeqs.length === 1 ? '' : 's'}`
+          : `${runnableSeqs.length} top-level sequence${runnableSeqs.length === 1 ? '' : 's'}`
+
     setIsRunning(true)
     setLog([])
-    addLog('Starting automation...')
+    addLog(`Starting automation (${scopeLabel})...`)
     runVarsRef.current = createRunContext({
       host,
       alePort,
@@ -2272,22 +2796,14 @@ export function AutomationTab({
     const durationSec = Math.max(1, parseInt(runDurationSeconds) || 300)
     const endTime = useDuration ? Date.now() + durationSec * 1000 : 0
 
-    const loops = useDuration ? Infinity : (loopCount === 'Inf' ? Infinity : parseInt(loopCount) || 1)
+    const loops = useDuration
+      ? Infinity
+      : loopCount === 'Inf'
+        ? Infinity
+        : loopCount === 'custom'
+          ? Math.max(1, parseInt(customLoopCount) || 1)
+          : parseInt(loopCount) || 1
     let loopNum = 0
-
-    // Sequences used purely as sub-routines (targets of a Call Sequence node) don't
-    // auto-run at the top level — they run only when called. If that would leave
-    // nothing to run (e.g. mutually-calling sequences), fall back to running them all.
-    const calledIds = new Set<string>()
-    for (const s of sortedSeqs) {
-      for (const st of s.steps) {
-        if (st.type === 'CALL_SEQUENCE' && st.params.callSequenceId) calledIds.add(st.params.callSequenceId)
-        if (st.type === 'FOR_EACH' && st.params.forEachSequenceId) calledIds.add(st.params.forEachSequenceId)
-        if (st.type === 'LOOP_N' && st.params.loopSequenceId) calledIds.add(st.params.loopSequenceId)
-      }
-    }
-    const topLevelSeqs = sortedSeqs.filter(s => !calledIds.has(s.id))
-    const runnableSeqs = topLevelSeqs.length > 0 ? topLevelSeqs : sortedSeqs
 
     try {
       for (let i = 0; i < loops; i++) {
@@ -2305,6 +2821,7 @@ export function AutomationTab({
           if (seq.steps.length === 0) continue
           addLog(`▶ Sequence ${seqIdx + 1}: ${seq.name}`)
           setCurrentSequenceIndex(seqIdx)
+          setRunningSeqId(seq.id)
           await runSequenceGraph(seq, signal)
         }
       }
@@ -2322,8 +2839,18 @@ export function AutomationTab({
       setIsRunning(false)
       setCurrentSequenceIndex(null)
       setCurrentRunningStepId(null)
+      setRunningSeqId(null)
       abortControllerRef.current = null
     }
+  }
+
+  const toggleSequenceChecked = (seqId: string) => {
+    setCheckedSequenceIds(prev => {
+      const next = new Set(prev)
+      if (next.has(seqId)) next.delete(seqId)
+      else next.add(seqId)
+      return next
+    })
   }
 
   const handleStop = () => {
@@ -2388,29 +2915,78 @@ export function AutomationTab({
     toast.success(`Loaded ${normalized.length} demo sequence(s) — press ▶ Start on “1 · Basics”`)
   }
 
-  const [paletteOpen, setPaletteOpen] = useState(false)
-
   return (
-    <div className="stagger-children h-full flex flex-col gap-0 overflow-hidden">
+    <div ref={rootRef} className="stagger-children h-full flex flex-col gap-0 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/50">
-        <div className="flex items-center gap-3">
-          <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/40">
-            ACTIVE
-          </span>
+      <div className="relative flex items-center justify-between px-4 py-3 border-b border-border/50 bg-card/50">
+        <div className="flex items-center gap-2">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLeftPanelOpen(o => !o)}>
+                {leftPanelOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{leftPanelOpen ? 'Hide sequences' : 'Show sequences'} <kbd className="ml-1 rounded border border-border px-1 text-[10px]">[</kbd></TooltipContent>
+          </Tooltip>
+          {isRunning ? (
+            <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary/15 text-primary border border-primary/40">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              </span>
+              RUNNING
+            </span>
+          ) : (
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/40">
+              READY
+            </span>
+          )}
           <span className="font-semibold text-sm tracking-wide text-muted-foreground">WORKFLOW BUILDER</span>
         </div>
-        <Button size="sm" onClick={() => setPaletteOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          ADD NODE
-          <kbd className="ml-2 hidden rounded border border-primary-foreground/30 px-1 text-[10px] font-medium sm:inline">Tab</kbd>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => setPaletteOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            ADD NODE
+            <kbd className="ml-2 hidden rounded border border-primary-foreground/30 px-1 text-[10px] font-medium sm:inline">Tab</kbd>
+          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setRightPanelOpen(o => !o)}>
+                {rightPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{rightPanelOpen ? 'Hide execution' : 'Show execution'} <kbd className="ml-1 rounded border border-border px-1 text-[10px]">]</kbd></TooltipContent>
+          </Tooltip>
+        </div>
+        {/* Indeterminate progress while running */}
+        <AnimatePresence>
+          {isRunning && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-x-0 -bottom-px h-0.5 overflow-hidden"
+            >
+              <div className="h-full w-1/4 animate-run-bar rounded-full bg-gradient-to-r from-transparent via-primary to-transparent" />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Main: Sequence list + Canvas + Execution */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
         {/* Sequence list (left) */}
-        <div className="w-72 shrink-0 flex flex-col border-r border-border/50 bg-card/50 min-w-0" data-tour="tour-automation-sequences">
+        <motion.div
+          className={cn(
+            'shrink-0 flex flex-col bg-card/50 overflow-hidden',
+            leftPanelOpen && 'border-r border-border/50',
+          )}
+          data-tour="tour-automation-sequences"
+          initial={false}
+          animate={{ width: leftPanelOpen ? leftPanelWidth : 0, opacity: leftPanelOpen ? 1 : 0 }}
+          transition={isResizingLeft ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
+        >
+          <div className="flex h-full min-h-0 flex-col" style={{ width: leftPanelWidth }}>
           <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between gap-1">
             <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <ListOrdered className="h-3.5 w-3.5" /> Sequences
@@ -2478,13 +3054,33 @@ export function AutomationTab({
                       className="cursor-grab active:cursor-grabbing relative"
                     >
                       <div
-                        className={`group flex items-center gap-1.5 rounded-lg px-2.5 py-2 cursor-pointer transition-colors min-w-0 ${
-                          selectedSequenceId === seq.id ? 'bg-primary/15 text-primary border border-primary/30' : 'hover:bg-muted/60'
-                        }`}
+                        className={cn(
+                          'group flex items-center gap-1.5 rounded-lg px-2.5 py-2 cursor-pointer transition-all duration-200 min-w-0',
+                          selectedSequenceId === seq.id ? 'bg-primary/15 text-primary border border-primary/30' : 'hover:bg-muted/60 hover:translate-x-0.5',
+                          runningSeqId === seq.id && 'ring-1 ring-primary/60 shadow-[0_0_12px_hsl(var(--primary)/0.25)]',
+                        )}
                         onClick={() => { if (editingSeqId !== seq.id) setSelectedSequenceId(seq.id) }}
                         onDoubleClick={() => startRenameSequence(seq)}
                       >
                         <GripVertical className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className={`h-4 w-4 shrink-0 rounded border flex items-center justify-center focus:outline-none select-none ${
+                                checkedSequenceIds.has(seq.id)
+                                  ? 'bg-primary border-primary text-primary-foreground'
+                                  : 'border-muted-foreground/40 hover:border-primary/60'
+                              }`}
+                              aria-label={checkedSequenceIds.has(seq.id) ? 'Uncheck sequence' : 'Check sequence for run'}
+                              aria-pressed={checkedSequenceIds.has(seq.id)}
+                              onClick={(e) => { e.stopPropagation(); toggleSequenceChecked(seq.id) }}
+                            >
+                              {checkedSequenceIds.has(seq.id) && <Check className="h-2.5 w-2.5" />}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right">Include in Selected run</TooltipContent>
+                        </Tooltip>
                         <span className="text-xs font-medium shrink-0 w-5">{idx + 1}.</span>
                         {editingSeqId === seq.id ? (
                           <Input
@@ -2502,8 +3098,28 @@ export function AutomationTab({
                         ) : (
                           <span className="flex-1 min-w-0 truncate text-sm font-medium">{seq.name}</span>
                         )}
-                        <span className="text-[10px] text-muted-foreground shrink-0">{seq.steps.length}</span>
+                        {runningSeqId === seq.id ? (
+                          <span className="relative flex h-2 w-2 shrink-0" title="Running">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground shrink-0">{seq.steps.length}</span>
+                        )}
                         <div className={`flex gap-0.5 shrink-0 transition-opacity ${selectedSequenceId === seq.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                className="p-0.5 rounded hover:bg-muted focus:outline-none select-none disabled:opacity-40"
+                                disabled={isRunning || seq.steps.length === 0}
+                                onClick={(e) => { e.stopPropagation(); void handleRun([seq.id]) }}
+                              >
+                                <Play className="h-3 w-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="right">Run this sequence only</TooltipContent>
+                          </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
@@ -2566,12 +3182,61 @@ export function AutomationTab({
               )}
             </div>
           </div>
-        </div>
+          </div>
+        </motion.div>
+
+        {/* Resize handle for the sequence panel (drag to resize, double-click to reset) */}
+        {leftPanelOpen && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sequence panel"
+            className={cn(
+              'group/resize relative z-10 -ml-0.5 w-1.5 shrink-0 cursor-col-resize select-none',
+              isResizingLeft && 'bg-primary/40',
+            )}
+            onPointerDown={handleLeftResizeStart}
+            onDoubleClick={() => setLeftPanelWidth(SEQ_PANEL_DEFAULT_WIDTH)}
+          >
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover/resize:bg-primary/50" />
+          </div>
+        )}
 
         {/* Workflow Canvas */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden relative">
           {/* Editor toolbar (top-left) */}
           <div className="absolute top-3 left-3 z-10 flex flex-wrap items-center gap-1">
+            {/* Tool: Select vs Pan (hand) */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={tool === 'select' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    className={cn('h-7 w-7', tool === 'select' && 'text-primary')}
+                    onClick={() => setTool('select')}
+                    aria-pressed={tool === 'select'}
+                  >
+                    <MousePointer2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Select tool — drag to rubber-band select <kbd className="ml-1 rounded border border-border px-1 text-[10px]">V</kbd></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={tool === 'pan' ? 'secondary' : 'ghost'}
+                    size="icon"
+                    className={cn('h-7 w-7', tool === 'pan' && 'text-primary')}
+                    onClick={() => setTool('pan')}
+                    aria-pressed={tool === 'pan'}
+                  >
+                    <Hand className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Pan tool — drag to move the canvas <kbd className="ml-1 rounded border border-border px-1 text-[10px]">H</kbd></TooltipContent>
+              </Tooltip>
+            </div>
             <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -2632,6 +3297,18 @@ export function AutomationTab({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom">Fit to view (F)</TooltipContent>
+              </Tooltip>
+            </div>
+            {/* Connection style — cycle curved → step → straight */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2" onClick={cycleEdgeStyle}>
+                    {edgeStyle === 'curved' ? <Spline className="h-3.5 w-3.5" /> : edgeStyle === 'step' ? <CornerDownRight className="h-3.5 w-3.5" /> : <MoveRight className="h-3.5 w-3.5" />}
+                    <span className="text-xs font-medium">{EDGE_STYLE_META[edgeStyle].label}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Connection style: {EDGE_STYLE_META[edgeStyle].hint} — click to cycle</TooltipContent>
               </Tooltip>
             </div>
             {/* Alignment — only while a multi-selection is active */}
@@ -2701,23 +3378,80 @@ export function AutomationTab({
               <TooltipContent side="top">Reset zoom</TooltipContent>
             </Tooltip>
           </div>
-          {/* Minimap (bottom-left) — overview + click/drag to navigate */}
+          {/* Floating run control — visible when the execution panel is hidden */}
+          <AnimatePresence>
+            {!rightPanelOpen && (
+              <div className="pointer-events-none absolute bottom-3 left-1/2 z-10 -translate-x-1/2">
+                <motion.div
+                  initial={{ opacity: 0, y: 16, scale: 0.9 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 16, scale: 0.9 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                  className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-card/95 py-1.5 pl-1.5 pr-4 shadow-lg backdrop-blur"
+                >
+                  {!isRunning ? (
+                    <Button
+                      size="sm"
+                      className="h-8 rounded-full"
+                      onClick={() => void handleRun()}
+                      disabled={sequenceRunScope === 'selected' && checkedSequenceIds.size === 0}
+                    >
+                      <Play className="mr-1.5 h-3.5 w-3.5" />
+                      {sequenceRunScope === 'current'
+                        ? 'Start current'
+                        : sequenceRunScope === 'selected'
+                          ? `Start selected${checkedSequenceIds.size > 0 ? ` (${checkedSequenceIds.size})` : ''}`
+                          : 'Start all'}
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="destructive" className="h-8 rounded-full" onClick={handleStop}>
+                      <Square className="mr-1.5 h-3.5 w-3.5" /> Stop
+                    </Button>
+                  )}
+                  <span className="text-[11px] text-muted-foreground">
+                    {isRunning
+                      ? runningSeqId
+                        ? `Running: ${sortedSeqs.find(s => s.id === runningSeqId)?.name ?? ''}`
+                        : 'Running…'
+                      : runMode === 'duration'
+                        ? `${runDurationSeconds || '300'}s`
+                        : loopCount === 'Inf'
+                          ? 'Loop ∞'
+                          : `×${loopCount === 'custom' ? customLoopCount || '1' : loopCount}`}
+                  </span>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+          {/* Minimap (bottom-left) — overview + click/drag to navigate. Uses a world
+              bounding box (nodes + current viewport) so it stays correct even when
+              nodes are dragged into negative space. */}
           {steps.length > 0 && (() => {
             const MM_W = 176, MM_H = 116, PAD = 6
-            const cw = Math.max(contentSize.width, 1)
-            const ch = Math.max(contentSize.height, 1)
-            const scale = Math.min((MM_W - PAD * 2) / cw, (MM_H - PAD * 2) / ch)
             const vp = {
               x: -canvasPan.x / canvasZoom,
               y: -canvasPan.y / canvasZoom,
               w: (canvasSize.w || 1) / canvasZoom,
               h: (canvasSize.h || 1) / canvasZoom,
             }
+            let minX = vp.x, minY = vp.y, maxX = vp.x + vp.w, maxY = vp.y + vp.h
+            for (const s of steps) {
+              const p = s.position ?? { x: 0, y: 0 }
+              minX = Math.min(minX, p.x)
+              minY = Math.min(minY, p.y)
+              maxX = Math.max(maxX, p.x + NODE_WIDTH)
+              maxY = Math.max(maxY, p.y + NODE_HEIGHT)
+            }
+            const bpad = 60
+            minX -= bpad; minY -= bpad; maxX += bpad; maxY += bpad
+            const worldW = Math.max(maxX - minX, 1)
+            const worldH = Math.max(maxY - minY, 1)
+            const scale = Math.min((MM_W - PAD * 2) / worldW, (MM_H - PAD * 2) / worldH)
             const navigate = (e: React.MouseEvent) => {
               e.stopPropagation()
               const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              const contentX = (e.clientX - rect.left - PAD) / scale
-              const contentY = (e.clientY - rect.top - PAD) / scale
+              const contentX = minX + (e.clientX - rect.left - PAD) / scale
+              const contentY = minY + (e.clientY - rect.top - PAD) / scale
               setCanvasPan({
                 x: (canvasSize.w || 0) / 2 - contentX * canvasZoom,
                 y: (canvasSize.h || 0) / 2 - contentY * canvasZoom,
@@ -2734,7 +3468,7 @@ export function AutomationTab({
                 <svg width={MM_W} height={MM_H} className="block">
                   <g transform={`translate(${PAD},${PAD})`}>
                     <rect
-                      x={vp.x * scale} y={vp.y * scale}
+                      x={(vp.x - minX) * scale} y={(vp.y - minY) * scale}
                       width={vp.w * scale} height={vp.h * scale}
                       className="fill-primary/10 stroke-primary/60"
                       strokeWidth={1}
@@ -2747,7 +3481,7 @@ export function AutomationTab({
                       return (
                         <rect
                           key={s.id}
-                          x={p.x * scale} y={p.y * scale}
+                          x={(p.x - minX) * scale} y={(p.y - minY) * scale}
                           width={NODE_WIDTH * scale} height={NODE_HEIGHT * scale}
                           rx={1.5}
                           className={cn(
@@ -2763,37 +3497,43 @@ export function AutomationTab({
           })()}
           <div
             ref={canvasRef}
-            className="relative flex-1 min-h-[400px] overflow-hidden rounded-xl border border-border/30 bg-background/40 cursor-grab active:cursor-grabbing focus:outline-none"
+            className={cn(
+              'relative flex-1 min-h-[400px] overflow-hidden rounded-xl border border-border/30 bg-background/40 focus:outline-none',
+              spacePan || tool === 'pan' ? 'cursor-grab active:cursor-grabbing' : 'cursor-crosshair',
+            )}
             data-tour="tour-automation-canvas"
             role="region"
             aria-label="Workflow canvas"
             tabIndex={0}
             onMouseDown={handleCanvasPanStart}
+            onContextMenu={handleCanvasContextMenu}
             onWheel={handleCanvasWheel}
             onKeyDown={handleCanvasKeyDown}
             style={{ minHeight: 400 }}
           >
+            {/* Infinite world-aligned grid — covers the full viewport, not just the content box */}
+            {showGrid && (
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 z-0"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle, hsl(var(--muted-foreground) / 0.22) 1px, transparent 1px)',
+                  backgroundSize: `${GRID_SIZE * canvasZoom}px ${GRID_SIZE * canvasZoom}px`,
+                  backgroundPosition: `${canvasPan.x}px ${canvasPan.y}px`,
+                }}
+              />
+            )}
+            {/* Full-viewport pan / marquee target (works even outside the content bounding box) */}
+            <div data-pan-background className="absolute inset-0 z-0" />
             <div
-              className="relative origin-top-left"
+              className="relative z-[1] origin-top-left pointer-events-none"
               style={{
-                minWidth: contentSize.width,
-                minHeight: contentSize.height,
+                width: contentSize.width,
+                height: contentSize.height,
                 transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
               }}
             >
-              {/* Pan background - drag to pan (Shift+drag = marquee select) */}
-              <div
-                data-pan-background
-                className="absolute inset-0 z-0"
-                style={{
-                  minWidth: contentSize.width,
-                  minHeight: contentSize.height,
-                  backgroundImage: showGrid
-                    ? 'radial-gradient(circle, hsl(var(--muted-foreground) / 0.18) 1px, transparent 1px)'
-                    : undefined,
-                  backgroundSize: showGrid ? `${GRID_SIZE}px ${GRID_SIZE}px` : undefined,
-                }}
-              />
               {/* Marquee selection rectangle */}
               {marquee && (
                 <div
@@ -2820,10 +3560,10 @@ export function AutomationTab({
 
               {/* SVG connections (explicit edges) + live link preview */}
               <svg
-                className="absolute top-0 left-0 pointer-events-none"
+                className="absolute top-0 left-0"
                 width={contentSize.width}
                 height={contentSize.height}
-                style={{ overflow: 'visible' }}
+                style={{ overflow: 'visible', pointerEvents: 'none' }}
               >
                 <defs>
                   <marker
@@ -2845,6 +3585,9 @@ export function AutomationTab({
                     steps={steps}
                     dragPreview={dragPreview}
                     isRunning={isRunning}
+                    edgeStyle={edgeStyle}
+                    isLinking={!!linking}
+                    isActive={isRunning && currentRunningStepId === edge.from}
                     onDelete={handleDeleteEdge}
                   />
                 ))}
@@ -2855,13 +3598,15 @@ export function AutomationTab({
                   const pos = fromStep.position ?? { x: 0, y: 0 }
                   const sx = pos.x + NODE_WIDTH
                   const sy = pos.y + sourcePortY(fromStep, linking.handle)
-                  const cp = Math.max(40, Math.abs(linkCursor.x - sx) * 0.5)
+                  const { d } = buildEdgeGeometry(sx, sy, linkCursor.x, linkCursor.y, edgeStyle)
                   return (
                     <path
-                      d={`M${sx},${sy} C${sx + cp},${sy} ${linkCursor.x - cp},${linkCursor.y} ${linkCursor.x},${linkCursor.y}`}
+                      d={d}
                       fill="none"
                       stroke="currentColor"
                       strokeWidth={2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
                       strokeDasharray="6,5"
                       className="text-primary"
                     />
@@ -2898,8 +3643,34 @@ export function AutomationTab({
           </div>
         </div>
 
+        {/* Resize handle for the execution panel (drag to resize, double-click to reset) */}
+        {rightPanelOpen && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize execution panel"
+            className={cn(
+              'group/resize relative z-10 -mr-0.5 w-1.5 shrink-0 cursor-col-resize select-none',
+              isResizingRight && 'bg-primary/40',
+            )}
+            onPointerDown={handleRightResizeStart}
+            onDoubleClick={() => setRightPanelWidth(EXEC_PANEL_DEFAULT_WIDTH)}
+          >
+            <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-transparent transition-colors group-hover/resize:bg-primary/50" />
+          </div>
+        )}
+
         {/* Right Sidebar - Execution only (config via dialog) */}
-        <div className="w-[320px] shrink-0 flex flex-col min-h-0 overflow-hidden border-l border-border/50 bg-card">
+        <motion.div
+          className={cn(
+            'shrink-0 flex flex-col min-h-0 overflow-hidden bg-card',
+            rightPanelOpen && 'border-l border-border/50',
+          )}
+          initial={false}
+          animate={{ width: rightPanelOpen ? rightPanelWidth : 0, opacity: rightPanelOpen ? 1 : 0 }}
+          transition={isResizingRight ? { duration: 0 } : { type: 'spring', stiffness: 320, damping: 34 }}
+        >
+          <div className="flex h-full min-h-0 flex-col" style={{ width: rightPanelWidth }}>
           {/* Execution */}
           <Card className="flex flex-col flex-1 min-h-0 border-0 border-t border-border/50 rounded-none overflow-hidden" data-tour="tour-automation-execution">
             <CardHeader className="pb-3 pt-4 px-5 shrink-0">
@@ -2909,6 +3680,35 @@ export function AutomationTab({
             <CardContent className="flex flex-col gap-4 px-5 pb-5 flex-1 min-h-0 overflow-hidden">
               <div className="flex flex-col gap-4 p-4 rounded-xl border border-border/50 bg-muted/10 shrink-0">
             <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="w-24 shrink-0">Sequences:</Label>
+                <Select
+                  value={sequenceRunScope}
+                  onValueChange={(v) => setSequenceRunScope(v as 'all' | 'current' | 'selected')}
+                  disabled={isRunning}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All (top-level)</SelectItem>
+                    <SelectItem value="current">Current only</SelectItem>
+                    <SelectItem value="selected">
+                      Selected{checkedSequenceIds.size > 0 ? ` (${checkedSequenceIds.size})` : ''}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {sequenceRunScope === 'current' && selectedSequence && (
+                <p className="text-[11px] text-muted-foreground pl-[6.5rem] leading-snug">
+                  {selectedSequence.name}
+                </p>
+              )}
+              {sequenceRunScope === 'selected' && checkedSequenceIds.size === 0 && (
+                <p className="text-[11px] text-muted-foreground pl-[6.5rem] leading-snug">
+                  Check sequences in the list
+                </p>
+              )}
               <div className="flex items-center gap-2">
                 <Label className="w-24 shrink-0">Run:</Label>
                 <Select value={runMode} onValueChange={(v) => setRunMode(v as 'loops' | 'duration')}>
@@ -2973,8 +3773,19 @@ export function AutomationTab({
             </div>
               <div className="flex gap-2">
                 {!isRunning ? (
-                <Button onClick={handleRun} className="flex-1">
-                  <Play className="w-4 h-4 mr-2" /> Start
+                <Button
+                  onClick={() => void handleRun()}
+                  className="flex-1"
+                  disabled={
+                    sequenceRunScope === 'selected' && checkedSequenceIds.size === 0
+                  }
+                >
+                  <Play className="w-4 h-4 mr-2" />
+                  {sequenceRunScope === 'current'
+                    ? 'Start current'
+                    : sequenceRunScope === 'selected'
+                      ? `Start selected${checkedSequenceIds.size > 0 ? ` (${checkedSequenceIds.size})` : ''}`
+                      : 'Start all'}
                 </Button>
               ) : (
                 <Button onClick={handleStop} variant="destructive" className="flex-1">
@@ -2991,100 +3802,99 @@ export function AutomationTab({
                 onExpand={() => setVarsExpandedOpen(true)}
                 isRunning={isRunning}
               />
-              <div className="flex items-center justify-between gap-2 shrink-0">
-                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2.5 py-1.5">
-                  <Switch
-                    id="automation-detail-logs"
-                    checked={fullActivityLog}
-                    onCheckedChange={(v) => {
-                      setFullActivityLog(v)
-                      setAutomationFullActivityLog(v)
-                    }}
-                  />
-                  <Label
-                    htmlFor="automation-detail-logs"
-                    className="cursor-pointer text-xs font-medium text-muted-foreground"
-                    title="Off: no log output while running. On: all step detail."
-                  >
-                    Activity log
-                  </Label>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => setLog([])} className="shrink-0 h-8">
-                  Clear
-                </Button>
-              </div>
+              {/* Activity log — one self-contained card: a fixed header of controls
+                  over a scrollable body that fills the remaining panel height. Uses
+                  flex-1 + min-h-0 so it can never overflow/clip into its neighbours. */}
               <div
                 className={cn(
-                  'group/expand relative flex-1 min-h-[120px] max-h-[320px] rounded-xl transition-shadow',
-                  'ring-1 ring-transparent hover:ring-border/80 hover:shadow-sm',
-                  !fullActivityLog && 'opacity-80',
+                  'flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-muted/10',
+                  !fullActivityLog && 'opacity-90',
                 )}
               >
-                <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-muted/10">
-                  <ScrollArea className="h-full flex-1">
-                    <div className="space-y-0 p-3 pr-11 font-mono text-xs">
-                      {log.length === 0 && (
-                        <div className="py-4 text-center text-muted-foreground">
-                          {fullActivityLog ? 'Ready to run…' : 'Activity log off — enable the switch to record runs'}
-                        </div>
-                      )}
-                      {log.map((l, i) => (
-                        <div
-                          key={i}
-                          className={`rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground ${i === log.length - 1 ? 'animate-log-new' : ''}`}
+                <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-muted/20 px-3 py-2">
+                  <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Activity log</span>
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                    {log.length}
+                  </span>
+                  {isRunning && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" title="Recording live" />}
+                  <div className="ml-auto flex items-center gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <label
+                          htmlFor="automation-detail-logs"
+                          className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/50 bg-background/60 px-2 py-1"
                         >
-                          {l}
-                        </div>
-                      ))}
-                      <div ref={logEndRef} />
-                    </div>
-                  </ScrollArea>
+                          <Switch
+                            id="automation-detail-logs"
+                            checked={fullActivityLog}
+                            onCheckedChange={(v) => {
+                              setFullActivityLog(v)
+                              setAutomationFullActivityLog(v)
+                            }}
+                          />
+                          <span className="text-[11px] font-medium text-muted-foreground">Detail</span>
+                        </label>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[15rem] text-xs">
+                        Off: no output while running. On: full step-by-step detail.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCopyLog} disabled={log.length === 0} aria-label="Copy log">
+                          {logCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Copy log</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setLog([])} disabled={log.length === 0} aria-label="Clear log">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Clear log</TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setLogExpandedOpen(true)} aria-label="Expand log">
+                          <Maximize2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">Expand activity log</TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
-                <div
-                  className={cn(
-                    'pointer-events-none absolute right-1.5 top-1.5 z-10 flex flex-row items-start gap-1',
-                    'opacity-60 sm:scale-95 sm:opacity-0',
-                    'sm:group-hover/expand:scale-100 sm:group-hover/expand:opacity-100',
-                    'transition-all duration-200 ease-out',
-                  )}
-                >
-                  <Tooltip delayDuration={400}>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="icon"
-                        className={cn(
-                          'pointer-events-auto h-8 w-8 shrink-0 rounded-md',
-                          'border border-border/60 bg-background/90 shadow-sm backdrop-blur-sm',
-                          'hover:bg-accent hover:text-accent-foreground',
-                          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                        )}
-                        aria-label="Expand activity log"
-                        onClick={(e) => {
-                          e.preventDefault()
-                          e.stopPropagation()
-                          setLogExpandedOpen(true)
-                        }}
+                <ScrollArea className="min-h-0 flex-1">
+                  <div className="space-y-0 p-3 font-mono text-xs">
+                    {log.length === 0 && (
+                      <div className="py-6 text-center text-muted-foreground">
+                        {fullActivityLog ? 'Ready to run…' : 'Detail logging off — enable it to record runs'}
+                      </div>
+                    )}
+                    {log.map((l, i) => (
+                      <div
+                        key={i}
+                        className={`rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground ${i === log.length - 1 ? 'animate-log-new' : ''}`}
                       >
-                        <Maximize2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="left" className="max-w-[14rem] text-xs">
-                      Expand activity log
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
+                        {l}
+                      </div>
+                    ))}
+                    <div ref={logEndRef} />
+                  </div>
+                </ScrollArea>
               </div>
             </CardContent>
           </Card>
-        </div>
+          </div>
+        </motion.div>
       </div>
 
       {/* Footer */}
-      <div className="flex items-center justify-between px-4 py-2 border-t border-border/50 bg-card/50 text-xs text-muted-foreground">
-        <span>• {sortedSeqs.length} SEQUENCES • {steps.length} NODES • {edges.length} LINKS{selectedIds.size > 0 ? ` • ${selectedIds.size} SELECTED` : ''}</span>
-        <span>Click to select · Shift-click to multi-select · Shift-drag empty canvas to marquee · double-click to configure · Tab adds a node · Ctrl+Z/Y undo/redo · Ctrl+D duplicate · Del removes</span>
+      <div className="flex items-center justify-between gap-4 px-4 py-2 border-t border-border/50 bg-card/50 text-xs text-muted-foreground">
+        <span className="shrink-0 whitespace-nowrap">• {sortedSeqs.length} SEQUENCES • {steps.length} NODES • {edges.length} LINKS{selectedIds.size > 0 ? ` • ${selectedIds.size} SELECTED` : ''}</span>
+        <span className="min-w-0 truncate text-right">Tools: Select (V) / Pan (H) · drag to select · Space/middle-drag pans · arrows nudge · right-click for actions · drag a port onto a node or arrow to connect · double-click to configure</span>
       </div>
 
       {/* Expanded variables */}
@@ -3182,10 +3992,132 @@ export function AutomationTab({
         </DialogContent>
       </Dialog>
 
+      {/* Right-click context menu (nodes + empty canvas) */}
+      {ctxMenu && (
+        <CanvasContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          items={
+            ctxMenu.nodeId
+              ? (() => {
+                  // "Disable" when any selected node is currently enabled, else "Enable".
+                  const anyEnabled = [...selectedIds].some((id) => !steps.find((s) => s.id === id)?.params.disabled)
+                  const n = selectedIds.size
+                  return [
+                    {
+                      label: 'Configure',
+                      icon: <Settings2 className="h-3.5 w-3.5" />,
+                      shortcut: '⏎⏎',
+                      onClick: () => handleConfigureNode(ctxMenu.nodeId!),
+                      disabled: isRunning,
+                    },
+                    {
+                      label: n > 1 ? `Duplicate ${n} nodes` : 'Duplicate',
+                      icon: <Copy className="h-3.5 w-3.5" />,
+                      shortcut: 'Ctrl+D',
+                      onClick: handleDuplicateSelected,
+                      disabled: isRunning,
+                    },
+                    {
+                      label: n > 1 ? `Copy ${n} nodes` : 'Copy',
+                      icon: <Copy className="h-3.5 w-3.5" />,
+                      shortcut: 'Ctrl+C',
+                      onClick: handleCopyNodes,
+                    },
+                    {
+                      label: anyEnabled ? (n > 1 ? `Disable ${n} nodes` : 'Disable') : (n > 1 ? `Enable ${n} nodes` : 'Enable'),
+                      icon: anyEnabled ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
+                      onClick: () => setDisabledForSelected(anyEnabled),
+                      disabled: isRunning,
+                    },
+                    ...(n >= 2
+                      ? ([
+                          { separator: true },
+                          {
+                            label: 'Align horizontal centers',
+                            icon: <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />,
+                            onClick: () => alignSelected('hcenter'),
+                            disabled: isRunning,
+                          },
+                          {
+                            label: 'Align vertical centers',
+                            icon: <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />,
+                            onClick: () => alignSelected('vcenter'),
+                            disabled: isRunning,
+                          },
+                        ] as CtxItem[])
+                      : []),
+                    { separator: true },
+                    {
+                      label: 'Zoom to selection',
+                      icon: <Frame className="h-3.5 w-3.5" />,
+                      shortcut: 'Shift+F',
+                      onClick: handleZoomToSelection,
+                    },
+                    { separator: true },
+                    {
+                      label: n > 1 ? `Delete ${n} nodes` : 'Delete',
+                      icon: <Trash2 className="h-3.5 w-3.5" />,
+                      shortcut: 'Del',
+                      onClick: handleDeleteSelected,
+                      disabled: isRunning,
+                      danger: true,
+                    },
+                  ] as CtxItem[]
+                })()
+              : [
+                  {
+                    label: 'Add node here…',
+                    icon: <Plus className="h-3.5 w-3.5" />,
+                    shortcut: 'Tab',
+                    onClick: () => {
+                      paletteAddPosRef.current = clientToContent(ctxMenu.x, ctxMenu.y)
+                      setPaletteOpen(true)
+                    },
+                    disabled: isRunning || !selectedSequenceId,
+                  },
+                  {
+                    label: 'Paste here',
+                    icon: <Copy className="h-3.5 w-3.5" />,
+                    shortcut: 'Ctrl+V',
+                    onClick: () => handlePasteNodes(clientToContent(ctxMenu.x, ctxMenu.y)),
+                    disabled: isRunning || !clipboardRef.current,
+                  },
+                  { separator: true },
+                  {
+                    label: 'Select all',
+                    shortcut: 'Ctrl+A',
+                    onClick: handleSelectAll,
+                    disabled: steps.length === 0,
+                  },
+                  {
+                    label: 'Clear selection',
+                    onClick: () => setSelectedIds(new Set()),
+                    disabled: selectedIds.size === 0,
+                  },
+                  { separator: true },
+                  {
+                    label: selectedIds.size > 0 ? 'Zoom to selection' : 'Fit to view',
+                    icon: selectedIds.size > 0 ? <Frame className="h-3.5 w-3.5" /> : <Maximize className="h-3.5 w-3.5" />,
+                    shortcut: selectedIds.size > 0 ? 'Shift+F' : 'F',
+                    onClick: selectedIds.size > 0 ? handleZoomToSelection : handleFitView,
+                    disabled: steps.length === 0,
+                  },
+                ]
+          }
+        />
+      )}
+
       {/* Searchable node palette (⌘K / Tab) */}
       <NodePalette
         open={paletteOpen}
-        onOpenChange={setPaletteOpen}
+        onOpenChange={(open) => {
+          // Drop any pending cursor placement when the palette closes so a later
+          // Tab-triggered add doesn't reuse a stale right-click position.
+          if (!open) paletteAddPosRef.current = null
+          setPaletteOpen(open)
+        }}
         onSelect={handleAddStep}
       />
 

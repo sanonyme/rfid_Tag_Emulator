@@ -227,6 +227,9 @@ export interface AutomationStep {
   name: string
   position?: { x: number; y: number }
   params: {
+    /** When true, the node is skipped at run time — execution passes straight
+     * through to its first outgoing edge without running the node's action. */
+    disabled?: boolean
     duration?: number
     message?: string
     port?: string

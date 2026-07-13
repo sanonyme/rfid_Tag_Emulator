@@ -669,7 +669,9 @@ function App() {
           {/* Main Content */}
           <main
             className={cn(
-              'flex-1 min-w-0 container overflow-hidden min-h-0 flex flex-col',
+              'flex-1 min-w-0 overflow-hidden min-h-0 flex flex-col',
+              // Automation is a full-bleed workspace: skip the centered container cap.
+              effectiveActiveTab === 'automation' ? 'w-full' : 'container',
               isAdmin && !isPopoutWindow ? 'px-4 py-4' : 'px-6 py-6',
               isPopoutWindow && 'px-4 py-4',
             )}
@@ -823,7 +825,7 @@ function App() {
               <DecoderTab />
             </TabPanel>
 
-            <TabPanel tabId="automation" visited={visitedTabs.has('automation')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+            <TabPanel tabId="automation" visited={visitedTabs.has('automation')} className={cn(TAB_PANEL_CLASS, 'p-0 overflow-hidden')}>
               <AutomationTab 
                 emulator={emulator}
                 handheldServer={handheldServer}
