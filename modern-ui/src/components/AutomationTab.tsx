@@ -3526,6 +3526,18 @@ export function AutomationTab({
             )}
             {/* Full-viewport pan / marquee target (works even outside the content bounding box) */}
             <div data-pan-background className="absolute inset-0 z-0" />
+            {/* Empty state is viewport-centered (not world/content-sized) so it stays in the middle of the canvas */}
+            {steps.length === 0 && (
+              <div className="pointer-events-none absolute inset-0 z-[2] flex items-center justify-center">
+                <div className="max-w-[280px] rounded-xl border-2 border-dashed border-border/50 bg-card/50 p-8 text-center text-sm text-muted-foreground">
+                  {!selectedSequenceId ? (
+                    <>Select a sequence from the list, or add one with the <strong>+</strong> button.</>
+                  ) : (
+                    <>No nodes yet.<br />Click <strong>ADD NODE</strong> to start.</>
+                  )}
+                </div>
+              </div>
+            )}
             <div
               className="relative z-[1] origin-top-left pointer-events-none"
               style={{
@@ -3545,17 +3557,6 @@ export function AutomationTab({
                     height: Math.abs(marquee.y1 - marquee.y0),
                   }}
                 />
-              )}
-              {steps.length === 0 && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <div className="text-center text-muted-foreground text-sm border-2 border-dashed border-border/50 rounded-xl p-8 bg-card/50 max-w-[280px]">
-                    {!selectedSequenceId ? (
-                      <>Select a sequence from the list, or add one with the <strong>+</strong> button.</>
-                    ) : (
-                      <>No nodes yet.<br />Click <strong>ADD NODE</strong> to start.</>
-                    )}
-                  </div>
-                </div>
               )}
 
               {/* SVG connections (explicit edges) + live link preview */}

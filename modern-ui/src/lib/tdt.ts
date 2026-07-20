@@ -37,6 +37,35 @@ export interface TdtDetectedScheme {
   detectedGCPLength?: number
 }
 
+interface TdtArtefactField {
+  name: string
+  length?: number
+  characterSet?: string
+  seq?: number
+}
+
+interface TdtArtefactOption {
+  optionKey?: string
+  pattern?: string
+  grammar?: string
+  aiSequence?: string[]
+  field?: TdtArtefactField[]
+}
+
+interface TdtArtefactLevel {
+  type: string
+  prefixMatch?: string
+  requiredFormattingParameters?: string
+  requiredParsingParameters?: string
+  option?: TdtArtefactOption[]
+}
+
+interface TdtArtefactScheme {
+  name?: string
+  optionKey?: string
+  level?: TdtArtefactLevel[]
+}
+
 interface TDTtranslatorInstance {
   initialized: Promise<unknown>
   processData?: () => void
@@ -49,6 +78,30 @@ interface TDTtranslatorInstance {
   ) => string | undefined
   schemes?: () => string[]
   hex2bin?: (s: string) => string
+  /** Loaded TDT JSON artefacts (present after initialized). */
+  tdtData?: {
+    scheme?: Record<string, Record<string, { scheme: TdtArtefactScheme }>>
+  }
+}
+
+export interface TdtSchemeField {
+  name: string
+  label: string
+  length?: number
+  characterSet?: string
+  placeholder: string
+}
+
+export interface TdtSchemeInputs {
+  scheme: string
+  fields: TdtSchemeField[]
+  /** GS1 AI codes in field order, when the scheme has a GS1_AI_JSON level. */
+  aiSequence: string[]
+  optionKey?: string
+  requiresGcpLength: boolean
+  hasFilter: boolean
+  /** Identifier-level examples derived from the scheme's TDT fields. */
+  examples: Array<{ label: string; value: string }>
 }
 
 declare global {
@@ -250,6 +303,197 @@ export async function tdtAutodetect(rawInput: string): Promise<TdtDetectedScheme
 export async function tdtListSchemes(): Promise<string[]> {
   const t = await getTdtTranslator()
   return (t.schemes?.() ?? []).sort((a, b) => a.localeCompare(b))
+}
+
+const TDT_CONTAINER = 'tdt:epcTagDataTranslation'
+
+const SAMPLE_FIELD_VALUES: Record<string, string> = {
+  gtin: '09521234123453',
+  serial: '123',
+  prodDate: '240101',
+  sscc: '006141411234567890',
+  grai: '09521234123453123',
+  graiprefix: '061414112345',
+  valueOf8003: '0061414112345123',
+  giai: '9521234ABC123',
+  gln: '0614141123452',
+  itip: '095212341234531201',
+  gcn: '0614141123452123',
+  sgcnprefix: '0614141123452',
+  gdtiprefix: '061414112345',
+  gdti: '0614141123452123',
+  gsrn: '061414112345678901',
+  gsrnp: '061414112345678901',
+  cpi: '12345.ABC',
+  cpiserial: '1',
+  cageordodaac: '2S194',
+  cage: '2S194',
+  urnEncodedSerial: '12345',
+  generalmanager: '5',
+  objectclass: '1',
+  gs1companyprefix: '9521234',
+  indassetref: 'ABC123',
+}
+
+function humanizeFieldName(name: string): string {
+  const known: Record<string, string> = {
+    gtin: 'GTIN',
+    sscc: 'SSCC',
+    grai: 'GRAI',
+    graiprefix: 'GRAI prefix',
+    valueOf8003: 'GRAI (AI 8003)',
+    giai: 'GIAI',
+    gln: 'GLN',
+    itip: 'ITIP',
+    gcn: 'GCN',
+    gdti: 'GDTI',
+    gdtiprefix: 'GDTI prefix',
+    gsrn: 'GSRN',
+    gsrnp: 'GSRN — Provider',
+    cpi: 'CPI',
+    cpiserial: 'CPI serial',
+    sgcnprefix: 'SGCN prefix',
+    cageordodaac: 'CAGE / DoDAAC',
+    cage: 'CAGE',
+    urnEncodedSerial: 'Serial (URN-encoded)',
+    generalmanager: 'General manager',
+    objectclass: 'Object class',
+    serial: 'Serial number',
+    prodDate: 'Production date',
+    indassetref: 'Individual asset ref',
+    gs1companyprefix: 'GS1 company prefix',
+  }
+  if (known[name]) return known[name]
+  return name
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+function sampleValueForField(field: TdtArtefactField): string {
+  if (SAMPLE_FIELD_VALUES[field.name]) return SAMPLE_FIELD_VALUES[field.name]
+  if (field.characterSet?.includes('0-9') && !/[A-Za-z]/.test(field.characterSet)) {
+    const len = Math.min(field.length ?? 6, 12)
+    return '1'.padStart(Math.max(len, 1), '0')
+  }
+  return 'ABC123'
+}
+
+/** Build a bare-identifier string from TDT field values (`gtin=…;serial=…`). */
+export function buildTdtBareIdentifier(values: Record<string, string>): string {
+  return Object.entries(values)
+    .filter(([, v]) => (v ?? '').trim().length > 0)
+    .map(([name, v]) => `${name}=${v.trim()}`)
+    .join(';')
+}
+
+/** Build a GS1 AI JSON string when the scheme exposes an AI sequence. */
+export function buildTdtAiJson(
+  aiSequence: string[],
+  fields: TdtSchemeField[],
+  values: Record<string, string>,
+): string | null {
+  if (!aiSequence.length || aiSequence.length > fields.length) return null
+  const obj: Record<string, string> = {}
+  for (let i = 0; i < aiSequence.length; i++) {
+    const v = (values[fields[i].name] ?? '').trim()
+    if (!v) return null
+    obj[aiSequence[i]] = v
+  }
+  return JSON.stringify(obj)
+}
+
+function pickLevelFields(levels: TdtArtefactLevel[] | undefined): {
+  fields: TdtArtefactField[]
+  aiSequence: string[]
+  requiresGcpLength: boolean
+  hasFilter: boolean
+  optionKey?: string
+} | null {
+  if (!levels?.length) return null
+  const bare = levels.find((l) => l.type === 'BARE_IDENTIFIER')
+  const aiJson = levels.find((l) => l.type === 'GS1_AI_JSON')
+  const pure = levels.find((l) => l.type === 'PURE_IDENTITY')
+  const tag = levels.find((l) => l.type === 'TAG_ENCODING')
+  const binary = levels.find((l) => l.type === 'BINARY')
+
+  const source =
+    bare?.option?.[0]?.field?.length ? bare.option[0]
+      : aiJson?.option?.[0]?.field?.length ? aiJson.option[0]
+        : pure?.option?.[0]?.field?.length ? pure.option[0]
+          : tag?.option?.[0]?.field?.length ? tag.option[0]
+            : null
+  if (!source?.field?.length) return null
+
+  // Skip filter in identity/tag field lists — it's an encode option, not a key field.
+  const fields = source.field.filter((f) => f?.name && f.name !== 'filter')
+  if (!fields.length) return null
+
+  return {
+    fields,
+    aiSequence: aiJson?.option?.[0]?.aiSequence?.filter(Boolean) ?? [],
+    requiresGcpLength:
+      (bare?.requiredParsingParameters ?? '').includes('gs1companyprefixlength'),
+    hasFilter:
+      (binary?.requiredFormattingParameters ?? '').includes('filter') ||
+      binary?.option?.[0]?.field?.some((f) => f.name === 'filter') === true,
+    optionKey: undefined,
+  }
+}
+
+/**
+ * Read encode-time input fields for a TDT scheme from the loaded artefacts.
+ * Prefers BARE_IDENTIFIER, then GS1_AI_JSON, then PURE_IDENTITY / TAG_ENCODING
+ * so every scheme (including ADI-var) can drive the quick-fields UI.
+ */
+export async function tdtGetSchemeInputs(schemeName: string): Promise<TdtSchemeInputs | null> {
+  const scheme = schemeName.trim()
+  if (!scheme) return null
+
+  const t = await getTdtTranslator()
+  const root = t.tdtData?.scheme?.[scheme]?.[TDT_CONTAINER]?.scheme
+  if (!root?.level?.length) return null
+
+  const picked = pickLevelFields(root.level)
+  if (!picked) return null
+
+  const requiresGcpLength =
+    root.optionKey === 'gs1companyprefixlength' || picked.requiresGcpLength
+
+  const seen = new Set<string>()
+  const fields: TdtSchemeField[] = []
+  for (const f of picked.fields) {
+    if (seen.has(f.name)) continue
+    seen.add(f.name)
+    const sample = sampleValueForField(f)
+    fields.push({
+      name: f.name,
+      label: humanizeFieldName(f.name),
+      length: f.length,
+      characterSet: f.characterSet,
+      placeholder: f.length ? `e.g. ${sample} (${f.length} chars)` : `e.g. ${sample}`,
+    })
+  }
+  if (!fields.length) return null
+
+  const sampleValues: Record<string, string> = {}
+  for (const f of fields) sampleValues[f.name] = sampleValueForField(f)
+
+  const examples: Array<{ label: string; value: string }> = []
+  const bareId = buildTdtBareIdentifier(sampleValues)
+  if (bareId) examples.push({ label: 'Bare ID', value: bareId })
+  const ai = buildTdtAiJson(picked.aiSequence, fields, sampleValues)
+  if (ai) examples.push({ label: 'AI JSON', value: ai })
+
+  return {
+    scheme,
+    fields,
+    aiSequence: picked.aiSequence,
+    optionKey: root.optionKey,
+    requiresGcpLength,
+    hasFilter: picked.hasFilter,
+    examples,
+  }
 }
 
 function pickTdtScheme(

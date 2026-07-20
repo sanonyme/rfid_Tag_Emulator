@@ -9,14 +9,18 @@ import { Badge } from './ui/badge'
 import { Switch } from './ui/switch'
 import { EPCDecoder, uidToEpcSerial } from '../lib/decoder'
 import {
+  buildTdtAiJson,
+  buildTdtBareIdentifier,
   prewarmTdt,
   tdtAutodetect,
   tdtDecode,
   tdtEncode,
+  tdtGetSchemeInputs,
   tdtListSchemes,
   type TdtDecodeResult,
   type TdtDetectedScheme,
   type TdtOutputLevel,
+  type TdtSchemeInputs,
 } from '../lib/tdt'
 import { ArrowDown, ArrowUp, Copy, Check, Loader2, Sparkles, Download } from 'lucide-react'
 import { toast } from 'sonner'
@@ -126,6 +130,261 @@ function buildSgtinAiJson(
     return { error: 'GTIN must be 13 or 14 digits' }
   }
   return { input: JSON.stringify({ '01': gtin14, '21': serialVal }) }
+}
+
+/** Strips the tag-length / variant suffix from a TDT scheme name, e.g. "SGTIN-96" / "SGTIN+" → "SGTIN". */
+function schemeFamily(scheme: string): string {
+  const trimmed = scheme.trim()
+  if (!trimmed) return ''
+  return trimmed.replace(/[-+].*$/, '').toUpperCase()
+}
+
+/**
+ * Validates/derives a GS1 self-check-digit key (GTIN, SSCC, GLN, GSRN, …).
+ * Accepts either the bare body (no check digit) or the body + check digit,
+ * optionally prefixed with a fixed literal digit before the checksum is computed
+ * (e.g. GRAI's leading "0").
+ */
+function selfCheckDigits(
+  raw: string,
+  bodyLen: number,
+  label: string,
+  fixedPrefix = '',
+): { value?: string; error?: string } {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === bodyLen) {
+    return { value: digits + EPCDecoder.calculateCheckDigit(fixedPrefix + digits) }
+  }
+  if (digits.length === bodyLen + 1) {
+    const body = digits.slice(0, bodyLen)
+    const provided = digits.slice(-1)
+    const calc = EPCDecoder.calculateCheckDigit(fixedPrefix + body)
+    if (provided !== calc) {
+      return { error: `${label} check digit mismatch (expected ${calc})` }
+    }
+    return { value: digits }
+  }
+  return { error: `${label} must be ${bodyLen} or ${bodyLen + 1} digits` }
+}
+
+interface QuickField {
+  key: string
+  label: string
+  placeholder: string
+  /** When set, renders a live check-digit hint under the field (GTIN-style self-check keys). */
+  checkDigit?: { bodyLen: number; fixedPrefix?: string }
+  optional?: boolean
+}
+
+interface QuickSchemeConfig {
+  title: string
+  fields: QuickField[]
+  usesCompanyPrefixLength: boolean
+  usesFilter: boolean
+  usesUidToggle?: boolean
+  build: (values: Record<string, string>, ctx: { serialIsUid: boolean }) => { input?: string; error?: string }
+}
+
+/** Per-scheme-family quick-encode field sets, so the form fits whichever scheme is selected. */
+const QUICK_SCHEME_CONFIGS: Record<string, QuickSchemeConfig> = {
+  SGTIN: {
+    title: 'Quick SGTIN',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    usesUidToggle: true,
+    fields: [
+      { key: 'gtin', label: 'GTIN / UPC', placeholder: 'e.g. 1234567890123', checkDigit: { bodyLen: 13 } },
+      { key: 'serial', label: 'Serial number', placeholder: 'e.g. 12345' },
+    ],
+    build: (v, ctx) => buildSgtinAiJson(v.gtin || '', v.serial || '', ctx.serialIsUid),
+  },
+  SSCC: {
+    title: 'Quick SSCC',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'sscc', label: 'SSCC', placeholder: 'e.g. 106141412345678908', checkDigit: { bodyLen: 17 } },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.sscc || '', 17, 'SSCC')
+      if (r.error) return { error: r.error }
+      return { input: JSON.stringify({ '00': r.value }) }
+    },
+  },
+  SGLN: {
+    title: 'Quick SGLN',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'gln', label: 'GLN', placeholder: 'e.g. 0614141000005', checkDigit: { bodyLen: 12 } },
+      { key: 'serial', label: 'Extension / serial (optional)', placeholder: 'e.g. 32a/b', optional: true },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.gln || '', 12, 'GLN')
+      if (r.error) return { error: r.error }
+      const serial = (v.serial || '').trim()
+      const obj: Record<string, string> = { '414': r.value! }
+      if (serial) obj['254'] = serial
+      return { input: JSON.stringify(obj) }
+    },
+  },
+  GRAI: {
+    title: 'Quick GRAI',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'grai', label: 'Company prefix + asset type', placeholder: '12 digits, e.g. 061414100000', checkDigit: { bodyLen: 12, fixedPrefix: '0' } },
+      { key: 'serial', label: 'Serial', placeholder: 'e.g. 12345' },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.grai || '', 12, 'GRAI', '0')
+      if (r.error) return { error: r.error }
+      const serial = (v.serial || '').trim()
+      if (!serial) return { error: 'Serial is required for GRAI' }
+      return { input: JSON.stringify({ '8003': '0' + r.value + serial }) }
+    },
+  },
+  GDTI: {
+    title: 'Quick GDTI',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'gdti', label: 'Company prefix + document type', placeholder: '12 digits, e.g. 061414100000', checkDigit: { bodyLen: 12 } },
+      { key: 'serial', label: 'Serial', placeholder: 'e.g. 12345' },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.gdti || '', 12, 'GDTI')
+      if (r.error) return { error: r.error }
+      const serial = (v.serial || '').trim()
+      if (!serial) return { error: 'Serial is required for GDTI' }
+      return { input: JSON.stringify({ '253': r.value + serial }) }
+    },
+  },
+  GSRN: {
+    title: 'Quick GSRN',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'gsrn', label: 'GSRN', placeholder: '17 or 18 digits', checkDigit: { bodyLen: 17 } },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.gsrn || '', 17, 'GSRN')
+      if (r.error) return { error: r.error }
+      return { input: JSON.stringify({ '8018': r.value }) }
+    },
+  },
+  GSRNP: {
+    title: 'Quick GSRN — Provider',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'gsrnp', label: 'GSRN — Provider', placeholder: '17 or 18 digits', checkDigit: { bodyLen: 17 } },
+    ],
+    build: (v) => {
+      const r = selfCheckDigits(v.gsrnp || '', 17, 'GSRN')
+      if (r.error) return { error: r.error }
+      return { input: JSON.stringify({ '8017': r.value }) }
+    },
+  },
+  GIAI: {
+    title: 'Quick GIAI',
+    usesCompanyPrefixLength: true,
+    usesFilter: true,
+    fields: [
+      { key: 'giai', label: 'GIAI', placeholder: 'company prefix + asset ref, e.g. 06141410012345' },
+    ],
+    build: (v) => {
+      const digits = (v.giai || '').replace(/\D/g, '')
+      if (digits.length < 13) return { error: 'GIAI (company prefix + asset reference) must be at least 13 digits' }
+      return { input: JSON.stringify({ '8004': digits }) }
+    },
+  },
+  GID: {
+    title: 'Quick GID',
+    usesCompanyPrefixLength: false,
+    usesFilter: false,
+    fields: [
+      { key: 'generalManager', label: 'General manager number', placeholder: 'e.g. 95100000' },
+      { key: 'objectClass', label: 'Object class', placeholder: 'e.g. 12345' },
+      { key: 'serial', label: 'Serial', placeholder: 'e.g. 400' },
+    ],
+    build: (v) => {
+      const gm = (v.generalManager || '').replace(/\D/g, '')
+      const oc = (v.objectClass || '').replace(/\D/g, '')
+      const serial = (v.serial || '').replace(/\D/g, '')
+      if (!gm || !oc || !serial) return { error: 'General manager, object class, and serial are all required' }
+      return { input: `generalmanager=${gm};objectclass=${oc};serial=${serial}` }
+    },
+  },
+  USDOD: {
+    title: 'Quick USDOD',
+    usesCompanyPrefixLength: false,
+    usesFilter: true,
+    fields: [
+      { key: 'cage', label: 'CAGE / DoDAAC', placeholder: 'e.g. ABC12' },
+      { key: 'serial', label: 'Serial', placeholder: 'e.g. 12345' },
+    ],
+    build: (v) => {
+      const cage = (v.cage || '').trim().toUpperCase()
+      const serial = (v.serial || '').replace(/\D/g, '')
+      if (!/^[0-9A-HJ-NP-Z]{5,6}$/.test(cage)) return { error: 'CAGE/DoDAAC must be 5-6 chars, no I or O' }
+      if (!serial) return { error: 'Serial is required' }
+      return { input: `cageordodaac=${cage};serial=${serial}` }
+    },
+  },
+}
+
+/** Check-digit hint metadata for common TDT field names. */
+const TDT_CHECK_DIGIT: Record<string, { bodyLen: number; fixedPrefix?: string }> = {
+  gtin: { bodyLen: 13 },
+  sscc: { bodyLen: 17 },
+  gln: { bodyLen: 12 },
+  gsrn: { bodyLen: 17 },
+  gsrnp: { bodyLen: 17 },
+}
+
+/** Build a QuickSchemeConfig from live TDT artefact fields (covers every scheme). */
+function quickConfigFromTdt(meta: TdtSchemeInputs): QuickSchemeConfig {
+  const fieldNames = new Set(meta.fields.map((f) => f.name))
+  return {
+    title: `Quick ${meta.scheme}`,
+    usesCompanyPrefixLength: meta.requiresGcpLength,
+    usesFilter: meta.hasFilter,
+    usesUidToggle: fieldNames.has('serial') && fieldNames.has('gtin'),
+    fields: meta.fields.map((f) => ({
+      key: f.name,
+      label: f.label,
+      placeholder: f.placeholder,
+      checkDigit: TDT_CHECK_DIGIT[f.name],
+    })),
+    build: (values, ctx) => {
+      const vals: Record<string, string> = {}
+      for (const f of meta.fields) {
+        let v = (values[f.name] ?? '').trim()
+        if (!v) continue
+        if (f.name === 'gtin') {
+          const digits = v.replace(/\D/g, '')
+          if (digits.length === 13) v = digits + EPCDecoder.calculateCheckDigit(digits)
+          else if (digits.length === 14) v = digits
+          else return { error: 'GTIN must be 13 or 14 digits' }
+        }
+        if (f.name === 'serial' && ctx.serialIsUid) {
+          const parsed = uidToEpcSerial(v)
+          if (parsed.error) return { error: parsed.error }
+          v = parsed.serial
+        }
+        vals[f.name] = v
+      }
+      if (!Object.keys(vals).length) {
+        return { error: 'Fill the quick fields below or paste an identifier above' }
+      }
+      const ai = buildTdtAiJson(meta.aiSequence, meta.fields, vals)
+      if (ai) return { input: ai }
+      const bare = buildTdtBareIdentifier(vals)
+      if (!bare) return { error: 'Fill the quick fields below or paste an identifier above' }
+      return { input: bare }
+    },
+  }
 }
 
 const SCHEME_AUTO = '__auto__'
@@ -409,6 +668,51 @@ function CopyButton({ text, size = 'icon' }: { text?: string; size?: 'icon' | 's
   )
 }
 
+/** Live check-digit feedback for GS1 self-check keys (GTIN, SSCC, GLN, GSRN, GRAI, GDTI, …). */
+function CheckDigitHint({
+  raw,
+  bodyLen,
+  fixedPrefix = '',
+}: {
+  raw: string
+  bodyLen: number
+  fixedPrefix?: string
+}) {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length === bodyLen) {
+    const check = EPCDecoder.calculateCheckDigit(fixedPrefix + digits)
+    return (
+      <p className="m-0 text-[11px] leading-normal text-muted-foreground">
+        Calculated check digit{' '}
+        <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary ring-1 ring-primary/15">
+          {check}
+        </span>
+      </p>
+    )
+  }
+  if (digits.length === bodyLen + 1) {
+    const body = digits.slice(0, bodyLen)
+    const providedCheck = digits.slice(-1)
+    const calcCheck = EPCDecoder.calculateCheckDigit(fixedPrefix + body)
+    const isValid = providedCheck === calcCheck
+    return (
+      <div
+        className={cn(
+          'flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] leading-normal ring-1',
+          isValid
+            ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-800 ring-emerald-500/15 dark:text-emerald-300'
+            : 'border-destructive/40 bg-destructive/[0.06] text-destructive ring-destructive/10'
+        )}
+      >
+        <span className="m-0">
+          {isValid ? 'Check digit is valid.' : `Check digit mismatch (expected ${calcCheck}).`}
+        </span>
+      </div>
+    )
+  }
+  return null
+}
+
 function OutputRow({ label, value }: { label: string; value?: string }) {
   if (!value) return null
   return (
@@ -449,8 +753,8 @@ export function DecoderTab() {
   const [encodeInput, setEncodeInput] = useState('')
   const [encodeScheme, setEncodeScheme] = useState('')
   const [encodeDetected, setEncodeDetected] = useState<TdtDetectedScheme[]>([])
-  const [gtinInput, setGtinInput] = useState('')
-  const [serialInput, setSerialInput] = useState('')
+  const [tdtSchemeInputs, setTdtSchemeInputs] = useState<TdtSchemeInputs | null>(null)
+  const [quickValues, setQuickValues] = useState<Record<string, string>>({})
   const [companyPrefixLen, setCompanyPrefixLen] = useState('6')
   const [filterValue, setFilterValue] = useState('0')
   const [encodedResult, setEncodedResult] = useState<{
@@ -461,11 +765,49 @@ export function DecoderTab() {
   const [serialIsUid, setSerialIsUid] = useState(false)
   const [encoding, setEncoding] = useState(false)
 
+  // Prefer handcrafted family forms when available; otherwise use live TDT field defs.
+  const activeFamily = schemeFamily(encodeScheme) || 'SGTIN'
+  const quickConfig = useMemo(() => {
+    const family = QUICK_SCHEME_CONFIGS[activeFamily]
+    if (family) return family
+    if (tdtSchemeInputs) return quickConfigFromTdt(tdtSchemeInputs)
+    return null
+  }, [activeFamily, tdtSchemeInputs])
+
+  const setQuickValue = (key: string, value: string) => {
+    setQuickValues((prev) => ({ ...prev, [key]: value }))
+  }
+
   // Pre-warm the TDT translator + artefacts when this tab mounts.
   useEffect(() => {
     prewarmTdt()
     void tdtListSchemes().then(setAllTdtSchemes).catch(() => {})
   }, [])
+
+  // Load TDT field definitions for the selected scheme (fallback for families without a handcrafted form).
+  useEffect(() => {
+    const scheme = encodeScheme || 'SGTIN-96'
+    let cancelled = false
+    void tdtGetSchemeInputs(scheme)
+      .then((meta) => {
+        if (cancelled) return
+        setTdtSchemeInputs(meta)
+        setQuickValues((prev) => {
+          const next: Record<string, string> = {}
+          const keys = QUICK_SCHEME_CONFIGS[schemeFamily(scheme)]?.fields.map((f) => f.key)
+            ?? meta?.fields.map((f) => f.name)
+            ?? []
+          for (const key of keys) next[key] = prev[key] ?? ''
+          return next
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setTdtSchemeInputs(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [encodeScheme])
 
   useEffect(() => {
     const raw = epcInput.trim()
@@ -571,28 +913,30 @@ export function DecoderTab() {
 
   const handleEncode = async () => {
     let raw = encodeInput.trim()
+    let fromQuickPanel = false
     if (!raw) {
-      if (!gtinInput.trim() || !serialInput.trim()) {
-        setEncodedResult({ error: 'Enter an identifier above or GTIN + serial below' })
+      if (!quickConfig) {
+        const msg = `Loading TDT fields for ${encodeScheme || activeFamily}… try again in a moment, or paste an identifier above`
+        setEncodedResult({ error: msg })
         return
       }
-      const built = buildSgtinAiJson(gtinInput, serialInput, serialIsUid)
+      const built = quickConfig.build(quickValues, { serialIsUid })
       if (built.error) {
         setEncodedResult({ error: built.error })
         toast.error(built.error)
         return
       }
       raw = built.input!
+      fromQuickPanel = true
     }
 
     setEncoding(true)
     setEncodedResult(null)
-    const fromQuickSgtin = !encodeInput.trim()
     try {
       const r = await tdtEncode(raw, 'HEX', {
         scheme: encodeScheme || undefined,
         filter: parseInt(filterValue, 10) || 0,
-        ...(fromQuickSgtin ? { gcpLength: parseInt(companyPrefixLen, 10) || 6 } : {}),
+        ...(fromQuickPanel && quickConfig!.usesCompanyPrefixLength ? { gcpLength: parseInt(companyPrefixLen, 10) || 6 } : {}),
       })
       if (!r.ok) {
         setEncodedResult({ error: r.error })
@@ -619,49 +963,12 @@ export function DecoderTab() {
     setEncodeInput('')
     setEncodeScheme('')
     setEncodeDetected([])
-    setGtinInput('')
-    setSerialInput('')
+    setQuickValues({})
     setCompanyPrefixLen('6')
     setFilterValue('0')
     setEncodedResult(null)
     setSerialIsUid(false)
   }
-
-  const gtinDigits = gtinInput.replace(/[^0-9]/g, '')
-  const gtinHint = useMemo(() => {
-    if (gtinDigits.length === 13) {
-      const check = EPCDecoder.calculateCheckDigit(gtinDigits)
-      return (
-        <p className="m-0 text-[11px] leading-normal text-muted-foreground">
-          Calculated check digit{' '}
-          <span className="rounded-md bg-primary/10 px-1.5 py-0.5 font-mono text-xs font-semibold tabular-nums text-primary ring-1 ring-primary/15">
-            {check}
-          </span>
-        </p>
-      )
-    }
-    if (gtinDigits.length === 14) {
-      const payload = gtinDigits.slice(0, 13)
-      const providedCheck = gtinDigits.slice(-1)
-      const calcCheck = EPCDecoder.calculateCheckDigit(payload)
-      const isValid = providedCheck === calcCheck
-      return (
-        <div
-          className={cn(
-            'flex items-center rounded-lg border px-2.5 py-1.5 text-[11px] leading-normal ring-1',
-            isValid
-              ? 'border-emerald-500/30 bg-emerald-500/[0.06] text-emerald-800 ring-emerald-500/15 dark:text-emerald-300'
-              : 'border-destructive/40 bg-destructive/[0.06] text-destructive ring-destructive/10'
-          )}
-        >
-          <span className="m-0">
-            {isValid ? 'Check digit is valid.' : `Check digit mismatch (expected ${calcCheck}).`}
-          </span>
-        </div>
-      )
-    }
-    return null
-  }, [gtinDigits])
 
   // Decide if we should render the SGTIN-96 bit visualizer
   const showSgtinViz = !!sgtinResult && tdtResult?.scheme === 'SGTIN-96'
@@ -906,10 +1213,11 @@ export function DecoderTab() {
               <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                 <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                   <Sparkles className="mr-1 inline h-3 w-3" /> examples
+                  {tdtSchemeInputs?.scheme ? ` · ${tdtSchemeInputs.scheme}` : ''}
                 </span>
-                {EXAMPLE_ENCODE.map((ex) => (
+                {(tdtSchemeInputs?.examples?.length ? tdtSchemeInputs.examples : EXAMPLE_ENCODE).map((ex) => (
                   <button
-                    key={ex.value}
+                    key={`${ex.label}-${ex.value}`}
                     type="button"
                     onClick={() => setEncodeInput(ex.value)}
                     className="rounded-md border border-border/40 bg-muted/30 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -933,84 +1241,106 @@ export function DecoderTab() {
               />
             </div>
 
-            <div className="space-y-2 rounded-lg border border-border/35 bg-muted/15 px-3 py-3 ring-1 ring-border/15">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Or quick SGTIN
-              </p>
-            <div className="space-y-2">
-              <Label htmlFor="encoder-gtin" className="text-sm font-medium">
-                GTIN / UPC
-              </Label>
-              <Input
-                id="encoder-gtin"
-                placeholder="e.g. 1234567890123"
-                value={gtinInput}
-                onChange={(e) => setGtinInput(e.target.value)}
-                className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
-              />
-              {gtinHint}
-            </div>
-
-            <div className="space-y-3">
-              <Label htmlFor="encoder-serial" className="text-sm font-medium">
-                Serial number
-              </Label>
-              <Input
-                id="encoder-serial"
-                placeholder={serialIsUid ? 'e.g. E0167801034E89FC' : 'e.g. 12345'}
-                value={serialInput}
-                onChange={(e) => setSerialInput(e.target.value)}
-                className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
-              />
-              <div className="flex items-start justify-between gap-3 rounded-lg border border-border/35 bg-muted/20 px-3 py-2.5 ring-1 ring-border/15">
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  <Label htmlFor="serial-is-uid" className="text-sm font-medium leading-snug">
-                    UID input
-                  </Label>
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">E016 + 12 hex → EPC serial</p>
-                </div>
-                <Switch id="serial-is-uid" className="mt-0.5 shrink-0" checked={serialIsUid} onCheckedChange={setSerialIsUid} />
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Company prefix length</Label>
-                <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
-                  <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
-                    <SelectValue placeholder="Length" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="6">6 digits</SelectItem>
-                    <SelectItem value="7">7 digits</SelectItem>
-                    <SelectItem value="8">8 digits</SelectItem>
-                    <SelectItem value="9">9 digits</SelectItem>
-                    <SelectItem value="10">10 digits</SelectItem>
-                    <SelectItem value="11">11 digits</SelectItem>
-                    <SelectItem value="12">12 digits</SelectItem>
-                  </SelectContent>
-                </Select>
+            <div className="space-y-3 rounded-lg border border-border/35 bg-muted/15 px-3 py-3 ring-1 ring-border/15">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {quickConfig ? `Or ${quickConfig.title.toLowerCase()}` : 'Quick fields'}
+                </p>
+                <Badge variant="outline" className="font-mono text-[10px] font-normal text-muted-foreground">
+                  {tdtSchemeInputs?.scheme || encodeScheme || activeFamily}
+                </Badge>
               </div>
 
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Filter value</Label>
-                <Select value={filterValue} onValueChange={setFilterValue}>
-                  <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
-                    <SelectValue placeholder="Filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="0">0 — All others (retail)</SelectItem>
-                    <SelectItem value="1">1 — POS trade item</SelectItem>
-                    <SelectItem value="2">2 — Full case transport</SelectItem>
-                    <SelectItem value="3">3 — Reserved</SelectItem>
-                    <SelectItem value="4">4 — Inner pack</SelectItem>
-                    <SelectItem value="5">5 — Reserved</SelectItem>
-                    <SelectItem value="6">6 — Unit load</SelectItem>
-                    <SelectItem value="7">7 — Component</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+              {quickConfig ? (
+                <>
+                  {quickConfig.fields.map((field) => (
+                    <div key={field.key} className="space-y-2">
+                      <Label htmlFor={`quick-${field.key}`} className="text-sm font-medium">
+                        {field.label}
+                      </Label>
+                      <Input
+                        id={`quick-${field.key}`}
+                        placeholder={
+                          field.key === 'serial' && quickConfig.usesUidToggle && serialIsUid
+                            ? 'e.g. E0167801034E89FC'
+                            : field.placeholder
+                        }
+                        value={quickValues[field.key] || ''}
+                        onChange={(e) => setQuickValue(field.key, e.target.value)}
+                        className="h-10 rounded-lg border-border/50 bg-background/80 font-mono text-sm"
+                      />
+                      {field.checkDigit && (
+                        <CheckDigitHint
+                          raw={quickValues[field.key] || ''}
+                          bodyLen={field.checkDigit.bodyLen}
+                          fixedPrefix={field.checkDigit.fixedPrefix}
+                        />
+                      )}
+                      {field.key === 'serial' && quickConfig.usesUidToggle && (
+                        <div className="flex items-start justify-between gap-3 rounded-lg border border-border/35 bg-muted/20 px-3 py-2.5 ring-1 ring-border/15">
+                          <div className="min-w-0 flex-1 space-y-0.5">
+                            <Label htmlFor="serial-is-uid" className="text-sm font-medium leading-snug">
+                              UID input
+                            </Label>
+                            <p className="text-[11px] leading-relaxed text-muted-foreground">E016 + 12 hex → EPC serial</p>
+                          </div>
+                          <Switch id="serial-is-uid" className="mt-0.5 shrink-0" checked={serialIsUid} onCheckedChange={setSerialIsUid} />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+
+                  {(quickConfig.usesCompanyPrefixLength || quickConfig.usesFilter) && (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {quickConfig.usesCompanyPrefixLength && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Company prefix length</Label>
+                          <Select value={companyPrefixLen} onValueChange={setCompanyPrefixLen}>
+                            <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
+                              <SelectValue placeholder="Length" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="6">6 digits</SelectItem>
+                              <SelectItem value="7">7 digits</SelectItem>
+                              <SelectItem value="8">8 digits</SelectItem>
+                              <SelectItem value="9">9 digits</SelectItem>
+                              <SelectItem value="10">10 digits</SelectItem>
+                              <SelectItem value="11">11 digits</SelectItem>
+                              <SelectItem value="12">12 digits</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+
+                      {quickConfig.usesFilter && (
+                        <div className="space-y-2">
+                          <Label className="text-sm font-medium">Filter value</Label>
+                          <Select value={filterValue} onValueChange={setFilterValue}>
+                            <SelectTrigger className="h-10 rounded-lg border-border/50 bg-background/80">
+                              <SelectValue placeholder="Filter" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="0">0 — All others (retail)</SelectItem>
+                              <SelectItem value="1">1 — POS trade item</SelectItem>
+                              <SelectItem value="2">2 — Full case transport</SelectItem>
+                              <SelectItem value="3">3 — Reserved</SelectItem>
+                              <SelectItem value="4">4 — Inner pack</SelectItem>
+                              <SelectItem value="5">5 — Reserved</SelectItem>
+                              <SelectItem value="6">6 — Unit load</SelectItem>
+                              <SelectItem value="7">7 — Component</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Loading TDT field definitions for{' '}
+                  <span className="font-mono text-foreground">{encodeScheme || 'SGTIN-96'}</span>…
+                </p>
+              )}
             </div>
 
             <Button
