@@ -257,7 +257,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
             <div className="space-y-5">
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label>UPC List</Label>
-                <p className="text-xs text-muted-foreground">Format: UPC,Count,TID (one per line)</p>
+                <p className="text-xs text-muted-foreground">Format: UPC,Count,TID[,userdata] (one per line)</p>
                 <Textarea
                   value={step.params.upcList}
                   onChange={(e) => onSaveParams(step.id, { upcList: e.target.value })}
@@ -285,7 +285,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label>Direct EPC List</Label>
-                <p className="text-xs text-muted-foreground">Format: EPC or EPC,TID (one per line)</p>
+                <p className="text-xs text-muted-foreground">Format: EPC[,TID[,userdata]] (one per line)</p>
                 <Textarea
                   value={step.params.epcList}
                   onChange={(e) => onSaveParams(step.id, { epcList: e.target.value })}
@@ -542,7 +542,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label>Direct EPC List</Label>
-                <p className="text-xs text-muted-foreground">Format: EPC or EPC,TID (one per line)</p>
+                <p className="text-xs text-muted-foreground">Format: EPC[,TID[,userdata]] (one per line)</p>
                 <Textarea
                   value={step.params.epcList}
                   onChange={(e) => onSaveParams(step.id, { epcList: e.target.value })}

@@ -288,7 +288,7 @@ export class HandheldServerHandler {
   }
 
   async sendEpcs(
-    tags: { epc: string; tid?: string; rssi?: string }[],
+    tags: { epc: string; tid?: string; rssi?: string; userdata?: string }[],
     delayMs: number,
     verboseProgress: boolean = true
   ): Promise<void> {
@@ -311,7 +311,7 @@ export class HandheldServerHandler {
   }
 
   private async runSendEpcs(
-    tags: { epc: string; tid?: string; rssi?: string }[],
+    tags: { epc: string; tid?: string; rssi?: string; userdata?: string }[],
     delayMs: number,
     verboseProgress: boolean
   ): Promise<void> {
@@ -431,7 +431,7 @@ export class HandheldServerHandler {
 
   // Java: private int broadcastBatch(List<String> epcs)
   /** Returns tags.length on success, 0 if empty, -1 if cancelled before finishing all clients. */
-  private async broadcastBatch(tags: { epc: string; tid?: string; rssi?: string }[]): Promise<number> {
+  private async broadcastBatch(tags: { epc: string; tid?: string; rssi?: string; userdata?: string }[]): Promise<number> {
     if (tags.length === 0) return 0
 
     // Java: StringBuilder sb = ... for (String epc : epcs) { String json = ...; sb.append(json).append("\r\n"); }

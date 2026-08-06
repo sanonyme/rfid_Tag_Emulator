@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
-import { TCPEmulatorClient, expandUpcListToEpcs, type TagData } from '@/lib/tcp-client'
+import { TCPEmulatorClient, expandUpcListToEpcs, parseEpcListLine, type TagData } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
 import { formatTime } from '@/lib/utils'
 import {
@@ -232,16 +232,18 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        const parts = trimmed.split(',')
-        const epc = parts[0]?.trim()
-        const customTid = parts[1]?.trim()
-        if (epc) {
-          for (const targetUid of targetUids) {
-            for (const ant of selectedAntennas) {
-                      tags.push({ epc, tid: customTid || epc, uid: targetUid, antenna: ant, rssi: getTagRssi() })
-            }
+        const parsed = parseEpcListLine(line)
+        if (!parsed) continue
+        for (const targetUid of targetUids) {
+          for (const ant of selectedAntennas) {
+            tags.push({
+              epc: parsed.epc,
+              tid: parsed.tid || parsed.epc,
+              uid: targetUid,
+              antenna: ant,
+              rssi: getTagRssi(),
+              userdata: parsed.userdata,
+            })
           }
         }
       }
@@ -249,7 +251,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
 
     if (upcList.trim()) {
       const expanded = expandUpcListToEpcs(upcList, startSerial, serialContinuesAcrossUpcLines)
-      for (const { epc, customTid } of expanded) {
+      for (const { epc, customTid, userdata } of expanded) {
         for (const targetUid of targetUids) {
           for (const ant of selectedAntennas) {
             tags.push({
@@ -258,6 +260,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
               uid: targetUid,
               antenna: ant,
               rssi: getTagRssi(),
+              userdata,
             })
           }
         }
@@ -531,7 +534,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
         <CardContent className="space-y-3">
           <ExpandableTagField
             dialogTitle="UPC → EPC"
-            dialogDescription="Format: UPC,Count,TID (optional)"
+            dialogDescription="Format: UPC,Count,TID[,userdata] (TID and userdata optional)"
             value={upcList}
             onChange={(e) => setUpcList(e.target.value)}
             onFileImport={(c) => setUpcList(upcList ? upcList + '\n' + c : c)}
@@ -559,11 +562,11 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
         <CardContent>
           <ExpandableTagField
             dialogTitle="Direct EPC"
-            dialogDescription="EPC or EPC,TID (one per line)"
+            dialogDescription="EPC[,TID[,userdata]] (one per line)"
             value={epcList}
             onChange={(e) => setEpcList(e.target.value)}
             onFileImport={(c) => setEpcList(epcList ? epcList + '\n' + c : c)}
-            placeholder="EPC or EPC,TID"
+            placeholder="EPC[,TID[,userdata]]"
             compactClassName="font-mono text-sm min-h-[80px]"
           />
         </CardContent>

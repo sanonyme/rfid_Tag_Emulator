@@ -2,8 +2,8 @@
  * Smart CSV → tag-list importer.
  *
  * The Fixed and Handheld tabs both consume two free-form line formats:
- *  - UPC:  `upc,count,tid` (count and tid optional)
- *  - EPC:  `epc,tid` (tid optional)
+ *  - UPC:  `upc,count,tid,userdata` (tid and userdata optional)
+ *  - EPC:  `epc,tid,userdata` (tid and userdata optional)
  *
  * Users often paste CSVs from Excel/SAP that contain extra columns and a
  * header row with arbitrary column ordering. This module detects the header,
@@ -15,7 +15,7 @@ export type TagListKind = 'upc' | 'epc'
 
 const DELIMITERS = [',', '\t', ';', '|'] as const
 
-const HEADER_ALIASES: Record<string, 'upc' | 'epc' | 'count' | 'tid'> = {
+const HEADER_ALIASES: Record<string, 'upc' | 'epc' | 'count' | 'tid' | 'userdata'> = {
   upc: 'upc',
   gtin: 'upc',
   sku: 'upc',
@@ -40,6 +40,10 @@ const HEADER_ALIASES: Record<string, 'upc' | 'epc' | 'count' | 'tid'> = {
   num: 'count',
   tid: 'tid',
   tagtid: 'tid',
+  userdata: 'userdata',
+  usermemory: 'userdata',
+  usermem: 'userdata',
+  userbank: 'userdata',
 }
 
 function normalizeHeader(s: string): string {
@@ -73,7 +77,7 @@ function detectDelimiter(sample: string): string {
 
 interface HeaderInfo {
   hasHeader: boolean
-  indexOf: Partial<Record<'upc' | 'epc' | 'count' | 'tid', number>>
+  indexOf: Partial<Record<'upc' | 'epc' | 'count' | 'tid' | 'userdata', number>>
 }
 
 function detectHeader(firstRow: string[], kind: TagListKind): HeaderInfo {
@@ -119,8 +123,8 @@ export interface CsvImportResult {
  * Parse a pasted/dropped block of CSV-like text and return the canonical
  * comma-separated form expected by the textareas.
  *
- * - For `kind: 'upc'`: returns rows of `UPC,Count,TID` (extra cells dropped).
- * - For `kind: 'epc'`: returns rows of `EPC,TID`.
+ * - For `kind: 'upc'`: returns rows of `UPC,Count,TID[,userdata]` (extra cells dropped).
+ * - For `kind: 'epc'`: returns rows of `EPC,TID[,userdata]`.
  */
 export function smartImport(raw: string, kind: TagListKind): CsvImportResult {
   const cleanLines = raw
@@ -146,25 +150,26 @@ export function smartImport(raw: string, kind: TagListKind): CsvImportResult {
         const upc = cells[indexOf.upc ?? 0]
         const count = indexOf.count !== undefined ? cells[indexOf.count] : ''
         const tid = indexOf.tid !== undefined ? cells[indexOf.tid] : ''
+        const userdata = indexOf.userdata !== undefined ? cells[indexOf.userdata] : ''
         if (!upc) continue
-        out.push(joinCells([upc, count, tid]))
+        out.push(joinCells([upc, count, tid, userdata]))
       } else {
-        // No header — assume the file already follows UPC,Count,TID with
-        // an optional currency/delimiter swap. Keep the first three cells.
-        const [upc, count, tid] = cells
+        // No header — assume UPC,Count,TID[,userdata]. Keep the first four cells.
+        const [upc, count, tid, userdata] = cells
         if (!upc) continue
-        out.push(joinCells([upc, count ?? '', tid ?? '']))
+        out.push(joinCells([upc, count ?? '', tid ?? '', userdata ?? '']))
       }
     } else {
       if (hasHeader) {
         const epc = cells[indexOf.epc ?? 0]
         const tid = indexOf.tid !== undefined ? cells[indexOf.tid] : ''
+        const userdata = indexOf.userdata !== undefined ? cells[indexOf.userdata] : ''
         if (!epc) continue
-        out.push(joinCells([epc, tid]))
+        out.push(joinCells([epc, tid, userdata]))
       } else {
-        const [epc, tid] = cells
+        const [epc, tid, userdata] = cells
         if (!epc) continue
-        out.push(joinCells([epc, tid ?? '']))
+        out.push(joinCells([epc, tid ?? '', userdata ?? '']))
       }
     }
   }

@@ -6,6 +6,7 @@ export interface HandheldTagPayload {
   epc: string
   tid?: string
   rssi: string
+  userdata?: string
 }
 
 /** Slot fields sent to main process — expanded one tag at a time (no giant IPC array). */
@@ -44,14 +45,15 @@ export function* iterateHandheldTags(recipe: HandheldSendRecipe): Generator<Hand
     const baseSerial = parseStartSerial(recipe.startSerial)
     let serial = baseSerial
     for (const line of iterateNonBlankLines(upcText)) {
-      const [upc, countStr, customTid] = line.split(',')
+      const [upc, countStr, customTid, userdata] = line.split(',')
       const qty = parseInt(countStr?.trim() || '0', 10)
       if (qty <= 0 || !upc?.trim()) continue
       const start = recipe.serialContinuesAcrossUpcLines ? serial : baseSerial
       const tid = customTid?.trim()
+      const user = userdata?.trim()
       for (let i = 0; i < qty; i++) {
         const epc = EPCGenerator.generateFromUpc(upc.trim(), 1, start + i)[0]
-        if (epc) yield { epc, tid: tid || epc, rssi }
+        if (epc) yield { epc, tid: tid || epc, rssi, userdata: user || undefined }
       }
       if (recipe.serialContinuesAcrossUpcLines) serial += qty
     }
@@ -63,7 +65,8 @@ export function* iterateHandheldTags(recipe: HandheldSendRecipe): Generator<Hand
       const parts = line.split(',')
       const epc = parts[0]?.trim()
       const customTid = parts[1]?.trim()
-      if (epc) yield { epc, tid: customTid || epc, rssi }
+      const userdata = parts[2]?.trim()
+      if (epc) yield { epc, tid: customTid || epc, rssi, userdata: userdata || undefined }
     }
   }
 }

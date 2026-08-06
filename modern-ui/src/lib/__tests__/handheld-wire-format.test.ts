@@ -21,6 +21,20 @@ describe('handheld wire format', () => {
     expect(JSON.parse(line.trim()).tid).toBe('ABC')
   })
 
+  it('includes userdata when set', () => {
+    const line = formatHandheldBroadcastLine(
+      { epc: '3034ABCD', tid: 'E280', userdata: 'DEADBEEF' },
+      'now',
+      70,
+    )
+    expect(JSON.parse(line.trim()).userdata).toBe('DEADBEEF')
+  })
+
+  it('omits userdata when empty', () => {
+    const line = formatHandheldBroadcastLine({ epc: '3034ABCD', userdata: '  ' }, 'now', 70)
+    expect(JSON.parse(line.trim()).userdata).toBeUndefined()
+  })
+
   it('joins multiple tag lines', () => {
     const payload = formatHandheldBroadcastPayload(
       [{ epc: 'A' }, { epc: 'B' }],

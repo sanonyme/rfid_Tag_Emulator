@@ -2,6 +2,7 @@ export type HandheldTagPayload = {
   epc: string
   tid?: string
   rssi?: string
+  userdata?: string
 }
 
 export function formatHandheldBroadcastLine(
@@ -9,14 +10,14 @@ export function formatHandheldBroadcastLine(
   date: string,
   rssi: number,
 ): string {
-  return (
-    JSON.stringify({
-      epc: tag.epc,
-      tid: tag.tid || tag.epc,
-      date,
-      rssi,
-    }) + '\r\n'
-  )
+  const payload: Record<string, string | number> = {
+    epc: tag.epc,
+    tid: tag.tid || tag.epc,
+    date,
+    rssi,
+  }
+  if (tag.userdata?.trim()) payload.userdata = tag.userdata.trim()
+  return JSON.stringify(payload) + '\r\n'
 }
 
 export function formatHandheldBroadcastPayload(

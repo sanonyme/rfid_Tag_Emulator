@@ -49,6 +49,12 @@ describe('smartImport (UPC mode)', () => {
     const { text } = smartImport(csv, 'upc')
     expect(text).toBe('00012345678905,5,ABC')
   })
+
+  it('keeps optional userdata as a fourth column', () => {
+    const csv = ['UPC,Count,TID,userdata', '00012345678905,5,ABC,DEAD'].join('\n')
+    const { text } = smartImport(csv, 'upc')
+    expect(text).toBe('00012345678905,5,ABC,DEAD')
+  })
 })
 
 describe('smartImport (EPC mode)', () => {
@@ -63,6 +69,11 @@ describe('smartImport (EPC mode)', () => {
     const b = smartImport(['TID,EPC', 'T1,3034ABC'].join('\n'), 'epc').text
     expect(a).toBe('3034ABC,T1')
     expect(b).toBe('3034ABC,T1')
+  })
+
+  it('keeps optional userdata on EPC rows', () => {
+    const { text } = smartImport(['EPC,TID,userdata', '3034ABC,T1,DEAD'].join('\n'), 'epc')
+    expect(text).toBe('3034ABC,T1,DEAD')
   })
 
   it('treats `Tag` as an alias for EPC', () => {

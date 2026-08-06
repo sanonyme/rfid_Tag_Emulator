@@ -19,10 +19,11 @@ import {
   SlidersHorizontal,
   Hash,
   FileCode2,
+  Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
-import { TCPEmulatorClient, expandUpcListToEpcs, type TagData } from '@/lib/tcp-client'
+import { TCPEmulatorClient, expandUpcListToEpcs, parseEpcListLine, type TagData } from '@/lib/tcp-client'
 import { formatTime, cn } from '@/lib/utils'
 import { prefersReducedMotion } from '@/lib/motion'
 import { sectionCard, actionGroup, actionBtnMuted } from '@/lib/ui-tokens'
@@ -324,37 +325,33 @@ export function FixedTab({
       return val.toFixed(1)
     }
 
-    // Parse EPC or EPC,TID (one EPC per line, TID optional)
+    // Parse EPC[,TID[,userdata]] (one EPC per line; TID / userdata optional)
     if (epcList.trim()) {
       const lines = epcList.trim().split('\n')
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-        const parts = trimmed.split(',')
-        const epc = parts[0]?.trim()
-        const customTid = parts[1]?.trim()
-        if (epc) {
-          const targetUids = selectedUids.length > 0 ? selectedUids : ['']
-          for (const targetUid of targetUids) {
-            for (const ant of selectedAntennas) {
-              tags.push({
-                epc,
-                tid: customTid || epc,
-                uid: targetUid,
-                antenna: ant,
-                rssi: getTagRssi(),
-              })
-            }
+        const parsed = parseEpcListLine(line)
+        if (!parsed) continue
+        const targetUids = selectedUids.length > 0 ? selectedUids : ['']
+        for (const targetUid of targetUids) {
+          for (const ant of selectedAntennas) {
+            tags.push({
+              epc: parsed.epc,
+              tid: parsed.tid || parsed.epc,
+              uid: targetUid,
+              antenna: ant,
+              rssi: getTagRssi(),
+              userdata: parsed.userdata,
+            })
           }
         }
       }
     }
 
-    // Parse UPC,Count,TID and generate EPCs
+    // Parse UPC,Count,TID[,userdata] and generate EPCs
     if (upcList.trim()) {
       const expanded = expandUpcListToEpcs(upcList, startSerial, serialContinuesAcrossUpcLines)
       const targetUids = selectedUids.length > 0 ? selectedUids : ['']
-      for (const { epc, customTid } of expanded) {
+      for (const { epc, customTid, userdata } of expanded) {
         for (const targetUid of targetUids) {
           for (const ant of selectedAntennas) {
             tags.push({
@@ -363,6 +360,7 @@ export function FixedTab({
               uid: targetUid,
               antenna: ant,
               rssi: getTagRssi(),
+              userdata,
             })
           }
         }
@@ -844,9 +842,23 @@ export function FixedTab({
                         setUpcList(mode === 'append' && upcList ? upcList + '\n' + content : content)
                       }
                     />
-                    <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                      UPC,Count,TID
-                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label="UPC line format"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        <p className="font-mono text-[11px]">UPC,Count,TID[,userdata]</p>
+                        <p className="mt-1 text-muted-foreground">
+                          TID and userdata are optional hex. Example: <span className="font-mono">12345,5,,DEADBEEF</span>
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 <CardDescription className="text-xs leading-relaxed text-pretty">
@@ -857,7 +869,7 @@ export function FixedTab({
             <CardContent className="space-y-4 px-5 pb-5 pt-0">
               <ExpandableTagField
                 dialogTitle="UPC → EPC generation"
-                dialogDescription="Format: UPC,Count,TID (optional TID per line) — CSV columns auto-detected on drop"
+                dialogDescription="Format: UPC,Count,TID[,userdata] (TID and userdata optional hex) — CSV columns auto-detected on drop"
                 value={upcList}
                 onChange={(e) => setUpcList(e.target.value)}
                 onFileImport={(content) => setUpcList(upcList ? upcList + '\n' + content : content)}
@@ -918,26 +930,40 @@ export function FixedTab({
                         setEpcList(mode === 'append' && epcList ? epcList + '\n' + content : content)
                       }
                     />
-                    <Badge variant="outline" className="shrink-0 font-mono text-[10px] font-normal">
-                      EPC[,TID]
-                    </Badge>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          aria-label="EPC line format"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-xs text-xs">
+                        <p className="font-mono text-[11px]">EPC[,TID[,userdata]]</p>
+                        <p className="mt-1 text-muted-foreground">
+                          TID and userdata are optional hex. Example: <span className="font-mono">3034…,,DEADBEEF</span>
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                 </div>
                 <CardDescription className="text-xs leading-relaxed text-pretty">
-                  Paste raw hex EPCs with optional TID per line
+                  Paste raw hex EPCs with optional TID and userdata per line
                 </CardDescription>
               </div>
             </CardHeader>
             <CardContent className="space-y-3 px-5 pb-5 pt-0">
               <ExpandableTagField
                 dialogTitle="Direct EPC input"
-                dialogDescription="Format: EPC or EPC,TID (one per line, TID optional) — CSV columns auto-detected on drop"
+                dialogDescription="Format: EPC[,TID[,userdata]] (one per line; TID and userdata optional hex) — CSV columns auto-detected on drop"
                 value={epcList}
                 onChange={(e) => setEpcList(e.target.value)}
                 onFileImport={(content) => setEpcList(epcList ? epcList + '\n' + content : content)}
                 kind="epc"
                 onKeyDown={epcShortcuts}
-                placeholder="3034...&#10;3035...,CustomTID"
+                placeholder="3034...&#10;3035...,CustomTID,DEADBEEF"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
             </CardContent>

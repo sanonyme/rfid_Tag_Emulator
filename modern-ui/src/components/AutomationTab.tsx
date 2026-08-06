@@ -104,6 +104,7 @@ import {
   type TagData,
   EPCGenerator,
   expandUpcListToEpcs,
+  parseEpcListLine,
 } from '@/lib/tcp-client'
 import { toast } from 'sonner'
 import { cn, formatTime } from '@/lib/utils'
@@ -2260,7 +2261,7 @@ export function AutomationTab({
               step.params.startSerial ?? 1,
               step.params.serialContinuesAcrossUpcLines === true,
             )
-            for (const { epc, customTid } of expanded) {
+            for (const { epc, customTid, userdata } of expanded) {
               for (const targetUid of targetUids) {
                 for (const ant of stepAntennas) {
                   fixedTags.push({
@@ -2269,31 +2270,30 @@ export function AutomationTab({
                     uid: targetUid,
                     antenna: ant,
                     rssi: getTagRssi(),
+                    userdata,
                   })
                 }
               }
             }
         }
 
-        // Parse EPC List (EPC or EPC,TID - one per line, TID optional)
+        // Parse EPC List (EPC[,TID[,userdata]] — one per line)
         if (epcList) {
             const lines = epcList.split('\n')
             for (const line of lines) {
-                const parts = line.split(',')
-                const epc = parts[0]?.trim()
-                const customTid = parts[1]?.trim()
-                if (epc) {
-                    for (const targetUid of targetUids) {
-                      for (const ant of stepAntennas) {
-                        fixedTags.push({
-                            epc,
-                            tid: customTid || step.params.tid || epc,
-                            uid: targetUid,
-                            antenna: ant,
-                            rssi: getTagRssi()
-                        })
-                      }
-                    }
+                const parsed = parseEpcListLine(line)
+                if (!parsed) continue
+                for (const targetUid of targetUids) {
+                  for (const ant of stepAntennas) {
+                    fixedTags.push({
+                        epc: parsed.epc,
+                        tid: parsed.tid || step.params.tid || parsed.epc,
+                        uid: targetUid,
+                        antenna: ant,
+                        rssi: getTagRssi(),
+                        userdata: parsed.userdata,
+                    })
+                  }
                 }
             }
         }
@@ -2350,7 +2350,7 @@ export function AutomationTab({
       case 'HANDHELD_TAG': {
         addLog(`Emulating Handheld Tags...`)
         const getHhTagRssi = makeRssiPicker(step.params)
-        const allHhTags: { epc: string; tid?: string; rssi?: string }[] = []
+        const allHhTags: { epc: string; tid?: string; rssi?: string; userdata?: string }[] = []
         const vars = runVarsRef.current
         const upcList = applyTemplate(step.params.upcList || '', vars)
         const epcList = applyTemplate(step.params.epcList || '', vars)
@@ -2363,28 +2363,27 @@ export function AutomationTab({
               step.params.serialContinuesAcrossUpcLines === true,
             )
             allHhTags.push(
-              ...expanded.map(({ epc, customTid }) => ({
+              ...expanded.map(({ epc, customTid, userdata }) => ({
                 epc,
                 tid: customTid || step.params.tid || epc,
                 rssi: getHhTagRssi(),
+                userdata,
               })),
             )
         }
 
-        // Add Direct EPCs (EPC or EPC,TID - one per line, TID optional)
+        // Add Direct EPCs (EPC[,TID[,userdata]] — one per line)
         if (epcList) {
             const lines = epcList.split('\n')
             for (const line of lines) {
-                const parts = line.split(',')
-                const epc = parts[0]?.trim()
-                const customTid = parts[1]?.trim()
-                if (epc) {
-                    allHhTags.push({
-                        epc,
-                        tid: customTid || step.params.tid || epc,
-                        rssi: getHhTagRssi()
-                    })
-                }
+                const parsed = parseEpcListLine(line)
+                if (!parsed) continue
+                allHhTags.push({
+                    epc: parsed.epc,
+                    tid: parsed.tid || step.params.tid || parsed.epc,
+                    rssi: getHhTagRssi(),
+                    userdata: parsed.userdata,
+                })
             }
         }
         

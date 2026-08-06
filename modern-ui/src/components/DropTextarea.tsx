@@ -8,7 +8,7 @@ interface DropTextareaProps extends TextareaProps {
   onFileImport: (content: string) => void
   /**
    * When provided, dropped files are run through {@link smartImport} so the
-   * caller receives canonical `UPC,Count,TID` or `EPC,TID` rows regardless
+   * caller receives canonical `UPC,Count,TID[,userdata]` or `EPC,TID[,userdata]` rows regardless
    * of column order in the source file. Falls back to a naïve header
    * detector if omitted.
    */

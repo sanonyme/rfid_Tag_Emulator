@@ -8,6 +8,8 @@ export interface TagData {
   uid: string
   antenna: number
   rssi: string
+  /** Optional user-memory bank (hex); sent as `@userdata=` on the Fixed wire. */
+  userdata?: string
 }
 
 export class TCPEmulatorClient {
@@ -376,9 +378,10 @@ export function parseStartSerial(input: string | number | undefined): number {
 export interface ExpandedUpcTag {
   epc: string
   customTid?: string
+  userdata?: string
 }
 
-/** Expand UPC,Count,TID lines to EPC hex strings using the chosen serial mode. */
+/** Expand UPC,Count,TID[,userdata] lines to EPC hex strings using the chosen serial mode. */
 export function expandUpcListToEpcs(
   upcList: string,
   startSerial: string | number | undefined,
@@ -394,19 +397,40 @@ export function expandUpcListToEpcs(
   for (const line of trimmedList.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed) continue
-    const [upc, countStr, customTid] = trimmed.split(',')
+    const [upc, countStr, customTid, userdata] = trimmed.split(',')
     const count = parseInt(countStr?.trim() || '0', 10)
     if (count <= 0 || !upc) continue
 
     const start = continuesAcrossLines ? serial : baseSerial
     const epcs = EPCGenerator.generateFromUpc(upc.trim(), count, start)
     const tid = customTid?.trim()
+    const user = userdata?.trim()
     for (const epc of epcs) {
-      out.push({ epc, customTid: tid || undefined })
+      out.push({
+        epc,
+        customTid: tid || undefined,
+        userdata: user || undefined,
+      })
     }
     if (continuesAcrossLines) serial += count
   }
 
   return out
+}
+
+/** Parse `EPC[,TID[,userdata]]` — empty TID falls through to caller default. */
+export function parseEpcListLine(line: string): { epc: string; tid?: string; userdata?: string } | null {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+  const parts = trimmed.split(',')
+  const epc = parts[0]?.trim()
+  if (!epc) return null
+  const tid = parts[1]?.trim()
+  const userdata = parts[2]?.trim()
+  return {
+    epc,
+    tid: tid || undefined,
+    userdata: userdata || undefined,
+  }
 }
 

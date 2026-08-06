@@ -691,7 +691,7 @@ function HandheldSlotCard({
           </TabsList>
           <TabsContent value="upc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">UPC,Count,TID · one per line</span>
+              <span className="text-xs text-muted-foreground">UPC,Count,TID[,userdata] · one per line</span>
               <div className="flex shrink-0 items-center gap-1">
                 <TagListSummary value={slot.upcList} kind="upc" variant="compact" />
                 <TagPresetMenu
@@ -721,7 +721,7 @@ function HandheldSlotCard({
             </div>
             <ExpandableTagField
               dialogTitle={`UPC → EPC — port ${slot.port}`}
-              dialogDescription="UPC,Count,TID (one per line) — CSV columns auto-detected on drop"
+              dialogDescription="UPC,Count,TID[,userdata] (one per line) — CSV columns auto-detected on drop"
               value={slot.upcList}
               onChange={(e) => onUpdate({ upcList: e.target.value })}
               onFileImport={(content) =>
@@ -750,7 +750,7 @@ function HandheldSlotCard({
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">EPC or EPC,TID · one per line</span>
+              <span className="text-xs text-muted-foreground">EPC[,TID[,userdata]] · one per line</span>
               <div className="flex shrink-0 items-center gap-1">
                 <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
                 <TagSchemeGenerator
@@ -788,7 +788,7 @@ function HandheldSlotCard({
             </div>
             <ExpandableTagField
               dialogTitle={`Direct EPC — port ${slot.port}`}
-              dialogDescription="EPC or EPC,TID (one per line) — CSV columns auto-detected on drop"
+              dialogDescription="EPC[,TID[,userdata]] (one per line) — CSV columns auto-detected on drop"
               value={slot.epcList}
               onChange={(e) => onUpdate({ epcList: e.target.value })}
               onFileImport={(content) =>

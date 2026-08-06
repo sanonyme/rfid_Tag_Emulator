@@ -7,13 +7,15 @@
  * and explain why anything was skipped.
  *
  * Rules (lenient enough to match the existing parsers):
- *  - UPC mode (`UPC,Count,TID`):
+ *  - UPC mode (`UPC,Count,TID[,userdata]`):
  *      * UPC must be digits only (1+ digits; longer values use the rightmost 14 for GTIN-14 encoding)
  *      * Count is required and must be a positive integer
  *      * TID is optional; when present it must be hex (any length)
- *  - EPC mode (`EPC[,TID]`):
+ *      * userdata is optional; when present it must be hex (user-memory bank)
+ *  - EPC mode (`EPC[,TID[,userdata]]`):
  *      * EPC must be a non-empty hex string with an even number of chars
  *      * TID is optional; when present it must be hex
+ *      * userdata is optional; when present it must be hex
  *
  * Each result row gets a 1-based `lineNumber` so the UI can show "line 12" to
  * users (matching what a code editor would show).
@@ -65,7 +67,7 @@ const HEX_RE = /^[0-9a-fA-F]+$/
 
 function validateUpcLine(raw: string, lineNumber: number): ValidationLine {
   const parts = raw.split(',').map((p) => p.trim())
-  const [upc, countStr, tid] = parts
+  const [upc, countStr, tid, userdata] = parts
   if (!upc) {
     return { ok: false, lineNumber, raw, error: 'Missing UPC' }
   }
@@ -85,12 +87,15 @@ function validateUpcLine(raw: string, lineNumber: number): ValidationLine {
   if (tid && !HEX_RE.test(tid)) {
     return { ok: false, lineNumber, raw, error: `TID "${tid}" must be hex` }
   }
+  if (userdata && !HEX_RE.test(userdata)) {
+    return { ok: false, lineNumber, raw, error: `userdata "${userdata}" must be hex` }
+  }
   return { ok: true, lineNumber, raw, count }
 }
 
 function validateEpcLine(raw: string, lineNumber: number): ValidationLine {
   const parts = raw.split(',').map((p) => p.trim())
-  const [epc, tid] = parts
+  const [epc, tid, userdata] = parts
   if (!epc) {
     return { ok: false, lineNumber, raw, error: 'Missing EPC' }
   }
@@ -102,6 +107,9 @@ function validateEpcLine(raw: string, lineNumber: number): ValidationLine {
   }
   if (tid && !HEX_RE.test(tid)) {
     return { ok: false, lineNumber, raw, error: `TID "${tid}" must be hex` }
+  }
+  if (userdata && !HEX_RE.test(userdata)) {
+    return { ok: false, lineNumber, raw, error: `userdata "${userdata}" must be hex` }
   }
   return { ok: true, lineNumber, raw, count: 1 }
 }

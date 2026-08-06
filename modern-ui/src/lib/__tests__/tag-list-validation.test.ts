@@ -81,6 +81,17 @@ describe('validateTagList (EPC)', () => {
     expect(result.invalidLines).toBe(0)
   })
 
+  it('accepts EPC,TID,userdata triples', () => {
+    const result = validateTagList('3034ABCD,DEADBEEF,CAFE', 'epc')
+    expect(result.invalidLines).toBe(0)
+  })
+
+  it('flags non-hex userdata', () => {
+    const result = validateTagList('3034ABCD,DEADBEEF,ZZZZ', 'epc')
+    expect(result.invalidLines).toBe(1)
+    if (!result.lines[0].ok) expect(result.lines[0].error).toMatch(/userdata/i)
+  })
+
   it('flags non-hex EPCs', () => {
     const result = validateTagList('not hex!', 'epc')
     expect(result.invalidLines).toBe(1)

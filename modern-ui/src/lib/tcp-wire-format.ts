@@ -6,8 +6,14 @@ export type TcpTagPayload = {
   uid: string
   antenna: number
   rssi: string
+  /** Optional user-memory bank payload; emitted as `@userdata=` when set. */
+  userdata?: string
 }
 
 export function formatTcpTagMessage(tag: TcpTagPayload, driver: string): string {
-  return `driver=${driver} epc=${tag.epc} @tid=${tag.tid} uid=${tag.uid} antenna=${tag.antenna} @rssi=${tag.rssi}\n`
+  const userdata =
+    tag.userdata && tag.userdata.trim()
+      ? ` @userdata=${tag.userdata.trim()}`
+      : ''
+  return `driver=${driver} epc=${tag.epc} @tid=${tag.tid}${userdata} uid=${tag.uid} antenna=${tag.antenna} @rssi=${tag.rssi}\n`
 }

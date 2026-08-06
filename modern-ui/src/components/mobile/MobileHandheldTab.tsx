@@ -293,7 +293,7 @@ export function MobileHandheldTab({
             <TabsContent value="upc" className="mt-3 space-y-2">
               <ExpandableTagField
                 dialogTitle={`UPC → EPC — port ${slot.port}`}
-                dialogDescription="One line per UPC,Count,TID"
+                dialogDescription="One line per UPC,Count,TID[,userdata]"
                 value={slot.upcList}
                 onChange={(e) => updateSlot({ upcList: e.target.value })}
                 onFileImport={(c) => updateSlot({ upcList: slot.upcList ? slot.upcList + '\n' + c : c })}
@@ -318,11 +318,11 @@ export function MobileHandheldTab({
             <TabsContent value="epc" className="mt-3">
               <ExpandableTagField
                 dialogTitle={`Direct EPC — port ${slot.port}`}
-                dialogDescription="EPC or EPC,TID (one per line)"
+                dialogDescription="EPC[,TID[,userdata]] (one per line)"
                 value={slot.epcList}
                 onChange={(e) => updateSlot({ epcList: e.target.value })}
                 onFileImport={(c) => updateSlot({ epcList: slot.epcList ? slot.epcList + '\n' + c : c })}
-                placeholder="EPC or EPC,TID"
+                placeholder="EPC[,TID[,userdata]]"
                 compactClassName="font-mono text-sm min-h-[100px]"
               />
             </TabsContent>
