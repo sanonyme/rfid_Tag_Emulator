@@ -7,7 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ScrollArea } from './ui/scroll-area'
 import { Badge } from './ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs'
-import { Smartphone, Zap, Server, Plus, Trash2, Upload, Download } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import {
+  Smartphone,
+  Zap,
+  Server,
+  Plus,
+  Trash2,
+  Upload,
+  Download,
+  Info,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
@@ -690,34 +700,49 @@ function HandheldSlotCard({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="upc" className="mt-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">UPC,Count,TID[,userdata] · one per line</span>
-              <div className="flex shrink-0 items-center gap-1">
-                <TagListSummary value={slot.upcList} kind="upc" variant="compact" />
-                <TagPresetMenu
-                  ref={upcPresetRef}
-                  kind="upc"
-                  variant="compact"
-                  currentValue={slot.upcList}
-                  onLoad={(content, mode) =>
-                    onUpdate({
-                      upcList: mode === 'append' && slot.upcList ? slot.upcList + '\n' + content : content,
-                    })
-                  }
-                />
-                <input type="file" ref={fileInputUpcRef} onChange={handleImportUpc} className="hidden" accept=".txt,.csv" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 rounded-md text-xs"
-                  onClick={() => fileInputUpcRef.current?.click()}
-                >
-                  <Upload className="h-3 w-3" /> Import
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportUpc}>
-                  <Download className="h-3 w-3" /> Export
-                </Button>
-              </div>
+            <div className="mb-2 flex items-center justify-end gap-1">
+              <TagListSummary value={slot.upcList} kind="upc" variant="compact" />
+              <TagPresetMenu
+                ref={upcPresetRef}
+                kind="upc"
+                variant="compact"
+                currentValue={slot.upcList}
+                onLoad={(content, mode) =>
+                  onUpdate({
+                    upcList: mode === 'append' && slot.upcList ? slot.upcList + '\n' + content : content,
+                  })
+                }
+              />
+              <input type="file" ref={fileInputUpcRef} onChange={handleImportUpc} className="hidden" accept=".txt,.csv" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 rounded-md text-xs"
+                onClick={() => fileInputUpcRef.current?.click()}
+              >
+                <Upload className="h-3 w-3" /> Import
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportUpc}>
+                <Download className="h-3 w-3" /> Export
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="UPC line format"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs">
+                  <p className="font-mono text-[11px]">UPC,Count,TID[,userdata]</p>
+                  <p className="mt-1 text-muted-foreground">
+                    TID and userdata are optional hex. Example:{' '}
+                    <span className="font-mono">12345,5,,DEADBEEF</span>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </div>
             <ExpandableTagField
               dialogTitle={`UPC → EPC — port ${slot.port}`}
@@ -749,42 +774,57 @@ function HandheldSlotCard({
             </div>
           </TabsContent>
           <TabsContent value="epc" className="mt-3">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">EPC[,TID[,userdata]] · one per line</span>
-              <div className="flex shrink-0 items-center gap-1">
-                <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
-                <TagSchemeGenerator
-                  variant="compact"
-                  onGenerated={(epcs) =>
-                    onUpdate({
-                      epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
-                    })
-                  }
-                />
-                <TagPresetMenu
-                  ref={epcPresetRef}
-                  kind="epc"
-                  variant="compact"
-                  currentValue={slot.epcList}
-                  onLoad={(content, mode) =>
-                    onUpdate({
-                      epcList: mode === 'append' && slot.epcList ? slot.epcList + '\n' + content : content,
-                    })
-                  }
-                />
-                <input type="file" ref={fileInputEpcRef} onChange={handleImportEpc} className="hidden" accept=".txt,.csv" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 gap-1 rounded-md text-xs"
-                  onClick={() => fileInputEpcRef.current?.click()}
-                >
-                  <Upload className="h-3 w-3" /> Import
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportEpc}>
-                  <Download className="h-3 w-3" /> Export
-                </Button>
-              </div>
+            <div className="mb-2 flex items-center justify-end gap-1">
+              <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
+              <TagSchemeGenerator
+                variant="compact"
+                onGenerated={(epcs) =>
+                  onUpdate({
+                    epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
+                  })
+                }
+              />
+              <TagPresetMenu
+                ref={epcPresetRef}
+                kind="epc"
+                variant="compact"
+                currentValue={slot.epcList}
+                onLoad={(content, mode) =>
+                  onUpdate({
+                    epcList: mode === 'append' && slot.epcList ? slot.epcList + '\n' + content : content,
+                  })
+                }
+              />
+              <input type="file" ref={fileInputEpcRef} onChange={handleImportEpc} className="hidden" accept=".txt,.csv" />
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 rounded-md text-xs"
+                onClick={() => fileInputEpcRef.current?.click()}
+              >
+                <Upload className="h-3 w-3" /> Import
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportEpc}>
+                <Download className="h-3 w-3" /> Export
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    aria-label="EPC line format"
+                  >
+                    <Info className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs">
+                  <p className="font-mono text-[11px]">EPC[,TID[,userdata]]</p>
+                  <p className="mt-1 text-muted-foreground">
+                    TID and userdata are optional hex. Example:{' '}
+                    <span className="font-mono">3034…,,DEADBEEF</span>
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </div>
             <ExpandableTagField
               dialogTitle={`Direct EPC — port ${slot.port}`}

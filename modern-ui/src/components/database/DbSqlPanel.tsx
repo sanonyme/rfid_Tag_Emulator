@@ -14,12 +14,14 @@ import {
   Loader2,
   Play,
   Plus,
+  Search,
   Wand2,
   X,
 } from 'lucide-react'
 import { PortaledAnchoredMenu } from '../ui/portaled-anchored-menu'
 import { IconAction, ToolbarSep } from './DbSurfaces'
 import type { QueryHistoryEntry, QueryTab } from './db-tab-shared'
+import { BUILTIN_QUERIES, type BuiltinQueryId } from './db-builtin-queries'
 
 export interface DbSqlPanelProps {
   height: number
@@ -45,6 +47,10 @@ export interface DbSqlPanelProps {
   onToggleHistory: (e: ReactMouseEvent<HTMLButtonElement>) => void
   onClearHistory: () => void
   onPickHistory: (sql: string) => void
+  showBuiltinQueries: boolean
+  builtinBtnRef: RefObject<HTMLButtonElement>
+  onToggleBuiltinQueries: (e: ReactMouseEvent<HTMLButtonElement>) => void
+  onPickBuiltinQuery: (id: BuiltinQueryId) => void
   onExportResultsCsv: () => void
   onClearResults: () => void
   onPrettify: () => void
@@ -76,6 +82,10 @@ export function DbSqlPanel({
   onToggleHistory,
   onClearHistory,
   onPickHistory,
+  showBuiltinQueries,
+  builtinBtnRef,
+  onToggleBuiltinQueries,
+  onPickBuiltinQuery,
   onExportResultsCsv,
   onClearResults,
   onPrettify,
@@ -169,6 +179,35 @@ export function DbSqlPanel({
                   {selectedDb}
                 </span>
               )}
+
+              <IconAction
+                icon={Search}
+                label="Built-in lookups"
+                active={showBuiltinQueries}
+                buttonRef={builtinBtnRef}
+                onClick={onToggleBuiltinQueries}
+              />
+              <PortaledAnchoredMenu
+                anchorRef={builtinBtnRef}
+                open={showBuiltinQueries}
+                className="w-80 rounded-xl border border-border/70 bg-popover/95 backdrop-blur-sm shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="sticky top-0 border-b border-border/50 bg-popover/95 px-3 py-2 text-xs font-medium backdrop-blur-sm">
+                  Built-in lookups
+                </div>
+                {BUILTIN_QUERIES.map((q) => (
+                  <button
+                    key={q.id}
+                    type="button"
+                    onClick={() => onPickBuiltinQuery(q.id)}
+                    className="w-full border-b border-border/30 px-3 py-2.5 text-left transition-colors last:border-0 hover:bg-accent/50"
+                  >
+                    <div className="text-xs font-medium">{q.label}</div>
+                    <div className="mt-0.5 text-[10px] text-muted-foreground">{q.description}</div>
+                  </button>
+                ))}
+              </PortaledAnchoredMenu>
 
               <IconAction
                 icon={History}

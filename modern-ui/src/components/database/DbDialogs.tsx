@@ -1,10 +1,13 @@
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
+import { Label } from '../ui/label'
 import {
   AlertCircle,
   Database,
   Loader2,
+  Play,
   Plus,
+  Search,
   Table2,
   Trash2,
   Upload,
@@ -12,6 +15,7 @@ import {
 import { SubtleModal } from './DbSurfaces'
 import { DEFAULT_CREATE_TABLE_COLUMNS, type SchemaConfirmState } from './db-tab-shared'
 import type { ParsedImport } from '@/lib/db-import-parse'
+import type { BuiltinQueryTemplate } from './db-builtin-queries'
 
 export function DbDeleteRowDialog({
   row,
@@ -319,6 +323,62 @@ export function DbCreateDatabaseDialog({
         <Button size="sm" className="gap-1" onClick={onSubmit} disabled={busy}>
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
           Create
+        </Button>
+      </div>
+    </SubtleModal>
+  )
+}
+
+/** Prompt for a single lookup value, then fill + run a built-in query. */
+export function DbBuiltinQueryDialog({
+  template,
+  value,
+  onValueChange,
+  onCancel,
+  onRun,
+}: {
+  template: BuiltinQueryTemplate
+  value: string
+  onValueChange: (v: string) => void
+  onCancel: () => void
+  onRun: () => void
+}) {
+  const canRun = value.trim().length > 0
+  return (
+    <SubtleModal className="max-w-md">
+      <div className="flex items-center gap-2 mb-1">
+        <Search className="w-5 h-5 text-sky-500" />
+        <span className="font-semibold">{template.label}</span>
+      </div>
+      <p className="text-xs text-muted-foreground mb-4">{template.description}</p>
+      <div className="space-y-2 mb-4">
+        <Label htmlFor="builtin-query-value" className="text-sm font-medium">
+          {template.valueLabel}
+        </Label>
+        <Input
+          id="builtin-query-value"
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          placeholder={template.placeholder}
+          className="font-mono text-sm"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && canRun) onRun()
+            if (e.key === 'Escape') onCancel()
+          }}
+        />
+      </div>
+      <div className="rounded-lg border border-border/40 bg-muted/20 px-3 py-2 mb-4">
+        <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">SQL preview</p>
+        <pre className="whitespace-pre-wrap break-all font-mono text-[11px] text-foreground/90">
+          {canRun ? template.buildSql(value) : template.buildSql('…')}
+        </pre>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+        <Button size="sm" className="gap-1" onClick={onRun} disabled={!canRun}>
+          <Play className="w-3.5 h-3.5" />
+          Run
         </Button>
       </div>
     </SubtleModal>

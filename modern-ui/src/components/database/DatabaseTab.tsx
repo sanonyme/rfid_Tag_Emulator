@@ -40,12 +40,14 @@ import { DbSqlPanel } from './DbSqlPanel'
 import { DbSidebarContextMenu, DbEditorContextMenu } from './DbMenus'
 import {
   DbBulkDeleteDialog,
+  DbBuiltinQueryDialog,
   DbCreateDatabaseDialog,
   DbCreateTableDialog,
   DbDeleteRowDialog,
   DbImportPreviewDialog,
   DbSchemaConfirmDialog,
 } from './DbDialogs'
+import { BUILTIN_QUERIES, type BuiltinQueryId, type BuiltinQueryTemplate } from './db-builtin-queries'
 import {
   DANGEROUS_SQL,
   DB_CREDS_KEY,
@@ -191,6 +193,11 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [queryHistory, setQueryHistory] = useState<QueryHistoryEntry[]>(loadQueryHistory)
   const [showHistory, setShowHistory] = useState(false)
 
+  // Built-in lookup queries
+  const [showBuiltinQueries, setShowBuiltinQueries] = useState(false)
+  const [builtinQueryPrompt, setBuiltinQueryPrompt] = useState<BuiltinQueryTemplate | null>(null)
+  const [builtinQueryValue, setBuiltinQueryValue] = useState('')
+
   // Insert row
   const [showInsertRow, setShowInsertRow] = useState(false)
   const [insertValues, setInsertValues] = useState<Record<string, string>>({})
@@ -227,6 +234,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const editorRef = useRef<HTMLDivElement>(null)
   const historyBtnRef = useRef<HTMLButtonElement>(null)
+  const builtinBtnRef = useRef<HTMLButtonElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const runQueryRef = useRef<(sqlOverride?: string) => void>(() => {})
   const selectedDbRef = useRef(selectedDb)
@@ -1156,6 +1164,32 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setActiveTabId(id)
   }, [activeTabId, saveCurrentTabContent])
 
+  const setEditorSql = useCallback((sqlText: string) => {
+    if (!viewRef.current) return
+    viewRef.current.dispatch({
+      changes: { from: 0, to: viewRef.current.state.doc.length, insert: sqlText },
+    })
+  }, [])
+
+  const handlePickBuiltinQuery = useCallback((id: BuiltinQueryId) => {
+    setShowBuiltinQueries(false)
+    const template = BUILTIN_QUERIES.find((q) => q.id === id)
+    if (!template) return
+    setBuiltinQueryPrompt(template)
+    setBuiltinQueryValue('')
+  }, [])
+
+  const handleRunBuiltinQuery = useCallback(() => {
+    if (!builtinQueryPrompt) return
+    const value = builtinQueryValue.trim()
+    if (!value) return
+    const sqlText = builtinQueryPrompt.buildSql(value)
+    setBuiltinQueryPrompt(null)
+    setBuiltinQueryValue('')
+    setEditorSql(sqlText)
+    handleRunQuery(sqlText)
+  }, [builtinQueryPrompt, builtinQueryValue, setEditorSql, handleRunQuery])
+
   // -- Editor Context Menu --
   const handleContextMenu = useCallback((e: MouseEvent) => {
     e.preventDefault()
@@ -1194,11 +1228,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [ctxMenu, sidebarCtx])
 
   useEffect(() => {
-    if (!showExportMenu && !showHistory && !showAutoRefreshMenu) return
-    const close = () => { setShowExportMenu(false); setShowHistory(false); setShowAutoRefreshMenu(false) }
+    if (!showExportMenu && !showHistory && !showBuiltinQueries && !showAutoRefreshMenu) return
+    const close = () => {
+      setShowExportMenu(false)
+      setShowHistory(false)
+      setShowBuiltinQueries(false)
+      setShowAutoRefreshMenu(false)
+    }
     const timer = setTimeout(() => window.addEventListener('click', close), 0)
     return () => { clearTimeout(timer); window.removeEventListener('click', close) }
-  }, [showExportMenu, showHistory, showAutoRefreshMenu])
+  }, [showExportMenu, showHistory, showBuiltinQueries, showAutoRefreshMenu])
 
   useEffect(() => {
     if (!active || !autoRefresh || !dbConnected) return
@@ -1648,6 +1687,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           historyBtnRef={historyBtnRef}
           onToggleHistory={(e) => {
             e.stopPropagation()
+            setShowBuiltinQueries(false)
             setShowHistory((v) => !v)
           }}
           onClearHistory={() => {
@@ -1656,12 +1696,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           }}
           onPickHistory={(sqlText) => {
             setShowHistory(false)
-            if (viewRef.current) {
-              viewRef.current.dispatch({
-                changes: { from: 0, to: viewRef.current.state.doc.length, insert: sqlText },
-              })
-            }
+            setEditorSql(sqlText)
           }}
+          showBuiltinQueries={showBuiltinQueries}
+          builtinBtnRef={builtinBtnRef}
+          onToggleBuiltinQueries={(e) => {
+            e.stopPropagation()
+            setShowHistory(false)
+            setShowBuiltinQueries((v) => !v)
+          }}
+          onPickBuiltinQuery={handlePickBuiltinQuery}
           onExportResultsCsv={handleExportQueryResultsCsv}
           onClearResults={clearQueryResults}
           onPrettify={handlePrettifySql}
@@ -1671,6 +1715,19 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       </div>
 
       {/* Dialogs */}
+      {builtinQueryPrompt && (
+        <DbBuiltinQueryDialog
+          template={builtinQueryPrompt}
+          value={builtinQueryValue}
+          onValueChange={setBuiltinQueryValue}
+          onCancel={() => {
+            setBuiltinQueryPrompt(null)
+            setBuiltinQueryValue('')
+          }}
+          onRun={handleRunBuiltinQuery}
+        />
+      )}
+
       {deleteConfirm && (
         <DbDeleteRowDialog
           row={deleteConfirm.row}
