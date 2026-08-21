@@ -40,7 +40,27 @@ export function LogAggregatorTab() {
   const [progress, setProgress] = useState<LogAggregatorProgress | null>(null)
   const [result, setResult] = useState<LogAggregatorResult | null>(null)
   const [dragActive, setDragActive] = useState(false)
+  const dragCounterRef = useRef(0)
   const unsubRef = useRef<(() => void) | null>(null)
+
+  const resolveDroppedFilePath = useCallback((file: File): string | null => {
+    const fromApi = window.electronAPI?.getPathForFile?.(file)
+    if (fromApi) return fromApi
+    const legacy = (file as File & { path?: string }).path
+    return legacy ?? null
+  }, [])
+
+  const applyZipPath = useCallback(
+    (filePath: string) => {
+      setZipPath(filePath)
+      setResult(null)
+      if (!outputDir) {
+        const parent = filePath.replace(/[/\\][^/\\]+$/, '')
+        setOutputDir(`${parent}/${suggestedOutputName(filePath)}`)
+      }
+    },
+    [outputDir],
+  )
 
   useEffect(() => {
     return () => {
@@ -55,16 +75,11 @@ export function LogAggregatorTab() {
     if (!res) return
     if ('cancelled' in res && res.cancelled) return
     if (res.ok && 'path' in res) {
-      setZipPath(res.path)
-      setResult(null)
-      if (!outputDir) {
-        const parent = res.path.replace(/[/\\][^/\\]+$/, '')
-        setOutputDir(`${parent}/${suggestedOutputName(res.path)}`)
-      }
+      applyZipPath(res.path)
     } else if (!res.ok && 'error' in res) {
       toast.error('Could not pick zip', { description: res.error })
     }
-  }, [outputDir])
+  }, [applyZipPath])
 
   const pickOutput = useCallback(async () => {
     const res = await window.electronAPI?.logAggregatorPickOutput?.()
@@ -80,26 +95,68 @@ export function LogAggregatorTab() {
     }
   }, [zipPath])
 
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (!hasElectron) return
+      dragCounterRef.current += 1
+      if (e.dataTransfer.types.includes('Files')) {
+        setDragActive(true)
+      }
+    },
+    [hasElectron],
+  )
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounterRef.current -= 1
+    if (dragCounterRef.current <= 0) {
+      dragCounterRef.current = 0
+      setDragActive(false)
+    }
+  }, [])
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent<HTMLDivElement>) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (hasElectron) {
+        e.dataTransfer.dropEffect = 'copy'
+      }
+    },
+    [hasElectron],
+  )
+
   const handleDrop = useCallback(
     (e: React.DragEvent<HTMLDivElement>) => {
       e.preventDefault()
+      e.stopPropagation()
+      dragCounterRef.current = 0
       setDragActive(false)
       if (!hasElectron) return
+
       const file = e.dataTransfer.files?.[0]
       if (!file) return
-      const filePath = (file as File & { path?: string }).path
-      if (!filePath?.toLowerCase().endsWith('.zip')) {
+
+      const name = file.name.toLowerCase()
+      if (!name.endsWith('.zip')) {
         toast.error('Drop a .zip file')
         return
       }
-      setZipPath(filePath)
-      setResult(null)
-      if (!outputDir) {
-        const parent = filePath.replace(/[/\\][^/\\]+$/, '')
-        setOutputDir(`${parent}/${suggestedOutputName(filePath)}`)
+
+      const filePath = resolveDroppedFilePath(file)
+      if (!filePath) {
+        toast.error('Could not read dropped file path', {
+          description: 'Use Choose zip or restart the desktop app.',
+        })
+        return
       }
+
+      applyZipPath(filePath)
     },
-    [hasElectron, outputDir],
+    [applyZipPath, hasElectron, resolveDroppedFilePath],
   )
 
   const handleRun = useCallback(async () => {
@@ -172,12 +229,10 @@ export function LogAggregatorTab() {
           )}
 
           <div
-            onDragOver={(e) => {
-              e.preventDefault()
-              if (hasElectron) setDragActive(true)
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={handleDrop}
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOverCapture={handleDragOver}
+            onDropCapture={handleDrop}
             className={cn(
               'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
               dragActive

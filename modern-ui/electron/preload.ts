@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { NetScanStartPayload } from './net-scan-handler.js'
 import type { ReaderDiscoveryPayload, ReaderVendor } from './reader-discovery-handler.js'
 
@@ -432,6 +432,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('shell-exit', handler)
     return () => ipcRenderer.removeListener('shell-exit', handler)
   },
+
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
 
   logAggregatorPickZip: () => ipcRenderer.invoke('log-aggregator-pick-zip'),
   logAggregatorPickOutput: () => ipcRenderer.invoke('log-aggregator-pick-output'),

@@ -702,6 +702,10 @@ class MockElectronAPI implements ElectronAPI {
     return () => {}
   }
 
+  getPathForFile(_file: File) {
+    return ''
+  }
+
   async logAggregatorPickZip() {
     return { ok: false as const, error: 'Log Aggregator requires the desktop app' }
   }

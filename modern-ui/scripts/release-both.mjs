@@ -1,8 +1,14 @@
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import dotenv from 'dotenv'
+import {
+  electronBuilderOutputArgs,
+  resolveBuildOutput,
+} from './clean-electron-output.mjs'
+import { ensureGithubDraftRelease } from './ensure-github-draft-release.mjs'
 import { electronBuilderPublishArgs } from './electron-builder-publish-args.mjs'
 import { runCommand } from './run-command.mjs'
+import { uploadGithubReleaseAssets } from './upload-github-release-assets.mjs'
 
 const cwd = process.cwd()
 const envPath = path.join(cwd, '.env')
@@ -28,20 +34,35 @@ const primaryOwner = process.env.ZEUS_RELEASE_OWNER.trim()
 const primaryRepo = process.env.ZEUS_RELEASE_REPO.trim()
 const secondOwner = process.env.ZEUS_SECOND_RELEASE_OWNER.trim()
 const secondRepo = process.env.ZEUS_SECOND_RELEASE_REPO.trim()
+const token = process.env.GH_TOKEN.trim()
+const version = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')).version
+
+const targets = [
+  { owner: primaryOwner, repo: primaryRepo },
+  { owner: secondOwner, repo: secondRepo },
+]
 
 console.log('Building app once...')
 runCommand('vite', ['build'], process.env, cwd)
 
-console.log(`Publishing release to ${primaryOwner}/${primaryRepo}...`)
-runCommand('electron-builder', electronBuilderPublishArgs(), process.env, cwd)
+const outputDir = resolveBuildOutput(cwd)
 
-const secondEnv = {
-  ...process.env,
-  ZEUS_RELEASE_OWNER: secondOwner,
-  ZEUS_RELEASE_REPO: secondRepo,
+for (const { owner, repo } of targets) {
+  await ensureGithubDraftRelease({ owner, repo, version, token })
 }
 
-console.log(`Publishing release to ${secondOwner}/${secondRepo}...`)
-runCommand('electron-builder', electronBuilderPublishArgs(), secondEnv, cwd)
+console.log('Packaging Windows installer...')
+runCommand(
+  'electron-builder',
+  [...electronBuilderPublishArgs(), ...electronBuilderOutputArgs(outputDir)],
+  process.env,
+  cwd,
+)
+
+for (const { owner, repo } of targets) {
+  const release = await ensureGithubDraftRelease({ owner, repo, version, token })
+  console.log(`Uploading release assets to ${owner}/${repo}...`)
+  await uploadGithubReleaseAssets({ owner, repo, version, token, distDir: outputDir, releaseId: release?.id })
+}
 
 console.log('Done: published to both repositories.')

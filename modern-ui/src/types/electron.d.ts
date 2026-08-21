@@ -35,6 +35,8 @@ export type ReaderVendor =
 
 export interface ElectronAPI {
   platform: string
+  /** Resolve a dropped File to an absolute path (Electron desktop only). */
+  getPathForFile?: (file: File) => string
   minimize: () => void
   maximize: () => void
   close: () => void

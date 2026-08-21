@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -35,6 +35,14 @@ import {
 } from './sftp-permissions'
 
 const COMMON_IDS = [0, 1000, 65534]
+
+function buildIdOptions(...extra: number[]): number[] {
+  const ids = new Set(COMMON_IDS)
+  for (const n of extra) {
+    if (Number.isFinite(n)) ids.add(n)
+  }
+  return [...ids].sort((a, b) => a - b)
+}
 
 function parentDir(filePath: string): string {
   if (filePath === '/' || !filePath) return '/'
@@ -91,6 +99,9 @@ export function SftpPropertiesDialog({
   onApplied,
   sftp,
 }: SftpPropertiesDialogProps) {
+  const sftpRef = useRef(sftp)
+  sftpRef.current = sftp
+  const nodePath = node?.path ?? null
 
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -128,45 +139,58 @@ export function SftpPropertiesDialog({
     [syncOctalFromPerms, typeBits],
   )
 
-  const loadStat = useCallback(async () => {
-    if (!node || !sftp?.stat) return
-    setLoading(true)
-    try {
-      const r = await sftp.stat(node.path)
-      if (!r.ok) {
-        toast.error(r.error)
-        return
-      }
-      const st = r.stat
-      setIsDirectory(st.isDirectory)
-      setLocation(parentDir(st.path))
-      setTypeBits(st.isDirectory ? S_IFDIR : S_IFREG)
-      if (st.isDirectory) {
-        setSizeLabel('Unknown')
-        setFileCount(null)
-      } else {
-        setSizeLabel(formatSftpSize(st.size, false))
-        setFileCount(1)
-      }
-      setUid(st.uid)
-      setGid(st.gid)
-      setOrigUid(st.uid)
-      setOrigGid(st.gid)
-      setOrigMode(st.mode)
-      const p = modeToPermissions(st.mode)
-      setPerms(p)
-      setOctalInput(formatOctalMode(st.mode))
-    } finally {
-      setLoading(false)
-    }
-  }, [sftp, node])
+  const ownerIds = useMemo(() => buildIdOptions(uid, origUid), [uid, origUid])
+  const groupIds = useMemo(() => buildIdOptions(gid, origGid), [gid, origGid])
 
   useEffect(() => {
-    if (!open || !node) return
+    if (!open || !nodePath) return
+    let cancelled = false
+
     setRecursive(false)
     setAddXToDirectories(false)
-    void loadStat()
-  }, [open, node, loadStat])
+    setLoading(true)
+
+    void (async () => {
+      const client = sftpRef.current
+      if (!client?.stat) {
+        if (!cancelled) setLoading(false)
+        return
+      }
+      try {
+        const r = await client.stat(nodePath)
+        if (cancelled) return
+        if (!r.ok) {
+          toast.error(r.error)
+          return
+        }
+        const st = r.stat
+        setIsDirectory(st.isDirectory)
+        setLocation(parentDir(st.path))
+        setTypeBits(st.isDirectory ? S_IFDIR : S_IFREG)
+        if (st.isDirectory) {
+          setSizeLabel('Unknown')
+          setFileCount(null)
+        } else {
+          setSizeLabel(formatSftpSize(st.size, false))
+          setFileCount(1)
+        }
+        setUid(st.uid)
+        setGid(st.gid)
+        setOrigUid(st.uid)
+        setOrigGid(st.gid)
+        setOrigMode(st.mode)
+        const p = modeToPermissions(st.mode)
+        setPerms(p)
+        setOctalInput(formatOctalMode(st.mode))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, nodePath])
 
   const onCalculateSize = async () => {
     if (!node || !sftp?.calculateSize) return
@@ -275,10 +299,10 @@ export function SftpPropertiesDialog({
                   <Label className="text-xs text-muted-foreground">Owner</Label>
                   <Select value={String(uid)} onValueChange={(v) => setUid(Number(v))}>
                     <SelectTrigger className="h-9 font-mono text-xs">
-                      <SelectValue>{formatOwnerLabel(uid)}</SelectValue>
+                      <SelectValue placeholder="Select owner" />
                     </SelectTrigger>
                     <SelectContent>
-                      {COMMON_IDS.map((id) => (
+                      {ownerIds.map((id) => (
                         <SelectItem key={`u-${id}`} value={String(id)}>
                           {formatOwnerLabel(id)}
                         </SelectItem>
@@ -290,10 +314,10 @@ export function SftpPropertiesDialog({
                   <Label className="text-xs text-muted-foreground">Group</Label>
                   <Select value={String(gid)} onValueChange={(v) => setGid(Number(v))}>
                     <SelectTrigger className="h-9 font-mono text-xs">
-                      <SelectValue>{formatGroupLabel(gid)}</SelectValue>
+                      <SelectValue placeholder="Select group" />
                     </SelectTrigger>
                     <SelectContent>
-                      {COMMON_IDS.map((id) => (
+                      {groupIds.map((id) => (
                         <SelectItem key={`g-${id}`} value={String(id)}>
                           {formatGroupLabel(id)}
                         </SelectItem>

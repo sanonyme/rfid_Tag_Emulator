@@ -53,8 +53,11 @@ import {
   DB_CREDS_KEY,
   DEFAULT_CREATE_TABLE_COLUMNS,
   loadSqlPanelHeight,
+  loadDbSidebarWidth,
   NEW_DB_NAME_RE,
   NEW_TABLE_NAME_RE,
+  clampDbSidebarWidth,
+  saveDbSidebarWidth,
   saveSqlPanelHeight,
   sqlPanelHeightForResults,
   downloadFile,
@@ -151,8 +154,11 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   /** tableName → column names, filled from schema / structure for SQL autocomplete */
   const [autocompleteColumns, setAutocompleteColumns] = useState<Record<string, string[]>>({})
 
-  const [sidebarWidth, setSidebarWidth] = useState(256)
+  const [sidebarWidth, setSidebarWidth] = useState(loadDbSidebarWidth)
+  const sidebarWidthRef = useRef(sidebarWidth)
+  const sidebarRef = useRef<HTMLDivElement>(null)
   const isSidebarDragging = useRef(false)
+  sidebarWidthRef.current = sidebarWidth
 
   const initialTabs = useMemo(() => initialQueryTabState(), [])
   const [queryTabs, setQueryTabs] = useState<QueryTab[]>(initialTabs.tabs)
@@ -1359,12 +1365,21 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     e.preventDefault()
     isSidebarDragging.current = true
     const startX = e.clientX
-    const startWidth = sidebarWidth
+    const startWidth = sidebarWidthRef.current
+
+    const applySidebarWidth = (next: number) => {
+      sidebarWidthRef.current = next
+      const el = sidebarRef.current
+      if (!el) return
+      const px = `${next}px`
+      el.style.width = px
+      el.style.minWidth = px
+      el.style.maxWidth = px
+    }
 
     const onMove = (ev: MouseEvent) => {
       if (!isSidebarDragging.current) return
-      const delta = ev.clientX - startX
-      setSidebarWidth(Math.max(180, Math.min(500, startWidth + delta)))
+      applySidebarWidth(clampDbSidebarWidth(startWidth + (ev.clientX - startX)))
     }
 
     const onUp = () => {
@@ -1373,13 +1388,16 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       document.removeEventListener('mouseup', onUp)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      const finalWidth = sidebarWidthRef.current
+      setSidebarWidth(finalWidth)
+      saveDbSidebarWidth(finalWidth)
     }
 
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [sidebarWidth])
+  }, [])
 
   const handleSort = useCallback((col: string) => {
     let nextCol: string | null = col
@@ -1482,6 +1500,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   return (
     <div className="stagger-children flex h-full min-h-0" data-tour="tour-database">
       <DbSidebar
+        ref={sidebarRef}
         width={sidebarWidth}
         host={host}
         databases={databases}

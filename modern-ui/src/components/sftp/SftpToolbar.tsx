@@ -28,6 +28,7 @@ import {
   ChevronDown,
   MoreHorizontal,
   FileText,
+  ChevronUp,
 } from 'lucide-react'
 
 function ToolbarSep() {
@@ -89,6 +90,8 @@ export interface SftpToolbarProps {
   selectedNode: SftpFileNode | null
   onDisconnect: () => void
   onRefresh: () => void
+  onCollapseAll: () => void
+  collapseAllDisabled?: boolean
   onFind: () => void
   onPickLocal: () => void
   onMigrateOpen: () => void
@@ -118,6 +121,8 @@ export function SftpToolbar({
   selectedNode,
   onDisconnect,
   onRefresh,
+  onCollapseAll,
+  collapseAllDisabled,
   onFind,
   onPickLocal,
   onMigrateOpen,
@@ -194,6 +199,12 @@ export function SftpToolbar({
           <ToolbarSep />
 
           <IconAction icon={RefreshCw} label="Refresh" onClick={onRefresh} />
+          <IconAction
+            icon={ChevronUp}
+            label="Collapse all folders"
+            onClick={onCollapseAll}
+            disabled={collapseAllDisabled}
+          />
           <IconAction icon={Search} label="Find files" shortcut="Ctrl+F" onClick={onFind} />
           <IconAction icon={FolderOpen} label="Local folder" onClick={onPickLocal} />
 

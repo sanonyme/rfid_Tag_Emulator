@@ -71,6 +71,10 @@ export const DEFAULT_CREATE_TABLE_COLUMNS = 'id INT NOT NULL AUTO_INCREMENT PRIM
 
 export const DB_CREDS_KEY = 'db-credentials'
 export const DB_SQL_PANEL_HEIGHT_KEY = 'db-sql-panel-height'
+export const DB_SIDEBAR_WIDTH_KEY = 'db-sidebar-width'
+export const DB_SIDEBAR_MIN_WIDTH = 200
+export const DB_SIDEBAR_MAX_WIDTH = 720
+export const DB_SIDEBAR_DEFAULT_WIDTH = 280
 export const DB_SQL_PANEL_MIN_HEIGHT = 120
 export const DB_SQL_PANEL_DEFAULT_HEIGHT = 240
 /** Minimum panel height when query results are shown so the grid is usable without manual resize. */
@@ -91,6 +95,27 @@ export function saveSqlPanelHeight(height: number) {
   try {
     localStorage.setItem(DB_SQL_PANEL_HEIGHT_KEY, String(height))
   } catch { /* ignore */ }
+}
+
+export function loadDbSidebarWidth(): number {
+  try {
+    const saved = localStorage.getItem(DB_SIDEBAR_WIDTH_KEY)
+    if (saved) {
+      const n = parseInt(saved, 10)
+      if (n >= DB_SIDEBAR_MIN_WIDTH && n <= DB_SIDEBAR_MAX_WIDTH) return n
+    }
+  } catch { /* ignore */ }
+  return DB_SIDEBAR_DEFAULT_WIDTH
+}
+
+export function saveDbSidebarWidth(width: number) {
+  try {
+    localStorage.setItem(DB_SIDEBAR_WIDTH_KEY, String(width))
+  } catch { /* ignore */ }
+}
+
+export function clampDbSidebarWidth(width: number): number {
+  return Math.max(DB_SIDEBAR_MIN_WIDTH, Math.min(DB_SIDEBAR_MAX_WIDTH, width))
 }
 
 /** Target height for the SQL panel when results need to be visible. */

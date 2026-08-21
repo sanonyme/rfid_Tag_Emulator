@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { flattenVisibleSftpRows } from '@/lib/sftp-tree-flatten'
 import {
@@ -90,6 +91,7 @@ interface SftpFileTreeProps {
   onSortChange: (key: SftpSortKey) => void
   expandedPaths: ReadonlySet<string>
   onRequestCollapse: (path: string) => void
+  onCollapseAll?: () => void
 }
 
 interface FileItemProps {
@@ -558,6 +560,7 @@ export function SftpFileTree({
   onSortChange,
   expandedPaths,
   onRequestCollapse,
+  onCollapseAll,
 }: SftpFileTreeProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -619,6 +622,18 @@ export function SftpFileTree({
           <div className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
         </div>
         <span className="text-xs text-muted-foreground ml-2">{title}</span>
+        <div className="flex-1 min-w-0" />
+        {onCollapseAll && expandedPaths.size > 0 && (
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors shrink-0"
+            onClick={onCollapseAll}
+            title="Collapse all folders"
+          >
+            <ChevronUp className="w-3 h-3 shrink-0" />
+            Collapse all
+          </button>
+        )}
       </div>
 
       <ColumnHeaderRow

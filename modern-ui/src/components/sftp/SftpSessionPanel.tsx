@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -103,8 +103,12 @@ export function SftpSessionPanel({
 
   const [host, setHost] = useState(defaultHost)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const sftp: SftpSessionApi | null =
-    api && sessionId ? bindSftpSession(api, sessionId) : null
+  const sftp = useMemo(
+    () => (api && sessionId ? bindSftpSession(api, sessionId) : null),
+    [api, sessionId],
+  )
+  const sftpRef = useRef(sftp)
+  sftpRef.current = sftp
 
   useEffect(() => {
     if (!isActive) return
@@ -699,7 +703,8 @@ export function SftpSessionPanel({
 
   const handleToggleFolder = useCallback(
     async (node: SftpFileNode) => {
-      if (node.type !== 'folder' || !sftp) return
+      const client = sftpRef.current
+      if (node.type !== 'folder' || !client) return
       if (node.loading) return
       if (!node.loaded) {
         setTree((prev) => setNodeLoading(prev, node.path, true))
@@ -714,7 +719,7 @@ export function SftpSessionPanel({
       }
       setExpandedPaths((prev) => new Set(prev).add(node.path))
     },
-    [sftp, loadDir],
+    [loadDir],
   )
 
   const onRequestCollapse = useCallback((path: string) => {
@@ -723,6 +728,10 @@ export function SftpSessionPanel({
       n.delete(path)
       return n
     })
+  }, [])
+
+  const collapseAllFolders = useCallback(() => {
+    setExpandedPaths(new Set())
   }, [])
 
   const togglePathSelection = useCallback((path: string) => {
@@ -757,13 +766,14 @@ export function SftpSessionPanel({
 
   const downloadRemoteFile = useCallback(
     async (remotePath: string, label: string) => {
-      if (!sftp?.downloadSaveDialog) {
+      const client = sftpRef.current
+      if (!client?.downloadSaveDialog) {
         toast.error('Download requires the latest desktop build')
         return
       }
       const id = nextOpId()
       pushTransfer({ id, label, kind: 'download' })
-      const r = await sftp.downloadSaveDialog(remotePath, id)
+      const r = await client.downloadSaveDialog(remotePath, id)
       if ('cancelled' in r && r.cancelled) {
         updateTransfer(id, { status: 'done', progress: 100 })
         return
@@ -776,7 +786,7 @@ export function SftpSessionPanel({
         toast.error('error' in r ? r.error : 'Download failed')
       }
     },
-    [api, pushTransfer, updateTransfer],
+    [pushTransfer, updateTransfer],
   )
 
   const downloadToLocalPath = useCallback(
@@ -797,12 +807,13 @@ export function SftpSessionPanel({
 
   const downloadRemoteFolder = useCallback(
     async (remoteFolderPath: string, folderName: string) => {
-      if (!api?.localPickFolder || !sftp?.downloadToPath || !sftp?.readdir) {
+      const client = sftpRef.current
+      if (!api?.localPickFolder || !client?.downloadToPath || !client?.readdir) {
         toast.error('Folder download requires the desktop app')
         return
       }
       try {
-        const files = await collectRemoteFiles(sftp, remoteFolderPath)
+        const files = await collectRemoteFiles(client, remoteFolderPath)
         if (files.length === 0) {
           toast.message('Folder is empty')
           return
@@ -848,8 +859,13 @@ export function SftpSessionPanel({
 
   const openEditForNode = useCallback(
     async (node: SftpFileNode) => {
-      if (node.type !== 'file' || !sftp?.readFile) return
-      const r = await sftp.readFile(node.path)
+      if (node.type !== 'file') return
+      const client = sftpRef.current
+      if (!client?.readFile) {
+        toast.error('Not connected to SFTP')
+        return
+      }
+      const r = await client.readFile(node.path)
       if (!r.ok) {
         toast.error(r.error)
         return
@@ -863,14 +879,17 @@ export function SftpSessionPanel({
         setEditPath(node.path)
         setEditText(r.text)
         setEditOpen(true)
+        return
       }
+      toast.error('Could not read file')
     },
-    [api, handleSelectNode],
+    [handleSelectNode],
   )
 
   const duplicateForNode = useCallback(
     async (node: SftpFileNode) => {
-      if (node.type !== 'file' || !sftp?.copyRemoteFile) return
+      const client = sftpRef.current
+      if (node.type !== 'file' || !client?.copyRemoteFile) return
       const base = node.name
       const dot = base.lastIndexOf('.')
       const copyName =
@@ -878,7 +897,7 @@ export function SftpSessionPanel({
       const dest = posixJoin(parentDir(node.path), copyName)
       const id = nextOpId()
       pushTransfer({ id, label: `Copy ${base}`, kind: 'copy' })
-      const r = await sftp.copyRemoteFile(node.path, dest, id)
+      const r = await client.copyRemoteFile(node.path, dest, id)
       if (r.ok) {
         updateTransfer(id, { status: 'done', progress: 100 })
         toast.success('Duplicated on server')
@@ -888,7 +907,7 @@ export function SftpSessionPanel({
         toast.error(r.error)
       }
     },
-    [api, pushTransfer, updateTransfer, refreshDirectory],
+    [pushTransfer, updateTransfer, refreshDirectory],
   )
 
   const deleteNode = useCallback((node: SftpFileNode) => {
@@ -921,11 +940,12 @@ export function SftpSessionPanel({
 
   const openNode = useCallback(
     (node: SftpFileNode) => {
-      handleSelectNode(node)
-      if (node.type === 'folder') {
-        void handleToggleFolder(node)
+      const live = findNode(treeRef.current, node.path) ?? node
+      handleSelectNode(live)
+      if (live.type === 'folder') {
+        void handleToggleFolder(live)
       } else {
-        void openEditForNode(node)
+        void openEditForNode(live)
       }
     },
     [handleSelectNode, handleToggleFolder, openEditForNode],
@@ -1427,6 +1447,8 @@ export function SftpSessionPanel({
         selectedNode={selectedNode}
         onDisconnect={() => void handleDisconnect()}
         onRefresh={() => void refreshRoot()}
+        onCollapseAll={collapseAllFolders}
+        collapseAllDisabled={expandedPaths.size === 0}
         onFind={() => setFindOpen(true)}
         onPickLocal={() => void pickLocalRoot()}
         onMigrateOpen={() => {
@@ -1626,6 +1648,7 @@ export function SftpSessionPanel({
               onSortChange={handleSortChange}
               expandedPaths={expandedPaths}
               onRequestCollapse={onRequestCollapse}
+              onCollapseAll={collapseAllFolders}
           />
         </div>
       </div>
@@ -1953,7 +1976,10 @@ export function SftpSessionPanel({
 
       <SftpPropertiesDialog
         open={propertiesOpen}
-        onOpenChange={setPropertiesOpen}
+        onOpenChange={(open) => {
+          setPropertiesOpen(open)
+          if (!open) setPropertiesNode(null)
+        }}
         node={propertiesNode}
         onApplied={() => void refreshRoot(true)}
         sftp={sftp}

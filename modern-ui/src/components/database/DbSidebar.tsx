@@ -1,5 +1,4 @@
-import { useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
-import { ScrollArea } from '../ui/scroll-area'
+import { forwardRef, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown,
@@ -51,29 +50,32 @@ export interface DbSidebarProps {
   onTableContextMenu: (e: ReactMouseEvent, dbName: string, tableName: string) => void
 }
 
-export function DbSidebar({
-  width,
-  host,
-  databases,
-  selectedDb,
-  selectedTable,
-  readOnly,
-  refreshing,
-  autoRefresh,
-  autoRefreshSec,
-  showAutoRefreshMenu,
-  onToggleReadOnly,
-  onRefresh,
-  onToggleAutoRefreshMenu,
-  onAutoRefreshChange,
-  onAutoRefreshSecChange,
-  onDisconnect,
-  onToggleDatabase,
-  onSelectTable,
-  onPaneContextMenu,
-  onDatabaseContextMenu,
-  onTableContextMenu,
-}: DbSidebarProps) {
+export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbSidebar(
+  {
+    width,
+    host,
+    databases,
+    selectedDb,
+    selectedTable,
+    readOnly,
+    refreshing,
+    autoRefresh,
+    autoRefreshSec,
+    showAutoRefreshMenu,
+    onToggleReadOnly,
+    onRefresh,
+    onToggleAutoRefreshMenu,
+    onAutoRefreshChange,
+    onAutoRefreshSecChange,
+    onDisconnect,
+    onToggleDatabase,
+    onSelectTable,
+    onPaneContextMenu,
+    onDatabaseContextMenu,
+    onTableContextMenu,
+  },
+  ref,
+) {
   const [filter, setFilter] = useState('')
 
   const { userDbs, systemDbs } = useMemo(() => {
@@ -146,7 +148,7 @@ export function DbSidebar({
                     onClick={() => onSelectTable(db.name, t.name)}
                     onContextMenu={(e) => onTableContextMenu(e, db.name, t.name)}
                     className={cn(
-                      'w-full min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors overflow-hidden',
+                      'w-full min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
                       isSelected
                         ? 'bg-primary/15 text-primary font-medium ring-1 ring-primary/25'
                         : 'hover:bg-accent/60 text-foreground',
@@ -154,7 +156,12 @@ export function DbSidebar({
                   >
                     <Table2 className={cn('w-3.5 h-3.5 shrink-0', isSelected ? 'text-primary' : 'text-sky-500')} />
                     <span className="truncate text-left flex-1 min-w-0">{t.name}</span>
-                    <span className={cn('shrink-0 text-[10px] tabular-nums', isSelected ? 'text-primary/70' : 'text-muted-foreground/50')}>
+                    <span
+                      className={cn(
+                        'ml-auto shrink-0 pl-1 text-[10px] tabular-nums',
+                        isSelected ? 'text-primary/70' : 'text-muted-foreground/50',
+                      )}
+                    >
                       {t.rows.toLocaleString()}
                     </span>
                   </button>
@@ -171,8 +178,9 @@ export function DbSidebar({
 
   return (
     <div
-      className="shrink-0 flex flex-col border border-border/40 rounded-xl bg-card/60 ring-1 ring-border/20 overflow-hidden"
-      style={{ width }}
+      ref={ref}
+      className="shrink-0 flex flex-col min-w-0 border border-border/40 rounded-xl bg-card/60 ring-1 ring-border/20 overflow-hidden"
+      style={{ width, minWidth: width, maxWidth: width }}
       data-tour="tour-db-sidebar"
     >
       {/* Header */}
@@ -292,9 +300,12 @@ export function DbSidebar({
         </div>
       </div>
 
-      {/* Tree */}
-      <ScrollArea className="flex-1 w-full" onContextMenu={onPaneContextMenu}>
-        <div className="p-1.5 space-y-0.5 overflow-hidden min-h-full" onContextMenu={onPaneContextMenu}>
+      {/* Tree — plain overflow so row counts reflow when the sidebar is resized */}
+      <div
+        className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden"
+        onContextMenu={onPaneContextMenu}
+      >
+        <div className="p-1.5 space-y-0.5 w-full min-w-0" onContextMenu={onPaneContextMenu}>
           {noResults ? (
             <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground">
               <SearchX className="w-6 h-6 opacity-40" />
@@ -317,7 +328,7 @@ export function DbSidebar({
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Footer */}
       <div className="px-3 py-2 border-t border-border/50 shrink-0 bg-muted/20">
@@ -347,4 +358,4 @@ export function DbSidebar({
       </div>
     </div>
   )
-}
+})
