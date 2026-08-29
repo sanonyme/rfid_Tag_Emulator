@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   Radio, Smartphone, ScanLine, Terminal, Cloud, Globe,
-  Code2, Workflow, QrCode, Database, FolderInput, Link2, Radar, LineChart, Wifi, WifiOff, Moon, Sun,
+  Code2, Sparkles, QrCode, Database, FolderInput, Link2, Radar, LineChart, Wifi, WifiOff, Moon, Sun,
   Search, Settings, User, Maximize2, RotateCcw, Clipboard, Braces, Layers, PanelTop, Keyboard,
   Play, History, ClipboardPaste, FolderOpen,
 } from 'lucide-react'
@@ -52,7 +52,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'edge', label: 'Edge', icon: <Cloud className="w-4 h-4" />, num: 5 },
   { value: 'api', label: 'API', icon: <Globe className="w-4 h-4" />, num: 6 },
   { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 7 },
-  { value: 'automation', label: 'Auto', icon: <Workflow className="w-4 h-4" />, num: 8 },
+  { value: 'automation', label: 'Auto', icon: <Sparkles className="w-4 h-4" />, num: 8 },
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
   { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
   { value: 'sftp', label: 'SFTP', icon: <FolderInput className="w-4 h-4" /> },

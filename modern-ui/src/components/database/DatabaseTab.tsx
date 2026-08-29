@@ -47,7 +47,14 @@ import {
   DbImportPreviewDialog,
   DbSchemaConfirmDialog,
 } from './DbDialogs'
+import { DbInspectDialog, DbPackingLookupDialog, type DbInspectView } from './DbInspectDialog'
 import { BUILTIN_QUERIES, type BuiltinQueryId, type BuiltinQueryTemplate } from './db-builtin-queries'
+import {
+  buildCartonInspectSql,
+  buildOrderInspectSql,
+  groupCartonInspectRows,
+  groupOrderInspectRows,
+} from './db-inspect'
 import {
   DANGEROUS_SQL,
   DB_CREDS_KEY,
@@ -203,6 +210,12 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [showBuiltinQueries, setShowBuiltinQueries] = useState(false)
   const [builtinQueryPrompt, setBuiltinQueryPrompt] = useState<BuiltinQueryTemplate | null>(null)
   const [builtinQueryValue, setBuiltinQueryValue] = useState('')
+  const [inspectView, setInspectView] = useState<DbInspectView | null>(null)
+  const [lastInspectView, setLastInspectView] = useState<DbInspectView | null>(null)
+  const [packingLookupOpen, setPackingLookupOpen] = useState(false)
+  const [packingLookupKind, setPackingLookupKind] = useState<'order' | 'carton'>('order')
+  const [packingLookupValue, setPackingLookupValue] = useState('')
+  const [packingLookupBusy, setPackingLookupBusy] = useState(false)
 
   // Insert row
   const [showInsertRow, setShowInsertRow] = useState(false)
@@ -352,6 +365,19 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [])
 
   const toggleDatabase = useCallback(async (dbName: string) => {
+    setSelectedDb(dbName)
+    if (selectedDb !== dbName) {
+      setSelectedTable('')
+      setTableRows([])
+      setTableColumns([])
+      setTableTotal(0)
+      setCurrentPage(0)
+      setSelectedRowIdxs(new Set())
+      setShowInsertRow(false)
+      setEditingCell(null)
+      setTableView('data')
+    }
+
     setDatabases((prev) =>
       prev.map((d) => {
         if (d.name !== dbName) return d
@@ -371,7 +397,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         })
       )
     }
-  }, [databases])
+  }, [databases, selectedDb])
 
   const loadPage = useCallback(async (dbName: string, tableName: string, page: number, size: number) => {
     if (!window.electronAPI) return
@@ -775,6 +801,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       saveQueryHistory(next)
       return next
     })
+    return result
   }, [readOnly, tourIx, expandSqlPanelForResults])
 
   const handleRunQuery = useCallback((sqlOverride?: string) => {
@@ -1185,16 +1212,112 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setBuiltinQueryValue('')
   }, [])
 
-  const handleRunBuiltinQuery = useCallback(() => {
+  const fetchPackingInspect = useCallback(async (kind: 'order' | 'carton', value: string): Promise<DbInspectView | null> => {
+    if (!window.electronAPI) return null
+    let schema = schemaData
+    if (!schema && selectedDb) {
+      const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
+      if (res.ok) {
+        schema = { tables: res.tables, foreignKeys: res.foreignKeys }
+        setSchemaData(schema)
+      }
+    }
+    const built = kind === 'order'
+      ? buildOrderInspectSql(schema, value)
+      : buildCartonInspectSql(schema, value)
+    if (!built.ok) {
+      toast.error(built.error)
+      return null
+    }
+    const result = await window.electronAPI.dbExecuteQuery(built.sql, selectedDbRef.current || undefined)
+    if (!result.ok) {
+      toast.error(result.error)
+      return null
+    }
+    return kind === 'order'
+      ? { kind: 'order', model: groupOrderInspectRows(result.rows, value) }
+      : { kind: 'carton', model: groupCartonInspectRows(result.rows, value) }
+  }, [schemaData, selectedDb])
+
+  const openInspectView = useCallback((view: DbInspectView) => {
+    setInspectView(view)
+    setLastInspectView(view)
+    setPackingLookupOpen(false)
+  }, [])
+
+  const handleRunBuiltinQuery = useCallback(async () => {
     if (!builtinQueryPrompt) return
     const value = builtinQueryValue.trim()
     if (!value) return
-    const sqlText = builtinQueryPrompt.buildSql(value)
+    const template = builtinQueryPrompt
     setBuiltinQueryPrompt(null)
     setBuiltinQueryValue('')
+
+    const inspectKind: 'order' | 'carton' | null =
+      template.id === 'order-by-number'
+        ? 'order'
+        : template.id === 'container-by-sscc' || template.id === 'container-items-by-sscc'
+          ? 'carton'
+          : null
+
+    if (inspectKind && window.electronAPI) {
+      let schema = schemaData
+      if (!schema && selectedDb) {
+        const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
+        if (res.ok) {
+          schema = { tables: res.tables, foreignKeys: res.foreignKeys }
+          setSchemaData(schema)
+        }
+      }
+      const built = inspectKind === 'order'
+        ? buildOrderInspectSql(schema, value)
+        : buildCartonInspectSql(schema, value)
+      if (built.ok) {
+        setEditorSql(built.sql)
+        const result = await executeQuery(built.sql)
+        if (result?.ok) {
+          const view: DbInspectView = inspectKind === 'order'
+            ? { kind: 'order', model: groupOrderInspectRows(result.rows, value) }
+            : { kind: 'carton', model: groupCartonInspectRows(result.rows, value) }
+          openInspectView(view)
+          return
+        }
+      } else {
+        toast.error(built.error)
+      }
+    }
+
+    const sqlText = template.buildSql(value)
     setEditorSql(sqlText)
     handleRunQuery(sqlText)
-  }, [builtinQueryPrompt, builtinQueryValue, setEditorSql, handleRunQuery])
+  }, [builtinQueryPrompt, builtinQueryValue, schemaData, selectedDb, setEditorSql, executeQuery, handleRunQuery, openInspectView])
+
+  const handleOpenPackingLookup = useCallback(() => {
+    setShowBuiltinQueries(false)
+    setShowHistory(false)
+    setPackingLookupOpen(true)
+  }, [])
+
+  const handleShowLastPacking = useCallback(() => {
+    if (!lastInspectView) return
+    setPackingLookupOpen(false)
+    setInspectView(lastInspectView)
+  }, [lastInspectView])
+
+  const handleRunPackingLookup = useCallback(async () => {
+    const value = packingLookupValue.trim()
+    if (!value) return
+    setPackingLookupBusy(true)
+    try {
+      const view = await fetchPackingInspect(packingLookupKind, value)
+      if (view) {
+        setPackingLookupValue('')
+        openInspectView(view)
+      }
+    } finally {
+      setPackingLookupBusy(false)
+    }
+  }, [packingLookupValue, packingLookupKind, fetchPackingInspect, openInspectView])
 
   // -- Editor Context Menu --
   const handleContextMenu = useCallback((e: MouseEvent) => {
@@ -1725,6 +1848,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             setShowBuiltinQueries((v) => !v)
           }}
           onPickBuiltinQuery={handlePickBuiltinQuery}
+          packingOpen={packingLookupOpen}
+          onOpenPackingLookup={handleOpenPackingLookup}
           onExportResultsCsv={handleExportQueryResultsCsv}
           onClearResults={clearQueryResults}
           onPrettify={handlePrettifySql}
@@ -1743,7 +1868,32 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             setBuiltinQueryPrompt(null)
             setBuiltinQueryValue('')
           }}
-          onRun={handleRunBuiltinQuery}
+          onRun={() => void handleRunBuiltinQuery()}
+        />
+      )}
+
+      {inspectView && (
+        <DbInspectDialog
+          view={inspectView}
+          onChangeView={(view) => {
+            setInspectView(view)
+            setLastInspectView(view)
+          }}
+          onClose={() => setInspectView(null)}
+        />
+      )}
+
+      {packingLookupOpen && !inspectView && (
+        <DbPackingLookupDialog
+          kind={packingLookupKind}
+          onKindChange={setPackingLookupKind}
+          value={packingLookupValue}
+          onValueChange={setPackingLookupValue}
+          lastView={lastInspectView}
+          onShowLast={handleShowLastPacking}
+          onOpen={() => void handleRunPackingLookup()}
+          onCancel={() => setPackingLookupOpen(false)}
+          busy={packingLookupBusy}
         />
       )}
 

@@ -217,6 +217,7 @@ function createWindow() {
     show: false, // Don't show until ready
     backgroundColor: '#0f172a', // Dark background while loading
     titleBarStyle: isLinux ? 'default' : 'hidden', // Default titlebar on Linux
+    thickFrame: !isLinux, // Windows/macOS: enables Aero Snap with -webkit-app-region drag
   })
 
   // Show window when page is fully loaded

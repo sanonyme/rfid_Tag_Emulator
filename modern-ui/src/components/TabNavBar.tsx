@@ -8,7 +8,7 @@ import {
   Terminal,
   Globe,
   Code2,
-  Workflow,
+  Sparkles,
   QrCode,
   Database,
   FolderInput,
@@ -32,7 +32,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'edge', label: 'Edge', icon: Cloud },
   { value: 'api', label: 'API', icon: Globe },
   { value: 'decoder', label: 'Decoder', icon: Code2 },
-  { value: 'automation', label: 'Auto', icon: Workflow },
+  { value: 'automation', label: 'Auto', icon: Sparkles },
   { value: 'generator', label: 'Gen', icon: QrCode },
   { value: 'database', label: 'DB', icon: Database },
   { value: 'sftp', label: 'SFTP', icon: FolderInput },
@@ -133,6 +133,8 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                 'data-[state=active]:bg-transparent',
                 'bg-transparent text-foreground/70 hover:text-foreground',
                 'data-[state=active]:text-primary dark:data-[state=active]:text-white',
+                item.value === 'automation' &&
+                  'ring-1 ring-inset ring-primary/35 text-primary/80 hover:text-primary dark:ring-white/25',
               )}
             >
               {isCompact ? (

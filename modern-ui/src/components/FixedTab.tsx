@@ -120,6 +120,7 @@ export function FixedTab({
   const [looping, setLooping] = useState(false)
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+  const logScrollRef = useRef<HTMLDivElement>(null)
   const sendTagsHotkeyRef = useRef<(isLooping?: boolean) => Promise<void>>(async () => {})
   const loopHotkeyRef = useRef<() => void>(() => {})
   const upcPresetRef = useRef<TagPresetMenuHandle>(null)
@@ -159,20 +160,14 @@ export function FixedTab({
   }
 
   useEffect(() => {
-    const end = logEndRef.current
-    if (!end) return
-    let el: HTMLElement | null = end.parentElement
-    while (el) {
-      const oy = getComputedStyle(el).overflowY
-      if (
-        (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
-        el.scrollHeight > el.clientHeight
-      ) {
-        el.scrollTop = el.scrollHeight
-        return
-      }
-      el = el.parentElement
+    const viewport = logScrollRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight
+      return
     }
+    logEndRef.current?.scrollIntoView({ block: 'nearest' })
   }, [log])
 
   useEffect(() => {
@@ -818,7 +813,7 @@ export function FixedTab({
       </div>
 
       {/* Right Side - Tag Management & Log */}
-      <div className={cn('flex flex-col gap-4 min-h-0', isPopout && 'flex-1')}>
+      <div className={cn('flex flex-col gap-4 min-h-0 overflow-hidden', isPopout ? 'flex-1' : 'h-full')}>
         {/* Tag Input */}
         <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2" data-tour="tour-fixed-tags">
           <Card className={sectionCard}>
@@ -1116,7 +1111,7 @@ export function FixedTab({
                 </div>
               </div>
             ) : (
-              <ScrollArea className="h-full min-h-[140px]">
+              <ScrollArea ref={logScrollRef} className="h-full min-h-[140px]">
                 <div className="space-y-0.5 p-3 font-mono text-xs sm:text-sm">
                   {log.map((line, i) => (
                     <div

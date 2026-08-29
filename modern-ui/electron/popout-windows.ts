@@ -63,6 +63,7 @@ function createPopoutWindow(tabId: string, title: string): BrowserWindow {
     show: false,
     backgroundColor: '#0f172a',
     titleBarStyle: isLinux ? 'default' : 'hidden',
+    thickFrame: !isLinux,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,

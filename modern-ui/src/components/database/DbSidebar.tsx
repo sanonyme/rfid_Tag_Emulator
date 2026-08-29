@@ -1,4 +1,4 @@
-import { forwardRef, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
+import { forwardRef, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import {
   ChevronDown,
@@ -77,6 +77,14 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
   ref,
 ) {
   const [filter, setFilter] = useState('')
+  const [refreshSecDraft, setRefreshSecDraft] = useState(String(autoRefreshSec))
+
+  useEffect(() => {
+    if (!showAutoRefreshMenu) return
+    setRefreshSecDraft(String(autoRefreshSec))
+    // Snapshot only when the menu opens so typing (including clearing) is not overwritten.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAutoRefreshMenu])
 
   const { userDbs, systemDbs } = useMemo(() => {
     const q = filter.trim().toLowerCase()
@@ -111,7 +119,9 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
           onContextMenu={(e) => onDatabaseContextMenu(e, db.name)}
           className={cn(
             'w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-accent/60',
-            db.expanded && 'bg-accent/40',
+            selectedDb === db.name
+              ? 'bg-primary/10 ring-1 ring-inset ring-primary/25'
+              : db.expanded && 'bg-accent/40',
           )}
         >
           {db.loading ? (
@@ -250,18 +260,30 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
                 </div>
                 <div className="px-2 py-1 flex items-center gap-1.5">
                   <input
-                    type="number"
-                    min={1}
-                    max={300}
-                    value={autoRefreshSec}
+                    type="text"
+                    inputMode="numeric"
+                    value={refreshSecDraft}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value)
+                      const raw = e.target.value.replace(/[^\d]/g, '')
+                      setRefreshSecDraft(raw)
+                      if (raw === '') return
+                      const v = parseInt(raw, 10)
                       if (v >= 1 && v <= 300) onAutoRefreshSecChange(v)
+                    }}
+                    onBlur={() => {
+                      if (refreshSecDraft.trim() === '') {
+                        setRefreshSecDraft('3')
+                        onAutoRefreshSecChange(3)
+                      }
                     }}
                     className="flex-1 h-6 px-1.5 text-[10px] font-mono rounded-md border border-border/50 bg-background/50 focus:outline-none focus:ring-1 focus:ring-primary/50 w-12"
                   />
                   <button
                     onClick={() => {
+                      const parsed = parseInt(refreshSecDraft, 10)
+                      const v = refreshSecDraft.trim() === '' || !Number.isFinite(parsed) ? 3 : Math.min(300, Math.max(1, parsed))
+                      setRefreshSecDraft(String(v))
+                      onAutoRefreshSecChange(v)
                       if (!autoRefresh) onAutoRefreshChange(true)
                       onToggleAutoRefreshMenu()
                     }}

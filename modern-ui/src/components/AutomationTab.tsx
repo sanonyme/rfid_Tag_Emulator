@@ -215,6 +215,8 @@ const GRID_SIZE = 20
 const PASTE_OFFSET = 32
 /** Guards graph execution against runaway loops (cyclic edges, incl. self-loops). */
 const MAX_GRAPH_STEPS = 10000
+/** Cap activity-log lines so a verbose run cannot unbounded-grow React state. */
+const MAX_AUTOMATION_LOG_LINES = 1000
 /** Max nesting depth for Call Sequence (guards against runaway sub-routine chains). */
 const MAX_CALL_DEPTH = 20
 /** How far a self-loop arc dips below its node. */
@@ -1285,6 +1287,9 @@ export function AutomationTab({
   fullActivityLogRef.current = fullActivityLog
   const logEndRef = useRef<HTMLDivElement>(null)
   const logExpandEndRef = useRef<HTMLDivElement>(null)
+  const logQueueRef = useRef<string[]>([])
+  const logFlushTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  const runVarsTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const abortControllerRef = useRef<AbortController | null>(null)
   const runVarsRef = useRef<AutomationVars>({})
   // Live snapshot of run variables for the inspector (updated after each node).
@@ -1306,6 +1311,22 @@ export function AutomationTab({
     setRunVars({ ...fresh })
   }, [host, alePort, customPort, isRunning])
 
+  const publishRunVars = useCallback((immediate = false) => {
+    if (immediate) {
+      if (runVarsTimerRef.current) {
+        clearTimeout(runVarsTimerRef.current)
+        runVarsTimerRef.current = undefined
+      }
+      setRunVars({ ...runVarsRef.current })
+      return
+    }
+    if (runVarsTimerRef.current) return
+    runVarsTimerRef.current = setTimeout(() => {
+      runVarsTimerRef.current = undefined
+      setRunVars({ ...runVarsRef.current })
+    }, 150)
+  }, [])
+
   useEffect(() => {
     if (sortedSeqs.length > 0 && !selectedSequenceId) setSelectedSequenceId(sortedSeqs[0].id)
     if (selectedSequenceId && !sortedSeqs.find(s => s.id === selectedSequenceId)) {
@@ -1323,24 +1344,42 @@ export function AutomationTab({
     })
   }, [sortedSeqs, selectedSequenceId])
 
-  const addLog = useCallback((msg: string) => {
-    if (!fullActivityLogRef.current) return
-    setLog((prev) => [...prev, `[${formatTime()}] ${msg}`])
+  const flushLogQueue = useCallback(() => {
+    if (logFlushTimerRef.current) {
+      clearTimeout(logFlushTimerRef.current)
+      logFlushTimerRef.current = undefined
+    }
+    const batch = logQueueRef.current
+    if (batch.length === 0) return
+    logQueueRef.current = []
+    setLog((prev) => {
+      const next = prev.length === 0 ? batch : prev.concat(batch)
+      return next.length > MAX_AUTOMATION_LOG_LINES ? next.slice(-MAX_AUTOMATION_LOG_LINES) : next
+    })
   }, [])
 
+  const addLog = useCallback((msg: string) => {
+    if (!fullActivityLogRef.current) return
+    logQueueRef.current.push(`[${formatTime()}] ${msg}`)
+    if (logFlushTimerRef.current != null) return
+    logFlushTimerRef.current = setTimeout(flushLogQueue, 80)
+  }, [flushLogQueue])
+
   useEffect(() => {
-    // `block: 'nearest'` keeps the scroll contained to the log's own viewport so
-    // appending a line never nudges the surrounding panel/page layout.
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    // Instant scroll stays inside the log viewport; smooth scrolling on every
+    // batch would fight the user if they try to read earlier lines.
+    logEndRef.current?.scrollIntoView({ block: 'nearest' })
     if (logExpandedOpen) {
-      logExpandEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      logExpandEndRef.current?.scrollIntoView({ block: 'nearest' })
     }
   }, [log, logExpandedOpen])
 
   const handleCopyLog = useCallback(async () => {
-    if (log.length === 0) return
+    const pending = logQueueRef.current
+    const lines = pending.length > 0 ? log.concat(pending) : log
+    if (lines.length === 0) return
     try {
-      await navigator.clipboard.writeText(log.join('\n'))
+      await navigator.clipboard.writeText(lines.join('\n'))
       setLogCopied(true)
       setTimeout(() => setLogCopied(false), 2000)
     } catch {
@@ -1624,7 +1663,7 @@ export function AutomationTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSequenceId])
 
-  // Record every structural change (add/move/link/config) as a history entry.
+  // Record structural changes as history, coalescing rapid config typing into one entry.
   useEffect(() => {
     if (!selectedSequence) return
     const snap = JSON.stringify({ steps: selectedSequence.steps, edges: selectedSequence.edges ?? [] })
@@ -1634,14 +1673,17 @@ export function AutomationTab({
       return
     }
     if (snap === lastSnapRef.current) return
-    if (lastSnapRef.current) {
-      historyRef.current.past.push(JSON.parse(lastSnapRef.current) as SeqSnapshot)
-      if (historyRef.current.past.length > 120) historyRef.current.past.shift()
-      historyRef.current.future = []
-      setCanUndo(true)
-      setCanRedo(false)
-    }
-    lastSnapRef.current = snap
+    const timer = window.setTimeout(() => {
+      if (lastSnapRef.current) {
+        historyRef.current.past.push(JSON.parse(lastSnapRef.current) as SeqSnapshot)
+        if (historyRef.current.past.length > 120) historyRef.current.past.shift()
+        historyRef.current.future = []
+        setCanUndo(true)
+        setCanRedo(false)
+      }
+      lastSnapRef.current = snap
+    }, 400)
+    return () => window.clearTimeout(timer)
   }, [selectedSequence])
 
   const applySnapshot = useCallback((snapshot: SeqSnapshot) => {
@@ -1903,21 +1945,21 @@ export function AutomationTab({
     }))
   }
 
-  const handleUpdateStep = (id: string, updates: Partial<AutomationStep>) => {
+  const handleUpdateStep = useCallback((id: string, updates: Partial<AutomationStep>) => {
     if (!selectedSequenceId) return
     updateStepsForSequence(selectedSequenceId, prev =>
       prev.map(s => s.id === id ? { ...s, ...updates } : s)
     )
-  }
+  }, [selectedSequenceId, updateStepsForSequence])
 
-  const handleUpdateParams = (id: string, updates: Partial<AutomationStep['params']>) => {
+  const handleUpdateParams = useCallback((id: string, updates: Partial<AutomationStep['params']>) => {
     if (!selectedSequenceId) return
     updateStepsForSequence(selectedSequenceId, prev =>
       prev.map(s => s.id === id ? { ...s, params: { ...s.params, ...updates } } : s)
     )
-  }
+  }, [selectedSequenceId, updateStepsForSequence])
 
-  const handleDeleteStep = (id: string) => {
+  const handleDeleteStep = useCallback((id: string) => {
     if (!selectedSequenceId) return
     // Remove the node and any edges connected to it in a single update.
     setSequences(prev => prev.map(seq => {
@@ -1939,7 +1981,7 @@ export function AutomationTab({
       next.delete(id)
       return next
     })
-  }
+  }, [selectedSequenceId, selectedStepId, setSequences])
 
   /** Reconnect all nodes into a left-to-right chain based on their X position. */
   const handleAutoLink = () => {
@@ -2038,10 +2080,10 @@ export function AutomationTab({
     setSequences(reordered.map((s, i) => ({ ...s, order: i })))
   }
 
-  const handleConfigureNode = (stepId: string) => {
+  const handleConfigureNode = useCallback((stepId: string) => {
     setSelectedStepId(stepId)
     setConfigDialogOpen(true)
-  }
+  }, [])
 
   const handleCanvasPanStart = useCallback((e: React.MouseEvent) => {
     const onBackground = (e.target as HTMLElement).hasAttribute('data-pan-background')
@@ -2650,7 +2692,7 @@ export function AutomationTab({
                 if (signal.aborted) return
                 runVarsRef.current[itemAs] = slice[i]!
                 runVarsRef.current[indexAs] = String(i)
-                setRunVars({ ...runVarsRef.current })
+                publishRunVars()
                 addLog(`  [${i + 1}/${slice.length}] ${itemAs}=${slice[i]}`)
                 await runSequenceGraph(target, signal, stack)
               }
@@ -2683,7 +2725,7 @@ export function AutomationTab({
               for (let i = 0; i < count; i++) {
                 if (signal.aborted) return
                 runVarsRef.current[indexAs] = String(i + 1)
-                setRunVars({ ...runVarsRef.current })
+                publishRunVars()
                 addLog(`  [${i + 1}/${count}]`)
                 await runSequenceGraph(target, signal, stack)
               }
@@ -2712,7 +2754,7 @@ export function AutomationTab({
           }
         }
         // Surface the latest variable values to the live inspector.
-        setRunVars({ ...runVarsRef.current })
+        publishRunVars()
         const nextEdge = seqEdges.find(e => e.from === current!.id && (e.sourceHandle ?? 'out') === handle)
         current = nextEdge ? byId.get(nextEdge.to) ?? null : null
       }
@@ -2778,6 +2820,11 @@ export function AutomationTab({
           : `${runnableSeqs.length} top-level sequence${runnableSeqs.length === 1 ? '' : 's'}`
 
     setIsRunning(true)
+    if (logFlushTimerRef.current) {
+      clearTimeout(logFlushTimerRef.current)
+      logFlushTimerRef.current = undefined
+    }
+    logQueueRef.current = []
     setLog([])
     addLog(`Starting automation (${scopeLabel})...`)
     runVarsRef.current = createRunContext({
@@ -2786,7 +2833,7 @@ export function AutomationTab({
       customPort,
       port: '',
     })
-    setRunVars({ ...runVarsRef.current })
+    publishRunVars(true)
 
     abortControllerRef.current = new AbortController()
     const signal = abortControllerRef.current.signal
@@ -2835,6 +2882,8 @@ export function AutomationTab({
         addLog('Automation stopped by user')
       }
     } finally {
+      flushLogQueue()
+      publishRunVars(true)
       setIsRunning(false)
       setCurrentSequenceIndex(null)
       setCurrentRunningStepId(null)

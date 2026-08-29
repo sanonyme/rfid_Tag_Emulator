@@ -118,6 +118,7 @@ describe('DatabaseTab (revamped)', () => {
 
     fireEvent.click(await screen.findByText('zeus'))
     await waitFor(() => expect(api.dbGetTables).toHaveBeenCalledWith('zeus'))
+    await waitFor(() => expect(api.dbGetDatabaseSchema).toHaveBeenCalledWith('zeus'))
 
     fireEvent.click(await screen.findByText('items'))
     await waitFor(() => expect(api.dbGetTableData).toHaveBeenCalled())

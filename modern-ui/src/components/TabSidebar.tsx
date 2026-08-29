@@ -8,7 +8,7 @@ import {
   Terminal,
   Globe,
   Code2,
-  Workflow,
+  Sparkles,
   QrCode,
   Database,
   FolderInput,
@@ -48,7 +48,7 @@ const GROUPS: TabGroup[] = [
     items: [
       { value: 'api', label: 'API', icon: Globe },
       { value: 'decoder', label: 'Decoder', icon: Code2 },
-      { value: 'automation', label: 'Automation', icon: Workflow },
+      { value: 'automation', label: 'Automation', icon: Sparkles },
       { value: 'generator', label: 'Generator', icon: QrCode },
       { value: 'database', label: 'Database', icon: Database },
       { value: 'sftp', label: 'SFTP', icon: FolderInput },
@@ -217,6 +217,8 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                         expanded
                           ? cn('gap-2.5 px-2.5 py-2 justify-start', canPopOut ? 'flex-1 min-w-0' : 'w-full')
                           : 'justify-center w-9 h-9 p-0',
+                        item.value === 'automation' &&
+                          'ring-1 ring-inset ring-primary/35 text-primary/80 hover:text-primary dark:ring-white/25',
                       )}
                     >
                       {/* Hover wash (inactive only) */}

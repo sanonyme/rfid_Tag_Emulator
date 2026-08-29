@@ -36,7 +36,7 @@ export const BUILTIN_QUERIES: BuiltinQueryTemplate[] = [
   {
     id: 'container-by-sscc',
     label: 'Container by SSCC',
-    description: 'SELECT from container where sscc = …',
+    description: 'Carton popup: SSCC, contents, qty per item',
     valueLabel: 'SSCC',
     placeholder: 'e.g. 006141411234567890',
     buildSql: (value) =>
@@ -45,7 +45,7 @@ export const BUILTIN_QUERIES: BuiltinQueryTemplate[] = [
   {
     id: 'order-by-number',
     label: 'Order by order number',
-    description: 'SELECT from order where orderNumber = …',
+    description: 'Packing list popup: cartons, qty, and items for this order',
     valueLabel: 'Order number',
     placeholder: 'e.g. SO-12345',
     buildSql: (value) =>
@@ -63,7 +63,7 @@ export const BUILTIN_QUERIES: BuiltinQueryTemplate[] = [
   {
     id: 'container-items-by-sscc',
     label: 'Items in container (by SSCC)',
-    description: 'container → container_item → item via container.id',
+    description: 'Carton popup via container → container_item → item',
     valueLabel: 'SSCC',
     placeholder: 'e.g. 006141411234567890',
     buildSql: (value) =>

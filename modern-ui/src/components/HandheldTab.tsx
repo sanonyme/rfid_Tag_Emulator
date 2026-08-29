@@ -94,6 +94,7 @@ export function HandheldTab({
   const [runningPorts, setRunningPorts] = useState<Set<number>>(new Set())
   const [fullActivityLog, setFullActivityLog] = useState(() => getHandheldFullActivityLog())
   const logEndRef = useRef<HTMLDivElement>(null)
+  const logScrollRef = useRef<HTMLDivElement>(null)
   const loopCancelRef = useRef<Set<number>>(new Set())
   const slotsRef = useRef(slots)
   slotsRef.current = slots
@@ -120,7 +121,14 @@ export function HandheldTab({
   }
 
   useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const viewport = logScrollRef.current?.querySelector<HTMLElement>(
+      '[data-radix-scroll-area-viewport]',
+    )
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight
+      return
+    }
+    logEndRef.current?.scrollIntoView({ block: 'nearest' })
   }, [log])
 
   const addSlot = () => {
@@ -508,7 +516,7 @@ export function HandheldTab({
           </div>
         </CardHeader>
         <CardContent className="bg-muted/15 p-2">
-          <ScrollArea className="h-[120px]">
+          <ScrollArea ref={logScrollRef} className="h-[120px]">
             <div className="space-y-0.5 px-1 py-0.5 font-mono text-xs">
               {log.map((line, i) => (
                 <div

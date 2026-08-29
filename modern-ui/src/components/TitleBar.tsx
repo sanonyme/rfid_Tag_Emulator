@@ -57,9 +57,9 @@ export function TitleBar({
       <div className="flex items-center gap-3 flex-1 animate-fade-in">
         <div className="relative group">
           <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/40 transition-all duration-500"></div>
-          <img 
-            src={logoImage} 
-            alt="edge logo" 
+          <img
+            src={logoImage}
+            alt="edge logo"
             className="w-12 h-12 object-contain relative transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3 drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
           />
         </div>
@@ -93,7 +93,7 @@ export function TitleBar({
             noTrigger
           />
         </div>
-        
+
         <div className="flex ml-2 no-drag gap-0.5">
           <button
             onClick={handleMinimize}
@@ -102,7 +102,7 @@ export function TitleBar({
           >
             <Minimize2 className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:scale-110 transition-all duration-200" />
           </button>
-          
+
           <button
             onClick={handleMaximize}
             className="h-11 w-12 flex items-center justify-center group transition-all duration-200 hover:bg-accent/50 rounded-lg"
@@ -110,7 +110,7 @@ export function TitleBar({
           >
             <Maximize2 className="w-4 h-4 text-muted-foreground group-hover:text-foreground group-hover:scale-110 transition-all duration-200" />
           </button>
-          
+
           <button
             onClick={handleClose}
             className="h-11 w-12 flex items-center justify-center group transition-all duration-200 hover:bg-destructive/10 rounded-lg"
@@ -123,4 +123,3 @@ export function TitleBar({
     </div>
   )
 }
-

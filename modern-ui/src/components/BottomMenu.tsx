@@ -10,7 +10,7 @@ import {
   Monitor,
   Radio,
   Smartphone,
-  Workflow,
+  Sparkles,
   ChevronRight,
   Keyboard,
   Shield,
@@ -29,7 +29,7 @@ import { Label } from './ui/label'
 const QUICK_TABS = [
   { id: 'fixed', icon: Radio, label: 'Fixed Reader' },
   { id: 'handheld', icon: Smartphone, label: 'Handheld' },
-  { id: 'automation', icon: Workflow, label: 'Auto' },
+  { id: 'automation', icon: Sparkles, label: 'Auto' },
 ] as const
 
 const THEME_OPTIONS = [
@@ -144,7 +144,8 @@ export function BottomMenu({
             className={cn(
               sharedHover,
               'flex items-center gap-3',
-              activeTab === id && 'bg-primary/15 text-primary dark:bg-white/15 dark:text-white'
+              activeTab === id && 'bg-primary/15 text-primary dark:bg-white/15 dark:text-white',
+              id === 'automation' && 'ring-1 ring-inset ring-primary/30 text-primary/80',
             )}
           >
             <Icon size={18} className="text-muted-foreground group-hover:text-foreground shrink-0" />

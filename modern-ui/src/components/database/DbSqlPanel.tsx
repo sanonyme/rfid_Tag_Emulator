@@ -12,6 +12,7 @@ import {
   FileSearch,
   History,
   Loader2,
+  Package,
   Play,
   Plus,
   Search,
@@ -51,6 +52,8 @@ export interface DbSqlPanelProps {
   builtinBtnRef: RefObject<HTMLButtonElement>
   onToggleBuiltinQueries: (e: ReactMouseEvent<HTMLButtonElement>) => void
   onPickBuiltinQuery: (id: BuiltinQueryId) => void
+  packingOpen: boolean
+  onOpenPackingLookup: () => void
   onExportResultsCsv: () => void
   onClearResults: () => void
   onPrettify: () => void
@@ -86,6 +89,8 @@ export function DbSqlPanel({
   builtinBtnRef,
   onToggleBuiltinQueries,
   onPickBuiltinQuery,
+  packingOpen,
+  onOpenPackingLookup,
   onExportResultsCsv,
   onClearResults,
   onPrettify,
@@ -186,6 +191,15 @@ export function DbSqlPanel({
                 active={showBuiltinQueries}
                 buttonRef={builtinBtnRef}
                 onClick={onToggleBuiltinQueries}
+              />
+              <IconAction
+                icon={Package}
+                label="Order / carton packing list"
+                active={packingOpen}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onOpenPackingLookup()
+                }}
               />
               <PortaledAnchoredMenu
                 anchorRef={builtinBtnRef}

@@ -750,7 +750,7 @@ function App() {
                 'flex flex-col min-h-0',
                 isPopoutWindow && popoutTabId === 'fixed'
                   ? 'p-3 overflow-hidden'
-                  : 'p-6 overflow-y-auto',
+                  : 'p-6 overflow-hidden',
               )}
             >
               <FixedTab 

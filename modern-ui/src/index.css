@@ -204,14 +204,13 @@
 }
 
 /*
- * Frameless Electron (Windows/macOS): without this, pan gestures and sometimes
- * wheel events on the page are treated as window-drag / don't reach canvases.
- * Only the title bar uses .draggable; everything below must be no-drag.
+ * Frameless Electron: mark the content pane no-drag so canvases/scroll
+ * don't move the window. Do NOT use `.electron-no-drag *` — each log line
+ * becomes its own region and Chromium maps them over the title bar.
  */
-.electron-no-drag,
-.electron-no-drag * {
-  -webkit-app-region: no-drag !important;
-  app-region: no-drag !important;
+.electron-no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 /* Enhanced Animations */

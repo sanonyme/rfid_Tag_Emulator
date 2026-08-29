@@ -20,7 +20,7 @@ import {
 } from './SftpFileTree'
 import { LocalDirList, LOCAL_DND_MIME, type LocalEntryRow } from './LocalDirList'
 import { collectRemoteFiles } from './sftp-remote-download'
-import { bindSftpSession, type SftpSessionApi } from '@/lib/sftp-session-api'
+import { bindSftpSession } from '@/lib/sftp-session-api'
 import { SftpPropertiesDialog } from './SftpPropertiesDialog'
 import { SftpMoveDialog } from './SftpMoveDialog'
 import { SftpRemoteContextMenu } from './SftpRemoteContextMenu'

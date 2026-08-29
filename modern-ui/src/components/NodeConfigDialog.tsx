@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback, memo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -83,10 +83,100 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   RANDOM: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400' },
 }
 
-export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId }: NodeConfigDialogProps) {
+export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenChange, step: savedStep, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId }: NodeConfigDialogProps) {
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
   const [isLoadingDevices, setIsLoadingDevices] = useState(false)
   const [apiClient] = useState(() => new AleApiClient())
+
+  const [draftName, setDraftName] = useState(savedStep?.name ?? '')
+  const [draftParams, setDraftParams] = useState<AutomationStep['params']>(savedStep?.params ?? {})
+  const draftNameRef = useRef(draftName)
+  const draftParamsRef = useRef(draftParams)
+  const savedStepRef = useRef(savedStep)
+  savedStepRef.current = savedStep
+  const onSaveRef = useRef(onSave)
+  const onSaveParamsRef = useRef(onSaveParams)
+  onSaveRef.current = onSave
+  onSaveParamsRef.current = onSaveParams
+  const [draftSessionOpen, setDraftSessionOpen] = useState(false)
+  const [draftSessionStepId, setDraftSessionStepId] = useState<string | undefined>(savedStep?.id)
+  const pendingPersistRef = useRef<{ id: string; name: string; params: AutomationStep['params'] } | null>(null)
+
+  const persistDraftTo = useCallback((id: string, name: string, params: AutomationStep['params']) => {
+    const current = savedStepRef.current
+    const nameChanged = !current || current.id !== id || name !== current.name
+    if (nameChanged) onSaveRef.current(id, { name })
+    onSaveParamsRef.current(id, params)
+  }, [])
+
+  const flushDraft = useCallback(() => {
+    const current = savedStepRef.current
+    if (!current) return
+    persistDraftTo(current.id, draftNameRef.current, draftParamsRef.current)
+  }, [persistDraftTo])
+
+  // Reset local drafts from the saved step when the dialog opens (or the node
+  // changes). React applies this setState before paint, so children mount with
+  // the persisted values instead of a stale draft.
+  if (open && savedStep && (!draftSessionOpen || draftSessionStepId !== savedStep.id)) {
+    if (draftSessionOpen && draftSessionStepId && draftSessionStepId !== savedStep.id) {
+      pendingPersistRef.current = {
+        id: draftSessionStepId,
+        name: draftNameRef.current,
+        params: { ...draftParamsRef.current },
+      }
+    }
+    setDraftSessionOpen(true)
+    setDraftSessionStepId(savedStep.id)
+    setDraftName(savedStep.name)
+    setDraftParams(savedStep.params)
+    draftNameRef.current = savedStep.name
+    draftParamsRef.current = savedStep.params
+  } else if (!open && draftSessionOpen) {
+    setDraftSessionOpen(false)
+  }
+
+  useEffect(() => {
+    const pending = pendingPersistRef.current
+    if (!pending) return
+    pendingPersistRef.current = null
+    persistDraftTo(pending.id, pending.name, pending.params)
+  }, [draftSessionStepId, persistDraftTo])
+
+  useEffect(() => () => {
+    const current = savedStepRef.current
+    if (!current) return
+    persistDraftTo(current.id, draftNameRef.current, draftParamsRef.current)
+  }, [persistDraftTo])
+
+  const patchParams = useCallback((updates: Partial<AutomationStep['params']>) => {
+    setDraftParams((prev) => {
+      const next = { ...prev, ...updates }
+      draftParamsRef.current = next
+      return next
+    })
+  }, [])
+
+  const handleNameChange = (name: string) => {
+    setDraftName(name)
+    draftNameRef.current = name
+  }
+
+  const handleEdgeBlockSaveParams = useCallback((
+    _id: string,
+    updates: Partial<AutomationStep['params']>,
+  ) => {
+    if ('edgeBlockName' in updates) {
+      patchParams(updates)
+      return
+    }
+    draftParamsRef.current = { ...draftParamsRef.current, ...updates }
+  }, [patchParams])
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next) flushDraft()
+    onOpenChange(next)
+  }
 
   const fetchLogicalDevices = async () => {
     if (!host) return
@@ -94,8 +184,8 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
     try {
       const devices = await apiClient.getLogicalDevices(host, alePort)
       setLogicalDevices(devices)
-      if (devices.length > 0 && step?.type === 'FIXED_TAG' && !step.params.uid) {
-        onSaveParams(step.id, { uid: devices[0].uid })
+      if (devices.length > 0 && savedStep?.type === 'FIXED_TAG' && !draftParamsRef.current.uid) {
+        patchParams({ uid: devices[0].uid })
       }
     } catch (err) {
       console.error('Failed to fetch logical devices:', err)
@@ -105,12 +195,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
   }
 
   useEffect(() => {
-    if (open && step?.type === 'FIXED_TAG' && host) {
+    if (open && savedStep?.type === 'FIXED_TAG' && host) {
       fetchLogicalDevices()
     }
-  }, [open, step?.type, step?.id, host, alePort])
+  }, [open, savedStep?.type, savedStep?.id, host, alePort])
 
-  if (!step) return null
+  if (!savedStep) return null
+
+  const step: AutomationStep = { ...savedStep, name: draftNameRef.current, params: draftParamsRef.current }
 
   const style = STEP_TYPE_STYLES[step.type]
   const selectedUids = (step.params.uid || '').split(',').filter(Boolean)
@@ -119,17 +211,17 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
     const current = new Set(selectedUids)
     if (current.has(deviceUid)) current.delete(deviceUid)
     else current.add(deviceUid)
-    onSaveParams(step.id, { uid: Array.from(current).join(',') })
+    patchParams({ uid: Array.from(current).join(',') })
   }
   const selectAllDevices = () => {
-    onSaveParams(step.id, { uid: logicalDevices.map(d => d.uid).join(',') })
+    patchParams({ uid: logicalDevices.map(d => d.uid).join(',') })
   }
   const deselectAllDevices = () => {
-    onSaveParams(step.id, { uid: '' })
+    patchParams({ uid: '' })
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -173,7 +265,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
             <Label>Step Name</Label>
             <Input
               value={step.name}
-              onChange={(e) => onSave(step.id, { name: e.target.value })}
+              onChange={(e) => handleNameChange(e.target.value)}
               className="h-10"
             />
           </div>
@@ -184,7 +276,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Input
                 type="number"
                 value={step.params.duration}
-                onChange={(e) => onSaveParams(step.id, { duration: parseInt(e.target.value) })}
+                onChange={(e) => patchParams( { duration: parseInt(e.target.value) })}
                 className="h-10"
               />
               <p className="text-xs text-muted-foreground">Wait time before next step</p>
@@ -196,20 +288,20 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Message Payload</Label>
               <Textarea
                 value={step.params.message}
-                onChange={(e) => onSaveParams(step.id, { message: e.target.value })}
+                onChange={(e) => patchParams( { message: e.target.value })}
                 rows={10}
                 className="font-mono text-sm min-h-[180px]"
               />
               <VariablePresetPicker
                 value={step.params.message || ''}
                 preferred={['host', 'epc', 'epcs', 'tagCount']}
-                onInsert={(next) => onSaveParams(step.id, { message: next })}
+                onInsert={(next) => patchParams( { message: next })}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 className="w-full"
-                onClick={() => onSaveParams(step.id, { message: '{"test":1}' })}
+                onClick={() => patchParams( { message: '{"test":1}' })}
               >
                 Insert Example JSON
               </Button>
@@ -224,7 +316,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 min={1}
                 max={65535}
                 value={step.params.port ?? customPort}
-                onChange={(e) => onSaveParams(step.id, { port: e.target.value })}
+                onChange={(e) => patchParams( { port: e.target.value })}
                 placeholder="12345"
                 className="font-mono h-10"
               />
@@ -232,7 +324,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Message</Label>
               <Textarea
                 value={step.params.message}
-                onChange={(e) => onSaveParams(step.id, { message: e.target.value })}
+                onChange={(e) => patchParams( { message: e.target.value })}
                 rows={10}
                 className="font-mono text-sm min-h-[180px]"
                 placeholder="Enter message to send (JSON, plain text, etc.)"
@@ -240,13 +332,13 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <VariablePresetPicker
                 value={step.params.message || ''}
                 preferred={['host', 'epc', 'epcs', 'lastOcrResponse']}
-                onInsert={(next) => onSaveParams(step.id, { message: next })}
+                onInsert={(next) => patchParams( { message: next })}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 className="w-full"
-                onClick={() => onSaveParams(step.id, { message: '{"test":1}' })}
+                onClick={() => patchParams( { message: '{"test":1}' })}
               >
                 Insert Example JSON
               </Button>
@@ -260,7 +352,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <p className="text-xs text-muted-foreground">Format: UPC,Count,TID[,userdata] (one per line)</p>
                 <Textarea
                   value={step.params.upcList}
-                  onChange={(e) => onSaveParams(step.id, { upcList: e.target.value })}
+                  onChange={(e) => patchParams( { upcList: e.target.value })}
                   rows={5}
                   className="font-mono text-sm"
                   placeholder="1234567890123, 5, CustomTID"
@@ -271,7 +363,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={1}
                     value={step.params.startSerial}
-                    onChange={(e) => onSaveParams(step.id, { startSerial: parseInt(e.target.value) })}
+                    onChange={(e) => patchParams( { startSerial: parseInt(e.target.value) })}
                     className="h-9"
                   />
                 </div>
@@ -279,7 +371,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   idPrefix={`automation-${step.id}-serial`}
                   continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
                   onContinuesAcrossLinesChange={(v) =>
-                    onSaveParams(step.id, { serialContinuesAcrossUpcLines: v })
+                    patchParams( { serialContinuesAcrossUpcLines: v })
                   }
                 />
               </div>
@@ -288,7 +380,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <p className="text-xs text-muted-foreground">Format: EPC[,TID[,userdata]] (one per line)</p>
                 <Textarea
                   value={step.params.epcList}
-                  onChange={(e) => onSaveParams(step.id, { epcList: e.target.value })}
+                  onChange={(e) => patchParams( { epcList: e.target.value })}
                   rows={5}
                   className="font-mono text-sm"
                   placeholder="3034... or pick a variable below"
@@ -297,7 +389,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   value={step.params.epcList || ''}
                   preferred={['epcs', 'epc']}
                   mode="replace"
-                  onInsert={(next) => onSaveParams(step.id, { epcList: next })}
+                  onInsert={(next) => patchParams( { epcList: next })}
                 />
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
@@ -386,7 +478,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       min={0}
                       step={50}
                       value={step.params.tagDelay ?? ''}
-                      onChange={(e) => onSaveParams(step.id, { tagDelay: e.target.value })}
+                      onChange={(e) => patchParams( { tagDelay: e.target.value })}
                       placeholder={fixedTabDelay?.trim() ? `Default: ${fixedTabDelay}` : '20'}
                       className="h-9 pe-12 font-mono text-sm"
                     />
@@ -400,7 +492,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Driver</Label>
-                  <Select value={step.params.driver || 'llrp'} onValueChange={(v) => onSaveParams(step.id, { driver: v })}>
+                  <Select value={step.params.driver || 'llrp'} onValueChange={(v) => patchParams( { driver: v })}>
                     <SelectTrigger className="h-9">
                       <SelectValue placeholder="Select driver" />
                     </SelectTrigger>
@@ -415,7 +507,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Custom TID</Label>
                   <Input
                     value={step.params.tid}
-                    onChange={(e) => onSaveParams(step.id, { tid: e.target.value })}
+                    onChange={(e) => patchParams( { tid: e.target.value })}
                     className="font-mono h-9"
                     placeholder="Default: EPC"
                   />
@@ -435,7 +527,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                             if (set.has(String(ant))) set.delete(String(ant))
                             else set.add(String(ant))
                             const sorted = Array.from(set).sort((a, b) => Number(a) - Number(b))
-                            onSaveParams(step.id, { antenna: sorted.join(',') || '1' })
+                            patchParams( { antenna: sorted.join(',') || '1' })
                           }}
                           className={`flex-1 h-12 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 transition-all focus:outline-none select-none ${
                             isSelected ? 'border-green-500 bg-green-500/15' : 'border-border bg-muted/40'
@@ -455,14 +547,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   </div>
                   <Slider
                     value={[parseFloat(step.params.rssi || '-45') || -45]}
-                    onValueChange={([val]) => onSaveParams(step.id, { rssi: val.toFixed(1) })}
+                    onValueChange={([val]) => patchParams( { rssi: val.toFixed(1) })}
                     min={-80}
                     max={0}
                     step={0.5}
                   />
                   <Input
                     value={step.params.rssi}
-                    onChange={(e) => onSaveParams(step.id, { rssi: e.target.value })}
+                    onChange={(e) => patchParams( { rssi: e.target.value })}
                     className="h-9 text-xs font-mono"
                   />
 
@@ -471,7 +563,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       <Label className="text-xs">Randomize RSSI per tag</Label>
                       <Switch
                         checked={step.params.rssiRandomize ?? false}
-                        onCheckedChange={(v) => onSaveParams(step.id, { rssiRandomize: v })}
+                        onCheckedChange={(v) => patchParams( { rssiRandomize: v })}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
@@ -482,7 +574,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                           type="number"
                           step="0.5"
                           value={step.params.rssiRandMin ?? ''}
-                          onChange={(e) => onSaveParams(step.id, { rssiRandMin: e.target.value })}
+                          onChange={(e) => patchParams( { rssiRandMin: e.target.value })}
                           placeholder="-90"
                           disabled={!(step.params.rssiRandomize ?? false)}
                           className="h-9 text-xs font-mono"
@@ -495,7 +587,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                           type="number"
                           step="0.5"
                           value={step.params.rssiRandMax ?? ''}
-                          onChange={(e) => onSaveParams(step.id, { rssiRandMax: e.target.value })}
+                          onChange={(e) => patchParams( { rssiRandMax: e.target.value })}
                           placeholder="-20"
                           disabled={!(step.params.rssiRandomize ?? false)}
                           className="h-9 text-xs font-mono"
@@ -518,7 +610,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <p className="text-xs text-muted-foreground">Format: UPC,Count (one per line)</p>
                 <Textarea
                   value={step.params.upcList}
-                  onChange={(e) => onSaveParams(step.id, { upcList: e.target.value })}
+                  onChange={(e) => patchParams( { upcList: e.target.value })}
                   rows={5}
                   className="font-mono text-sm"
                 />
@@ -528,7 +620,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={1}
                     value={step.params.startSerial ?? 1}
-                    onChange={(e) => onSaveParams(step.id, { startSerial: parseInt(e.target.value) })}
+                    onChange={(e) => patchParams( { startSerial: parseInt(e.target.value) })}
                     className="h-9"
                   />
                 </div>
@@ -536,7 +628,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   idPrefix={`automation-hh-${step.id}-serial`}
                   continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
                   onContinuesAcrossLinesChange={(v) =>
-                    onSaveParams(step.id, { serialContinuesAcrossUpcLines: v })
+                    patchParams( { serialContinuesAcrossUpcLines: v })
                   }
                 />
               </div>
@@ -545,7 +637,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <p className="text-xs text-muted-foreground">Format: EPC[,TID[,userdata]] (one per line)</p>
                 <Textarea
                   value={step.params.epcList}
-                  onChange={(e) => onSaveParams(step.id, { epcList: e.target.value })}
+                  onChange={(e) => patchParams( { epcList: e.target.value })}
                   rows={5}
                   className="font-mono text-sm"
                   placeholder="3034... or pick a variable below"
@@ -554,7 +646,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   value={step.params.epcList || ''}
                   preferred={['epcs', 'epc']}
                   mode="replace"
-                  onInsert={(next) => onSaveParams(step.id, { epcList: next })}
+                  onInsert={(next) => patchParams( { epcList: next })}
                 />
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
@@ -565,7 +657,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     min={0}
                     step={50}
                     value={step.params.tagDelay ?? ''}
-                    onChange={(e) => onSaveParams(step.id, { tagDelay: e.target.value })}
+                    onChange={(e) => patchParams( { tagDelay: e.target.value })}
                     placeholder={handheldTabDelay?.trim() ? `Default: ${handheldTabDelay}` : '20'}
                     className="h-9 pe-12 font-mono text-sm"
                   />
@@ -581,11 +673,17 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
           )}
 
           {step.type === 'EDGE_BLOCK' && (
-            <EdgeBlockNodeConfig step={step} onSaveParams={onSaveParams} />
+            <EdgeBlockNodeConfig
+              step={step}
+              onSaveParams={handleEdgeBlockSaveParams}
+            />
           )}
 
           {step.type === 'EDGE_PROCESS' && (
-            <EdgeProcessNodeConfig step={step} onSaveParams={onSaveParams} />
+            <EdgeProcessNodeConfig
+              step={step}
+              onSaveParams={(_id, updates) => patchParams(updates)}
+            />
           )}
 
           {step.type === 'SET_VARIABLE' && (() => {
@@ -598,14 +696,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Variable name</Label>
                   <Input
                     value={step.params.varName || ''}
-                    onChange={(e) => onSaveParams(step.id, { varName: e.target.value })}
+                    onChange={(e) => patchParams( { varName: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="sku"
                   />
                 </div>
                 <div className="space-y-1">
                   <Label>Type</Label>
-                  <Select value={varType} onValueChange={(v) => onSaveParams(step.id, { varType: v as VarType })}>
+                  <Select value={varType} onValueChange={(v) => patchParams( { varType: v as VarType })}>
                     <SelectTrigger className="h-10">
                       <SelectValue />
                     </SelectTrigger>
@@ -620,7 +718,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Value</Label>
               <Textarea
                 value={step.params.varValue || ''}
-                onChange={(e) => onSaveParams(step.id, { varValue: e.target.value })}
+                onChange={(e) => patchParams( { varValue: e.target.value })}
                 rows={3}
                 className="font-mono text-sm"
                 placeholder={
@@ -640,7 +738,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <VariablePresetPicker
                 value={step.params.varValue || ''}
                 preferred={['epcs', 'epc', 'tagCount', 'lastOcrResponse', 'host']}
-                onInsert={(next) => onSaveParams(step.id, { varValue: next })}
+                onInsert={(next) => patchParams( { varValue: next })}
               />
               <StandardVariablesReference />
             </div>
@@ -652,14 +750,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Database (optional)</Label>
               <Input
                 value={step.params.dbDatabase || ''}
-                onChange={(e) => onSaveParams(step.id, { dbDatabase: e.target.value })}
+                onChange={(e) => patchParams( { dbDatabase: e.target.value })}
                 className="h-10 font-mono"
                 placeholder="Leave empty for current connection default"
               />
               <Label>SQL</Label>
               <Textarea
                 value={step.params.dbSql || ''}
-                onChange={(e) => onSaveParams(step.id, { dbSql: e.target.value })}
+                onChange={(e) => patchParams( { dbSql: e.target.value })}
                 rows={6}
                 className="font-mono text-sm"
                 placeholder={"SELECT * FROM inventory WHERE epc IN ({{epcsSql}})"}
@@ -667,7 +765,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <VariablePresetPicker
                 value={step.params.dbSql || ''}
                 preferred={['epcsSql', 'epc', 'tagCount', 'host']}
-                onInsert={(next) => onSaveParams(step.id, { dbSql: next })}
+                onInsert={(next) => patchParams( { dbSql: next })}
               />
               <div className="flex flex-wrap gap-1.5">
                 <Button
@@ -676,7 +774,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   size="sm"
                   className="h-7 text-[11px]"
                   onClick={() =>
-                    onSaveParams(step.id, {
+                    patchParams( {
                       dbSql: "SELECT * FROM inventory WHERE epc IN ({{epcsSql}})",
                       dbSaveAs: 'dbResult',
                       dbSaveColumn: '',
@@ -691,7 +789,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   size="sm"
                   className="h-7 text-[11px]"
                   onClick={() =>
-                    onSaveParams(step.id, {
+                    patchParams( {
                       dbSql: "SELECT COUNT(*) AS cnt FROM inventory WHERE epc = '{{epc}}'",
                       dbSaveAs: 'rowCount',
                       dbSaveColumn: 'cnt',
@@ -706,7 +804,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save as</Label>
                   <Input
                     value={step.params.dbSaveAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { dbSaveAs: e.target.value })}
+                    onChange={(e) => patchParams( { dbSaveAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="rowCount"
                   />
@@ -715,7 +813,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Column</Label>
                   <Input
                     value={step.params.dbSaveColumn || ''}
-                    onChange={(e) => onSaveParams(step.id, { dbSaveColumn: e.target.value })}
+                    onChange={(e) => patchParams( { dbSaveColumn: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="cnt"
                   />
@@ -726,7 +824,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={0}
                     value={step.params.dbSaveRowIndex ?? 0}
-                    onChange={(e) => onSaveParams(step.id, { dbSaveRowIndex: parseInt(e.target.value) || 0 })}
+                    onChange={(e) => patchParams( { dbSaveRowIndex: parseInt(e.target.value) || 0 })}
                     className="h-9"
                   />
                 </div>
@@ -740,7 +838,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <div className="flex items-center gap-2">
                 <Switch
                   checked={step.params.scriptInline !== false}
-                  onCheckedChange={(v) => onSaveParams(step.id, { scriptInline: v })}
+                  onCheckedChange={(v) => patchParams( { scriptInline: v })}
                 />
                 <Label className="text-xs">Inline script (otherwise path under user scripts folder)</Label>
               </div>
@@ -749,14 +847,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Script</Label>
                   <Textarea
                     value={step.params.scriptInlineText || ''}
-                    onChange={(e) => onSaveParams(step.id, { scriptInlineText: e.target.value })}
+                    onChange={(e) => patchParams( { scriptInlineText: e.target.value })}
                     rows={8}
                     className="font-mono text-xs"
                   />
                   <VariablePresetPicker
                     value={step.params.scriptInlineText || ''}
                     preferred={['epcs', 'epc', 'tagCount', 'host']}
-                    onInsert={(next) => onSaveParams(step.id, { scriptInlineText: next })}
+                    onInsert={(next) => patchParams( { scriptInlineText: next })}
                   />
                 </>
               ) : (
@@ -764,7 +862,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Script path</Label>
                   <Input
                     value={step.params.scriptPath || ''}
-                    onChange={(e) => onSaveParams(step.id, { scriptPath: e.target.value })}
+                    onChange={(e) => patchParams( { scriptPath: e.target.value })}
                     className="h-10 font-mono text-xs"
                     placeholder="…/userData/scripts/validate.ps1"
                   />
@@ -789,14 +887,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Args (space-separated)</Label>
               <Input
                 value={step.params.scriptArgs || ''}
-                onChange={(e) => onSaveParams(step.id, { scriptArgs: e.target.value })}
+                onChange={(e) => patchParams( { scriptArgs: e.target.value })}
                 className="h-9 font-mono text-xs"
               />
               <VariablePresetPicker
                 value={step.params.scriptArgs || ''}
                 preferred={['epc', 'tagCount', 'host']}
                 compact
-                onInsert={(next) => onSaveParams(step.id, { scriptArgs: next })}
+                onInsert={(next) => patchParams( { scriptArgs: next })}
               />
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
@@ -804,7 +902,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Input
                     type="number"
                     value={step.params.scriptTimeoutMs ?? 30000}
-                    onChange={(e) => onSaveParams(step.id, { scriptTimeoutMs: parseInt(e.target.value) || 30000 })}
+                    onChange={(e) => patchParams( { scriptTimeoutMs: parseInt(e.target.value) || 30000 })}
                     className="h-9"
                   />
                 </div>
@@ -812,7 +910,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save stdout as</Label>
                   <Input
                     value={step.params.scriptSaveStdoutAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { scriptSaveStdoutAs: e.target.value })}
+                    onChange={(e) => patchParams( { scriptSaveStdoutAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                   />
                 </div>
@@ -820,7 +918,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <div className="flex items-center gap-2">
                 <Switch
                   checked={step.params.scriptFailOnNonZero !== false}
-                  onCheckedChange={(v) => onSaveParams(step.id, { scriptFailOnNonZero: v })}
+                  onCheckedChange={(v) => patchParams( { scriptFailOnNonZero: v })}
                 />
                 <Label className="text-xs">Fail on non-zero exit</Label>
               </div>
@@ -847,7 +945,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Left value</Label>
                   <Input
                     value={step.params.condLeft || ''}
-                    onChange={(e) => onSaveParams(step.id, { condLeft: e.target.value })}
+                    onChange={(e) => patchParams( { condLeft: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="{{tagCount}}"
                   />
@@ -855,12 +953,12 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     value={step.params.condLeft || ''}
                     preferred={['tagCount', 'epc', 'lastOcrResponse', 'dbResult', 'scriptOut']}
                     compact
-                    onInsert={(next) => onSaveParams(step.id, { condLeft: next })}
+                    onInsert={(next) => patchParams( { condLeft: next })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Operator</Label>
-                  <Select value={op} onValueChange={(v) => onSaveParams(step.id, { condOp: v as ConditionOp })}>
+                  <Select value={op} onValueChange={(v) => patchParams( { condOp: v as ConditionOp })}>
                     <SelectTrigger className="h-10">
                       <SelectValue />
                     </SelectTrigger>
@@ -876,7 +974,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label>Right value</Label>
                     <Input
                       value={step.params.condRight || ''}
-                      onChange={(e) => onSaveParams(step.id, { condRight: e.target.value })}
+                      onChange={(e) => patchParams( { condRight: e.target.value })}
                       className="h-10 font-mono"
                       placeholder={op === 'matches' ? '^\\d+$ (regex)' : '0'}
                     />
@@ -884,7 +982,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       value={step.params.condRight || ''}
                       preferred={['tagCount', 'epc', 'host']}
                       compact
-                      onInsert={(next) => onSaveParams(step.id, { condRight: next })}
+                      onInsert={(next) => patchParams( { condRight: next })}
                     />
                   </div>
                 )}
@@ -892,7 +990,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Case-sensitive text compare</Label>
                   <Switch
                     checked={step.params.condCaseSensitive === true}
-                    onCheckedChange={(v) => onSaveParams(step.id, { condCaseSensitive: v })}
+                    onCheckedChange={(v) => patchParams( { condCaseSensitive: v })}
                   />
                 </div>
                 <p className="text-[11px] text-muted-foreground">
@@ -920,7 +1018,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Left value</Label>
                   <Input
                     value={step.params.condLeft || ''}
-                    onChange={(e) => onSaveParams(step.id, { condLeft: e.target.value })}
+                    onChange={(e) => patchParams( { condLeft: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="{{tagCount}}"
                   />
@@ -928,12 +1026,12 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     value={step.params.condLeft || ''}
                     preferred={['tagCount', 'epc', 'dbResult', 'httpStatus', 'scriptOut']}
                     compact
-                    onInsert={(next) => onSaveParams(step.id, { condLeft: next })}
+                    onInsert={(next) => patchParams( { condLeft: next })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Operator</Label>
-                  <Select value={op} onValueChange={(v) => onSaveParams(step.id, { condOp: v as ConditionOp })}>
+                  <Select value={op} onValueChange={(v) => patchParams( { condOp: v as ConditionOp })}>
                     <SelectTrigger className="h-10">
                       <SelectValue />
                     </SelectTrigger>
@@ -949,7 +1047,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label>Right value</Label>
                     <Input
                       value={step.params.condRight || ''}
-                      onChange={(e) => onSaveParams(step.id, { condRight: e.target.value })}
+                      onChange={(e) => patchParams( { condRight: e.target.value })}
                       className="h-10 font-mono"
                       placeholder="0"
                     />
@@ -959,7 +1057,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Case-sensitive text compare</Label>
                   <Switch
                     checked={step.params.condCaseSensitive === true}
-                    onCheckedChange={(v) => onSaveParams(step.id, { condCaseSensitive: v })}
+                    onCheckedChange={(v) => patchParams( { condCaseSensitive: v })}
                   />
                 </div>
                 {!isWait && (
@@ -967,7 +1065,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label>Failure message</Label>
                     <Input
                       value={step.params.assertMessage || ''}
-                      onChange={(e) => onSaveParams(step.id, { assertMessage: e.target.value })}
+                      onChange={(e) => patchParams( { assertMessage: e.target.value })}
                       className="h-10 font-mono text-sm"
                       placeholder="Expected tags but got {{tagCount}}"
                     />
@@ -982,7 +1080,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                           type="number"
                           min={0}
                           value={step.params.waitTimeoutMs ?? 10000}
-                          onChange={(e) => onSaveParams(step.id, { waitTimeoutMs: parseInt(e.target.value) || 0 })}
+                          onChange={(e) => patchParams( { waitTimeoutMs: parseInt(e.target.value) || 0 })}
                           className="h-9 font-mono"
                         />
                       </div>
@@ -992,7 +1090,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                           type="number"
                           min={50}
                           value={step.params.waitPollMs ?? 500}
-                          onChange={(e) => onSaveParams(step.id, { waitPollMs: parseInt(e.target.value) || 500 })}
+                          onChange={(e) => patchParams( { waitPollMs: parseInt(e.target.value) || 500 })}
                           className="h-9 font-mono"
                         />
                       </div>
@@ -1001,7 +1099,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       <Label>On timeout</Label>
                       <Select
                         value={step.params.waitOnTimeout ?? 'fail'}
-                        onValueChange={(v) => onSaveParams(step.id, { waitOnTimeout: v as 'fail' | 'continue' })}
+                        onValueChange={(v) => patchParams( { waitOnTimeout: v as 'fail' | 'continue' })}
                       >
                         <SelectTrigger className="h-10">
                           <SelectValue />
@@ -1023,7 +1121,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Message</Label>
               <Textarea
                 value={step.params.logMessage || ''}
-                onChange={(e) => onSaveParams(step.id, { logMessage: e.target.value })}
+                onChange={(e) => patchParams( { logMessage: e.target.value })}
                 rows={3}
                 className="font-mono text-sm"
                 placeholder="Sent {{tagCount}} tags to {{host}}"
@@ -1031,13 +1129,13 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <VariablePresetPicker
                 value={step.params.logMessage || ''}
                 preferred={['tagCount', 'epc', 'epcs', 'lastOcrResponse', 'host']}
-                onInsert={(next) => onSaveParams(step.id, { logMessage: next })}
+                onInsert={(next) => patchParams( { logMessage: next })}
               />
               <div className="space-y-2">
                 <Label>Level</Label>
                 <Select
                   value={step.params.logLevel ?? 'info'}
-                  onValueChange={(v) => onSaveParams(step.id, { logLevel: v as LogLevel })}
+                  onValueChange={(v) => patchParams( { logLevel: v as LogLevel })}
                 >
                   <SelectTrigger className="h-10">
                     <SelectValue />
@@ -1054,7 +1152,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Abort the run when this node executes</Label>
                   <Switch
                     checked={step.params.logAbort === true}
-                    onCheckedChange={(v) => onSaveParams(step.id, { logAbort: v })}
+                    onCheckedChange={(v) => patchParams( { logAbort: v })}
                   />
                 </div>
               )}
@@ -1075,14 +1173,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <Label>Database (optional)</Label>
               <Input
                 value={step.params.dbDatabase || ''}
-                onChange={(e) => onSaveParams(step.id, { dbDatabase: e.target.value })}
+                onChange={(e) => patchParams( { dbDatabase: e.target.value })}
                 className="h-10 font-mono"
                 placeholder="Leave empty for current connection default"
               />
               <Label>SQL statement</Label>
               <Textarea
                 value={step.params.dbSql || ''}
-                onChange={(e) => onSaveParams(step.id, { dbSql: e.target.value })}
+                onChange={(e) => patchParams( { dbSql: e.target.value })}
                 rows={6}
                 className="font-mono text-sm"
                 placeholder={"UPDATE inventory SET last_seen = NOW() WHERE epc = '{{epc}}'"}
@@ -1090,7 +1188,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               <VariablePresetPicker
                 value={step.params.dbSql || ''}
                 preferred={['epc', 'epcsSql', 'tagCount', 'host']}
-                onInsert={(next) => onSaveParams(step.id, { dbSql: next })}
+                onInsert={(next) => patchParams( { dbSql: next })}
               />
               <div className="flex flex-wrap gap-1.5">
                 <Button
@@ -1099,7 +1197,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   size="sm"
                   className="h-7 text-[11px]"
                   onClick={() =>
-                    onSaveParams(step.id, {
+                    patchParams( {
                       dbSql: "UPDATE inventory SET last_seen = NOW() WHERE epc = '{{epc}}'",
                     })
                   }
@@ -1112,7 +1210,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   size="sm"
                   className="h-7 text-[11px]"
                   onClick={() =>
-                    onSaveParams(step.id, {
+                    patchParams( {
                       dbSql: "DELETE FROM inventory WHERE epc IN ({{epcsSql}})",
                     })
                   }
@@ -1125,7 +1223,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save affected rows as</Label>
                   <Input
                     value={step.params.dbSaveAffectedAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { dbSaveAffectedAs: e.target.value })}
+                    onChange={(e) => patchParams( { dbSaveAffectedAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="rowsAffected"
                   />
@@ -1134,7 +1232,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save insert id as</Label>
                   <Input
                     value={step.params.dbSaveInsertIdAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { dbSaveInsertIdAs: e.target.value })}
+                    onChange={(e) => patchParams( { dbSaveInsertIdAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="newId"
                   />
@@ -1158,7 +1256,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Method</Label>
                   <Select
                     value={step.params.httpMethod || 'GET'}
-                    onValueChange={(v) => onSaveParams(step.id, { httpMethod: v as HttpMethod })}
+                    onValueChange={(v) => patchParams( { httpMethod: v as HttpMethod })}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue />
@@ -1174,7 +1272,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>URL</Label>
                   <Input
                     value={step.params.httpUrl || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpUrl: e.target.value })}
+                    onChange={(e) => patchParams( { httpUrl: e.target.value })}
                     className="h-10 font-mono text-sm"
                     placeholder="http://{{host}}:8081/…"
                   />
@@ -1184,12 +1282,12 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 value={step.params.httpUrl || ''}
                 preferred={['host', 'alePort', 'epc']}
                 compact
-                onInsert={(next) => onSaveParams(step.id, { httpUrl: next })}
+                onInsert={(next) => patchParams( { httpUrl: next })}
               />
               <Label>Headers (one per line — <code className="text-[10px]">Key: Value</code>)</Label>
               <Textarea
                 value={step.params.httpHeaders || ''}
-                onChange={(e) => onSaveParams(step.id, { httpHeaders: e.target.value })}
+                onChange={(e) => patchParams( { httpHeaders: e.target.value })}
                 rows={3}
                 className="font-mono text-xs"
                 placeholder={"Content-Type: application/json\nAuthorization: Bearer {{token}}"}
@@ -1199,7 +1297,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Body</Label>
                   <Textarea
                     value={step.params.httpBody || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpBody: e.target.value })}
+                    onChange={(e) => patchParams( { httpBody: e.target.value })}
                     rows={5}
                     className="font-mono text-xs"
                     placeholder={'{"epc":"{{epc}}"}'}
@@ -1207,7 +1305,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <VariablePresetPicker
                     value={step.params.httpBody || ''}
                     preferred={['epc', 'epcs', 'tagCount', 'lastOcrResponse']}
-                    onInsert={(next) => onSaveParams(step.id, { httpBody: next })}
+                    onInsert={(next) => patchParams( { httpBody: next })}
                   />
                 </>
               )}
@@ -1216,7 +1314,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save status as</Label>
                   <Input
                     value={step.params.httpSaveStatusAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpSaveStatusAs: e.target.value })}
+                    onChange={(e) => patchParams( { httpSaveStatusAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="httpStatus"
                   />
@@ -1225,7 +1323,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save body as</Label>
                   <Input
                     value={step.params.httpSaveBodyAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpSaveBodyAs: e.target.value })}
+                    onChange={(e) => patchParams( { httpSaveBodyAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="httpBody"
                   />
@@ -1236,7 +1334,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>JSON path (optional)</Label>
                   <Input
                     value={step.params.httpJsonPath || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpJsonPath: e.target.value })}
+                    onChange={(e) => patchParams( { httpJsonPath: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="data.items.0.epc"
                   />
@@ -1245,7 +1343,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>…save as</Label>
                   <Input
                     value={step.params.httpSaveJsonAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { httpSaveJsonAs: e.target.value })}
+                    onChange={(e) => patchParams( { httpSaveJsonAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="firstEpc"
                   />
@@ -1258,7 +1356,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={100}
                     value={step.params.httpTimeoutMs ?? 15000}
-                    onChange={(e) => onSaveParams(step.id, { httpTimeoutMs: parseInt(e.target.value) || 15000 })}
+                    onChange={(e) => patchParams( { httpTimeoutMs: parseInt(e.target.value) || 15000 })}
                     className="h-9 font-mono text-xs"
                   />
                 </div>
@@ -1266,7 +1364,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Fail on non-2xx</Label>
                   <Switch
                     checked={step.params.httpFailOnError !== false}
-                    onCheckedChange={(v) => onSaveParams(step.id, { httpFailOnError: v })}
+                    onCheckedChange={(v) => patchParams( { httpFailOnError: v })}
                   />
                 </div>
               </div>
@@ -1288,10 +1386,10 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   value={step.params.callSequenceId || ''}
                   onValueChange={(v) => {
                     const target = targets.find((s) => s.id === v)
-                    onSaveParams(step.id, { callSequenceId: v })
+                    patchParams( { callSequenceId: v })
                     // Auto-name the node after its target while the name is still generic.
                     if (target && (step.name === 'Call Sequence' || step.name.startsWith('Call '))) {
-                      onSave(step.id, { name: `Call ${target.name}` })
+                      handleNameChange(`Call ${target.name}`)
                     }
                   }}
                 >
@@ -1342,7 +1440,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <Label>JavaScript source</Label>
                 <Textarea
                   value={step.params.codeSource || ''}
-                  onChange={(e) => onSaveParams(step.id, { codeSource: e.target.value, codeLanguage: 'javascript' })}
+                  onChange={(e) => patchParams( { codeSource: e.target.value, codeLanguage: 'javascript' })}
                   rows={14}
                   spellCheck={false}
                   className="font-mono text-xs leading-relaxed"
@@ -1352,7 +1450,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   variant="outline"
                   size="sm"
                   className="h-7 text-[11px]"
-                  onClick={() => onSaveParams(step.id, { codeSource: CODE_STARTER, codeLanguage: 'javascript' })}
+                  onClick={() => patchParams( { codeSource: CODE_STARTER, codeLanguage: 'javascript' })}
                 >
                   Reset to starter
                 </Button>
@@ -1374,7 +1472,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>List source</Label>
                   <Textarea
                     value={step.params.forEachSource || ''}
-                    onChange={(e) => onSaveParams(step.id, { forEachSource: e.target.value })}
+                    onChange={(e) => patchParams( { forEachSource: e.target.value })}
                     rows={3}
                     className="font-mono text-sm"
                     placeholder="{{epcs}}"
@@ -1383,7 +1481,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     value={step.params.forEachSource || ''}
                     preferred={['epcs', 'epc']}
                     compact
-                    onInsert={(next) => onSaveParams(step.id, { forEachSource: next })}
+                    onInsert={(next) => patchParams( { forEachSource: next })}
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-2">
@@ -1391,7 +1489,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label className="text-xs">Item variable</Label>
                     <Input
                       value={step.params.forEachItemAs || ''}
-                      onChange={(e) => onSaveParams(step.id, { forEachItemAs: e.target.value })}
+                      onChange={(e) => patchParams( { forEachItemAs: e.target.value })}
                       className="h-9 font-mono"
                       placeholder="item"
                     />
@@ -1400,7 +1498,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label className="text-xs">Index variable</Label>
                     <Input
                       value={step.params.forEachIndexAs || ''}
-                      onChange={(e) => onSaveParams(step.id, { forEachIndexAs: e.target.value })}
+                      onChange={(e) => patchParams( { forEachIndexAs: e.target.value })}
                       className="h-9 font-mono"
                       placeholder="index"
                     />
@@ -1410,7 +1508,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Sequence to run per item</Label>
                   <Select
                     value={step.params.forEachSequenceId || ''}
-                    onValueChange={(v) => onSaveParams(step.id, { forEachSequenceId: v })}
+                    onValueChange={(v) => patchParams( { forEachSequenceId: v })}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder="Select sequence…" />
@@ -1428,7 +1526,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={1}
                     value={step.params.forEachMax ?? 500}
-                    onChange={(e) => onSaveParams(step.id, { forEachMax: parseInt(e.target.value) || 500 })}
+                    onChange={(e) => patchParams( { forEachMax: parseInt(e.target.value) || 500 })}
                     className="h-9 font-mono w-28"
                   />
                 </div>
@@ -1445,7 +1543,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <Label>Scope</Label>
                 <Select
                   value={step.params.stopScope ?? 'sequence'}
-                  onValueChange={(v) => onSaveParams(step.id, { stopScope: v as StopScope })}
+                  onValueChange={(v) => patchParams( { stopScope: v as StopScope })}
                 >
                   <SelectTrigger className="h-10">
                     <SelectValue />
@@ -1460,7 +1558,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <Label>Message (optional)</Label>
                 <Input
                   value={step.params.stopMessage || ''}
-                  onChange={(e) => onSaveParams(step.id, { stopMessage: e.target.value })}
+                  onChange={(e) => patchParams( { stopMessage: e.target.value })}
                   className="h-10"
                   placeholder="Done"
                 />
@@ -1476,7 +1574,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Kind</Label>
                   <Select
                     value={kind}
-                    onValueChange={(v) => onSaveParams(step.id, { generateKind: v as GenerateKind })}
+                    onValueChange={(v) => patchParams( { generateKind: v as GenerateKind })}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue />
@@ -1495,7 +1593,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save as variable</Label>
                   <Input
                     value={step.params.generateSaveAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { generateSaveAs: e.target.value })}
+                    onChange={(e) => patchParams( { generateSaveAs: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="generated"
                   />
@@ -1507,7 +1605,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       <Input
                         type="number"
                         value={step.params.generateMin ?? 0}
-                        onChange={(e) => onSaveParams(step.id, { generateMin: parseInt(e.target.value) || 0 })}
+                        onChange={(e) => patchParams( { generateMin: parseInt(e.target.value) || 0 })}
                         className="h-9 font-mono"
                       />
                     </div>
@@ -1516,7 +1614,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       <Input
                         type="number"
                         value={step.params.generateMax ?? 9999}
-                        onChange={(e) => onSaveParams(step.id, { generateMax: parseInt(e.target.value) || 0 })}
+                        onChange={(e) => patchParams( { generateMax: parseInt(e.target.value) || 0 })}
                         className="h-9 font-mono"
                       />
                     </div>
@@ -1530,7 +1628,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       min={1}
                       max={128}
                       value={step.params.generateHexLength ?? 16}
-                      onChange={(e) => onSaveParams(step.id, { generateHexLength: parseInt(e.target.value) || 16 })}
+                      onChange={(e) => patchParams( { generateHexLength: parseInt(e.target.value) || 16 })}
                       className="h-9 font-mono w-28"
                     />
                   </div>
@@ -1546,7 +1644,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
               </p>
               <Textarea
                 value={step.params.commentText || ''}
-                onChange={(e) => onSaveParams(step.id, { commentText: e.target.value })}
+                onChange={(e) => patchParams( { commentText: e.target.value })}
                 rows={4}
                 placeholder="Notes for this part of the flow…"
               />
@@ -1565,7 +1663,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Input value</Label>
                   <Textarea
                     value={step.params.transformInput || ''}
-                    onChange={(e) => onSaveParams(step.id, { transformInput: e.target.value })}
+                    onChange={(e) => patchParams( { transformInput: e.target.value })}
                     rows={2}
                     className="font-mono text-sm"
                     placeholder="{{epc}}"
@@ -1574,12 +1672,12 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     value={step.params.transformInput || ''}
                     preferred={['epc', 'epcs', 'tagCount', 'lastOcrResponse', 'httpBody']}
                     compact
-                    onInsert={(next) => onSaveParams(step.id, { transformInput: next })}
+                    onInsert={(next) => patchParams( { transformInput: next })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Operation</Label>
-                  <Select value={op} onValueChange={(v) => onSaveParams(step.id, { transformOp: v as TransformOp })}>
+                  <Select value={op} onValueChange={(v) => patchParams( { transformOp: v as TransformOp })}>
                     <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {(['text', 'number', 'json'] as const).map((cat) => (
@@ -1600,7 +1698,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                       <Label className="text-xs">{opMeta.arg}</Label>
                       <Input
                         value={step.params.transformArg || ''}
-                        onChange={(e) => onSaveParams(step.id, { transformArg: e.target.value })}
+                        onChange={(e) => patchParams( { transformArg: e.target.value })}
                         className="h-9 font-mono text-xs"
                       />
                     </div>
@@ -1609,7 +1707,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                         <Label className="text-xs">{opMeta.arg2}</Label>
                         <Input
                           value={step.params.transformArg2 || ''}
-                          onChange={(e) => onSaveParams(step.id, { transformArg2: e.target.value })}
+                          onChange={(e) => patchParams( { transformArg2: e.target.value })}
                           className="h-9 font-mono text-xs"
                         />
                       </div>
@@ -1620,7 +1718,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Save result as</Label>
                   <Input
                     value={step.params.transformSaveAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { transformSaveAs: e.target.value })}
+                    onChange={(e) => patchParams( { transformSaveAs: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="transformed"
                   />
@@ -1638,7 +1736,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <Label>Title (optional)</Label>
                 <Input
                   value={step.params.notifyTitle || ''}
-                  onChange={(e) => onSaveParams(step.id, { notifyTitle: e.target.value })}
+                  onChange={(e) => patchParams( { notifyTitle: e.target.value })}
                   className="h-10"
                   placeholder="Run complete"
                 />
@@ -1647,7 +1745,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <Label>Message</Label>
                 <Textarea
                   value={step.params.notifyMessage || ''}
-                  onChange={(e) => onSaveParams(step.id, { notifyMessage: e.target.value })}
+                  onChange={(e) => patchParams( { notifyMessage: e.target.value })}
                   rows={3}
                   className="font-mono text-sm"
                   placeholder="Sent {{tagCount}} tag(s) to {{host}}"
@@ -1655,14 +1753,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                 <VariablePresetPicker
                   value={step.params.notifyMessage || ''}
                   preferred={['tagCount', 'epc', 'epcs', 'lastOcrResponse', 'host']}
-                  onInsert={(next) => onSaveParams(step.id, { notifyMessage: next })}
+                  onInsert={(next) => patchParams( { notifyMessage: next })}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Level</Label>
                 <Select
                   value={step.params.notifyLevel ?? 'info'}
-                  onValueChange={(v) => onSaveParams(step.id, { notifyLevel: v as NotifyLevel })}
+                  onValueChange={(v) => patchParams( { notifyLevel: v as NotifyLevel })}
                 >
                   <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -1689,7 +1787,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label className="text-xs">Count</Label>
                     <Input
                       value={step.params.loopCount || ''}
-                      onChange={(e) => onSaveParams(step.id, { loopCount: e.target.value })}
+                      onChange={(e) => patchParams( { loopCount: e.target.value })}
                       className="h-9 font-mono"
                       placeholder="3 or {{tagCount}}"
                     />
@@ -1698,7 +1796,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     <Label className="text-xs">Index variable</Label>
                     <Input
                       value={step.params.loopIndexAs || ''}
-                      onChange={(e) => onSaveParams(step.id, { loopIndexAs: e.target.value })}
+                      onChange={(e) => patchParams( { loopIndexAs: e.target.value })}
                       className="h-9 font-mono"
                       placeholder="i"
                     />
@@ -1708,13 +1806,13 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   value={step.params.loopCount || ''}
                   preferred={['tagCount']}
                   compact
-                  onInsert={(next) => onSaveParams(step.id, { loopCount: next })}
+                  onInsert={(next) => patchParams( { loopCount: next })}
                 />
                 <div className="space-y-2">
                   <Label>Sequence to run each iteration</Label>
                   <Select
                     value={step.params.loopSequenceId || ''}
-                    onValueChange={(v) => onSaveParams(step.id, { loopSequenceId: v })}
+                    onValueChange={(v) => patchParams( { loopSequenceId: v })}
                   >
                     <SelectTrigger className="h-10">
                       <SelectValue placeholder={targets.length ? 'Select sequence…' : 'No other sequences available'} />
@@ -1732,7 +1830,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     type="number"
                     min={1}
                     value={step.params.loopMax ?? 1000}
-                    onChange={(e) => onSaveParams(step.id, { loopMax: parseInt(e.target.value) || 1000 })}
+                    onChange={(e) => patchParams( { loopMax: parseInt(e.target.value) || 1000 })}
                     className="h-9 font-mono w-32"
                   />
                 </div>
@@ -1742,7 +1840,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
 
           {step.type === 'SWITCH' && (() => {
             const cases: SwitchCase[] = step.params.switchCases ?? []
-            const updateCases = (next: SwitchCase[]) => onSaveParams(step.id, { switchCases: next })
+            const updateCases = (next: SwitchCase[]) => patchParams( { switchCases: next })
             return (
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <p className="text-xs text-muted-foreground">
@@ -1754,7 +1852,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label>Switch value</Label>
                   <Input
                     value={step.params.switchValue || ''}
-                    onChange={(e) => onSaveParams(step.id, { switchValue: e.target.value })}
+                    onChange={(e) => patchParams( { switchValue: e.target.value })}
                     className="h-10 font-mono"
                     placeholder="{{tagCount}}"
                   />
@@ -1762,7 +1860,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                     value={step.params.switchValue || ''}
                     preferred={['tagCount', 'epc', 'lastOcrResponse', 'httpStatus', 'dbResult']}
                     compact
-                    onInsert={(next) => onSaveParams(step.id, { switchValue: next })}
+                    onInsert={(next) => patchParams( { switchValue: next })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -1801,14 +1899,14 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Include a default port</Label>
                   <Switch
                     checked={step.params.switchHasDefault !== false}
-                    onCheckedChange={(v) => onSaveParams(step.id, { switchHasDefault: v })}
+                    onCheckedChange={(v) => patchParams( { switchHasDefault: v })}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <Label className="text-xs">Case-sensitive compare</Label>
                   <Switch
                     checked={step.params.switchCaseSensitive === true}
-                    onCheckedChange={(v) => onSaveParams(step.id, { switchCaseSensitive: v })}
+                    onCheckedChange={(v) => patchParams( { switchCaseSensitive: v })}
                   />
                 </div>
               </div>
@@ -1818,7 +1916,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
           {step.type === 'RANDOM' && (() => {
             const branches: RandomBranch[] = step.params.randomBranches ?? []
             const total = branches.reduce((a, b) => a + (b.weight > 0 ? b.weight : 0), 0)
-            const updateBranches = (next: RandomBranch[]) => onSaveParams(step.id, { randomBranches: next })
+            const updateBranches = (next: RandomBranch[]) => patchParams( { randomBranches: next })
             return (
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <p className="text-xs text-muted-foreground">
@@ -1868,7 +1966,7 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
                   <Label className="text-xs">Save chosen index as (optional)</Label>
                   <Input
                     value={step.params.randomSaveAs || ''}
-                    onChange={(e) => onSaveParams(step.id, { randomSaveAs: e.target.value })}
+                    onChange={(e) => patchParams( { randomSaveAs: e.target.value })}
                     className="h-9 font-mono text-xs"
                     placeholder="chosenBranch"
                   />
@@ -1879,12 +1977,12 @@ export function NodeConfigDialog({ open, onOpenChange, step, onSave, onSaveParam
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
             Close
           </Button>
-          <Button onClick={() => onOpenChange(false)}>Done</Button>
+          <Button onClick={() => handleOpenChange(false)}>Done</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
   )
-}
+})
