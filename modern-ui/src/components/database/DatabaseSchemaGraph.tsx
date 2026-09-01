@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -14,6 +14,7 @@ import {
   type Edge,
   type NodeTypes,
   type NodeProps,
+  type ReactFlowInstance,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { cn } from '@/lib/utils'
@@ -36,13 +37,13 @@ function SchemaTableNode({ data, id }: NodeProps<Node<SchemaTableNodeData>>) {
 
   return (
     <div
-      className="rounded-lg border border-border bg-popover shadow-md min-w-[200px] max-w-[260px] text-xs"
+      className="nowheel rounded-lg border border-border bg-popover shadow-md min-w-[200px] max-w-[260px] text-xs electron-no-drag"
       onDoubleClick={openTable}
     >
       <Handle type="target" position={Position.Left} className="!h-2 !w-2 !border-2 !bg-blue-500" />
       <button
         type="button"
-        className="nodrag nopan w-full px-2 py-1.5 font-semibold border-b border-border bg-muted/60 text-foreground truncate text-left cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors"
+        className="nodrag nopan pointer-events-auto w-full px-2 py-1.5 font-semibold border-b border-border bg-muted/60 text-foreground truncate text-left cursor-pointer hover:bg-primary/10 hover:text-primary transition-colors"
         title="Open table"
         onClick={(e) => {
           e.stopPropagation()
@@ -51,7 +52,7 @@ function SchemaTableNode({ data, id }: NodeProps<Node<SchemaTableNodeData>>) {
       >
         {data.label}
       </button>
-      <div className="max-h-[280px] overflow-y-auto">
+      <div className="max-h-[280px] overflow-y-auto nowheel">
         {data.columns.map((c) => (
           <div
             key={c.name}
@@ -104,6 +105,10 @@ function buildFkColumnSet(fks: DbSchemaForeignKey[]): Map<string, Set<string>> {
   return map
 }
 
+function schemaFingerprint(tables: DbSchemaTable[], foreignKeys: DbSchemaForeignKey[]): string {
+  return `${tables.map((t) => t.name).join('\0')}#${foreignKeys.map((fk) => fk.constraintName).join('\0')}`
+}
+
 function SchemaFlowInner({
   tables,
   foreignKeys,
@@ -115,6 +120,8 @@ function SchemaFlowInner({
 }) {
   const colorMode = document.documentElement.classList.contains('dark') ? 'dark' : 'light'
   const fkCols = useMemo(() => buildFkColumnSet(foreignKeys), [foreignKeys])
+  const fingerprint = useMemo(() => schemaFingerprint(tables, foreignKeys), [tables, foreignKeys])
+  const rfRef = useRef<ReactFlowInstance | null>(null)
 
   const { initialNodes, initialEdges } = useMemo(() => {
     const pos = layoutGrid(tables)
@@ -155,7 +162,12 @@ function SchemaFlowInner({
   useEffect(() => {
     setNodes(initialNodes)
     setEdges(initialEdges)
-  }, [initialNodes, initialEdges, setNodes, setEdges])
+    const rf = rfRef.current
+    if (!rf) return
+    requestAnimationFrame(() => rf.fitView({ padding: 0.15, duration: 0 }))
+    // Only re-fit when the table/FK set actually changes (not every parent render).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fingerprint, setNodes, setEdges])
 
   const handleSelectTable = useCallback(
     (tableName: string) => {
@@ -167,23 +179,23 @@ function SchemaFlowInner({
   return (
     <SchemaSelectCtx.Provider value={handleSelectTable}>
       <ReactFlow
-        className="h-full w-full bg-muted/20"
+        className="electron-no-drag h-full w-full bg-muted/20 [&_.react-flow__pane]:cursor-grab [&_.react-flow__pane]:active:cursor-grabbing"
+        style={{ width: '100%', height: '100%' }}
         nodes={nodes}
         edges={edges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         colorMode={colorMode}
-        fitView
-        fitViewOptions={{ padding: 0.15 }}
         onInit={(rf) => {
-          queueMicrotask(() => rf.fitView({ padding: 0.15, duration: 0 }))
+          rfRef.current = rf
+          requestAnimationFrame(() => rf.fitView({ padding: 0.15, duration: 0 }))
         }}
-        onNodeClick={(_e, node) => onSelectTable?.(node.id)}
-        minZoom={0.1}
+        minZoom={0.08}
         maxZoom={2.5}
         proOptions={{ hideAttribution: true }}
-        panOnDrag
+        panOnDrag={[0, 1, 2]}
+        panOnScroll={false}
         zoomOnScroll
         zoomOnPinch
         zoomOnDoubleClick={false}
@@ -192,16 +204,23 @@ function SchemaFlowInner({
         nodesConnectable={false}
         elementsSelectable={false}
         selectNodesOnDrag={false}
+        selectionOnDrag={false}
+        deleteKeyCode={null}
+        multiSelectionKeyCode={null}
+        nodeDragThreshold={4}
       >
-      <Background gap={20} size={1} className="!bg-muted/30" />
-      <Controls className="!bg-popover !border-border !shadow-md [&_button]:!border-border [&_button:hover]:!bg-muted" />
-      <MiniMap
-        className="!bg-popover !border-border rounded-md"
-        maskColor="hsl(var(--background) / 0.7)"
-        nodeStrokeWidth={2}
-        zoomable
-        pannable
-      />
+        <Background gap={20} size={1} className="!bg-muted/30" />
+        <Controls
+          showInteractive={false}
+          className="!bg-popover !border-border !shadow-md [&_button]:!border-border [&_button:hover]:!bg-muted"
+        />
+        <MiniMap
+          className="!bg-popover !border-border rounded-md"
+          maskColor="hsl(var(--background) / 0.7)"
+          nodeStrokeWidth={2}
+          zoomable
+          pannable
+        />
       </ReactFlow>
     </SchemaSelectCtx.Provider>
   )
@@ -225,7 +244,7 @@ export function DatabaseSchemaGraph({
   }
 
   return (
-    <div className="relative h-full min-h-[400px] w-full flex-1 rounded-lg border border-border/50 bg-muted/20 overflow-hidden [&_.react-flow__attribution]:hidden">
+    <div className="electron-no-drag relative h-full min-h-[400px] w-full flex-1 rounded-lg border border-border/50 bg-muted/20 overflow-hidden [&_.react-flow__attribution]:hidden">
       <ReactFlowProvider>
         <div className="absolute inset-0 min-h-[320px]">
           <SchemaFlowInner tables={tables} foreignKeys={foreignKeys} onSelectTable={onSelectTable} />

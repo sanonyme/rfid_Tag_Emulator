@@ -44,6 +44,17 @@ function findFk(
   return null
 }
 
+export const CUSTOM_FIELD_KEYS = [
+  'field1', 'field2', 'field3', 'field4', 'field5',
+  'field6', 'field7', 'field8', 'field9', 'field10',
+] as const
+
+export type InspectKv = {
+  key: string
+  label: string
+  value: string
+}
+
 export type InspectLine = {
   itemId: string
   quantity: number
@@ -56,11 +67,13 @@ export type InspectCarton = {
   sscc: string
   lines: InspectLine[]
   totalQty: number
+  fields: InspectKv[]
 }
 
 export type OrderInspectModel = {
   orderNumber: string
   orderId: string
+  fields: InspectKv[]
   cartons: InspectCarton[]
   found: boolean
 }
@@ -69,6 +82,8 @@ export type CartonInspectModel = {
   sscc: string
   containerId: string
   orderNumber: string
+  orderFields: InspectKv[]
+  fields: InspectKv[]
   lines: InspectLine[]
   found: boolean
 }
@@ -76,6 +91,41 @@ export type CartonInspectModel = {
 export type InspectSqlResult =
   | { ok: true; sql: string }
   | { ok: false; error: string }
+
+const ORDER_FALLBACK_COLS = [
+  'id', 'orderNumber', 'completed', 'statusId', 'type', 'generated',
+  'customerId', 'sourceOrganizationId', 'sourceLocationId',
+  'destinationOrganizationId', 'destinationLocationId',
+  'createTs', 'updateTs',
+  ...CUSTOM_FIELD_KEYS,
+]
+
+const CONTAINER_FALLBACK_COLS = [
+  'id', 'sscc', 'epc', 'orderId', 'weight', 'type', 'poNumber', 'isVirtual',
+  'expectedItems', 'generated', 'statusId', 'customerId',
+  'currentLocationId', 'sourceOrganizationId', 'sourceLocationId',
+  'destinationOrganizationId', 'destinationLocationId',
+  'createTs', 'updateTs',
+  ...CUSTOM_FIELD_KEYS,
+]
+
+type ColSpec = { col: string | string[]; as: string }
+
+function pickSelects(alias: string, columns: string[], specs: ColSpec[]): string[] {
+  const lines: string[] = []
+  for (const spec of specs) {
+    const candidates = Array.isArray(spec.col) ? spec.col : [spec.col]
+    const actual = findColumn(columns, candidates)
+    if (actual) lines.push(`  ${alias}.${quoteIdent(actual)} AS ${quoteIdent(spec.as)}`)
+  }
+  return lines
+}
+
+function customFieldSelects(alias: string, columns: string[], prefix: 'order' | 'carton'): string[] {
+  return CUSTOM_FIELD_KEYS.flatMap((key, i) =>
+    pickSelects(alias, columns, [{ col: key, as: `${prefix}Field${i + 1}` }]),
+  )
+}
 
 function itemJoinCols(itemCols: string[]): { barcode: string | null; label: string | null } {
   return {
@@ -129,13 +179,84 @@ function deletedPredicate(alias: string, columns: string[]): string {
   return `IFNULL(${alias}.${quoteIdent(deletedCol)}, 0) = 0`
 }
 
+function addLookup(
+  parts: { joins: string[]; selects: string[] },
+  schema: SchemaData | null,
+  fromAlias: string,
+  fromCols: string[],
+  fkCandidates: string[],
+  tableCandidates: string[],
+  nameCandidates: string[],
+  asName: string,
+  joinAlias: string,
+): void {
+  const fkCol = findColumn(fromCols, fkCandidates)
+  const table = findTable(schema, tableCandidates)
+  if (!fkCol || !table) return
+  const pk = findColumn(table.columns, ['id']) ?? 'id'
+  const nameCol = findColumn(table.columns, nameCandidates)
+  if (!nameCol) return
+  parts.joins.push(
+    `LEFT JOIN ${quoteIdent(table.name)} ${joinAlias}`,
+    `  ON ${joinAlias}.${quoteIdent(pk)} = ${fromAlias}.${quoteIdent(fkCol)}`,
+  )
+  parts.selects.push(`  ${joinAlias}.${quoteIdent(nameCol)} AS ${quoteIdent(asName)}`)
+}
+
+const ORDER_COL_SPECS: ColSpec[] = [
+  { col: 'completed', as: 'orderCompleted' },
+  { col: 'type', as: 'orderType' },
+  { col: 'generated', as: 'orderGenerated' },
+  { col: 'createTs', as: 'orderCreateTs' },
+  { col: 'updateTs', as: 'orderUpdateTs' },
+]
+
+const CARTON_COL_SPECS: ColSpec[] = [
+  { col: 'epc', as: 'cartonEpc' },
+  { col: ['poNumber', 'po_number'], as: 'cartonPoNumber' },
+  { col: 'type', as: 'cartonType' },
+  { col: 'weight', as: 'cartonWeight' },
+  { col: ['expectedItems', 'expected', 'expected_items'], as: 'cartonExpectedItems' },
+  { col: 'generated', as: 'cartonGenerated' },
+  { col: 'isVirtual', as: 'cartonIsVirtual' },
+  { col: 'createTs', as: 'cartonCreateTs' },
+  { col: 'updateTs', as: 'cartonUpdateTs' },
+]
+
+function orderLookups(schema: SchemaData | null, orderCols: string[]): { joins: string[]; selects: string[] } {
+  const parts = { joins: [] as string[], selects: [] as string[] }
+  addLookup(parts, schema, 'o', orderCols, ['statusId', 'status_id'], ['status'], ['status', 'name', 'description'], 'orderStatus', 'ost')
+  addLookup(parts, schema, 'o', orderCols, ['customerId', 'customer_id'], ['customer'], ['name'], 'orderCustomer', 'ocust')
+  addLookup(parts, schema, 'o', orderCols, ['sourceOrganizationId', 'source_organization_id'], ['organization', 'organisation'], ['name', 'code'], 'orderSourceOrg', 'osorg')
+  addLookup(parts, schema, 'o', orderCols, ['destinationOrganizationId', 'destination_organization_id'], ['organization', 'organisation'], ['name', 'code'], 'orderDestOrg', 'odorg')
+  addLookup(parts, schema, 'o', orderCols, ['sourceLocationId', 'source_location_id'], ['location'], ['name', 'barcode'], 'orderSourceLoc', 'osloc')
+  addLookup(parts, schema, 'o', orderCols, ['destinationLocationId', 'destination_location_id'], ['location'], ['name', 'barcode'], 'orderDestLoc', 'odloc')
+  return parts
+}
+
+function cartonLookups(schema: SchemaData | null, containerCols: string[]): { joins: string[]; selects: string[] } {
+  const parts = { joins: [] as string[], selects: [] as string[] }
+  addLookup(parts, schema, 'c', containerCols, ['statusId', 'status_id'], ['status'], ['status', 'name', 'description'], 'cartonStatus', 'cst')
+  addLookup(parts, schema, 'c', containerCols, ['customerId', 'customer_id'], ['customer'], ['name'], 'cartonCustomer', 'ccust')
+  addLookup(parts, schema, 'c', containerCols, ['sourceOrganizationId', 'source_organization_id'], ['organization', 'organisation'], ['name', 'code'], 'cartonSourceOrg', 'csorg')
+  addLookup(parts, schema, 'c', containerCols, ['destinationOrganizationId', 'destination_organization_id'], ['organization', 'organisation'], ['name', 'code'], 'cartonDestOrg', 'cdorg')
+  addLookup(parts, schema, 'c', containerCols, ['sourceLocationId', 'source_location_id'], ['location'], ['name', 'barcode'], 'cartonSourceLoc', 'csloc')
+  addLookup(parts, schema, 'c', containerCols, ['destinationLocationId', 'destination_location_id'], ['location'], ['name', 'barcode'], 'cartonDestLoc', 'cdloc')
+  addLookup(parts, schema, 'c', containerCols, ['currentLocationId', 'current_location_id'], ['location'], ['name', 'barcode'], 'cartonCurrentLoc', 'cloc')
+  return parts
+}
+
+function commaJoin(lines: string[]): string[] {
+  return lines.map((line, i) => (i === lines.length - 1 ? line : `${line},`))
+}
+
 /**
  * Build a packing-list SELECT: order → carton(s) → lines → item.
  * Uses foreign keys when the schema graph has them; otherwise common column names.
  */
 export function buildOrderInspectSql(schema: SchemaData | null, orderNumber: string): InspectSqlResult {
-  const order = findTable(schema, ['order']) ?? { name: 'order', columns: ['id', 'orderNumber'] }
-  const container = findTable(schema, ['container', 'carton']) ?? { name: 'container', columns: ['id', 'sscc', 'orderId'] }
+  const order = findTable(schema, ['order']) ?? { name: 'order', columns: ORDER_FALLBACK_COLS }
+  const container = findTable(schema, ['container', 'carton']) ?? { name: 'container', columns: CONTAINER_FALLBACK_COLS }
   const containerItem = findTable(schema, ['container_item', 'containerItem', 'carton_item'])
     ?? { name: 'container_item', columns: ['id', 'containerId', 'itemId', 'quantity', 'deleted'] }
   const item = findTable(schema, ['item', 'items']) ?? { name: 'item', columns: ['id', 'barcode', 'name'] }
@@ -158,19 +279,33 @@ export function buildOrderInspectSql(schema: SchemaData | null, orderNumber: str
     }
   }
 
+  const oLookups = orderLookups(schema, order.columns)
+  const cLookups = cartonLookups(schema, container.columns)
+  const selectLines = [
+    `  o.${quoteIdent(orderIdCol)} AS orderId`,
+    `  o.${quoteIdent(orderNumberCol)} AS orderNumber`,
+    ...pickSelects('o', order.columns, ORDER_COL_SPECS),
+    ...customFieldSelects('o', order.columns, 'order'),
+    ...oLookups.selects,
+    `  c.${quoteIdent(containerIdCol)} AS containerId`,
+    `  c.${quoteIdent(ssccCol)} AS sscc`,
+    ...pickSelects('c', container.columns, CARTON_COL_SPECS),
+    ...customFieldSelects('c', container.columns, 'carton'),
+    ...cLookups.selects,
+    `  ci.${quoteIdent(qtyCol)} AS quantity`,
+    `  i.${quoteIdent(itemIdCol)} AS itemId`,
+    `  ${barcodeSelect}`,
+    `  ${labelSelect}`,
+  ]
+
   const sql = [
     'SELECT',
-    `  o.${quoteIdent(orderIdCol)} AS orderId,`,
-    `  o.${quoteIdent(orderNumberCol)} AS orderNumber,`,
-    `  c.${quoteIdent(containerIdCol)} AS containerId,`,
-    `  c.${quoteIdent(ssccCol)} AS sscc,`,
-    `  ci.${quoteIdent(qtyCol)} AS quantity,`,
-    `  i.${quoteIdent(itemIdCol)} AS itemId,`,
-    `  ${barcodeSelect},`,
-    `  ${labelSelect}`,
+    ...commaJoin(selectLines),
     `FROM ${quoteIdent(order.name)} o`,
+    ...oLookups.joins,
     `LEFT JOIN ${quoteIdent(container.name)} c`,
     `  ON ${join.sql}`,
+    ...cLookups.joins,
     `LEFT JOIN ${quoteIdent(containerItem.name)} ci`,
     `  ON ci.${quoteIdent(ciContainerCol)} = c.${quoteIdent(containerIdCol)}`,
     `  AND ${deletedPredicate('ci', containerItem.columns)}`,
@@ -184,8 +319,8 @@ export function buildOrderInspectSql(schema: SchemaData | null, orderNumber: str
 }
 
 export function buildCartonInspectSql(schema: SchemaData | null, sscc: string): InspectSqlResult {
-  const order = findTable(schema, ['order'])
-  const container = findTable(schema, ['container', 'carton']) ?? { name: 'container', columns: ['id', 'sscc', 'orderId'] }
+  const order = findTable(schema, ['order']) ?? (schema ? null : { name: 'order', columns: ORDER_FALLBACK_COLS })
+  const container = findTable(schema, ['container', 'carton']) ?? { name: 'container', columns: CONTAINER_FALLBACK_COLS }
   const containerItem = findTable(schema, ['container_item', 'containerItem', 'carton_item'])
     ?? { name: 'container_item', columns: ['id', 'containerId', 'itemId', 'quantity', 'deleted'] }
   const item = findTable(schema, ['item', 'items']) ?? { name: 'item', columns: ['id', 'barcode', 'name'] }
@@ -198,29 +333,47 @@ export function buildCartonInspectSql(schema: SchemaData | null, sscc: string): 
   const itemIdCol = findColumn(item.columns, ['id']) ?? 'id'
   const { barcodeSelect, labelSelect } = itemSelects(item.columns, itemIdCol)
 
-  const orderSelect: string[] = ['  NULL AS orderNumber,']
-  const orderJoin: string[] = []
-  if (order) {
-    const join = orderContainerJoin(schema, order.name, order.columns, container.name, container.columns)
-    const orderNumberCol = findColumn(order.columns, ['orderNumber', 'order_number', 'number']) ?? 'orderNumber'
-    if (join) {
-      orderSelect[0] = `  o.${quoteIdent(orderNumberCol)} AS orderNumber,`
-      orderJoin.push(`LEFT JOIN ${quoteIdent(order.name)} o`)
-      orderJoin.push(`  ON ${join.sql}`)
-    }
-  }
+  const join = order
+    ? orderContainerJoin(schema, order.name, order.columns, container.name, container.columns)
+    : null
+  const oLookups = order && join ? orderLookups(schema, order.columns) : { joins: [] as string[], selects: [] as string[] }
+  const cLookups = cartonLookups(schema, container.columns)
+
+  const orderSelects: string[] = order && join
+    ? [
+        `  o.${quoteIdent(findColumn(order.columns, ['id']) ?? 'id')} AS orderId`,
+        `  o.${quoteIdent(findColumn(order.columns, ['orderNumber', 'order_number', 'number']) ?? 'orderNumber')} AS orderNumber`,
+        ...pickSelects('o', order.columns, ORDER_COL_SPECS),
+        ...customFieldSelects('o', order.columns, 'order'),
+        ...oLookups.selects,
+      ]
+    : ['  NULL AS orderNumber']
+
+  const selectLines = [
+    `  c.${quoteIdent(containerIdCol)} AS containerId`,
+    `  c.${quoteIdent(ssccCol)} AS sscc`,
+    ...orderSelects,
+    ...pickSelects('c', container.columns, CARTON_COL_SPECS),
+    ...customFieldSelects('c', container.columns, 'carton'),
+    ...cLookups.selects,
+    `  ci.${quoteIdent(qtyCol)} AS quantity`,
+    `  i.${quoteIdent(itemIdCol)} AS itemId`,
+    `  ${barcodeSelect}`,
+    `  ${labelSelect}`,
+  ]
 
   const sql = [
     'SELECT',
-    `  c.${quoteIdent(containerIdCol)} AS containerId,`,
-    `  c.${quoteIdent(ssccCol)} AS sscc,`,
-    ...orderSelect,
-    `  ci.${quoteIdent(qtyCol)} AS quantity,`,
-    `  i.${quoteIdent(itemIdCol)} AS itemId,`,
-    `  ${barcodeSelect},`,
-    `  ${labelSelect}`,
+    ...commaJoin(selectLines),
     `FROM ${quoteIdent(container.name)} c`,
-    ...orderJoin,
+    ...cLookups.joins,
+    ...(order && join
+      ? [
+          `LEFT JOIN ${quoteIdent(order.name)} o`,
+          `  ON ${join.sql}`,
+          ...oLookups.joins,
+        ]
+      : []),
     `LEFT JOIN ${quoteIdent(containerItem.name)} ci`,
     `  ON ci.${quoteIdent(ciContainerCol)} = c.${quoteIdent(containerIdCol)}`,
     `  AND ${deletedPredicate('ci', containerItem.columns)}`,
@@ -234,14 +387,94 @@ export function buildCartonInspectSql(schema: SchemaData | null, sscc: string): 
 }
 
 function str(row: Record<string, unknown>, key: string): string {
-  const v = row[key]
+  const v = row[key] ?? row[key.toLowerCase()] ?? row[key.toUpperCase()]
   if (v == null) return ''
+  if (typeof v === 'boolean') return v ? '1' : '0'
+  if (v instanceof Date) return v.toISOString()
   return String(v)
 }
 
 function num(row: Record<string, unknown>, key: string): number {
-  const n = Number(row[key])
+  const n = Number(row[key] ?? row[key.toLowerCase()])
   return Number.isFinite(n) ? n : 0
+}
+
+function rowHas(row: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(row, key)
+    || Object.keys(row).some((k) => k.toLowerCase() === key.toLowerCase())
+}
+
+function formatFlag(value: string): string {
+  if (value === '1' || value.toLowerCase() === 'true') return 'Yes'
+  if (value === '0' || value.toLowerCase() === 'false') return 'No'
+  return value
+}
+
+function formatTs(value: string): string {
+  if (!value) return ''
+  const n = Number(value)
+  if (!Number.isFinite(n) || n < 1e11) return value
+  const d = new Date(n)
+  if (Number.isNaN(d.getTime())) return value
+  return d.toLocaleString()
+}
+
+function kvFromRow(
+  row: Record<string, unknown>,
+  key: string,
+  label: string,
+  format?: (v: string) => string,
+): InspectKv | null {
+  if (!rowHas(row, key)) return null
+  const raw = str(row, key)
+  return { key, label, value: format ? format(raw) : raw }
+}
+
+const ORDER_FIELD_SPECS: { key: string; label: string; format?: (v: string) => string }[] = [
+  { key: 'orderStatus', label: 'Status' },
+  { key: 'orderCompleted', label: 'Completed', format: formatFlag },
+  { key: 'orderType', label: 'Type' },
+  { key: 'orderGenerated', label: 'Generated', format: formatFlag },
+  { key: 'orderCustomer', label: 'Customer' },
+  { key: 'orderSourceOrg', label: 'Source organization' },
+  { key: 'orderDestOrg', label: 'Destination organization' },
+  { key: 'orderSourceLoc', label: 'Source location' },
+  { key: 'orderDestLoc', label: 'Destination location' },
+  ...CUSTOM_FIELD_KEYS.map((key, i) => ({ key: `orderField${i + 1}`, label: `Field ${i + 1}` })),
+  { key: 'orderCreateTs', label: 'Created', format: formatTs },
+  { key: 'orderUpdateTs', label: 'Updated', format: formatTs },
+]
+
+const CARTON_FIELD_SPECS: { key: string; label: string; format?: (v: string) => string }[] = [
+  { key: 'cartonStatus', label: 'Status' },
+  { key: 'cartonGenerated', label: 'Generated', format: formatFlag },
+  { key: 'cartonExpectedItems', label: 'Expected items' },
+  { key: 'cartonPoNumber', label: 'PO number' },
+  { key: 'cartonType', label: 'Type' },
+  { key: 'cartonWeight', label: 'Weight' },
+  { key: 'cartonIsVirtual', label: 'Virtual', format: formatFlag },
+  { key: 'cartonEpc', label: 'EPC' },
+  { key: 'cartonCustomer', label: 'Customer' },
+  { key: 'cartonSourceOrg', label: 'Source organization' },
+  { key: 'cartonDestOrg', label: 'Destination organization' },
+  { key: 'cartonSourceLoc', label: 'Source location' },
+  { key: 'cartonDestLoc', label: 'Destination location' },
+  { key: 'cartonCurrentLoc', label: 'Current location' },
+  ...CUSTOM_FIELD_KEYS.map((key, i) => ({ key: `cartonField${i + 1}`, label: `Field ${i + 1}` })),
+  { key: 'cartonCreateTs', label: 'Created', format: formatTs },
+  { key: 'cartonUpdateTs', label: 'Updated', format: formatTs },
+]
+
+export function collectFields(
+  row: Record<string, unknown>,
+  specs: { key: string; label: string; format?: (v: string) => string }[],
+): InspectKv[] {
+  const out: InspectKv[] = []
+  for (const spec of specs) {
+    const kv = kvFromRow(row, spec.key, spec.label, spec.format)
+    if (kv) out.push(kv)
+  }
+  return out
 }
 
 function lineFromRow(row: Record<string, unknown>): InspectLine | null {
@@ -259,7 +492,7 @@ function lineFromRow(row: Record<string, unknown>): InspectLine | null {
 
 export function groupOrderInspectRows(rows: Record<string, unknown>[], lookup: string): OrderInspectModel {
   if (rows.length === 0) {
-    return { orderNumber: lookup, orderId: '', cartons: [], found: false }
+    return { orderNumber: lookup, orderId: '', fields: [], cartons: [], found: false }
   }
   const cartons = new Map<string, InspectCarton>()
   for (const row of rows) {
@@ -269,7 +502,13 @@ export function groupOrderInspectRows(rows: Record<string, unknown>[], lookup: s
     const key = containerId || sscc
     let carton = cartons.get(key)
     if (!carton) {
-      carton = { containerId, sscc, lines: [], totalQty: 0 }
+      carton = {
+        containerId,
+        sscc,
+        lines: [],
+        totalQty: 0,
+        fields: collectFields(row, CARTON_FIELD_SPECS),
+      }
       cartons.set(key, carton)
     }
     const line = lineFromRow(row)
@@ -282,6 +521,7 @@ export function groupOrderInspectRows(rows: Record<string, unknown>[], lookup: s
   return {
     orderNumber: str(first, 'orderNumber') || lookup,
     orderId: str(first, 'orderId'),
+    fields: collectFields(first, ORDER_FIELD_SPECS),
     cartons: [...cartons.values()],
     found: true,
   }
@@ -289,7 +529,15 @@ export function groupOrderInspectRows(rows: Record<string, unknown>[], lookup: s
 
 export function groupCartonInspectRows(rows: Record<string, unknown>[], lookup: string): CartonInspectModel {
   if (rows.length === 0) {
-    return { sscc: lookup, containerId: '', orderNumber: '', lines: [], found: false }
+    return {
+      sscc: lookup,
+      containerId: '',
+      orderNumber: '',
+      orderFields: [],
+      fields: [],
+      lines: [],
+      found: false,
+    }
   }
   const first = rows[0]!
   const lines: InspectLine[] = []
@@ -301,6 +549,8 @@ export function groupCartonInspectRows(rows: Record<string, unknown>[], lookup: 
     sscc: str(first, 'sscc') || lookup,
     containerId: str(first, 'containerId'),
     orderNumber: str(first, 'orderNumber'),
+    orderFields: collectFields(first, ORDER_FIELD_SPECS),
+    fields: collectFields(first, CARTON_FIELD_SPECS),
     lines,
     found: true,
   }

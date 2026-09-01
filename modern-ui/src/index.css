@@ -213,6 +213,17 @@
   app-region: no-drag;
 }
 
+/*
+ * React Flow (schema map) applies `transform` on the viewport. Chromium then
+ * ignores ancestor -webkit-app-region, so clicks drag the whole Electron window.
+ * A handful of graph nodes is safe to mark explicitly — unlike log lines.
+ */
+.react-flow,
+.react-flow * {
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+
 /* Enhanced Animations */
 @keyframes slideInUp {
   from {
@@ -511,7 +522,9 @@ button, a, input, select, textarea {
 }
 .reveal-item,
 .stagger-children > * {
-  animation: revealItem 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  /* `backwards` (not `both`): after the animation, drop transform so Electron
+     app-region hit-testing works on canvases inside these panels. */
+  animation: revealItem 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 .stagger-children > *:nth-child(1) { animation-delay: 0.02s; }
 .stagger-children > *:nth-child(2) { animation-delay: 0.06s; }

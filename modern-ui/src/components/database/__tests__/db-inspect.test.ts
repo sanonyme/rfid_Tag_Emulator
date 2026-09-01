@@ -90,4 +90,94 @@ describe('db-inspect', () => {
     expect(groupOrderInspectRows([], 'SO-X').found).toBe(false)
     expect(groupCartonInspectRows([], 'SSCC-X').found).toBe(false)
   })
+
+  it('selects Edge carton/order columns and lookup joins when the schema has them', () => {
+    const col = (name: string, key = '') => ({ name, type: 'varchar', key })
+    const edge: SchemaData = {
+      tables: [
+        {
+          name: 'order',
+          columns: [
+            col('id', 'PRI'), col('orderNumber'), col('completed'), col('statusId', 'MUL'),
+            col('type'), col('generated'), col('customerId', 'MUL'),
+            col('sourceOrganizationId', 'MUL'), col('destinationOrganizationId', 'MUL'),
+            col('sourceLocationId', 'MUL'), col('destinationLocationId', 'MUL'),
+            col('field1'), col('field2'), col('field3'), col('field4'), col('field5'),
+            col('field6'), col('field7'), col('field8'), col('field9'), col('field10'),
+          ],
+        },
+        {
+          name: 'container',
+          columns: [
+            col('id', 'PRI'), col('sscc'), col('epc'), col('orderId', 'MUL'),
+            col('weight'), col('type'), col('poNumber'), col('isVirtual'),
+            col('expectedItems'), col('generated'), col('statusId', 'MUL'),
+            col('customerId', 'MUL'), col('currentLocationId', 'MUL'),
+            col('sourceOrganizationId'), col('destinationOrganizationId'),
+            col('sourceLocationId', 'MUL'), col('destinationLocationId', 'MUL'),
+            col('field1'), col('field2'), col('field3'), col('field4'), col('field5'),
+            col('field6'), col('field7'), col('field8'), col('field9'), col('field10'),
+          ],
+        },
+        { name: 'container_item', columns: [col('id', 'PRI'), col('containerId', 'MUL'), col('itemId', 'MUL'), col('quantity'), col('deleted')] },
+        { name: 'item', columns: [col('id', 'PRI'), col('barcode'), col('name')] },
+        { name: 'organization', columns: [col('id', 'PRI'), col('name'), col('code')] },
+        { name: 'status', columns: [col('id', 'PRI'), col('status')] },
+        { name: 'customer', columns: [col('id', 'PRI'), col('name')] },
+        { name: 'location', columns: [col('id', 'PRI'), col('name')] },
+      ],
+      foreignKeys: [{
+        constraintName: 'fk_container_order',
+        childTable: 'container',
+        childColumns: ['orderId'],
+        parentTable: 'order',
+        parentColumns: ['id'],
+      }],
+    }
+    const built = buildCartonInspectSql(edge, '401960485')
+    expect(built.ok).toBe(true)
+    if (!built.ok) return
+    expect(built.sql).toContain('c.`generated` AS `cartonGenerated`')
+    expect(built.sql).toContain('c.`expectedItems` AS `cartonExpectedItems`')
+    expect(built.sql).toContain('c.`field1` AS `cartonField1`')
+    expect(built.sql).toContain('c.`field10` AS `cartonField10`')
+    expect(built.sql).toContain('o.`generated` AS `orderGenerated`')
+    expect(built.sql).toContain('o.`field1` AS `orderField1`')
+    expect(built.sql).toContain('LEFT JOIN `organization` csorg')
+    expect(built.sql).toContain('csorg.`name` AS `cartonSourceOrg`')
+    expect(built.sql).toContain('LEFT JOIN `organization` osorg')
+    expect(built.sql).toContain('LEFT JOIN `status` cst')
+    expect(built.sql).toContain('LEFT JOIN `customer` ccust')
+    expect(built.sql).toContain('LEFT JOIN `location` cloc')
+  })
+
+  it('groups carton rows with generated, expected, org, and custom fields', () => {
+    const model = groupCartonInspectRows([
+      {
+        containerId: 10,
+        sscc: 'SSCC-A',
+        orderNumber: '5003',
+        cartonGenerated: 1,
+        cartonExpectedItems: 12,
+        cartonSourceOrg: 'DC East',
+        cartonField1: 'alpha',
+        cartonField2: 'beta',
+        orderGenerated: 0,
+        orderSourceOrg: 'HQ',
+        orderField1: 'po-9',
+        quantity: 2,
+        itemId: 5,
+        barcode: '111',
+        itemLabel: 'Shirt',
+      },
+    ], 'SSCC-A')
+    expect(model.fields.find((f) => f.key === 'cartonGenerated')?.value).toBe('Yes')
+    expect(model.fields.find((f) => f.key === 'cartonExpectedItems')?.value).toBe('12')
+    expect(model.fields.find((f) => f.key === 'cartonSourceOrg')?.value).toBe('DC East')
+    expect(model.fields.find((f) => f.key === 'cartonField1')?.value).toBe('alpha')
+    expect(model.fields.find((f) => f.key === 'cartonField2')?.value).toBe('beta')
+    expect(model.orderFields.find((f) => f.key === 'orderGenerated')?.value).toBe('No')
+    expect(model.orderFields.find((f) => f.key === 'orderSourceOrg')?.value).toBe('HQ')
+    expect(model.orderFields.find((f) => f.key === 'orderField1')?.value).toBe('po-9')
+  })
 })

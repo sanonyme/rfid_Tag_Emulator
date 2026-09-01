@@ -1621,7 +1621,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const hasTableContext = Boolean(selectedDb && (selectedTable || tableView === 'schema'))
 
   return (
-    <div className="stagger-children flex h-full min-h-0" data-tour="tour-database">
+    <div className="flex h-full min-h-0" data-tour="tour-database">
       <DbSidebar
         ref={sidebarRef}
         width={sidebarWidth}
@@ -1729,7 +1729,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
                 ) : schemaData ? (
                   <div className="flex-1 min-h-0 flex flex-col p-2 gap-1">
                     <p className="text-[10px] text-muted-foreground px-2 shrink-0">
-                      Arrows run from child table → referenced table. Click a table name to open it. Double-click anywhere on a card also works.
+                      Arrows run from child table → referenced table. Drag to pan, scroll to zoom. Click a table name (or double-click a card) to open it.
                     </p>
                     <div className="relative flex-1 min-h-[420px] min-w-0">
                       <DatabaseSchemaGraph

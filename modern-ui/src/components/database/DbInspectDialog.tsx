@@ -16,7 +16,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { ScrollArea } from '../ui/scroll-area'
 import { SubtleModal } from './DbSurfaces'
-import type { CartonInspectModel, InspectCarton, InspectLine, OrderInspectModel } from './db-inspect'
+import type { CartonInspectModel, InspectCarton, InspectKv, InspectLine, OrderInspectModel } from './db-inspect'
 
 export type DbInspectView =
   | { kind: 'order'; model: OrderInspectModel }
@@ -29,6 +29,27 @@ export function packingViewLabel(view: DbInspectView): string {
 
 function qty(n: number): string {
   return n.toLocaleString()
+}
+
+function FieldGrid({ fields, title }: { fields: InspectKv[]; title?: string }) {
+  if (fields.length === 0) return null
+  return (
+    <div className="mb-4 rounded-lg border border-border/40 bg-muted/15 px-3 py-2.5">
+      {title && (
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</p>
+      )}
+      <dl className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2">
+        {fields.map((f) => (
+          <div key={f.key} className="min-w-0">
+            <dt className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{f.label}</dt>
+            <dd className="whitespace-pre-wrap break-words font-mono text-xs leading-snug">
+              {f.value || '—'}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }
 
 function CartonBarcode({ sscc }: { sscc: string }) {
@@ -104,6 +125,17 @@ function CartonCard({
           </Badge>
         </div>
         <CartonBarcode sscc={carton.sscc} />
+        {(carton.fields.some((f) => f.key === 'cartonGenerated' || f.key === 'cartonExpectedItems' || f.key === 'cartonSourceOrg')) && (
+          <div className="mt-2 flex flex-wrap gap-1">
+            {carton.fields
+              .filter((f) => ['cartonGenerated', 'cartonExpectedItems', 'cartonSourceOrg', 'cartonPoNumber'].includes(f.key) && f.value)
+              .map((f) => (
+                <Badge key={f.key} variant="outline" className="h-5 max-w-full truncate px-1.5 text-[10px]">
+                  {f.label}: {f.value}
+                </Badge>
+              ))}
+          </div>
+        )}
         <div className="mt-2 max-h-36 overflow-auto">
           {carton.lines.length === 0 ? (
             <p className="py-2 text-center text-[11px] text-muted-foreground">Empty carton</p>
@@ -155,14 +187,15 @@ function OrderBody({
           </div>
         </div>
       </div>
-      {model.cartons.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border/60 px-4 py-10 text-center">
-          <Package className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
-          <p className="text-sm font-medium">No cartons packed yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">This order exists, but nothing is linked in container.</p>
-        </div>
-      ) : (
-        <ScrollArea className="h-[min(60vh,28rem)] pr-3">
+      <ScrollArea className="h-[min(70vh,38rem)] pr-3">
+        <FieldGrid fields={model.fields} />
+        {model.cartons.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border/60 px-4 py-10 text-center">
+            <Package className="mx-auto mb-2 h-8 w-8 text-muted-foreground/50" />
+            <p className="text-sm font-medium">No cartons packed yet</p>
+            <p className="mt-1 text-xs text-muted-foreground">This order exists, but nothing is linked in container.</p>
+          </div>
+        ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {model.cartons.map((carton, i) => (
               <CartonCard
@@ -174,8 +207,8 @@ function OrderBody({
               />
             ))}
           </div>
-        </ScrollArea>
-      )}
+        )}
+      </ScrollArea>
     </>
   )
 }
@@ -207,24 +240,28 @@ function CartonBody({ model }: { model: CartonInspectModel }) {
           </div>
         </div>
       </div>
+      <ScrollArea className="h-[min(70vh,38rem)] pr-3">
+        <FieldGrid fields={model.fields} title="Carton" />
+        {model.orderFields.length > 0 && <FieldGrid fields={model.orderFields} title="Order" />}
 
-      <div className="mx-auto max-w-sm">
-        <div className="mx-8 h-3 rounded-t-md bg-amber-800/70 dark:bg-amber-700/60" />
-        <div className="rounded-2xl border border-amber-900/20 bg-amber-100/80 p-4 shadow-sm ring-1 ring-amber-900/10 dark:border-amber-500/20 dark:bg-amber-950/50 dark:ring-amber-500/10">
-          <CartonBarcode sscc={model.sscc} />
-          <div className="mt-3 rounded-lg bg-background/70 px-3 py-1 ring-1 ring-border/40">
-            {model.lines.length === 0 ? (
-              <p className="py-6 text-center text-sm text-muted-foreground">No items in this carton</p>
-            ) : (
-              <ScrollArea className="h-[min(40vh,18rem)]">
-                {model.lines.map((line, i) => (
-                  <LineRow key={`${line.itemId}-${line.barcode}-${i}`} line={line} />
-                ))}
-              </ScrollArea>
-            )}
+        <div className="mx-auto max-w-sm">
+          <div className="mx-8 h-3 rounded-t-md bg-amber-800/70 dark:bg-amber-700/60" />
+          <div className="rounded-2xl border border-amber-900/20 bg-amber-100/80 p-4 shadow-sm ring-1 ring-amber-900/10 dark:border-amber-500/20 dark:bg-amber-950/50 dark:ring-amber-500/10">
+            <CartonBarcode sscc={model.sscc} />
+            <div className="mt-3 rounded-lg bg-background/70 px-3 py-1 ring-1 ring-border/40">
+              {model.lines.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">No items in this carton</p>
+              ) : (
+                <div>
+                  {model.lines.map((line, i) => (
+                    <LineRow key={`${line.itemId}-${line.barcode}-${i}`} line={line} />
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </ScrollArea>
     </>
   )
 }
@@ -259,7 +296,7 @@ export function DbInspectDialog({
   const title = view.kind === 'order' ? 'Order packing list' : 'Carton contents'
 
   return (
-    <SubtleModal className="max-w-3xl p-0 overflow-hidden">
+    <SubtleModal className="max-w-4xl p-0 overflow-hidden">
       <div className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
         {view.kind === 'carton' && view.fromOrder && (
           <Button
@@ -298,6 +335,8 @@ export function DbInspectDialog({
                   sscc: carton.sscc,
                   containerId: carton.containerId,
                   orderNumber: view.model.orderNumber,
+                  orderFields: view.model.fields,
+                  fields: carton.fields,
                   lines: carton.lines,
                   found: true,
                 },
