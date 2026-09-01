@@ -1,7 +1,8 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowLeft,
   Box,
+  ChevronDown,
   Hash,
   Loader2,
   Package,
@@ -16,7 +17,7 @@ import { Input } from '../ui/input'
 import { Label } from '../ui/label'
 import { ScrollArea } from '../ui/scroll-area'
 import { SubtleModal } from './DbSurfaces'
-import type { CartonInspectModel, InspectCarton, InspectKv, InspectLine, OrderInspectModel } from './db-inspect'
+import type { CartonInspectModel, InspectCarton, InspectKv, InspectLine, OrderInspectModel, PackingChoice } from './db-inspect'
 
 export type DbInspectView =
   | { kind: 'order'; model: OrderInspectModel }
@@ -280,10 +281,14 @@ export function DbInspectDialog({
   view,
   onChangeView,
   onClose,
+  onBackToLookup,
+  plain = false,
 }: {
   view: DbInspectView
   onChangeView: (view: DbInspectView) => void
   onClose: () => void
+  onBackToLookup?: () => void
+  plain?: boolean
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -295,9 +300,21 @@ export function DbInspectDialog({
 
   const title = view.kind === 'order' ? 'Order packing list' : 'Carton contents'
 
-  return (
-    <SubtleModal className="max-w-4xl p-0 overflow-hidden">
+  const inner = (
+    <>
       <div className="flex items-center gap-2 border-b border-border/50 px-4 py-3">
+        {onBackToLookup && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1 px-2"
+            onClick={onBackToLookup}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Packing list
+          </Button>
+        )}
         {view.kind === 'carton' && view.fromOrder && (
           <Button
             type="button"
@@ -349,8 +366,11 @@ export function DbInspectDialog({
         )}
         {view.kind === 'carton' && view.model.found && <CartonBody model={view.model} />}
       </div>
-    </SubtleModal>
+    </>
   )
+
+  if (plain) return inner
+  return <SubtleModal className="max-w-4xl p-0 overflow-hidden">{inner}</SubtleModal>
 }
 
 export function DbPackingLookupDialog({
@@ -363,6 +383,9 @@ export function DbPackingLookupDialog({
   onOpen,
   onCancel,
   busy,
+  choices,
+  choicesLoading,
+  plain = false,
 }: {
   kind: 'order' | 'carton'
   onKindChange: (kind: 'order' | 'carton') => void
@@ -373,10 +396,23 @@ export function DbPackingLookupDialog({
   onOpen: () => void
   onCancel: () => void
   busy: boolean
+  choices: PackingChoice[]
+  choicesLoading: boolean
+  plain?: boolean
 }) {
+  const [showChoices, setShowChoices] = useState(true)
   const canOpen = value.trim().length > 0 && !busy
-  return (
-    <SubtleModal className="max-w-md">
+  const needle = value.trim().toLowerCase()
+  const isExactChoice = choices.some((c) => c.value === value.trim())
+  const filtered = useMemo(() => {
+    if (!needle || isExactChoice) return choices
+    return choices.filter((c) =>
+      c.value.toLowerCase().includes(needle) || (c.hint ? c.hint.toLowerCase().includes(needle) : false),
+    )
+  }, [choices, needle, isExactChoice])
+
+  const inner = (
+    <>
       <div className="flex items-center gap-2 mb-1">
         <Package className="w-5 h-5 text-amber-600 dark:text-amber-400" />
         <span className="font-semibold">Packing list</span>
@@ -388,7 +424,7 @@ export function DbPackingLookupDialog({
         <button
           type="button"
           onClick={onShowLast}
-          className="mb-4 flex w-full items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50"
+          className="mb-4 flex w-full items-center justify-between gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50"
         >
           <Box className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <span className="min-w-0 flex-1 truncate font-mono text-xs">{packingViewLabel(lastView)}</span>
@@ -417,7 +453,7 @@ export function DbPackingLookupDialog({
           Carton
         </button>
       </div>
-      <div className="space-y-2 mb-4">
+      <div className="space-y-2 mb-3">
         <Label htmlFor="packing-lookup-value" className="text-sm font-medium">
           {kind === 'order' ? 'Order number' : 'SSCC'}
         </Label>
@@ -427,13 +463,63 @@ export function DbPackingLookupDialog({
           onChange={(e) => onValueChange(e.target.value)}
           placeholder={kind === 'order' ? 'e.g. SO-12345' : 'e.g. 006141411234567890'}
           className="font-mono text-sm"
-          autoFocus
+          autoFocus={!plain}
           disabled={busy}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && canOpen) onOpen()
             if (e.key === 'Escape') onCancel()
           }}
         />
+      </div>
+      <div className="mb-4 rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowChoices((v) => !v)}
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !showChoices && '-rotate-90')} />
+          Choose available {kind === 'order' ? 'order' : 'carton'}
+          <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/80">
+            {choicesLoading ? '…' : `${filtered.length}${needle && filtered.length !== choices.length ? ` / ${choices.length}` : ''}`}
+          </span>
+        </button>
+        {showChoices && (
+          <div className="max-h-40 overflow-y-auto border-t border-border/40">
+            {choicesLoading ? (
+              <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading…
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">
+                {choices.length === 0
+                  ? `No ${kind === 'order' ? 'orders' : 'cartons'} in this database`
+                  : 'No matches'}
+              </p>
+            ) : (
+              filtered.map((choice) => {
+                const selected = choice.value === value.trim()
+                return (
+                  <button
+                    key={choice.value}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onValueChange(choice.value)}
+                    className={cn(
+                      'flex w-full items-baseline gap-2 px-3 py-1.5 text-left transition-colors hover:bg-accent/50',
+                      selected && 'bg-primary/10',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.value}</span>
+                    {choice.hint && (
+                      <span className="shrink-0 truncate max-w-[40%] text-[10px] text-muted-foreground">{choice.hint}</span>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+        )}
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
@@ -442,6 +528,9 @@ export function DbPackingLookupDialog({
           Open
         </Button>
       </div>
-    </SubtleModal>
+    </>
   )
+
+  if (plain) return inner
+  return <SubtleModal className="max-w-md">{inner}</SubtleModal>
 }

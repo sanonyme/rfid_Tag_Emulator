@@ -555,3 +555,84 @@ export function groupCartonInspectRows(rows: Record<string, unknown>[], lookup: 
     found: true,
   }
 }
+
+export const PACKING_CHOICE_LIMIT = 250
+
+export type PackingChoice = {
+  value: string
+  hint?: string
+}
+
+export function buildOrderListSql(schema: SchemaData | null): InspectSqlResult {
+  const order = findTable(schema, ['order']) ?? { name: 'order', columns: ORDER_FALLBACK_COLS }
+  const orderNumberCol = findColumn(order.columns, ['orderNumber', 'order_number', 'number']) ?? 'orderNumber'
+  const tsCol = findColumn(order.columns, ['updateTs', 'update_ts', 'createTs', 'create_ts'])
+  const where = [
+    deletedPredicate('o', order.columns),
+    `o.${quoteIdent(orderNumberCol)} IS NOT NULL`,
+    `o.${quoteIdent(orderNumberCol)} <> ''`,
+  ]
+  const orderBy = tsCol
+    ? `ORDER BY o.${quoteIdent(tsCol)} DESC, o.${quoteIdent(orderNumberCol)}`
+    : `ORDER BY o.${quoteIdent(orderNumberCol)}`
+  const sql = [
+    'SELECT',
+    `  o.${quoteIdent(orderNumberCol)} AS value`,
+    `FROM ${quoteIdent(order.name)} o`,
+    `WHERE ${where.join('\n  AND ')}`,
+    orderBy,
+    `LIMIT ${PACKING_CHOICE_LIMIT};`,
+  ].join('\n')
+  return { ok: true, sql }
+}
+
+export function buildCartonListSql(schema: SchemaData | null): InspectSqlResult {
+  const order = findTable(schema, ['order']) ?? (schema ? null : { name: 'order', columns: ORDER_FALLBACK_COLS })
+  const container = findTable(schema, ['container', 'carton']) ?? { name: 'container', columns: CONTAINER_FALLBACK_COLS }
+  const ssccCol = findColumn(container.columns, ['sscc', 'SSCC', 'serial']) ?? 'sscc'
+  const tsCol = findColumn(container.columns, ['updateTs', 'update_ts', 'createTs', 'create_ts'])
+  const join = order
+    ? orderContainerJoin(schema, order.name, order.columns, container.name, container.columns)
+    : null
+  const orderNumberCol = order
+    ? (findColumn(order.columns, ['orderNumber', 'order_number', 'number']) ?? 'orderNumber')
+    : null
+  const orderSelect = order && join && orderNumberCol
+    ? `  o.${quoteIdent(orderNumberCol)} AS hint`
+    : '  NULL AS hint'
+  const orderJoin = order && join
+    ? [`LEFT JOIN ${quoteIdent(order.name)} o`, `  ON ${join.sql}`]
+    : []
+  const where = [
+    deletedPredicate('c', container.columns),
+    `c.${quoteIdent(ssccCol)} IS NOT NULL`,
+    `c.${quoteIdent(ssccCol)} <> ''`,
+  ]
+  const orderBy = tsCol
+    ? `ORDER BY c.${quoteIdent(tsCol)} DESC, c.${quoteIdent(ssccCol)}`
+    : `ORDER BY c.${quoteIdent(ssccCol)}`
+  const sql = [
+    'SELECT',
+    `  c.${quoteIdent(ssccCol)} AS value,`,
+    orderSelect,
+    `FROM ${quoteIdent(container.name)} c`,
+    ...orderJoin,
+    `WHERE ${where.join('\n  AND ')}`,
+    orderBy,
+    `LIMIT ${PACKING_CHOICE_LIMIT};`,
+  ].join('\n')
+  return { ok: true, sql }
+}
+
+export function parsePackingChoices(rows: Record<string, unknown>[]): PackingChoice[] {
+  const seen = new Set<string>()
+  const out: PackingChoice[] = []
+  for (const row of rows) {
+    const value = str(row, 'value')
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    const hint = str(row, 'hint')
+    out.push(hint ? { value, hint } : { value })
+  }
+  return out
+}

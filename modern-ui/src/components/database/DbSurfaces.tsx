@@ -118,13 +118,26 @@ export function MenuLabel({ children }: { children: ReactNode }) {
 }
 
 /** Lightweight centered modal used by the tab's confirm/create dialogs. */
-export function SubtleModal({ className, children }: { className?: string; children: ReactNode }) {
+export function SubtleModal({
+  className,
+  children,
+  animate = true,
+}: {
+  className?: string
+  children: ReactNode
+  animate?: boolean
+}) {
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 animate-in fade-in-0 duration-150">
+    <div
+      className={cn(
+        'fixed inset-0 z-[9999] flex items-center justify-center bg-black/40',
+        animate && 'animate-in fade-in-0 duration-150',
+      )}
+    >
       <div
         className={cn(
           'rounded-xl border border-border bg-popover shadow-2xl p-5 w-full mx-4',
-          'animate-in fade-in-0 zoom-in-[0.98] slide-in-from-bottom-1 duration-200 ease-out',
+          animate && 'animate-in fade-in-0 zoom-in-[0.98] slide-in-from-bottom-1 duration-200 ease-out',
           className,
         )}
       >

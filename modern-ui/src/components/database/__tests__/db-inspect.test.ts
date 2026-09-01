@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import type { SchemaData } from '../db-tab-shared'
 import {
   buildCartonInspectSql,
+  buildCartonListSql,
   buildOrderInspectSql,
+  buildOrderListSql,
   groupCartonInspectRows,
   groupOrderInspectRows,
+  parsePackingChoices,
 } from '../db-inspect'
 
 const schema: SchemaData = {
@@ -179,5 +182,27 @@ describe('db-inspect', () => {
     expect(model.orderFields.find((f) => f.key === 'orderGenerated')?.value).toBe('No')
     expect(model.orderFields.find((f) => f.key === 'orderSourceOrg')?.value).toBe('HQ')
     expect(model.orderFields.find((f) => f.key === 'orderField1')?.value).toBe('po-9')
+  })
+
+  it('lists available orders and cartons', () => {
+    const orders = buildOrderListSql(schema)
+    expect(orders.ok).toBe(true)
+    if (orders.ok) {
+      expect(orders.sql).toContain('FROM `order` o')
+      expect(orders.sql).toContain('AS value')
+      expect(orders.sql).toContain('LIMIT 250')
+    }
+    const cartons = buildCartonListSql(schema)
+    expect(cartons.ok).toBe(true)
+    if (cartons.ok) {
+      expect(cartons.sql).toContain('FROM `container` c')
+      expect(cartons.sql).toContain('LEFT JOIN `order` o')
+      expect(cartons.sql).toContain('AS hint')
+    }
+    expect(parsePackingChoices([
+      { value: '5003', hint: null },
+      { value: '5003', hint: 'dup' },
+      { value: '401960485', hint: '5003' },
+    ]).map((c) => c.value)).toEqual(['5003', '401960485'])
   })
 })

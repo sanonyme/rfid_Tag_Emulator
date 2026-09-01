@@ -48,12 +48,17 @@ import {
   DbSchemaConfirmDialog,
 } from './DbDialogs'
 import { DbInspectDialog, DbPackingLookupDialog, type DbInspectView } from './DbInspectDialog'
+import { SubtleModal } from './DbSurfaces'
 import { BUILTIN_QUERIES, type BuiltinQueryId, type BuiltinQueryTemplate } from './db-builtin-queries'
 import {
   buildCartonInspectSql,
+  buildCartonListSql,
   buildOrderInspectSql,
+  buildOrderListSql,
   groupCartonInspectRows,
   groupOrderInspectRows,
+  parsePackingChoices,
+  type PackingChoice,
 } from './db-inspect'
 import {
   DANGEROUS_SQL,
@@ -216,6 +221,9 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [packingLookupKind, setPackingLookupKind] = useState<'order' | 'carton'>('order')
   const [packingLookupValue, setPackingLookupValue] = useState('')
   const [packingLookupBusy, setPackingLookupBusy] = useState(false)
+  const [packingOrderChoices, setPackingOrderChoices] = useState<PackingChoice[]>([])
+  const [packingCartonChoices, setPackingCartonChoices] = useState<PackingChoice[]>([])
+  const [packingChoicesLoading, setPackingChoicesLoading] = useState(false)
 
   // Insert row
   const [showInsertRow, setShowInsertRow] = useState(false)
@@ -1242,7 +1250,6 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const openInspectView = useCallback((view: DbInspectView) => {
     setInspectView(view)
     setLastInspectView(view)
-    setPackingLookupOpen(false)
   }, [])
 
   const handleRunBuiltinQuery = useCallback(async () => {
@@ -1298,9 +1305,43 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setPackingLookupOpen(true)
   }, [])
 
+  useEffect(() => {
+    if (!packingLookupOpen || !window.electronAPI) return
+    let cancelled = false
+    ;(async () => {
+      setPackingChoicesLoading(true)
+      try {
+        let schema = schemaData
+        if (!schema && selectedDb) {
+          const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
+          if (res.ok) {
+            schema = { tables: res.tables, foreignKeys: res.foreignKeys }
+            setSchemaData(schema)
+          }
+        }
+        const db = selectedDbRef.current || undefined
+        const orderSql = buildOrderListSql(schema)
+        const cartonSql = buildCartonListSql(schema)
+        const [orderRes, cartonRes] = await Promise.all([
+          orderSql.ok ? window.electronAPI.dbExecuteQuery(orderSql.sql, db) : Promise.resolve(null),
+          cartonSql.ok ? window.electronAPI.dbExecuteQuery(cartonSql.sql, db) : Promise.resolve(null),
+        ])
+        if (cancelled) return
+        setPackingOrderChoices(orderRes?.ok ? parsePackingChoices(orderRes.rows) : [])
+        setPackingCartonChoices(cartonRes?.ok ? parsePackingChoices(cartonRes.rows) : [])
+      } finally {
+        if (!cancelled) setPackingChoicesLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // schemaData is read at open time; don't re-fetch when the silent schema prefetch lands.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packingLookupOpen, selectedDb])
+
   const handleShowLastPacking = useCallback(() => {
     if (!lastInspectView) return
-    setPackingLookupOpen(false)
     setInspectView(lastInspectView)
   }, [lastInspectView])
 
@@ -1310,10 +1351,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     setPackingLookupBusy(true)
     try {
       const view = await fetchPackingInspect(packingLookupKind, value)
-      if (view) {
-        setPackingLookupValue('')
-        openInspectView(view)
-      }
+      if (view) openInspectView(view)
     } finally {
       setPackingLookupBusy(false)
     }
@@ -1872,7 +1910,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         />
       )}
 
-      {inspectView && (
+      {inspectView && !packingLookupOpen && (
         <DbInspectDialog
           view={inspectView}
           onChangeView={(view) => {
@@ -1880,21 +1918,50 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             setLastInspectView(view)
           }}
           onClose={() => setInspectView(null)}
+          onBackToLookup={() => {
+            setInspectView(null)
+            setPackingLookupOpen(true)
+          }}
         />
       )}
 
-      {packingLookupOpen && !inspectView && (
-        <DbPackingLookupDialog
-          kind={packingLookupKind}
-          onKindChange={setPackingLookupKind}
-          value={packingLookupValue}
-          onValueChange={setPackingLookupValue}
-          lastView={lastInspectView}
-          onShowLast={handleShowLastPacking}
-          onOpen={() => void handleRunPackingLookup()}
-          onCancel={() => setPackingLookupOpen(false)}
-          busy={packingLookupBusy}
-        />
+      {packingLookupOpen && (
+        <SubtleModal className={inspectView ? 'max-w-4xl p-0 overflow-hidden' : 'max-w-md'}>
+          <div className={inspectView ? 'hidden' : undefined}>
+            <DbPackingLookupDialog
+              plain
+              kind={packingLookupKind}
+              onKindChange={setPackingLookupKind}
+              value={packingLookupValue}
+              onValueChange={setPackingLookupValue}
+              lastView={lastInspectView}
+              onShowLast={handleShowLastPacking}
+              onOpen={() => void handleRunPackingLookup()}
+              onCancel={() => {
+                setPackingLookupOpen(false)
+                setInspectView(null)
+              }}
+              busy={packingLookupBusy}
+              choices={packingLookupKind === 'order' ? packingOrderChoices : packingCartonChoices}
+              choicesLoading={packingChoicesLoading}
+            />
+          </div>
+          {inspectView && (
+            <DbInspectDialog
+              plain
+              view={inspectView}
+              onChangeView={(view) => {
+                setInspectView(view)
+                setLastInspectView(view)
+              }}
+              onClose={() => {
+                setInspectView(null)
+                setPackingLookupOpen(false)
+              }}
+              onBackToLookup={() => setInspectView(null)}
+            />
+          )}
+        </SubtleModal>
       )}
 
       {deleteConfirm && (
