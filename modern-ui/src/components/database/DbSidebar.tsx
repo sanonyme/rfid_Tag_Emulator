@@ -1,7 +1,6 @@
 import { forwardRef, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { cn } from '@/lib/utils'
 import {
-  ChevronDown,
   ChevronRight,
   Database,
   Loader2,
@@ -126,10 +125,13 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
         >
           {db.loading ? (
             <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" />
-          ) : expanded ? (
-            <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
           ) : (
-            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+            <ChevronRight
+              className={cn(
+                'w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform duration-200 ease-out motion-reduce:transition-none',
+                expanded && 'rotate-90',
+              )}
+            />
           )}
           <Database className={cn('w-3.5 h-3.5 shrink-0', isSystem ? 'text-muted-foreground/60' : 'text-amber-500')} />
           <span className={cn('truncate font-medium text-left flex-1 min-w-0', isSystem && 'text-muted-foreground')}>
@@ -141,45 +143,56 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
             </span>
           )}
         </button>
-        {expanded && tables && (
-          <div
-            className="ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5"
-            onContextMenu={(e) => onDatabaseContextMenu(e, db.name)}
-          >
-            {tables.length === 0 ? (
-              <p className="text-xs text-muted-foreground px-2 py-1 italic">No tables</p>
-            ) : (
-              tables.map((t) => {
-                const isSelected = selectedDb === db.name && selectedTable === t.name
-                return (
-                  <button
-                    key={t.name}
-                    type="button"
-                    onClick={() => onSelectTable(db.name, t.name)}
-                    onContextMenu={(e) => onTableContextMenu(e, db.name, t.name)}
-                    className={cn(
-                      'w-full min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
-                      isSelected
-                        ? 'bg-primary/15 text-primary font-medium ring-1 ring-primary/25'
-                        : 'hover:bg-accent/60 text-foreground',
-                    )}
-                  >
-                    <Table2 className={cn('w-3.5 h-3.5 shrink-0', isSelected ? 'text-primary' : 'text-sky-500')} />
-                    <span className="truncate text-left flex-1 min-w-0">{t.name}</span>
-                    <span
+        <div
+          className={cn(
+            'grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none',
+            expanded && tables ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+          )}
+        >
+          <div className={cn('min-h-0 overflow-hidden', !(expanded && tables) && 'pointer-events-none')}>
+            <div
+              className={cn(
+                'ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5 origin-top',
+                'transition-opacity duration-200 ease-out motion-reduce:transition-none',
+                expanded && tables ? 'opacity-100' : 'opacity-0',
+              )}
+              onContextMenu={(e) => onDatabaseContextMenu(e, db.name)}
+            >
+              {tables && tables.length === 0 ? (
+                <p className="text-xs text-muted-foreground px-2 py-1 italic">No tables</p>
+              ) : (
+                tables?.map((t) => {
+                  const isSelected = selectedDb === db.name && selectedTable === t.name
+                  return (
+                    <button
+                      key={t.name}
+                      type="button"
+                      onClick={() => onSelectTable(db.name, t.name)}
+                      onContextMenu={(e) => onTableContextMenu(e, db.name, t.name)}
                       className={cn(
-                        'ml-auto shrink-0 pl-1 text-[10px] tabular-nums',
-                        isSelected ? 'text-primary/70' : 'text-muted-foreground/50',
+                        'w-full min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+                        isSelected
+                          ? 'bg-primary/15 text-primary font-medium ring-1 ring-primary/25'
+                          : 'hover:bg-accent/60 text-foreground',
                       )}
                     >
-                      {t.rows.toLocaleString()}
-                    </span>
-                  </button>
-                )
-              })
-            )}
+                      <Table2 className={cn('w-3.5 h-3.5 shrink-0', isSelected ? 'text-primary' : 'text-sky-500')} />
+                      <span className="truncate text-left flex-1 min-w-0">{t.name}</span>
+                      <span
+                        className={cn(
+                          'ml-auto shrink-0 pl-1 text-[10px] tabular-nums',
+                          isSelected ? 'text-primary/70' : 'text-muted-foreground/50',
+                        )}
+                      >
+                        {t.rows.toLocaleString()}
+                      </span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
           </div>
-        )}
+        </div>
       </div>
     )
   }

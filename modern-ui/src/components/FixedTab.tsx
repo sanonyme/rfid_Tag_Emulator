@@ -30,8 +30,10 @@ import { sectionCard, actionGroup, actionBtnMuted } from '@/lib/ui-tokens'
 import { SendButton, LoopSendButton } from './SendControls'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
+import { InditexTempeGenerator } from './InditexTempeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { DefinedItemsPicker } from './DefinedItemsPicker'
+import { CartonUpcFill } from './CartonUpcFill'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
@@ -862,6 +864,7 @@ export function FixedTab({
               </div>
             </CardHeader>
             <CardContent className="space-y-4 px-5 pb-5 pt-0">
+              <CartonUpcFill host={host} onApply={setUpcList} />
               <ExpandableTagField
                 dialogTitle="UPC → EPC generation"
                 dialogDescription="Format: UPC,Count,TID[,userdata] (TID and userdata optional hex) — CSV columns auto-detected on drop"
@@ -912,6 +915,10 @@ export function FixedTab({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-1">
                     <TagListSummary value={epcList} kind="epc" />
+                    <InditexTempeGenerator
+                      variant="compact"
+                      onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}
+                    />
                     <TagSchemeGenerator
                       variant="compact"
                       onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}

@@ -411,7 +411,7 @@ class MockElectronAPI implements ElectronAPI {
   ) {
     return { ok: false as const, error: 'Not connected' }
   }
-  async dbExecuteQuery(_query: string, _database?: string) {
+  async dbExecuteQuery(_query: string, _database?: string, _maxRows?: number) {
     return { ok: false as const, error: 'Not connected' }
   }
   async automationRunScript(_payload: unknown) {

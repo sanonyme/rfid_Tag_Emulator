@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { startTransition, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   ArrowLeft,
   Box,
@@ -11,6 +12,14 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import {
+  indicatorSpring,
+  motionSafeTransition,
+  prefersReducedMotion,
+  SLIDE_TAB_ATTR,
+  SlidingHighlight,
+  useSlidingIndicator,
+} from '@/lib/motion'
 import { Button } from '../ui/button'
 import { Badge } from '../ui/badge'
 import { Input } from '../ui/input'
@@ -373,6 +382,70 @@ export function DbInspectDialog({
   return <SubtleModal className="max-w-4xl p-0 overflow-hidden">{inner}</SubtleModal>
 }
 
+const CHOICE_ROW_H = 28
+const CHOICE_VIEW_H = 256
+
+function PackingChoiceList({
+  items,
+  selectedValue,
+  onSelect,
+  busy,
+  empty,
+}: {
+  items: PackingChoice[]
+  selectedValue: string
+  onSelect: (v: string) => void
+  busy: boolean
+  empty: ReactNode
+}) {
+  const [scrollTop, setScrollTop] = useState(0)
+  const start = Math.max(0, Math.floor(scrollTop / CHOICE_ROW_H) - 4)
+  const visible = Math.ceil(CHOICE_VIEW_H / CHOICE_ROW_H) + 8
+  const end = Math.min(items.length, start + visible)
+  const slice = items.slice(start, end)
+
+  if (items.length === 0) return <>{empty}</>
+
+  return (
+    <div
+      className="overflow-y-auto border-t border-border/40"
+      style={{ maxHeight: CHOICE_VIEW_H }}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      <div style={{ height: items.length * CHOICE_ROW_H, position: 'relative' }}>
+        {slice.map((choice, i) => {
+          const index = start + i
+          const selected = choice.value === selectedValue
+          return (
+            <button
+              key={choice.value}
+              type="button"
+              disabled={busy}
+              onClick={() => onSelect(choice.value)}
+              style={{
+                position: 'absolute',
+                top: index * CHOICE_ROW_H,
+                left: 0,
+                right: 0,
+                height: CHOICE_ROW_H,
+              }}
+              className={cn(
+                'flex w-full items-center gap-2 px-3 text-left transition-colors hover:bg-accent/50',
+                selected && 'bg-primary/10',
+              )}
+            >
+              <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.value}</span>
+              {choice.hint && (
+                <span className="max-w-[40%] shrink-0 truncate text-[10px] text-muted-foreground">{choice.hint}</span>
+              )}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 export function DbPackingLookupDialog({
   kind,
   onKindChange,
@@ -401,15 +474,26 @@ export function DbPackingLookupDialog({
   plain?: boolean
 }) {
   const [showChoices, setShowChoices] = useState(true)
+  const reduced = prefersReducedMotion()
+  const { containerRef, rect, ready } = useSlidingIndicator(kind)
   const canOpen = value.trim().length > 0 && !busy
   const needle = value.trim().toLowerCase()
-  const isExactChoice = choices.some((c) => c.value === value.trim())
+  const selected = value.trim()
+  const isExactChoice = useMemo(
+    () => choices.some((c) => c.value === selected),
+    [choices, selected],
+  )
   const filtered = useMemo(() => {
     if (!needle || isExactChoice) return choices
     return choices.filter((c) =>
       c.value.toLowerCase().includes(needle) || (c.hint ? c.hint.toLowerCase().includes(needle) : false),
     )
   }, [choices, needle, isExactChoice])
+
+  const switchKind = (next: 'order' | 'carton') => {
+    if (next === kind) return
+    startTransition(() => onKindChange(next))
+  }
 
   const inner = (
     <>
@@ -431,95 +515,103 @@ export function DbPackingLookupDialog({
           <span className="shrink-0 text-[10px] text-muted-foreground">Show last</span>
         </button>
       )}
-      <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted/40 p-0.5">
+      <div
+        ref={containerRef}
+        className="relative mb-3 grid grid-cols-2 gap-1 rounded-lg bg-muted/40 p-0.5"
+      >
+        <SlidingHighlight
+          rect={rect}
+          ready={ready}
+          transition={reduced ? { duration: 0 } : indicatorSpring}
+        />
         <button
           type="button"
-          onClick={() => onKindChange('order')}
+          {...{ [SLIDE_TAB_ATTR]: 'order' }}
+          onClick={() => switchKind('order')}
           className={cn(
-            'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-            kind === 'order' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            'relative z-[1] rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-200',
+            kind === 'order' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
         >
           Order
         </button>
         <button
           type="button"
-          onClick={() => onKindChange('carton')}
+          {...{ [SLIDE_TAB_ATTR]: 'carton' }}
+          onClick={() => switchKind('carton')}
           className={cn(
-            'rounded-md px-2 py-1.5 text-xs font-medium transition-colors',
-            kind === 'carton' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+            'relative z-[1] rounded-md px-2 py-1.5 text-xs font-medium transition-colors duration-200',
+            kind === 'carton' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
           )}
         >
           Carton
         </button>
       </div>
-      <div className="space-y-2 mb-3">
-        <Label htmlFor="packing-lookup-value" className="text-sm font-medium">
-          {kind === 'order' ? 'Order number' : 'SSCC'}
-        </Label>
-        <Input
-          id="packing-lookup-value"
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          placeholder={kind === 'order' ? 'e.g. SO-12345' : 'e.g. 006141411234567890'}
-          className="font-mono text-sm"
-          autoFocus={!plain}
-          disabled={busy}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && canOpen) onOpen()
-            if (e.key === 'Escape') onCancel()
-          }}
-        />
-      </div>
-      <div className="mb-4 rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setShowChoices((v) => !v)}
-          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent/40 hover:text-foreground"
-        >
-          <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !showChoices && '-rotate-90')} />
-          Choose available {kind === 'order' ? 'order' : 'carton'}
-          <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/80">
-            {choicesLoading ? '…' : `${filtered.length}${needle && filtered.length !== choices.length ? ` / ${choices.length}` : ''}`}
-          </span>
-        </button>
-        {showChoices && (
-          <div className="max-h-40 overflow-y-auto border-t border-border/40">
-            {choicesLoading ? (
-              <div className="flex items-center justify-center gap-2 px-3 py-4 text-xs text-muted-foreground">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Loading…
-              </div>
-            ) : filtered.length === 0 ? (
-              <p className="px-3 py-3 text-center text-[11px] text-muted-foreground">
-                {choices.length === 0
-                  ? `No ${kind === 'order' ? 'orders' : 'cartons'} in this database`
-                  : 'No matches'}
-              </p>
-            ) : (
-              filtered.map((choice) => {
-                const selected = choice.value === value.trim()
-                return (
-                  <button
-                    key={choice.value}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => onValueChange(choice.value)}
-                    className={cn(
-                      'flex w-full items-baseline gap-2 px-3 py-1.5 text-left transition-colors hover:bg-accent/50',
-                      selected && 'bg-primary/10',
-                    )}
-                  >
-                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.value}</span>
-                    {choice.hint && (
-                      <span className="shrink-0 truncate max-w-[40%] text-[10px] text-muted-foreground">{choice.hint}</span>
-                    )}
-                  </button>
+      <div className="overflow-hidden">
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={kind}
+            initial={reduced ? false : { opacity: 0, x: kind === 'carton' ? 16 : -16 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={reduced ? { opacity: 1, x: 0 } : { opacity: 0, x: kind === 'carton' ? 16 : -16 }}
+            transition={motionSafeTransition({ duration: 0.2, ease: [0.16, 1, 0.3, 1] })}
+          >
+            <div className="space-y-2 mb-3">
+              <Label htmlFor="packing-lookup-value" className="text-sm font-medium">
+                {kind === 'order' ? 'Order number' : 'SSCC'}
+              </Label>
+              <Input
+                id="packing-lookup-value"
+                value={value}
+                onChange={(e) => onValueChange(e.target.value)}
+                placeholder={kind === 'order' ? 'e.g. SO-12345' : 'e.g. 006141411234567890'}
+                className="font-mono text-sm"
+                autoFocus={!plain}
+                disabled={busy}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && canOpen) onOpen()
+                  if (e.key === 'Escape') onCancel()
+                }}
+              />
+            </div>
+            <div className="mb-4 rounded-lg border border-border/40 bg-muted/10 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowChoices((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] font-medium text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+              >
+                <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 transition-transform', !showChoices && '-rotate-90')} />
+                Choose available {kind === 'order' ? 'order' : 'carton'}
+                <span className="ml-auto tabular-nums text-[10px] text-muted-foreground/80">
+                  {choicesLoading ? '…' : `${filtered.length.toLocaleString()}${needle && filtered.length !== choices.length ? ` / ${choices.length.toLocaleString()}` : ''}`}
+                </span>
+              </button>
+              {showChoices && (
+                choicesLoading ? (
+                  <div className="flex items-center justify-center gap-2 border-t border-border/40 px-3 py-4 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading…
+                  </div>
+                ) : (
+                  <PackingChoiceList
+                    key={kind}
+                    items={filtered}
+                    selectedValue={selected}
+                    onSelect={onValueChange}
+                    busy={busy}
+                    empty={
+                      <p className="border-t border-border/40 px-3 py-3 text-center text-[11px] text-muted-foreground">
+                        {choices.length === 0
+                          ? `No ${kind === 'order' ? 'orders' : 'cartons'} in this database`
+                          : 'No matches'}
+                      </p>
+                    }
+                  />
                 )
-              })
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          </motion.div>
+        </AnimatePresence>
       </div>
       <div className="flex justify-end gap-2">
         <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>

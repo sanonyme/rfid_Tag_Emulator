@@ -251,7 +251,8 @@ export async function dbGetTableData(
 
 export async function dbExecuteQuery(
   query: string,
-  database?: string
+  database?: string,
+  maxRows: number = DB_QUERY_MAX_ROWS,
 ): Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; insertId?: number | string; message?: string } | { ok: false; error: string }> {
   if (!connection) return { ok: false, error: 'Not connected' }
   try {
@@ -259,23 +260,24 @@ export async function dbExecuteQuery(
       await selectDatabase(database)
     }
 
+    const cap = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : DB_QUERY_MAX_ROWS
     let sql = query.trim()
     const isSelect = /^\s*(select|show|describe|desc|explain)\b/i.test(sql)
     if (isSelect && !/\blimit\b/i.test(sql)) {
-      sql = `${sql.replace(/;\s*$/, '')} LIMIT ${DB_QUERY_MAX_ROWS}`
+      sql = `${sql.replace(/;\s*$/, '')} LIMIT ${cap}`
     }
 
     const [result, fields] = await connection.query(sql)
 
     if (Array.isArray(result)) {
       const columns = fields ? (fields as any[]).map((f: any) => f.name) : []
-      const rows = (result as any[]).map(sanitizeRow).slice(0, DB_QUERY_MAX_ROWS)
-      const truncated = (result as any[]).length > DB_QUERY_MAX_ROWS
+      const rows = (result as any[]).map(sanitizeRow).slice(0, cap)
+      const truncated = (result as any[]).length > cap
       return {
         ok: true,
         columns,
         rows,
-        ...(truncated ? { message: `Results truncated to ${DB_QUERY_MAX_ROWS} rows` } : {}),
+        ...(truncated ? { message: `Results truncated to ${cap} rows` } : {}),
       }
     }
 

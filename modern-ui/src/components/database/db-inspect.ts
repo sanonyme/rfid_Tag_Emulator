@@ -556,7 +556,7 @@ export function groupCartonInspectRows(rows: Record<string, unknown>[], lookup: 
   }
 }
 
-export const PACKING_CHOICE_LIMIT = 250
+export const PACKING_QUERY_MAX_ROWS = 100_000
 
 export type PackingChoice = {
   value: string
@@ -581,7 +581,6 @@ export function buildOrderListSql(schema: SchemaData | null): InspectSqlResult {
     `FROM ${quoteIdent(order.name)} o`,
     `WHERE ${where.join('\n  AND ')}`,
     orderBy,
-    `LIMIT ${PACKING_CHOICE_LIMIT};`,
   ].join('\n')
   return { ok: true, sql }
 }
@@ -619,7 +618,6 @@ export function buildCartonListSql(schema: SchemaData | null): InspectSqlResult 
     ...orderJoin,
     `WHERE ${where.join('\n  AND ')}`,
     orderBy,
-    `LIMIT ${PACKING_CHOICE_LIMIT};`,
   ].join('\n')
   return { ok: true, sql }
 }

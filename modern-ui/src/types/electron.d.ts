@@ -149,7 +149,7 @@ export interface ElectronAPI {
     | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string>; primaryKeys: string[] }
     | { ok: false; error: string }
   >
-  dbExecuteQuery: (query: string, database?: string) => Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; insertId?: number | string; message?: string } | { ok: false; error: string }>
+  dbExecuteQuery: (query: string, database?: string, maxRows?: number) => Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; insertId?: number | string; message?: string } | { ok: false; error: string }>
   dbGetPrimaryKeys: (database: string, table: string) => Promise<string[]>
   automationRunScript: (payload: {
     scriptPath?: string

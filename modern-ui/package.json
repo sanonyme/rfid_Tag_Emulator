@@ -1,9 +1,9 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "9.4.2",
+  "version": "10.0.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
-    "name": "Anexya",
+    "name": "Samy Chemaly",
     "email": "samichemaly30@gmail.com"
   },
   "homepage": "https://github.com/sanonyme/rfid_Tag_Emulator",

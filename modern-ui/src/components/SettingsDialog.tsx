@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Check, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash, Package, FolderOpen } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash, Package, FolderOpen } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from './ui/button'
 import {
@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from './ui/dialog'
 import { Label } from './ui/label'
-import { themes, applyTheme, saveTheme, getSavedTheme, type Theme } from '../lib/themes'
+import { themes, applyTheme, saveTheme, getSavedTheme, getThemeSwatches, THEME_CHANGE_EVENT, type Theme } from '../lib/themes'
 import { useSettings } from '../lib/settings-context'
 import type { FontSize, DefaultTab } from '../lib/settings'
 import { IS_MOBILE } from '../lib/platform'
@@ -31,47 +31,22 @@ import {
   type SettingsHighlightTarget,
 } from '@/lib/settings-navigation'
 
-function hslToStyle(hsl: string) {
-  return `hsl(${hsl})`
-}
-
-function ThemeCard({ theme, isActive, onClick }: { theme: Theme; isActive: boolean; onClick: () => void }) {
-  const isDark = document.documentElement.classList.contains('dark')
-  const colors = isDark ? theme.colors.dark : theme.colors.light
+function ThemeOption({ theme, isDark }: { theme: Theme; isDark: boolean }) {
+  const chips = getThemeSwatches(theme, isDark)
 
   return (
-    <button
-      onClick={onClick}
-      className={`
-        relative w-full text-left rounded-xl border-2 p-3 transition-all
-        ${isActive
-          ? 'border-primary ring-2 ring-primary/20 shadow-md'
-          : 'border-border/50 hover:border-primary/40 hover:shadow-sm'
-        }
-      `}
-    >
-      {isActive && (
-        <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-          <Check className="w-3 h-3 text-primary-foreground" />
-        </div>
-      )}
-      <div className="flex items-center gap-3">
-        <div className="flex gap-0.5 shrink-0">
-          <div className="w-5 h-10 rounded-l-md" style={{ background: hslToStyle(colors.primary) }} />
-          <div className="w-5 h-10" style={{ background: hslToStyle(colors.secondary) }} />
-          <div className="w-5 h-10" style={{ background: hslToStyle(colors.accent) }} />
-          <div className="w-5 h-10 rounded-r-md" style={{ background: hslToStyle(colors.background) }} />
-        </div>
-        <div className="min-w-0">
-          <p className="text-sm font-medium truncate">{theme.label}</p>
-          <div className="flex gap-1 mt-1">
-            {[colors.primary, colors.secondary, colors.accent, colors.destructive].map((c, i) => (
-              <div key={i} className="w-3 h-3 rounded-full border border-border/30" style={{ background: hslToStyle(c) }} />
-            ))}
-          </div>
-        </div>
-      </div>
-    </button>
+    <span className="inline-flex flex-row items-center gap-2.5 min-w-0 max-w-full">
+      <span className="inline-flex h-5 shrink-0 overflow-hidden rounded-md ring-1 ring-black/10 dark:ring-white/15">
+        {chips.map((color, i) => (
+          <span
+            key={`${theme.name}-${i}`}
+            className="inline-block h-5 w-4 shrink-0"
+            style={{ backgroundColor: color }}
+          />
+        ))}
+      </span>
+      <span className="truncate font-medium leading-none">{theme.label}</span>
+    </span>
   )
 }
 
@@ -114,12 +89,21 @@ export function SettingsDialog({
   onHighlightClear,
 }: SettingsDialogProps = {}) {
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
+  const [isDarkMode, setIsDarkMode] = useState(
+    () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark'),
+  )
   const { settings, setSettings } = useSettings()
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'>('idle')
   const [downloadProgress, setDownloadProgress] = useState(0)
   const [errorMessage, setErrorMessage] = useState('')
   const [pendingBackup, setPendingBackup] = useState<BackupFile | null>(null)
   const [autoUpdateEnabled, setAutoUpdateEnabledState] = useState(true)
+
+  useEffect(() => {
+    const syncDark = () => setIsDarkMode(document.documentElement.classList.contains('dark'))
+    window.addEventListener(THEME_CHANGE_EVENT, syncDark)
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, syncDark)
+  }, [])
 
   useEffect(() => {
     const isDark = document.documentElement.classList.contains('dark')
@@ -175,6 +159,8 @@ export function SettingsDialog({
     const isDark = document.documentElement.classList.contains('dark')
     applyTheme(value, isDark)
   }
+
+  const selectedTheme = themes.find((t) => t.name === currentTheme)
 
   const checkForUpdates = () => {
     if (window.electronAPI) {
@@ -546,16 +532,20 @@ export function SettingsDialog({
               <Layout className="w-4 h-4 text-primary" />
               Theme
             </h4>
-            <div className="grid grid-cols-2 gap-2">
-              {themes.map((theme) => (
-                <ThemeCard
-                  key={theme.name}
-                  theme={theme}
-                  isActive={currentTheme === theme.name}
-                  onClick={() => handleThemeChange(theme.name)}
-                />
-              ))}
-            </div>
+            <Select value={currentTheme} onValueChange={handleThemeChange}>
+              <SelectTrigger className="h-11 rounded-lg [&>span]:flex [&>span]:flex-row [&>span]:items-center [&>span]:overflow-visible">
+                {selectedTheme
+                  ? <ThemeOption theme={selectedTheme} isDark={isDarkMode} />
+                  : <SelectValue placeholder="Select a theme" />}
+              </SelectTrigger>
+              <SelectContent className="z-[200] max-h-80">
+                {themes.map((theme) => (
+                  <SelectItem key={theme.name} value={theme.name} className="py-2 [&>span:last-child]:inline-flex [&>span:last-child]:flex-row [&>span:last-child]:items-center">
+                    <ThemeOption theme={theme} isDark={isDarkMode} />
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Updates — desktop Electron only (mock in dev browser) */}

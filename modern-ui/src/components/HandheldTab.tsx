@@ -24,6 +24,7 @@ import { useSettings } from '@/lib/settings-context'
 import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
+import { InditexTempeGenerator } from './InditexTempeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { SendButton, LoopSendButton } from './SendControls'
 import { sectionCard } from '@/lib/ui-tokens'
@@ -784,6 +785,14 @@ function HandheldSlotCard({
           <TabsContent value="epc" className="mt-3">
             <div className="mb-2 flex items-center justify-end gap-1">
               <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
+              <InditexTempeGenerator
+                variant="compact"
+                onGenerated={(epcs) =>
+                  onUpdate({
+                    epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
+                  })
+                }
+              />
               <TagSchemeGenerator
                 variant="compact"
                 onGenerated={(epcs) =>

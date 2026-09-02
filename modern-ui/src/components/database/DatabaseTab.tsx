@@ -58,6 +58,7 @@ import {
   groupCartonInspectRows,
   groupOrderInspectRows,
   parsePackingChoices,
+  PACKING_QUERY_MAX_ROWS,
   type PackingChoice,
 } from './db-inspect'
 import {
@@ -110,16 +111,18 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [dbPass, setDbPass] = useState('')
   const [rememberCreds, setRememberCreds] = useState(false)
   const [credsLoaded, setCredsLoaded] = useState(false)
+  const [directHost, setDirectHost] = useState('')
+  const dbHost = (directHost || host).trim()
 
   useEffect(() => {
     tourIx?.setDbMysqlConnected(dbConnected)
     publishStatus('db', {
       status: dbConnected ? 'connected' : 'idle',
-      host: dbConnected && host ? host : undefined,
+      host: dbConnected && dbHost ? dbHost : undefined,
       port: dbConnected ? 3306 : undefined,
       label: 'DB',
     })
-  }, [dbConnected, host, tourIx])
+  }, [dbConnected, dbHost, tourIx])
 
   useEffect(() => () => clearStatus('db'), [])
 
@@ -335,10 +338,10 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [])
 
   const handleConnect = useCallback(async () => {
-    if (!window.electronAPI || !dbUser.trim()) return
+    if (!window.electronAPI || !dbUser.trim() || !dbHost) return
     setConnecting(true)
     setError('')
-    const result = await window.electronAPI.dbConnect(host, dbUser, dbPass)
+    const result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass)
     if (result.ok) {
       setDbConnected(true)
       setDatabases(result.databases.map((d) => ({ name: d, tables: undefined, expanded: false, loading: false })))
@@ -348,7 +351,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       setError(result.error)
     }
     setConnecting(false)
-  }, [host, dbUser, dbPass, rememberCreds, persistCreds, clearCreds])
+  }, [dbHost, dbUser, dbPass, rememberCreds, persistCreds, clearCreds])
 
   const handleDisconnect = useCallback(async () => {
     if (!window.electronAPI) return
@@ -472,7 +475,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     const expandedDbNames = databases.filter((d) => d.expanded).map((d) => d.name)
     let result = await window.electronAPI.dbListDatabases?.()
     if (!result?.ok) {
-      result = await window.electronAPI.dbConnect(host, dbUser, dbPass)
+      result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass)
     }
     if (result.ok) {
       setDbConnected(true)
@@ -511,7 +514,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       setError(result.error)
     }
     setRefreshing(false)
-  }, [host, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
+  }, [dbHost, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
 
   /** Runs DDL/DML from the sidebar; bypasses read-only (user confirms in dialog). */
   const executeMutationSql = useCallback(async (sqlText: string, useDatabase?: string): Promise<boolean> => {
@@ -767,7 +770,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     })
   }, [])
 
-  const executeQuery = useCallback(async (sqlText: string) => {
+  const executeQuery = useCallback(async (sqlText: string, maxRows?: number) => {
     if (!window.electronAPI || !sqlText.trim()) return
 
     if (readOnly && DANGEROUS_SQL.test(sqlText.trim())) {
@@ -786,7 +789,11 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     expandSqlPanelForResults()
 
     const start = performance.now()
-    const result = await window.electronAPI.dbExecuteQuery(sqlText.trim(), selectedDbRef.current || undefined)
+    const result = await window.electronAPI.dbExecuteQuery(
+      sqlText.trim(),
+      selectedDbRef.current || undefined,
+      maxRows,
+    )
     setQueryTime(Math.round(performance.now() - start))
 
     if (result.ok) {
@@ -1237,7 +1244,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       toast.error(built.error)
       return null
     }
-    const result = await window.electronAPI.dbExecuteQuery(built.sql, selectedDbRef.current || undefined)
+    const result = await window.electronAPI.dbExecuteQuery(built.sql, selectedDbRef.current || undefined, PACKING_QUERY_MAX_ROWS)
     if (!result.ok) {
       toast.error(result.error)
       return null
@@ -1281,7 +1288,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         : buildCartonInspectSql(schema, value)
       if (built.ok) {
         setEditorSql(built.sql)
-        const result = await executeQuery(built.sql)
+        const result = await executeQuery(built.sql, PACKING_QUERY_MAX_ROWS)
         if (result?.ok) {
           const view: DbInspectView = inspectKind === 'order'
             ? { kind: 'order', model: groupOrderInspectRows(result.rows, value) }
@@ -1323,8 +1330,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         const orderSql = buildOrderListSql(schema)
         const cartonSql = buildCartonListSql(schema)
         const [orderRes, cartonRes] = await Promise.all([
-          orderSql.ok ? window.electronAPI.dbExecuteQuery(orderSql.sql, db) : Promise.resolve(null),
-          cartonSql.ok ? window.electronAPI.dbExecuteQuery(cartonSql.sql, db) : Promise.resolve(null),
+          orderSql.ok ? window.electronAPI.dbExecuteQuery(orderSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
+          cartonSql.ok ? window.electronAPI.dbExecuteQuery(cartonSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
         ])
         if (cancelled) return
         setPackingOrderChoices(orderRes?.ok ? parsePackingChoices(orderRes.rows) : [])
@@ -1631,14 +1638,14 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const canEdit = !readOnly && primaryKeys.length > 0
 
-  if (!connected) {
-    return <DbNoHostScreen />
+  if (!connected && !directHost.trim()) {
+    return <DbNoHostScreen onDirectHost={setDirectHost} />
   }
 
   if (!dbConnected) {
     return (
       <DbLoginScreen
-        host={host}
+        host={dbHost}
         dbUser={dbUser}
         dbPass={dbPass}
         rememberCreds={rememberCreds}
@@ -1652,6 +1659,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           if (!v) clearCreds()
         }}
         onConnect={handleConnect}
+        onChangeHost={!connected ? () => setDirectHost('') : undefined}
       />
     )
   }
@@ -1663,7 +1671,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       <DbSidebar
         ref={sidebarRef}
         width={sidebarWidth}
-        host={host}
+        host={dbHost}
         databases={databases}
         selectedDb={selectedDb}
         selectedTable={selectedTable}

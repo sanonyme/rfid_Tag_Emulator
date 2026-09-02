@@ -30,6 +30,8 @@ import { ScrollArea } from '../ui/scroll-area'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { VENDOR_DRIVERS } from '@/lib/vendor-drivers'
 import { Switch } from '../ui/switch'
+import { CartonUpcFill } from '../CartonUpcFill'
+import { InditexTempeGenerator } from '../InditexTempeGenerator'
 
 interface MobileFixedTabProps {
   emulator: TCPEmulatorClient
@@ -532,6 +534,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           <CardTitle className="text-base">UPC → EPC</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <CartonUpcFill host={host} onApply={setUpcList} inputClassName="h-12" buttonClassName="h-12" />
           <ExpandableTagField
             dialogTitle="UPC → EPC"
             dialogDescription="Format: UPC,Count,TID[,userdata] (TID and userdata optional)"
@@ -557,7 +560,13 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
 
       <Card className="border-border/50">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">Direct EPC</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base">Direct EPC</CardTitle>
+            <InditexTempeGenerator
+              variant="compact"
+              onGenerated={(epcs) => setEpcList(epcList ? epcList + '\n' + epcs : epcs)}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           <ExpandableTagField

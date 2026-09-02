@@ -14,7 +14,16 @@ import {
 } from 'lucide-react'
 
 /** Shown while the emulator itself is not connected to a reader host. */
-export function DbNoHostScreen() {
+export function DbNoHostScreen({ onDirectHost }: { onDirectHost: (host: string) => void }) {
+  const [showIp, setShowIp] = useState(false)
+  const [ip, setIp] = useState('')
+
+  const submit = () => {
+    const next = ip.trim()
+    if (!next) return
+    onDirectHost(next)
+  }
+
   return (
     <div
       className="flex flex-col items-center justify-center h-full gap-5 text-muted-foreground"
@@ -34,6 +43,42 @@ export function DbNoHostScreen() {
           Connect to an IP with the connection button above, then come back here to browse the MySQL database on that host.
         </p>
       </div>
+      {!showIp ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-8 gap-1.5 rounded-lg text-xs"
+          onClick={() => setShowIp(true)}
+        >
+          <Server className="h-3.5 w-3.5" />
+          Connect by IP
+        </Button>
+      ) : (
+        <div className="flex w-full max-w-xs items-center gap-1.5">
+          <input
+            autoFocus
+            value={ip}
+            onChange={(e) => setIp(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') submit()
+              if (e.key === 'Escape') setShowIp(false)
+            }}
+            placeholder="192.168.1.10"
+            className="h-8 min-w-0 flex-1 rounded-lg border border-border/50 bg-background/60 px-2.5 font-mono text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+            aria-label="Database host IP"
+          />
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 shrink-0 px-2.5 text-xs"
+            disabled={!ip.trim()}
+            onClick={submit}
+          >
+            Continue
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -50,6 +95,7 @@ interface DbLoginScreenProps {
   onPassChange: (v: string) => void
   onRememberChange: (v: boolean) => void
   onConnect: () => void
+  onChangeHost?: () => void
 }
 
 /** MySQL sign-in card shown before a database session exists. */
@@ -65,6 +111,7 @@ export function DbLoginScreen({
   onPassChange,
   onRememberChange,
   onConnect,
+  onChangeHost,
 }: DbLoginScreenProps) {
   const [showPass, setShowPass] = useState(false)
   const canConnect = !connecting && credsLoaded && dbUser.trim().length > 0
@@ -84,6 +131,15 @@ export function DbLoginScreen({
             <Server className="w-3 h-3 text-muted-foreground" />
             {host}
             <span className="text-muted-foreground/70">:3306</span>
+            {onChangeHost && (
+              <button
+                type="button"
+                onClick={onChangeHost}
+                className="ml-0.5 text-[10px] font-sans text-muted-foreground hover:text-foreground"
+              >
+                Change
+              </button>
+            )}
           </span>
         </div>
 

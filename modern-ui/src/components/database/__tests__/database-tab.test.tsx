@@ -84,6 +84,22 @@ describe('DatabaseTab (revamped)', () => {
   it('shows the no-reader screen when the emulator is not connected', () => {
     render({ host: '', connected: false })
     expect(screen.getByText(/Not Connected/i)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Connect by IP/i })).toBeInTheDocument()
+  })
+
+  it('lets you enter a database IP without an emulator connection', async () => {
+    const api = installElectronApiMock()
+    render({ host: '', connected: false })
+    fireEvent.click(screen.getByRole('button', { name: /Connect by IP/i }))
+    fireEvent.change(screen.getByLabelText('Database host IP'), { target: { value: '172.16.1.209' } })
+    fireEvent.click(screen.getByRole('button', { name: /Continue/i }))
+
+    expect(await screen.findByText('Database Explorer')).toBeInTheDocument()
+    expect(screen.getByText(/172\.16\.1\.209/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'root' } })
+    fireEvent.click(screen.getByRole('button', { name: /Connect to Database/i }))
+    await waitFor(() => expect(api.dbConnect).toHaveBeenCalledWith('172.16.1.209', 'root', ''))
   })
 
   it('shows the MySQL login card and connects through electronAPI', async () => {

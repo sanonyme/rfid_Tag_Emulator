@@ -12,7 +12,7 @@ export interface FetchDefinedItemsResult {
   skippedNonNumeric: number
 }
 
-function isUsableUpcBarcode(value: string): boolean {
+export function isUsableUpcBarcode(value: string): boolean {
   return /^\d{1,14}$/.test(value)
 }
 

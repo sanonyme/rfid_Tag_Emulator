@@ -190,7 +190,7 @@ describe('db-inspect', () => {
     if (orders.ok) {
       expect(orders.sql).toContain('FROM `order` o')
       expect(orders.sql).toContain('AS value')
-      expect(orders.sql).toContain('LIMIT 250')
+      expect(orders.sql).not.toMatch(/LIMIT\s+\d+/i)
     }
     const cartons = buildCartonListSql(schema)
     expect(cartons.ok).toBe(true)
@@ -198,6 +198,7 @@ describe('db-inspect', () => {
       expect(cartons.sql).toContain('FROM `container` c')
       expect(cartons.sql).toContain('LEFT JOIN `order` o')
       expect(cartons.sql).toContain('AS hint')
+      expect(cartons.sql).not.toMatch(/LIMIT\s+\d+/i)
     }
     expect(parsePackingChoices([
       { value: '5003', hint: null },

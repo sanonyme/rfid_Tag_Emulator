@@ -507,9 +507,9 @@ app.whenReady().then(() => {
     return dbGetTableData(database, table, limit, offset, filter)
   })
 
-  ipcMain.handle('db-execute-query', async (_event, query: string, database?: string) => {
+  ipcMain.handle('db-execute-query', async (_event, query: string, database?: string, maxRows?: number) => {
     console.log(`DB: Execute query on ${database || 'default'}`)
-    return dbExecuteQuery(query, database)
+    return dbExecuteQuery(query, database, maxRows)
   })
 
   ipcMain.handle('db-get-primary-keys', async (_event, database: string, table: string) => {

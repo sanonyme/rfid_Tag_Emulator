@@ -190,6 +190,15 @@
   background: transparent;
 }
 
+/* Native scroll in dropdowns. Radix arrow buttons mount/unmount and jump the list. */
+[data-radix-select-viewport] {
+  overflow-y: auto !important;
+  scrollbar-width: thin !important;
+}
+[data-radix-select-viewport]::-webkit-scrollbar {
+  display: block;
+}
+
 /* Titlebar draggable area */
 .draggable {
   -webkit-app-region: drag;
