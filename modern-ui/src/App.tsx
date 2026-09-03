@@ -48,6 +48,7 @@ const BarcodeGenerator = React.lazy(() => import('./components/BarcodeGenerator'
 const DatabaseTab = React.lazy(() => import('./components/database/DatabaseTab').then((m) => ({ default: m.DatabaseTab })))
 const SftpTab = React.lazy(() => import('./components/SftpTab').then((m) => ({ default: m.SftpTab })))
 const NetScanTab = React.lazy(() => import('./components/NetScanTab').then((m) => ({ default: m.NetScanTab })))
+const JsonLintTab = React.lazy(() => import('./components/JsonLintTab').then((m) => ({ default: m.JsonLintTab })))
 const LinkToUidTab = React.lazy(() => import('./components/LinkToUidTab').then((m) => ({ default: m.LinkToUidTab })))
 const AdminTerminalTab = React.lazy(() => import('./components/AdminTerminalTab').then((m) => ({ default: m.AdminTerminalTab })))
 const SystemLogAnalyzerTab = React.lazy(() =>
@@ -66,6 +67,7 @@ const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
   decoder: () => import('./components/DecoderTab'),
   automation: () => import('./components/AutomationTab'),
   generator: () => import('./components/BarcodeGenerator'),
+  jsonlint: () => import('./components/JsonLintTab'),
   database: () => import('./components/database/DatabaseTab'),
   sftp: () => import('./components/SftpTab'),
   netscan: () => import('./components/NetScanTab'),
@@ -134,6 +136,7 @@ const TAB_VALUES_FULL = [
   'decoder',
   'automation',
   'generator',
+  'jsonlint',
   'database',
   'sftp',
   'netscan',
@@ -842,6 +845,10 @@ function App() {
 
             <TabPanel tabId="generator" visited={visitedTabs.has('generator')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
               <BarcodeGenerator />
+            </TabPanel>
+
+            <TabPanel tabId="jsonlint" visited={visitedTabs.has('jsonlint')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
+              <JsonLintTab />
             </TabPanel>
 
             <TabPanel tabId="database" visited={visitedTabs.has('database')} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>

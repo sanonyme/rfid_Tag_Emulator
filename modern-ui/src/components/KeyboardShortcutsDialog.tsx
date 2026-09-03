@@ -32,6 +32,9 @@ const SHORTCUTS = [
     { label: 'Open preset menu', keys: 'Ctrl+L' },
     { label: 'Show invalid-line popover', keys: 'click → N EPCs · M errors' },
   ]},
+  { group: 'JSON Lint', items: [
+    { label: 'Prettify', keys: 'Ctrl+Shift+F' },
+  ]},
   { group: 'Window', items: [
     { label: 'Toggle fullscreen', keys: 'F11' },
     { label: 'Reload app', keys: 'Ctrl+R' },

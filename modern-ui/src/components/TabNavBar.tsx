@@ -15,6 +15,7 @@ import {
   Link2,
   Radar,
   Cloud,
+  Braces,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -32,6 +33,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'edge', label: 'Edge', icon: Cloud },
   { value: 'api', label: 'API', icon: Globe },
   { value: 'decoder', label: 'Decoder', icon: Code2 },
+  { value: 'jsonlint', label: 'JSON', icon: Braces },
   { value: 'automation', label: 'Auto', icon: Sparkles },
   { value: 'generator', label: 'Gen', icon: QrCode },
   { value: 'database', label: 'DB', icon: Database },

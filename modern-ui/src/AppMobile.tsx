@@ -6,6 +6,7 @@ import type { HandheldSlot } from './components/HandheldTab'
 import { DecoderTab } from './components/DecoderTab'
 import { CustomTab } from './components/CustomTab'
 import { BarcodeGenerator } from './components/BarcodeGenerator'
+import { JsonLintTab } from './components/JsonLintTab'
 import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
 import { migrateStepsToSequences } from './lib/automation-types'
@@ -17,6 +18,7 @@ import {
   useSettingsNavigationRequest,
   type SettingsHighlightTarget,
 } from './lib/settings-navigation'
+import { cn } from './lib/utils'
 import { MobileHeader } from './components/mobile/MobileHeader'
 import { MobileBottomNav } from './components/mobile/MobileBottomNav'
 import { MobileMoreMenu } from './components/mobile/MobileMoreMenu'
@@ -58,7 +60,7 @@ function AppMobile() {
 
   const [activeTab, setActiveTab] = useState<string>(() => {
     const { defaultTab } = loadSettings()
-    const moreTabs = ['custom', 'decoder', 'generator']
+    const moreTabs = ['custom', 'decoder', 'generator', 'jsonlint']
     return moreTabs.includes(defaultTab) ? defaultTab : ['fixed', 'handheld', 'ocr'].includes(defaultTab) ? defaultTab : 'fixed'
   })
   const [connectionSheetOpen, setConnectionSheetOpen] = useState(false)
@@ -264,6 +266,12 @@ function AppMobile() {
         return (
           <div className={contentClass}>
             <BarcodeGenerator />
+          </div>
+        )
+      case 'jsonlint':
+        return (
+          <div className={cn(contentClass, 'flex min-h-[70vh] flex-col overflow-hidden pb-28')}>
+            <JsonLintTab />
           </div>
         )
       default:

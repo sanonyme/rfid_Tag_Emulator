@@ -57,6 +57,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
   { value: 'sftp', label: 'SFTP', icon: <FolderInput className="w-4 h-4" /> },
   { value: 'netscan', label: 'LAN scan', icon: <Radar className="w-4 h-4" /> },
+  { value: 'jsonlint', label: 'JSON Lint', icon: <Braces className="w-4 h-4" /> },
 ]
 
 const TAB_COMMANDS_PUBLIC = TAB_COMMANDS_ALL.filter(

@@ -12,8 +12,12 @@ import { uploadGithubReleaseAssets } from './upload-github-release-assets.mjs'
 
 const cwd = process.cwd()
 const envPath = path.join(cwd, '.env')
+const existingGhToken = process.env.GH_TOKEN?.trim()
 if (existsSync(envPath)) {
   dotenv.config({ path: envPath, override: true })
+}
+if (existingGhToken) {
+  process.env.GH_TOKEN = existingGhToken
 }
 
 const required = [

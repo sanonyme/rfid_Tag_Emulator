@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise'
 import type { Connection } from 'mysql2/promise'
-import { assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
+import { applyQueryRowLimit, assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
 import { formatSqlInserts } from '../src/lib/db-export-format.js'
 
 let connection: Connection | null = null
@@ -261,11 +261,7 @@ export async function dbExecuteQuery(
     }
 
     const cap = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : DB_QUERY_MAX_ROWS
-    let sql = query.trim()
-    const isSelect = /^\s*(select|show|describe|desc|explain)\b/i.test(sql)
-    if (isSelect && !/\blimit\b/i.test(sql)) {
-      sql = `${sql.replace(/;\s*$/, '')} LIMIT ${cap}`
-    }
+    const sql = applyQueryRowLimit(query, cap)
 
     const [result, fields] = await connection.query(sql)
 

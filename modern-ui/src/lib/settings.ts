@@ -12,6 +12,7 @@ export type DefaultTab =
   | 'decoder'
   | 'automation'
   | 'generator'
+  | 'jsonlint'
   | 'database'
   | 'sftp'
   | 'netscan'

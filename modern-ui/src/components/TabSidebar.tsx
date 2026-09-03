@@ -20,6 +20,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Shield,
+  Braces,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -48,6 +49,7 @@ const GROUPS: TabGroup[] = [
     items: [
       { value: 'api', label: 'API', icon: Globe },
       { value: 'decoder', label: 'Decoder', icon: Code2 },
+      { value: 'jsonlint', label: 'JSON Lint', icon: Braces },
       { value: 'automation', label: 'Automation', icon: Sparkles },
       { value: 'generator', label: 'Generator', icon: QrCode },
       { value: 'database', label: 'Database', icon: Database },

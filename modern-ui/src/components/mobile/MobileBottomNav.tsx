@@ -48,7 +48,7 @@ export function MobileBottomNav({
         onClick={onMorePress}
         className={cn(
           'smooth-press flex flex-col items-center justify-center gap-1 py-3 px-6 min-h-[56px] flex-1 transition-colors active:scale-95',
-          ['custom', 'decoder', 'generator'].includes(activeTab)
+          ['custom', 'decoder', 'generator', 'jsonlint'].includes(activeTab)
             ? 'text-primary'
             : 'text-muted-foreground'
         )}

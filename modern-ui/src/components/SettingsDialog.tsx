@@ -71,6 +71,7 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'decoder', label: 'Decoder' },
   { value: 'automation', label: 'Auto' },
   { value: 'generator', label: 'Generator' },
+  { value: 'jsonlint', label: 'JSON Lint' },
   { value: 'database', label: 'Database' },
   { value: 'sftp', label: 'SFTP' },
   { value: 'netscan', label: 'LAN scan' },

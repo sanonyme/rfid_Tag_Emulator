@@ -118,6 +118,7 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
           onContextMenu={(e) => onDatabaseContextMenu(e, db.name)}
           className={cn(
             'w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm transition-colors hover:bg-accent/60',
+            'outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/30',
             selectedDb === db.name
               ? 'bg-primary/10 ring-1 ring-inset ring-primary/25'
               : db.expanded && 'bg-accent/40',
@@ -152,7 +153,7 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
           <div className={cn('min-h-0 overflow-hidden', !(expanded && tables) && 'pointer-events-none')}>
             <div
               className={cn(
-                'ml-3 pl-3 border-l border-border/40 space-y-0.5 my-0.5 origin-top',
+                'ml-3 pl-3 pr-0.5 border-l border-border/40 space-y-0.5 my-0.5 origin-top',
                 'transition-opacity duration-200 ease-out motion-reduce:transition-none',
                 expanded && tables ? 'opacity-100' : 'opacity-0',
               )}
@@ -171,8 +172,9 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
                       onContextMenu={(e) => onTableContextMenu(e, db.name, t.name)}
                       className={cn(
                         'w-full min-w-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-sm transition-colors',
+                        'outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/30',
                         isSelected
-                          ? 'bg-primary/15 text-primary font-medium ring-1 ring-primary/25'
+                          ? 'bg-primary/15 text-primary font-medium ring-1 ring-inset ring-primary/25'
                           : 'hover:bg-accent/60 text-foreground',
                       )}
                     >

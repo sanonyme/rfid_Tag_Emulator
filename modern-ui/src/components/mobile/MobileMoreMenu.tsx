@@ -4,11 +4,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { Terminal, Code2, QrCode, Settings, Sun, Moon, FolderOpen, Save } from 'lucide-react'
+import { Terminal, Code2, QrCode, Braces, Settings, Sun, Moon, FolderOpen, Save } from 'lucide-react'
 
 const MORE_ITEMS = [
   { id: 'custom', label: 'Custom', icon: Terminal },
   { id: 'decoder', label: 'Decoder', icon: Code2 },
+  { id: 'jsonlint', label: 'JSON Lint', icon: Braces },
   { id: 'generator', label: 'Generator', icon: QrCode },
 ] as const
 
