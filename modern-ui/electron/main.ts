@@ -29,7 +29,9 @@ import {
   dbExportDatabaseSql,
   dbGetDatabaseSchema,
   getDbConnection,
+  getDbEngine,
   dbImportRows,
+  type DbConnectOptions,
 } from './db-handler.js'
 import {
   streamDatabaseCsvToFolder,
@@ -476,10 +478,21 @@ app.whenReady().then(() => {
   })
 
   // Database IPC handlers
-  ipcMain.handle('db-connect', async (_event, host: string, user: string, password: string) => {
-    console.log(`DB: Connect request to ${host} as ${user}`)
-    return dbConnect(host, user, password)
-  })
+  ipcMain.handle(
+    'db-connect',
+    async (
+      _event,
+      host: string,
+      user: string,
+      password: string,
+      port?: number,
+      options?: DbConnectOptions,
+    ) => {
+      const engine = options?.engine ?? 'mysql'
+      console.log(`DB: Connect request to ${host}:${port ?? (engine === 'postgres' ? 5432 : 3306)} as ${user} (${engine})`)
+      return dbConnect(host, user, password, port, options)
+    },
+  )
 
   ipcMain.handle('db-disconnect', async () => {
     console.log('DB: Disconnect request')
@@ -553,8 +566,6 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'db-save-export-table',
     async (event, database: string, table: string, format: 'csv' | 'sql') => {
-      const conn = getDbConnection()
-      if (!conn) return { ok: false as const, error: 'Not connected' }
       const win = BrowserWindow.fromWebContents(event.sender)
       const ext = format === 'csv' ? 'csv' : 'sql'
       const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
@@ -565,16 +576,33 @@ app.whenReady().then(() => {
 
       const emit = (progress: DbExportProgress) => event.sender.send('db-export-progress', progress)
       emit({ message: `Preparing ${table}…` })
-      const result = await streamTableExportToFile(conn, database, table, filePath, format, emit)
-      return result.ok
-        ? { ok: true as const, total: result.total, filePath }
-        : result
+
+      const conn = getDbConnection()
+      if (conn) {
+        const result = await streamTableExportToFile(conn, database, table, filePath, format, emit)
+        return result.ok
+          ? { ok: true as const, total: result.total, filePath }
+          : result
+      }
+
+      // PostgreSQL (and any non-mysql2 connection): in-memory export fallback
+      if (getDbEngine() === 'postgres') {
+        const data = await dbExportTable(database, table)
+        if (!data.ok) return data
+        const { formatCsvRow, formatSqlInserts } = await import('../src/lib/db-export-format.js')
+        const body =
+          format === 'csv'
+            ? [data.columns.join(','), ...data.rows.map((r) => formatCsvRow(data.columns, r))].join('\n') + '\n'
+            : formatSqlInserts(table, data.columns, data.rows)
+        await fs.promises.writeFile(filePath, body, 'utf8')
+        return { ok: true as const, total: data.total, filePath }
+      }
+
+      return { ok: false as const, error: 'Not connected' }
     },
   )
 
   ipcMain.handle('db-save-export-database-sql', async (event, database: string) => {
-    const conn = getDbConnection()
-    if (!conn) return { ok: false as const, error: 'Not connected' }
     const win = BrowserWindow.fromWebContents(event.sender)
     const { canceled, filePath } = await dialog.showSaveDialog(win ?? undefined, {
       defaultPath: `${database}_dump.sql`,
@@ -584,15 +612,33 @@ app.whenReady().then(() => {
 
     const emit = (progress: DbExportProgress) => event.sender.send('db-export-progress', progress)
     emit({ message: `Preparing ${database} dump…` })
-    const result = await streamDatabaseSqlToFile(conn, database, filePath, dbGetTables, emit)
-    return result.ok
-      ? { ok: true as const, tableCount: result.tableCount, totalRows: result.totalRows, filePath }
-      : result
+
+    const conn = getDbConnection()
+    if (conn) {
+      const result = await streamDatabaseSqlToFile(conn, database, filePath, dbGetTables, emit)
+      return result.ok
+        ? { ok: true as const, tableCount: result.tableCount, totalRows: result.totalRows, filePath }
+        : result
+    }
+
+    if (getDbEngine() === 'postgres') {
+      const result = await dbExportDatabaseSql(database)
+      if (!result.ok) return result
+      await fs.promises.writeFile(filePath, result.sql, 'utf8')
+      return { ok: true as const, tableCount: 0, totalRows: 0, filePath }
+    }
+
+    return { ok: false as const, error: 'Not connected' }
   })
 
   ipcMain.handle('db-save-export-database-csv', async (event, database: string) => {
     const conn = getDbConnection()
-    if (!conn) return { ok: false as const, error: 'Not connected' }
+    if (!conn) {
+      if (getDbEngine() === 'postgres') {
+        return { ok: false as const, error: 'Full-database CSV folder export is currently MySQL-only. Export tables individually instead.' }
+      }
+      return { ok: false as const, error: 'Not connected' }
+    }
     const win = BrowserWindow.fromWebContents(event.sender)
     const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
       title: `Choose folder for ${database} CSV exports`,

@@ -63,7 +63,15 @@ export type SchemaConfirmState =
 
 export const PAGE_SIZES = [25, 50, 100, 500, 1000] as const
 export const DANGEROUS_SQL = /^\s*(UPDATE|DELETE|INSERT|DROP|ALTER|TRUNCATE|REPLACE|RENAME|CREATE)\b/i
-export const SYSTEM_DATABASES = new Set(['information_schema', 'mysql', 'performance_schema', 'sys'])
+export const SYSTEM_DATABASES = new Set([
+  'information_schema',
+  'mysql',
+  'performance_schema',
+  'sys',
+  // PostgreSQL system schemas (shown under system when browsing schemas)
+  'pg_catalog',
+  'pg_toast',
+])
 
 export const NEW_DB_NAME_RE = /^[a-zA-Z0-9$_-]{1,64}$/
 export const NEW_TABLE_NAME_RE = NEW_DB_NAME_RE

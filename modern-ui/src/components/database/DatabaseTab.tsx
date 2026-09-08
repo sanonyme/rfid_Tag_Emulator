@@ -25,7 +25,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { basicSetup } from 'codemirror'
 
 import { DatabaseSchemaGraph } from './DatabaseSchemaGraph'
-import { DbNoHostScreen, DbLoginScreen } from './DbConnectScreens'
+import { DbNoHostScreen, DbLoginScreen, type DbEngineChoice } from './DbConnectScreens'
 import { DbSidebar } from './DbSidebar'
 import { DbDataGrid } from './DbDataGrid'
 import { DbStructureTable } from './DbStructureTable'
@@ -109,20 +109,38 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   const [databases, setDatabases] = useState<DbNode[]>([])
   const [dbUser, setDbUser] = useState('')
   const [dbPass, setDbPass] = useState('')
+  const [dbEngine, setDbEngine] = useState<DbEngineChoice>('mysql')
+  const [dbPort, setDbPort] = useState('3306')
+  const [dbName, setDbName] = useState('')
+  const [dbSsl, setDbSsl] = useState(false)
   const [rememberCreds, setRememberCreds] = useState(false)
   const [credsLoaded, setCredsLoaded] = useState(false)
   const [directHost, setDirectHost] = useState('')
   const dbHost = (directHost || host).trim()
+  const dbPortNumber = (() => {
+    const n = parseInt(dbPort, 10)
+    const fallback = dbEngine === 'postgres' ? 5432 : 3306
+    return Number.isFinite(n) && n >= 1 && n <= 65535 ? n : fallback
+  })()
+
+  const handleEngineChange = useCallback((next: DbEngineChoice) => {
+    setDbEngine(next)
+    setDbPort((prev) => {
+      if (next === 'postgres' && (prev === '3306' || !prev.trim())) return '5432'
+      if (next === 'mysql' && (prev === '5432' || !prev.trim())) return '3306'
+      return prev
+    })
+  }, [])
 
   useEffect(() => {
     tourIx?.setDbMysqlConnected(dbConnected)
     publishStatus('db', {
       status: dbConnected ? 'connected' : 'idle',
       host: dbConnected && dbHost ? dbHost : undefined,
-      port: dbConnected ? 3306 : undefined,
+      port: dbConnected ? dbPortNumber : undefined,
       label: 'DB',
     })
-  }, [dbConnected, dbHost, tourIx])
+  }, [dbConnected, dbHost, dbPortNumber, tourIx])
 
   useEffect(() => () => clearStatus('db'), [])
 
@@ -280,6 +298,14 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
             const parsed = JSON.parse(raw)
             setDbUser(parsed.user || '')
             setDbPass(parsed.pass || '')
+            if (parsed.port != null && String(parsed.port).trim()) {
+              setDbPort(String(parsed.port))
+            }
+            if (parsed.engine === 'postgres' || parsed.engine === 'mysql') {
+              setDbEngine(parsed.engine)
+            }
+            if (typeof parsed.database === 'string') setDbName(parsed.database)
+            if (typeof parsed.ssl === 'boolean') setDbSsl(parsed.ssl)
             setRememberCreds(true)
             setCredsLoaded(true)
             return
@@ -292,8 +318,26 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
           const parsed = JSON.parse(raw)
           setDbUser(parsed.user || '')
           setDbPass(parsed.pass || '')
+          if (parsed.port != null && String(parsed.port).trim()) {
+            setDbPort(String(parsed.port))
+          }
+          if (parsed.engine === 'postgres' || parsed.engine === 'mysql') {
+            setDbEngine(parsed.engine)
+          }
+          if (typeof parsed.database === 'string') setDbName(parsed.database)
+          if (typeof parsed.ssl === 'boolean') setDbSsl(parsed.ssl)
           setRememberCreds(true)
         }
+      } catch { /* ignore */ }
+      try {
+        const savedPort = localStorage.getItem('db-port')
+        if (savedPort?.trim()) setDbPort(savedPort.trim())
+        const savedEngine = localStorage.getItem('db-engine')
+        if (savedEngine === 'postgres' || savedEngine === 'mysql') setDbEngine(savedEngine)
+        const savedDb = localStorage.getItem('db-name')
+        if (savedDb) setDbName(savedDb)
+        const savedSsl = localStorage.getItem('db-ssl')
+        if (savedSsl === '1') setDbSsl(true)
       } catch { /* ignore */ }
       setCredsLoaded(true)
     })()
@@ -322,7 +366,20 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [queryTabs, activeTabId])
 
   const persistCreds = useCallback(async () => {
-    const payload = JSON.stringify({ user: dbUser, pass: dbPass })
+    const payload = JSON.stringify({
+      user: dbUser,
+      pass: dbPass,
+      port: dbPortNumber,
+      engine: dbEngine,
+      database: dbName,
+      ssl: dbSsl,
+    })
+    try {
+      localStorage.setItem('db-port', String(dbPortNumber))
+      localStorage.setItem('db-engine', dbEngine)
+      localStorage.setItem('db-name', dbName)
+      localStorage.setItem('db-ssl', dbSsl ? '1' : '0')
+    } catch { /* ignore */ }
     if (!window.electronAPI?.safeStoreSet) return
     try {
       await window.electronAPI.safeStoreSet(DB_CREDS_KEY, payload)
@@ -330,7 +387,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     } catch {
       toast.error('Could not save credentials securely')
     }
-  }, [dbUser, dbPass])
+  }, [dbUser, dbPass, dbPortNumber, dbEngine, dbName, dbSsl])
 
   const clearCreds = useCallback(async () => {
     try { if (window.electronAPI?.safeStoreDelete) await window.electronAPI.safeStoreDelete(DB_CREDS_KEY) } catch { /* ignore */ }
@@ -339,9 +396,23 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
 
   const handleConnect = useCallback(async () => {
     if (!window.electronAPI || !dbUser.trim() || !dbHost) return
+    if (dbEngine === 'postgres' && !dbName.trim()) {
+      setError('Database name is required for PostgreSQL')
+      return
+    }
     setConnecting(true)
     setError('')
-    const result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass)
+    try {
+      localStorage.setItem('db-port', String(dbPortNumber))
+      localStorage.setItem('db-engine', dbEngine)
+      localStorage.setItem('db-name', dbName)
+      localStorage.setItem('db-ssl', dbSsl ? '1' : '0')
+    } catch { /* ignore */ }
+    const result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass, dbPortNumber, {
+      engine: dbEngine,
+      database: dbName.trim() || undefined,
+      ssl: dbSsl,
+    })
     if (result.ok) {
       setDbConnected(true)
       setDatabases(result.databases.map((d) => ({ name: d, tables: undefined, expanded: false, loading: false })))
@@ -351,7 +422,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       setError(result.error)
     }
     setConnecting(false)
-  }, [dbHost, dbUser, dbPass, rememberCreds, persistCreds, clearCreds])
+  }, [dbHost, dbUser, dbPass, dbPortNumber, dbEngine, dbName, dbSsl, rememberCreds, persistCreds, clearCreds])
 
   const handleDisconnect = useCallback(async () => {
     if (!window.electronAPI) return
@@ -475,7 +546,11 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     const expandedDbNames = databases.filter((d) => d.expanded).map((d) => d.name)
     let result = await window.electronAPI.dbListDatabases?.()
     if (!result?.ok) {
-      result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass)
+      result = await window.electronAPI.dbConnect(dbHost, dbUser, dbPass, dbPortNumber, {
+        engine: dbEngine,
+        database: dbName.trim() || undefined,
+        ssl: dbSsl,
+      })
     }
     if (result.ok) {
       setDbConnected(true)
@@ -514,7 +589,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       setError(result.error)
     }
     setRefreshing(false)
-  }, [dbHost, dbUser, dbPass, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
+  }, [dbHost, dbUser, dbPass, dbPortNumber, dbEngine, dbName, dbSsl, databases, selectedDb, selectedTable, currentPage, pageSize, loadPage, tableView, loadSchema])
 
   /** Runs DDL/DML from the sidebar; bypasses read-only (user confirms in dialog). */
   const executeMutationSql = useCallback(async (sqlText: string, useDatabase?: string): Promise<boolean> => {
@@ -1646,12 +1721,20 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     return (
       <DbLoginScreen
         host={dbHost}
+        dbEngine={dbEngine}
+        dbPort={dbPort}
+        dbName={dbName}
+        dbSsl={dbSsl}
         dbUser={dbUser}
         dbPass={dbPass}
         rememberCreds={rememberCreds}
         connecting={connecting}
         credsLoaded={credsLoaded}
         error={error}
+        onEngineChange={handleEngineChange}
+        onPortChange={setDbPort}
+        onDbNameChange={setDbName}
+        onSslChange={setDbSsl}
         onUserChange={setDbUser}
         onPassChange={setDbPass}
         onRememberChange={(v) => {
@@ -1671,7 +1754,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       <DbSidebar
         ref={sidebarRef}
         width={sidebarWidth}
-        host={dbHost}
+        host={`${dbHost}:${dbPortNumber}`}
         databases={databases}
         selectedDb={selectedDb}
         selectedTable={selectedTable}

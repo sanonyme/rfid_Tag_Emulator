@@ -135,7 +135,16 @@ export interface ElectronAPI {
   }>
 
   // Database
-  dbConnect: (host: string, user: string, password: string) => Promise<{ ok: true; databases: string[] } | { ok: false; error: string }>
+  dbConnect: (
+    host: string,
+    user: string,
+    password: string,
+    port?: number,
+    options?: { engine?: 'mysql' | 'postgres'; database?: string; ssl?: boolean; port?: number },
+  ) => Promise<
+    | { ok: true; databases: string[]; engine?: 'mysql' | 'postgres' }
+    | { ok: false; error: string }
+  >
   dbDisconnect: () => Promise<void>
   dbListDatabases: () => Promise<{ ok: true; databases: string[] } | { ok: false; error: string }>
   dbGetTables: (database: string) => Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }>

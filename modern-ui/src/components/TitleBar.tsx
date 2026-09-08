@@ -1,5 +1,6 @@
 import { Minimize2, Maximize2, X } from 'lucide-react'
 import { SettingsDialog } from './SettingsDialog'
+import { WhatsNewTitleBarControl } from './WhatsNewDialog'
 import type { SettingsHighlightTarget } from '@/lib/settings-navigation'
 import logoImage from '/ZeusLogoNoBG.png'
 import packageJson from '../../package.json' // Import version from package.json
@@ -80,6 +81,9 @@ export function TitleBar({
 
       {/* Right - Actions menu & Window Controls */}
       <div className="flex items-center gap-2 animate-fade-in">
+        <div className="no-drag">
+          <WhatsNewTitleBarControl />
+        </div>
         <div className="no-drag">
           {actionsMenu}
         </div>

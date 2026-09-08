@@ -99,7 +99,13 @@ describe('DatabaseTab (revamped)', () => {
 
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'root' } })
     fireEvent.click(screen.getByRole('button', { name: /Connect to Database/i }))
-    await waitFor(() => expect(api.dbConnect).toHaveBeenCalledWith('172.16.1.209', 'root', ''))
+    await waitFor(() => expect(api.dbConnect).toHaveBeenCalledWith(
+      '172.16.1.209',
+      'root',
+      '',
+      3306,
+      expect.objectContaining({ engine: 'mysql' }),
+    ))
   })
 
   it('shows the MySQL login card and connects through electronAPI', async () => {
@@ -117,7 +123,13 @@ describe('DatabaseTab (revamped)', () => {
     await waitFor(() => expect(connectBtn).toBeEnabled())
 
     fireEvent.click(connectBtn)
-    await waitFor(() => expect(api.dbConnect).toHaveBeenCalledWith('10.0.0.5', 'root', 'secret'))
+    await waitFor(() => expect(api.dbConnect).toHaveBeenCalledWith(
+      '10.0.0.5',
+      'root',
+      'secret',
+      3306,
+      expect.objectContaining({ engine: 'mysql' }),
+    ))
 
     // Sidebar renders databases; system schemas are grouped separately
     expect(await screen.findByText('zeus')).toBeInTheDocument()

@@ -1,10 +1,36 @@
 import mysql from 'mysql2/promise'
 import type { Connection } from 'mysql2/promise'
+import pg from 'pg'
 import { applyQueryRowLimit, assertSafeSqlIdentifier, DB_QUERY_MAX_ROWS } from './db-sql-utils.js'
-import { formatSqlInserts } from '../src/lib/db-export-format.js'
+import {
+  type DbEngine,
+  PG_SYSTEM_SCHEMAS,
+  quoteIdent,
+  resolveDbPort,
+  toPgText,
+} from './db-engine.js'
+import { formatSqlInserts, formatSqlInsertValue } from '../src/lib/db-export-format.js'
+import type {
+  DbSchemaForeignKey,
+  DbSchemaTable,
+} from '../src/lib/db-schema-types.js'
 
-let connection: Connection | null = null
+export type { DbEngine } from './db-engine.js'
+
+export type DbConnectOptions = {
+  engine?: DbEngine
+  database?: string
+  ssl?: boolean
+  port?: number
+}
+
+let engine: DbEngine = 'mysql'
+let mysqlConn: Connection | null = null
+let pgClient: import('pg').Client | null = null
+/** MySQL: selected database. PostgreSQL: selected schema (search_path). */
 let currentDatabase: string | null = null
+/** Actual PostgreSQL database name we connected to. */
+let pgDatabaseName: string | null = null
 
 /** ponytail: per-table meta cache; cleared on disconnect. Page changes = SELECT only. */
 type TableMeta = {
@@ -18,23 +44,134 @@ function tableMetaKey(db: string, table: string): string {
   return `${db}\0${table}`
 }
 
+function isConnected(): boolean {
+  return engine === 'postgres' ? pgClient !== null : mysqlConn !== null
+}
+
+function qIdent(name: string): string {
+  return quoteIdent(engine, name)
+}
+
+async function closeAllConnections(): Promise<void> {
+  if (mysqlConn) {
+    await mysqlConn.end().catch(() => {})
+    mysqlConn = null
+  }
+  if (pgClient) {
+    await pgClient.end().catch(() => {})
+    pgClient = null
+  }
+  currentDatabase = null
+  pgDatabaseName = null
+  tableMetaCache.clear()
+}
+
+async function execQuery(
+  sql: string,
+  params: any[] = [],
+): Promise<{ rows: any[]; fields?: any[]; affectedRows?: number; insertId?: any }> {
+  if (engine === 'postgres') {
+    if (!pgClient) throw new Error('Not connected')
+    const result = await pgClient.query(toPgText(sql), params)
+    return {
+      rows: result.rows ?? [],
+      fields: result.fields as any[] | undefined,
+      affectedRows: result.rowCount ?? 0,
+    }
+  }
+  if (!mysqlConn) throw new Error('Not connected')
+  const [result, fields] = await mysqlConn.query(sql, params)
+  if (Array.isArray(result)) {
+    return { rows: result, fields: fields as any[] }
+  }
+  return {
+    rows: [],
+    fields: fields as any[] | undefined,
+    affectedRows: parseInt(String((result as any).affectedRows ?? '0'), 10) || 0,
+    insertId: (result as any).insertId,
+  }
+}
+
 async function selectDatabase(database: string): Promise<void> {
-  if (!connection) throw new Error('Not connected')
+  if (!isConnected()) throw new Error('Not connected')
   const safe = assertSafeSqlIdentifier(database)
   if (!safe) throw new Error('Invalid database name')
   if (currentDatabase === safe) return
-  await connection.query(`USE \`${safe}\``)
+
+  if (engine === 'postgres') {
+    await execQuery(`SET search_path TO ${quoteIdent('postgres', safe)}`)
+  } else {
+    await mysqlConn!.query(`USE \`${safe}\``)
+  }
   currentDatabase = safe
 }
 
+async function listSchemasOrDatabases(): Promise<string[]> {
+  if (engine === 'postgres') {
+    const { rows } = await execQuery(
+      `SELECT schema_name AS name
+       FROM information_schema.schemata
+       ORDER BY schema_name`,
+    )
+    return rows
+      .map((r) => String(r.name))
+      .filter((name) => !PG_SYSTEM_SCHEMAS.has(name))
+  }
+  const { rows } = await execQuery('SHOW DATABASES')
+  return rows.map((r: any) => Object.values(r)[0] as string)
+}
+
 async function fetchTableMeta(safeDb: string, safeTable: string): Promise<TableMeta> {
-  if (!connection) throw new Error('Not connected')
+  if (!isConnected()) throw new Error('Not connected')
+
+  if (engine === 'postgres') {
+    const [colResult, keyResult, estResult] = await Promise.all([
+      execQuery(
+        `SELECT column_name, data_type, udt_name
+         FROM information_schema.columns
+         WHERE table_schema = ? AND table_name = ?
+         ORDER BY ordinal_position`,
+        [safeDb, safeTable],
+      ),
+      execQuery(
+        `SELECT kcu.column_name
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_schema = kcu.constraint_schema
+          AND tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+          AND tc.table_name = kcu.table_name
+         WHERE tc.constraint_type = 'PRIMARY KEY'
+           AND tc.table_schema = ?
+           AND tc.table_name = ?
+         ORDER BY kcu.ordinal_position`,
+        [safeDb, safeTable],
+      ),
+      execQuery(
+        `SELECT COALESCE(c.reltuples, 0)::bigint AS estimate
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+         WHERE n.nspname = ? AND c.relname = ? AND c.relkind = 'r'`,
+        [safeDb, safeTable],
+      ),
+    ])
+    const columnTypes: Record<string, string> = {}
+    for (const r of colResult.rows) {
+      const udt = String(r.udt_name ?? '')
+      const dt = String(r.data_type ?? '')
+      columnTypes[String(r.column_name)] = udt || dt
+    }
+    const primaryKeys = keyResult.rows.map((r) => String(r.column_name))
+    const rowEstimate = parseInt(String(estResult.rows[0]?.estimate ?? 0), 10) || 0
+    return { columnTypes, primaryKeys, rowEstimate }
+  }
+
   const [colResult, keyResult, estResult] = await Promise.all([
-    connection.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``),
-    connection.query(
+    mysqlConn!.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``),
+    mysqlConn!.query(
       `SHOW KEYS FROM \`${safeTable}\` FROM \`${safeDb}\` WHERE Key_name = 'PRIMARY'`,
     ),
-    connection.query(
+    mysqlConn!.query(
       `SELECT TABLE_ROWS FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
       [safeDb, safeTable],
     ),
@@ -66,6 +203,22 @@ function sanitizeRow(row: any): any {
   return out
 }
 
+function formatPgSqlInserts(
+  table: string,
+  columns: string[],
+  rows: Record<string, unknown>[],
+): string {
+  if (rows.length === 0 || columns.length === 0) return ''
+  const colList = columns.map((c) => quoteIdent('postgres', c)).join(', ')
+  const qTable = quoteIdent('postgres', table)
+  return rows
+    .map((row) => {
+      const vals = columns.map((c) => formatSqlInsertValue(row[c]))
+      return `INSERT INTO ${qTable} (${colList}) VALUES (${vals.join(', ')});`
+    })
+    .join('\n')
+}
+
 export interface ColumnInfo {
   name: string
   type: string
@@ -76,49 +229,88 @@ export interface ColumnInfo {
   comment: string
 }
 
-export async function dbConnect(host: string, user: string, password: string): Promise<{ ok: true; databases: string[] } | { ok: false; error: string }> {
+function parseConnectArgs(
+  portOrOptions?: number | DbConnectOptions,
+  maybeOptions?: DbConnectOptions,
+): { engine: DbEngine; port?: number; database?: string; ssl: boolean } {
+  let options: DbConnectOptions = {}
+  let port: number | undefined
+
+  if (typeof portOrOptions === 'number') {
+    port = portOrOptions
+    if (maybeOptions) options = maybeOptions
+  } else if (portOrOptions && typeof portOrOptions === 'object') {
+    options = portOrOptions
+    port = options.port
+  }
+
+  const resolvedEngine: DbEngine = options.engine === 'postgres' ? 'postgres' : 'mysql'
+  return {
+    engine: resolvedEngine,
+    port: port ?? options.port,
+    database: options.database,
+    ssl: Boolean(options.ssl),
+  }
+}
+
+export async function dbConnect(
+  host: string,
+  user: string,
+  password: string,
+  portOrOptions?: number | DbConnectOptions,
+  maybeOptions?: DbConnectOptions,
+): Promise<{ ok: true; databases: string[]; engine: DbEngine } | { ok: false; error: string }> {
   try {
-    if (connection) {
-      await connection.end().catch(() => {})
-      connection = null
+    await closeAllConnections()
+
+    const parsed = parseConnectArgs(portOrOptions, maybeOptions)
+    engine = parsed.engine
+    const resolvedPort = resolveDbPort(engine, parsed.port)
+
+    if (engine === 'postgres') {
+      const dbName = parsed.database?.trim() || 'postgres'
+      pgDatabaseName = dbName
+      pgClient = new pg.Client({
+        host,
+        port: resolvedPort,
+        user,
+        password,
+        database: dbName,
+        connectionTimeoutMillis: 10000,
+        ...(parsed.ssl ? { ssl: { rejectUnauthorized: false } } : {}),
+      })
+      await pgClient.connect()
+    } else {
+      mysqlConn = await mysql.createConnection({
+        host,
+        port: resolvedPort,
+        user,
+        password,
+        connectTimeout: 10000,
+        supportBigNumbers: true,
+        bigNumberStrings: true,
+      })
     }
-    currentDatabase = null
-    tableMetaCache.clear()
 
-    connection = await mysql.createConnection({
-      host,
-      user,
-      password,
-      connectTimeout: 10000,
-      supportBigNumbers: true,
-      bigNumberStrings: true,
-    })
-
-    const [rows] = await connection.query('SHOW DATABASES')
-    const databases = (rows as any[]).map((r: any) => Object.values(r)[0] as string)
-
-    return { ok: true, databases }
+    const databases = await listSchemasOrDatabases()
+    return { ok: true, databases, engine }
   } catch (err: any) {
-    connection = null
+    await closeAllConnections()
+    engine = 'mysql'
     return { ok: false, error: err.message || 'Connection failed' }
   }
 }
 
 export async function dbDisconnect(): Promise<void> {
-  if (connection) {
-    await connection.end().catch(() => {})
-    connection = null
-  }
-  currentDatabase = null
-  tableMetaCache.clear()
+  await closeAllConnections()
+  engine = 'mysql'
 }
 
 /** List databases on the existing connection (no reconnect). */
 export async function dbListDatabases(): Promise<{ ok: true; databases: string[] } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
-    const [rows] = await connection.query('SHOW DATABASES')
-    const databases = (rows as any[]).map((r: any) => Object.values(r)[0] as string)
+    const databases = await listSchemasOrDatabases()
     return { ok: true, databases }
   } catch (err: any) {
     return { ok: false, error: err.message || 'Failed to list databases' }
@@ -126,11 +318,35 @@ export async function dbListDatabases(): Promise<{ ok: true; databases: string[]
 }
 
 export async function dbGetTables(database: string): Promise<{ ok: true; tables: { name: string; rows: number }[] } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   const safe = assertSafeSqlIdentifier(database)
   if (!safe) return { ok: false, error: 'Invalid database name' }
   try {
-    const [rows] = await connection.query(
+    if (engine === 'postgres') {
+      const { rows } = await execQuery(
+        `SELECT t.table_name AS name,
+                COALESCE((
+                  SELECT c.reltuples::bigint
+                  FROM pg_class c
+                  JOIN pg_namespace n ON n.oid = c.relnamespace
+                  WHERE n.nspname = t.table_schema
+                    AND c.relname = t.table_name
+                    AND c.relkind = 'r'
+                ), 0) AS row_estimate
+         FROM information_schema.tables t
+         WHERE t.table_schema = ?
+           AND t.table_type = 'BASE TABLE'
+         ORDER BY t.table_name`,
+        [safe],
+      )
+      const tables = rows.map((r) => ({
+        name: String(r.name),
+        rows: parseInt(String(r.row_estimate), 10) || 0,
+      }))
+      return { ok: true, tables }
+    }
+
+    const { rows } = await execQuery(
       `SELECT TABLE_NAME, TABLE_ROWS
        FROM information_schema.TABLES
        WHERE TABLE_SCHEMA = ?
@@ -139,7 +355,7 @@ export async function dbGetTables(database: string): Promise<{ ok: true; tables:
       [safe],
     )
 
-    const tables = (rows as any[]).map((r) => ({
+    const tables = rows.map((r) => ({
       name: String(r.TABLE_NAME),
       rows: parseInt(String(r.TABLE_ROWS), 10) || 0,
     }))
@@ -170,7 +386,8 @@ function buildTableDataClauses(
 
   if (search) {
     const like = `%${escapeLikePattern(search)}%`
-    const parts = columnNames.map((c) => `CAST(\`${c}\` AS CHAR) LIKE ?`)
+    const castType = engine === 'postgres' ? 'text' : 'CHAR'
+    const parts = columnNames.map((c) => `CAST(${qIdent(c)} AS ${castType}) LIKE ?`)
     whereClause = ` WHERE (${parts.join(' OR ')})`
     whereParams.push(...columnNames.map(() => like))
   }
@@ -179,7 +396,7 @@ function buildTableDataClauses(
   if (filter?.sortColumn && filter.sortDir) {
     const safeCol = assertSafeSqlIdentifier(filter.sortColumn)
     if (safeCol && columnNames.includes(safeCol)) {
-      orderClause = ` ORDER BY \`${safeCol}\` ${filter.sortDir === 'desc' ? 'DESC' : 'ASC'}`
+      orderClause = ` ORDER BY ${qIdent(safeCol)} ${filter.sortDir === 'desc' ? 'DESC' : 'ASC'}`
     }
   }
 
@@ -196,7 +413,7 @@ export async function dbGetTableData(
   | { ok: true; columns: string[]; rows: any[]; total: number; columnTypes: Record<string, string>; primaryKeys: string[] }
   | { ok: false; error: string }
 > {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   const safeDb = assertSafeSqlIdentifier(database)
   const safeTable = assertSafeSqlIdentifier(table)
   if (!safeDb || !safeTable) return { ok: false, error: 'Invalid database or table name' }
@@ -212,24 +429,30 @@ export async function dbGetTableData(
     const { whereClause, orderClause, whereParams } = buildTableDataClauses(columnNames, filter)
     const searchActive = Boolean(filter?.search?.trim())
 
-    const dataSql = `SELECT * FROM \`${safeTable}\`${whereClause}${orderClause} LIMIT ? OFFSET ?`
+    const dataSql = `SELECT * FROM ${qIdent(safeTable)}${whereClause}${orderClause} LIMIT ? OFFSET ?`
     const dataParams = [...whereParams, limit, offset]
 
     const countPromise = searchActive
-      ? connection.query(`SELECT COUNT(*) AS cnt FROM \`${safeTable}\`${whereClause}`, whereParams)
+      ? execQuery(`SELECT COUNT(*) AS cnt FROM ${qIdent(safeTable)}${whereClause}`, whereParams)
       : Promise.resolve(null)
 
-    const [[rows, fields], countResult] = await Promise.all([
-      connection.query(dataSql, dataParams),
+    const [dataResult, countResult] = await Promise.all([
+      execQuery(dataSql, dataParams),
       countPromise,
     ])
 
-    const rowArr = rows as any[]
-    const columns = (fields as any[]).map((f: any) => f.name)
+    const rowArr = dataResult.rows
+    let columns =
+      dataResult.fields && dataResult.fields.length > 0
+        ? dataResult.fields.map((f: any) => f.name)
+        : columnNames
+    if (columns.length === 0 && rowArr.length > 0) {
+      columns = Object.keys(rowArr[0])
+    }
 
     let total: number
     if (searchActive && countResult) {
-      total = parseInt(String((countResult[0] as any[])[0]?.cnt), 10) || 0
+      total = parseInt(String(countResult.rows[0]?.cnt), 10) || 0
     } else if (rowArr.length < limit) {
       total = offset + rowArr.length
     } else {
@@ -254,7 +477,7 @@ export async function dbExecuteQuery(
   database?: string,
   maxRows: number = DB_QUERY_MAX_ROWS,
 ): Promise<{ ok: true; columns: string[]; rows: any[]; affectedRows?: number; insertId?: number | string; message?: string } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     if (database) {
       await selectDatabase(database)
@@ -263,7 +486,54 @@ export async function dbExecuteQuery(
     const cap = Number.isFinite(maxRows) && maxRows > 0 ? Math.floor(maxRows) : DB_QUERY_MAX_ROWS
     const sql = applyQueryRowLimit(query, cap)
 
-    const [result, fields] = await connection.query(sql)
+    if (engine === 'postgres') {
+      if (!pgClient) return { ok: false, error: 'Not connected' }
+      const pgResult = await pgClient.query(toPgText(sql))
+      const cmd = String(pgResult.command || '').toUpperCase()
+      const isResultSet =
+        cmd === 'SELECT' ||
+        cmd === 'SHOW' ||
+        cmd === 'WITH' ||
+        (Boolean(pgResult.fields?.length) && !['INSERT', 'UPDATE', 'DELETE'].includes(cmd))
+
+      if (isResultSet || (pgResult.fields?.length && cmd === '')) {
+        const columns = (pgResult.fields || []).map((f: any) => f.name)
+        const rows = (pgResult.rows || []).map(sanitizeRow).slice(0, cap)
+        const truncated = (pgResult.rows || []).length > cap
+        return {
+          ok: true,
+          columns,
+          rows,
+          ...(truncated ? { message: `Results truncated to ${cap} rows` } : {}),
+        }
+      }
+
+      // INSERT/UPDATE/DELETE — optionally with RETURNING rows
+      if (pgResult.fields?.length && pgResult.rows?.length) {
+        const columns = pgResult.fields.map((f: any) => f.name)
+        const rows = pgResult.rows.map(sanitizeRow).slice(0, cap)
+        const affected = pgResult.rowCount ?? rows.length
+        return {
+          ok: true,
+          columns,
+          rows,
+          affectedRows: affected,
+          message: `OK — ${affected} row(s) affected`,
+        }
+      }
+
+      const affected = pgResult.rowCount ?? 0
+      return {
+        ok: true,
+        columns: [],
+        rows: [],
+        affectedRows: affected,
+        message: `OK — ${affected} row(s) affected`,
+      }
+    }
+
+    if (!mysqlConn) return { ok: false, error: 'Not connected' }
+    const [result, fields] = await mysqlConn.query(sql)
 
     if (Array.isArray(result)) {
       const columns = fields ? (fields as any[]).map((f: any) => f.name) : []
@@ -296,15 +566,33 @@ export async function dbGetPrimaryKeys(
   database: string,
   table: string
 ): Promise<string[]> {
-  if (!connection) return []
+  if (!isConnected()) return []
   try {
-    const [rows] = await connection.query(
+    if (engine === 'postgres') {
+      const { rows } = await execQuery(
+        `SELECT kcu.column_name AS COLUMN_NAME
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_schema = kcu.constraint_schema
+          AND tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+          AND tc.table_name = kcu.table_name
+         WHERE tc.constraint_type = 'PRIMARY KEY'
+           AND tc.table_schema = ?
+           AND tc.table_name = ?
+         ORDER BY kcu.ordinal_position`,
+        [database, table],
+      )
+      return rows.map((r: any) => String(r.COLUMN_NAME ?? r.column_name))
+    }
+
+    const { rows } = await execQuery(
       `SELECT COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = 'PRIMARY'
        ORDER BY ORDINAL_POSITION`,
-      [database, table]
+      [database, table],
     )
-    return (rows as any[]).map((r: any) => r.COLUMN_NAME)
+    return rows.map((r: any) => r.COLUMN_NAME)
   } catch {
     return []
   }
@@ -317,22 +605,23 @@ export async function dbUpdateCell(
   column: string,
   value: any
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     await selectDatabase(database)
 
-    const setClauses = `\`${column}\` = ?`
+    const setClauses = `${qIdent(column)} = ?`
     const whereEntries = Object.entries(primaryKeys)
     if (whereEntries.length === 0) return { ok: false, error: 'No primary key provided' }
 
-    const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+    const whereClauses = whereEntries.map(([k]) => `${qIdent(k)} = ?`).join(' AND ')
     const whereValues = whereEntries.map(([, v]) => v)
 
-    const sql = `UPDATE \`${table}\` SET ${setClauses} WHERE ${whereClauses} LIMIT 1`
+    const limitSql = engine === 'postgres' ? '' : ' LIMIT 1'
+    const sql = `UPDATE ${qIdent(table)} SET ${setClauses} WHERE ${whereClauses}${limitSql}`
     const params = [value === '' ? null : value, ...whereValues]
 
-    const [result] = await connection.query(sql, params)
-    const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    const result = await execQuery(sql, params)
+    const affected = parseInt(String(result.affectedRows ?? '0'), 10) || 0
     return { ok: true, affectedRows: affected }
   } catch (err: any) {
     return { ok: false, error: err.message }
@@ -343,10 +632,45 @@ export async function dbGetTableStructure(
   database: string,
   table: string
 ): Promise<{ ok: true; columns: ColumnInfo[] } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
-    const [rows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
-    const columns: ColumnInfo[] = (rows as any[]).map((r: any) => ({
+    if (engine === 'postgres') {
+      const [colResult, pkResult] = await Promise.all([
+        execQuery(
+          `SELECT column_name, data_type, udt_name, is_nullable, column_default,
+                  character_maximum_length, numeric_precision, numeric_scale
+           FROM information_schema.columns
+           WHERE table_schema = ? AND table_name = ?
+           ORDER BY ordinal_position`,
+          [database, table],
+        ),
+        dbGetPrimaryKeys(database, table),
+      ])
+      const pkSet = new Set(pkResult)
+      const columns: ColumnInfo[] = colResult.rows.map((r: any) => {
+        const udt = String(r.udt_name ?? '')
+        const dt = String(r.data_type ?? '')
+        let type = udt || dt
+        if (r.character_maximum_length != null && (dt === 'character varying' || dt === 'character')) {
+          type = `${dt === 'character' ? 'char' : 'varchar'}(${r.character_maximum_length})`
+        } else if (r.numeric_precision != null && (dt === 'numeric' || dt === 'decimal')) {
+          type = `${dt}(${r.numeric_precision}${r.numeric_scale != null ? `,${r.numeric_scale}` : ''})`
+        }
+        return {
+          name: String(r.column_name),
+          type,
+          nullable: String(r.is_nullable).toUpperCase() === 'YES',
+          defaultValue: r.column_default === null || r.column_default === undefined ? null : String(r.column_default),
+          key: pkSet.has(String(r.column_name)) ? 'PRI' : '',
+          extra: '',
+          comment: '',
+        }
+      })
+      return { ok: true, columns }
+    }
+
+    const { rows } = await execQuery(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
+    const columns: ColumnInfo[] = rows.map((r: any) => ({
       name: String(r.Field),
       type: String(r.Type),
       nullable: r.Null === 'YES',
@@ -366,19 +690,20 @@ export async function dbDeleteRow(
   table: string,
   primaryKeys: Record<string, any>
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     await selectDatabase(database)
 
     const whereEntries = Object.entries(primaryKeys)
     if (whereEntries.length === 0) return { ok: false, error: 'No primary key provided' }
 
-    const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+    const whereClauses = whereEntries.map(([k]) => `${qIdent(k)} = ?`).join(' AND ')
     const whereValues = whereEntries.map(([, v]) => v)
 
-    const sql = `DELETE FROM \`${table}\` WHERE ${whereClauses} LIMIT 1`
-    const [result] = await connection.query(sql, whereValues)
-    const affected = parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+    const limitSql = engine === 'postgres' ? '' : ' LIMIT 1'
+    const sql = `DELETE FROM ${qIdent(table)} WHERE ${whereClauses}${limitSql}`
+    const result = await execQuery(sql, whereValues)
+    const affected = parseInt(String(result.affectedRows ?? '0'), 10) || 0
     return { ok: true, affectedRows: affected }
   } catch (err: any) {
     return { ok: false, error: err.message }
@@ -390,20 +715,28 @@ export async function dbInsertRow(
   table: string,
   values: Record<string, any>
 ): Promise<{ ok: true; insertId: any } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     await selectDatabase(database)
 
     const entries = Object.entries(values)
     if (entries.length === 0) return { ok: false, error: 'No columns to insert' }
 
-    const colList = entries.map(([k]) => `\`${k}\``).join(', ')
+    const colList = entries.map(([k]) => qIdent(k)).join(', ')
     const placeholders = entries.map(() => '?').join(', ')
-    const sql = `INSERT INTO \`${table}\` (${colList}) VALUES (${placeholders})`
     const params = entries.map(([, v]) => v)
 
-    const [result] = await connection.query(sql, params)
-    const insertId = sanitizeValue((result as any).insertId)
+    if (engine === 'postgres') {
+      const sql = `INSERT INTO ${qIdent(table)} (${colList}) VALUES (${placeholders}) RETURNING *`
+      const result = await execQuery(sql, params)
+      const returned = result.rows[0]
+      const insertId = returned ? sanitizeValue(Object.values(returned)[0]) : null
+      return { ok: true, insertId }
+    }
+
+    const sql = `INSERT INTO ${qIdent(table)} (${colList}) VALUES (${placeholders})`
+    const result = await execQuery(sql, params)
+    const insertId = sanitizeValue(result.insertId)
     return { ok: true, insertId }
   } catch (err: any) {
     return { ok: false, error: err.message }
@@ -415,7 +748,7 @@ export async function dbDeleteRows(
   table: string,
   rows: Record<string, any>[]
 ): Promise<{ ok: true; affectedRows: number } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     await selectDatabase(database)
 
@@ -423,17 +756,17 @@ export async function dbDeleteRows(
     if (pkCols.length === 0) return { ok: false, error: 'No primary key on table' }
 
     let totalAffected = 0
-    const conn = connection
+    const limitSql = engine === 'postgres' ? '' : ' LIMIT 1'
     for (const row of rows) {
       const whereEntries = pkCols.map((col) => [col, row[col]] as [string, any])
       if (whereEntries.some(([, v]) => v === undefined)) {
         return { ok: false, error: 'Row missing primary key field' }
       }
-      const whereClauses = whereEntries.map(([k]) => `\`${k}\` = ?`).join(' AND ')
+      const whereClauses = whereEntries.map(([k]) => `${qIdent(k)} = ?`).join(' AND ')
       const whereValues = whereEntries.map(([, v]) => v)
-      const sql = `DELETE FROM \`${table}\` WHERE ${whereClauses} LIMIT 1`
-      const [result] = await conn.query(sql, whereValues)
-      totalAffected += parseInt(String((result as any).affectedRows ?? '0'), 10) || 0
+      const sql = `DELETE FROM ${qIdent(table)} WHERE ${whereClauses}${limitSql}`
+      const result = await execQuery(sql, whereValues)
+      totalAffected += parseInt(String(result.affectedRows ?? '0'), 10) || 0
     }
     return { ok: true, affectedRows: totalAffected }
   } catch (err: any) {
@@ -445,25 +778,41 @@ export async function dbExportTable(
   database: string,
   table: string
 ): Promise<{ ok: true; columns: string[]; rows: any[]; total: number } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   try {
     await selectDatabase(database)
+    const safeTable = assertSafeSqlIdentifier(table)
+    if (!safeTable) return { ok: false, error: 'Invalid table name' }
 
-    const [countResult] = await connection.query(`SELECT COUNT(*) as cnt FROM \`${table}\``)
-    const total = parseInt(String((countResult as any[])[0].cnt), 10) || 0
+    const countResult = await execQuery(`SELECT COUNT(*) as cnt FROM ${qIdent(safeTable)}`)
+    const total = parseInt(String(countResult.rows[0]?.cnt), 10) || 0
 
-    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${table}\` FROM \`${database}\``)
-    const columns = (colRows as any[]).map((r: any) => String(r.Field))
+    let columns: string[]
+    if (engine === 'postgres') {
+      const colResult = await execQuery(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = ? AND table_name = ?
+         ORDER BY ordinal_position`,
+        [database, safeTable],
+      )
+      columns = colResult.rows.map((r: any) => String(r.column_name))
+    } else {
+      const colResult = await execQuery(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${database}\``)
+      columns = colResult.rows.map((r: any) => String(r.Field))
+    }
 
     const allRows: any[] = []
     const batchSize = 5000
     let offset = 0
-    const conn = connection
     let hasMore = true
 
     while (hasMore) {
-      const [batch] = await conn.query(`SELECT * FROM \`${table}\` LIMIT ? OFFSET ?`, [batchSize, offset])
-      const batchArr = batch as any[]
+      const batch = await execQuery(
+        `SELECT * FROM ${qIdent(safeTable)} LIMIT ? OFFSET ?`,
+        [batchSize, offset],
+      )
+      const batchArr = batch.rows
       if (batchArr.length === 0) {
         hasMore = false
         break
@@ -484,7 +833,7 @@ export async function dbExportTable(
 export async function dbExportDatabaseSql(
   database: string,
 ): Promise<{ ok: true; sql: string } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   const safeDb = assertSafeSqlIdentifier(database)
   if (!safeDb) return { ok: false, error: 'Invalid database name' }
   try {
@@ -494,6 +843,34 @@ export async function dbExportDatabaseSql(
 
     const chunks: string[] = []
     const ts = new Date().toISOString()
+
+    if (engine === 'postgres') {
+      chunks.push(`-- PostgreSQL dump generated ${ts}\n`)
+      chunks.push(`-- Schema: ${quoteIdent('postgres', safeDb)}\n`)
+      chunks.push(`-- Database: ${quoteIdent('postgres', pgDatabaseName || 'postgres')}\n`)
+      chunks.push(`-- Data-only dump (CREATE TABLE omitted)\n\n`)
+      chunks.push(`SET search_path TO ${quoteIdent('postgres', safeDb)};\n\n`)
+
+      for (const { name: tableName } of tablesResult.tables) {
+        const safeTable = assertSafeSqlIdentifier(tableName)
+        if (!safeTable) continue
+
+        const data = await dbExportTable(safeDb, safeTable)
+        if (data.ok === false) {
+          return { ok: false, error: data.error }
+        }
+        chunks.push(`-- table ${safeDb}.${safeTable}\n`)
+        if (data.rows.length > 0) {
+          chunks.push(formatPgSqlInserts(safeTable, data.columns, data.rows))
+          chunks.push('\n\n')
+        } else {
+          chunks.push('-- (no rows)\n\n')
+        }
+      }
+
+      return { ok: true, sql: chunks.join('') }
+    }
+
     chunks.push(`-- MySQL dump generated ${ts}\n-- Database: \`${safeDb}\`\n\n`)
     chunks.push(`CREATE DATABASE IF NOT EXISTS \`${safeDb}\`;\nUSE \`${safeDb}\`;\n\n`)
     chunks.push('SET FOREIGN_KEY_CHECKS=0;\n\n')
@@ -502,8 +879,8 @@ export async function dbExportDatabaseSql(
       const safeTable = assertSafeSqlIdentifier(tableName)
       if (!safeTable) continue
 
-      const [createResult] = await connection.query(`SHOW CREATE TABLE \`${safeTable}\``)
-      const createRow = (createResult as any[])[0] as Record<string, string> | undefined
+      const createResult = await execQuery(`SHOW CREATE TABLE \`${safeTable}\``)
+      const createRow = createResult.rows[0] as Record<string, string> | undefined
       const createSql = createRow?.['Create Table'] ?? createRow?.['Create View']
       if (!createSql) continue
 
@@ -512,7 +889,7 @@ export async function dbExportDatabaseSql(
       chunks.push(`${createSql};\n\n`)
 
       const data = await dbExportTable(safeDb, safeTable)
-      if (!data.ok) {
+      if (data.ok === false) {
         return { ok: false, error: data.error }
       }
       if (data.rows.length > 0) {
@@ -529,34 +906,134 @@ export async function dbExportDatabaseSql(
   }
 }
 
-import type {
-  DbSchemaColumn,
-  DbSchemaForeignKey,
-  DbSchemaTable,
-} from '../src/lib/db-schema-types.js'
 export async function dbGetDatabaseSchema(
   database: string
 ): Promise<
   | { ok: true; tables: DbSchemaTable[]; foreignKeys: DbSchemaForeignKey[] }
   | { ok: false; error: string }
 > {
-  if (!connection) return { ok: false, error: 'Not connected' }
-  if (database.includes('`') || database.includes('\0')) {
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
+  if (database.includes('`') || database.includes('"') || database.includes('\0')) {
     return { ok: false, error: 'Invalid database name' }
   }
   try {
     await selectDatabase(database)
 
-    const [colRows] = await connection.query(
+    const tableMap = new Map<string, DbSchemaTable>()
+
+    if (engine === 'postgres') {
+      const colResult = await execQuery(
+        `SELECT table_name, column_name, data_type, udt_name, ordinal_position
+         FROM information_schema.columns
+         WHERE table_schema = ?
+         ORDER BY table_name, ordinal_position`,
+        [database],
+      )
+
+      const pkResult = await execQuery(
+        `SELECT tc.table_name, kcu.column_name
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_schema = kcu.constraint_schema
+          AND tc.constraint_name = kcu.constraint_name
+          AND tc.table_schema = kcu.table_schema
+          AND tc.table_name = kcu.table_name
+         WHERE tc.constraint_type = 'PRIMARY KEY'
+           AND tc.table_schema = ?`,
+        [database],
+      )
+      const pkByTable = new Map<string, Set<string>>()
+      for (const r of pkResult.rows) {
+        const tname = String(r.table_name)
+        if (!pkByTable.has(tname)) pkByTable.set(tname, new Set())
+        pkByTable.get(tname)!.add(String(r.column_name))
+      }
+
+      for (const r of colResult.rows) {
+        const tname = String(r.table_name)
+        if (!tableMap.has(tname)) {
+          tableMap.set(tname, { name: tname, columns: [] })
+        }
+        const colName = String(r.column_name)
+        const type = String(r.udt_name || r.data_type || '')
+        const key = pkByTable.get(tname)?.has(colName) ? 'PRI' : ''
+        tableMap.get(tname)!.columns.push({
+          name: colName,
+          type,
+          key,
+        })
+      }
+
+      const fkRows = await execQuery(
+        `SELECT
+           rc.constraint_name AS constraint_name,
+           kcu.table_name AS table_name,
+           kcu.column_name AS column_name,
+           kcu.ordinal_position AS ordinal_position,
+           ccu.table_name AS referenced_table_name,
+           ccu.column_name AS referenced_column_name
+         FROM information_schema.referential_constraints rc
+         JOIN information_schema.key_column_usage kcu
+           ON kcu.constraint_name = rc.constraint_name
+          AND kcu.constraint_schema = rc.constraint_schema
+         JOIN information_schema.constraint_column_usage ccu
+           ON ccu.constraint_name = rc.unique_constraint_name
+          AND ccu.constraint_schema = rc.unique_constraint_schema
+         WHERE kcu.table_schema = ?
+         ORDER BY kcu.table_name, rc.constraint_name, kcu.ordinal_position`,
+        [database],
+      )
+
+      type FkGroup = {
+        constraintName: string
+        childTable: string
+        parentTable: string
+        pairs: { child: string; parent: string }[]
+      }
+      const fkGroups = new Map<string, FkGroup>()
+      for (const r of fkRows.rows) {
+        const childTable = String(r.table_name)
+        const cname = String(r.constraint_name)
+        const key = `${childTable}\0${cname}`
+        const parentTable = String(r.referenced_table_name)
+        if (!fkGroups.has(key)) {
+          fkGroups.set(key, {
+            constraintName: cname,
+            childTable,
+            parentTable,
+            pairs: [],
+          })
+        }
+        fkGroups.get(key)!.pairs.push({
+          child: String(r.column_name),
+          parent: String(r.referenced_column_name),
+        })
+      }
+
+      const foreignKeys: DbSchemaForeignKey[] = []
+      for (const g of fkGroups.values()) {
+        foreignKeys.push({
+          constraintName: g.constraintName,
+          childTable: g.childTable,
+          childColumns: g.pairs.map((p) => p.child),
+          parentTable: g.parentTable,
+          parentColumns: g.pairs.map((p) => p.parent),
+        })
+      }
+
+      const tables = Array.from(tableMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+      return { ok: true, tables, foreignKeys }
+    }
+
+    const colResult = await execQuery(
       `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, COLUMN_KEY, ORDINAL_POSITION
        FROM INFORMATION_SCHEMA.COLUMNS
        WHERE TABLE_SCHEMA = ?
        ORDER BY TABLE_NAME, ORDINAL_POSITION`,
-      [database]
+      [database],
     )
 
-    const tableMap = new Map<string, DbSchemaTable>()
-    for (const r of colRows as any[]) {
+    for (const r of colResult.rows) {
       const tname = String(r.TABLE_NAME)
       if (!tableMap.has(tname)) {
         tableMap.set(tname, { name: tname, columns: [] })
@@ -568,14 +1045,14 @@ export async function dbGetDatabaseSchema(
       })
     }
 
-    const [fkRows] = await connection.query(
+    const fkResult = await execQuery(
       `SELECT CONSTRAINT_NAME, TABLE_NAME, COLUMN_NAME,
               REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME, ORDINAL_POSITION
        FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
        WHERE TABLE_SCHEMA = ?
          AND REFERENCED_TABLE_NAME IS NOT NULL
        ORDER BY TABLE_NAME, CONSTRAINT_NAME, ORDINAL_POSITION`,
-      [database]
+      [database],
     )
 
     type FkGroup = {
@@ -585,7 +1062,7 @@ export async function dbGetDatabaseSchema(
       pairs: { child: string; parent: string }[]
     }
     const fkGroups = new Map<string, FkGroup>()
-    for (const r of fkRows as any[]) {
+    for (const r of fkResult.rows) {
       const childTable = String(r.TABLE_NAME)
       const cname = String(r.CONSTRAINT_NAME)
       const key = `${childTable}\0${cname}`
@@ -630,7 +1107,7 @@ export async function dbImportRows(
   table: string,
   rows: Record<string, any>[],
 ): Promise<{ ok: true; inserted: number; skipped: number } | { ok: false; error: string }> {
-  if (!connection) return { ok: false, error: 'Not connected' }
+  if (!isConnected()) return { ok: false, error: 'Not connected' }
   const safeDb = assertSafeSqlIdentifier(database)
   const safeTable = assertSafeSqlIdentifier(table)
   if (!safeDb || !safeTable) return { ok: false, error: 'Invalid database or table name' }
@@ -642,32 +1119,66 @@ export async function dbImportRows(
   try {
     await selectDatabase(safeDb)
 
-    const [colRows] = await connection.query(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``)
-    const validCols = new Set((colRows as any[]).map((r) => String(r.Field)))
+    let validCols: Set<string>
+    if (engine === 'postgres') {
+      const colResult = await execQuery(
+        `SELECT column_name
+         FROM information_schema.columns
+         WHERE table_schema = ? AND table_name = ?`,
+        [safeDb, safeTable],
+      )
+      validCols = new Set(colResult.rows.map((r: any) => String(r.column_name)))
+    } else {
+      const colResult = await execQuery(`SHOW FULL COLUMNS FROM \`${safeTable}\` FROM \`${safeDb}\``)
+      validCols = new Set(colResult.rows.map((r: any) => String(r.Field)))
+    }
 
     let inserted = 0
     let skipped = 0
-    const conn = connection
 
-    await conn.beginTransaction()
-    try {
-      for (const row of rows) {
-        const entries = Object.entries(row).filter(([k, v]) => validCols.has(k) && v !== undefined)
-        if (entries.length === 0) {
-          skipped++
-          continue
+    if (engine === 'postgres') {
+      await execQuery('BEGIN')
+      try {
+        for (const row of rows) {
+          const entries = Object.entries(row).filter(([k, v]) => validCols.has(k) && v !== undefined)
+          if (entries.length === 0) {
+            skipped++
+            continue
+          }
+          const colList = entries.map(([k]) => qIdent(k)).join(', ')
+          const placeholders = entries.map(() => '?').join(', ')
+          const sql = `INSERT INTO ${qIdent(safeTable)} (${colList}) VALUES (${placeholders})`
+          const params = entries.map(([, v]) => v)
+          await execQuery(sql, params)
+          inserted++
         }
-        const colList = entries.map(([k]) => `\`${k}\``).join(', ')
-        const placeholders = entries.map(() => '?').join(', ')
-        const sql = `INSERT INTO \`${safeTable}\` (${colList}) VALUES (${placeholders})`
-        const params = entries.map(([, v]) => v)
-        await conn.query(sql, params)
-        inserted++
+        await execQuery('COMMIT')
+      } catch (err) {
+        await execQuery('ROLLBACK').catch(() => {})
+        throw err
       }
-      await conn.commit()
-    } catch (err) {
-      await conn.rollback()
-      throw err
+    } else {
+      const conn = mysqlConn!
+      await conn.beginTransaction()
+      try {
+        for (const row of rows) {
+          const entries = Object.entries(row).filter(([k, v]) => validCols.has(k) && v !== undefined)
+          if (entries.length === 0) {
+            skipped++
+            continue
+          }
+          const colList = entries.map(([k]) => `\`${k}\``).join(', ')
+          const placeholders = entries.map(() => '?').join(', ')
+          const sql = `INSERT INTO \`${safeTable}\` (${colList}) VALUES (${placeholders})`
+          const params = entries.map(([, v]) => v)
+          await conn.query(sql, params)
+          inserted++
+        }
+        await conn.commit()
+      } catch (err) {
+        await conn.rollback()
+        throw err
+      }
     }
 
     return { ok: true, inserted, skipped }
@@ -677,10 +1188,18 @@ export async function dbImportRows(
 }
 
 export function dbIsConnected(): boolean {
-  return connection !== null
+  return mysqlConn !== null || pgClient !== null
 }
 
-/** Exposes the active connection for streaming export helpers in main process. */
+export function getDbEngine(): DbEngine {
+  return engine
+}
+
+export function dbIsPostgres(): boolean {
+  return engine === 'postgres'
+}
+
+/** Exposes the active MySQL connection for streaming export helpers in main process. */
 export function getDbConnection(): Connection | null {
-  return connection
+  return mysqlConn
 }

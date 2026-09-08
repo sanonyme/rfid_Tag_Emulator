@@ -219,7 +219,7 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                         expanded
                           ? cn('gap-2.5 px-2.5 py-2 justify-start', canPopOut ? 'flex-1 min-w-0' : 'w-full')
                           : 'justify-center w-9 h-9 p-0',
-                        item.value === 'automation' &&
+                        (item.value === 'automation' || item.value === 'jsonlint') &&
                           'ring-1 ring-inset ring-primary/35 text-primary/80 hover:text-primary dark:ring-white/25',
                       )}
                     >

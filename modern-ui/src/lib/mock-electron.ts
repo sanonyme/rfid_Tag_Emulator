@@ -392,7 +392,13 @@ class MockElectronAPI implements ElectronAPI {
   }
 
   // Database (mock – no-ops in browser)
-  async dbConnect(_host: string, _user: string, _password: string) {
+  async dbConnect(
+    _host: string,
+    _user: string,
+    _password: string,
+    _port?: number,
+    _options?: { engine?: 'mysql' | 'postgres'; database?: string; ssl?: boolean; port?: number },
+  ) {
     return { ok: false as const, error: 'Database not available in browser mode' }
   }
   async dbDisconnect() {}

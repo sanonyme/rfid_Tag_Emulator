@@ -109,7 +109,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('itx-api-request', url, body, headerName, apiKey),
 
   // Database
-  dbConnect: (host: string, user: string, password: string) => ipcRenderer.invoke('db-connect', host, user, password),
+  dbConnect: (
+    host: string,
+    user: string,
+    password: string,
+    port?: number,
+    options?: { engine?: 'mysql' | 'postgres'; database?: string; ssl?: boolean; port?: number },
+  ) => ipcRenderer.invoke('db-connect', host, user, password, port, options),
   dbDisconnect: () => ipcRenderer.invoke('db-disconnect'),
   dbListDatabases: () => ipcRenderer.invoke('db-list-databases'),
   dbGetTables: (database: string) => ipcRenderer.invoke('db-get-tables', database),

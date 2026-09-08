@@ -135,7 +135,7 @@ export function TabNavBar({ value, className, isAdmin, poppedOutTabs, onPopOut }
                 'data-[state=active]:bg-transparent',
                 'bg-transparent text-foreground/70 hover:text-foreground',
                 'data-[state=active]:text-primary dark:data-[state=active]:text-white',
-                item.value === 'automation' &&
+                (item.value === 'automation' || item.value === 'jsonlint') &&
                   'ring-1 ring-inset ring-primary/35 text-primary/80 hover:text-primary dark:ring-white/25',
               )}
             >
