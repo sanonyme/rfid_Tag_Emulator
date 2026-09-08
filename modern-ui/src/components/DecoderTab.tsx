@@ -378,8 +378,12 @@ function quickConfigFromTdt(meta: TdtSchemeInputs): QuickSchemeConfig {
       if (!Object.keys(vals).length) {
         return { error: 'Fill the quick fields below or paste an identifier above' }
       }
-      const ai = buildTdtAiJson(meta.aiSequence, meta.fields, vals)
-      if (ai) return { input: ai }
+      // TDS 2.3 ++ needs hostname in the bare identifier; AI JSON can't carry it.
+      const preferBare = /\+{1,2}$/.test(meta.scheme) || fieldNames.has('hostname')
+      if (!preferBare) {
+        const ai = buildTdtAiJson(meta.aiSequence, meta.fields, vals)
+        if (ai) return { input: ai }
+      }
       const bare = buildTdtBareIdentifier(vals)
       if (!bare) return { error: 'Fill the quick fields below or paste an identifier above' }
       return { input: bare }
@@ -754,6 +758,7 @@ export function DecoderTab() {
   const [encodeScheme, setEncodeScheme] = useState('')
   const [encodeDetected, setEncodeDetected] = useState<TdtDetectedScheme[]>([])
   const [tdtSchemeInputs, setTdtSchemeInputs] = useState<TdtSchemeInputs | null>(null)
+  const [tdtFieldsLoading, setTdtFieldsLoading] = useState(false)
   const [quickValues, setQuickValues] = useState<Record<string, string>>({})
   const [companyPrefixLen, setCompanyPrefixLen] = useState('6')
   const [filterValue, setFilterValue] = useState('0')
@@ -766,8 +771,12 @@ export function DecoderTab() {
   const [encoding, setEncoding] = useState(false)
 
   // Prefer handcrafted family forms when available; otherwise use live TDT field defs.
+  // For TDS 2.3 +/++ (e.g. CPI++), always use scheme-specific field defs — family forms are classic-only.
   const activeFamily = schemeFamily(encodeScheme) || 'SGTIN'
   const quickConfig = useMemo(() => {
+    if (tdtSchemeInputs?.scheme && /\+{1,2}$/.test(tdtSchemeInputs.scheme)) {
+      return quickConfigFromTdt(tdtSchemeInputs)
+    }
     const family = QUICK_SCHEME_CONFIGS[activeFamily]
     if (family) return family
     if (tdtSchemeInputs) return quickConfigFromTdt(tdtSchemeInputs)
@@ -788,21 +797,27 @@ export function DecoderTab() {
   useEffect(() => {
     const scheme = encodeScheme || 'SGTIN-96'
     let cancelled = false
+    setTdtFieldsLoading(true)
     void tdtGetSchemeInputs(scheme)
       .then((meta) => {
         if (cancelled) return
         setTdtSchemeInputs(meta)
         setQuickValues((prev) => {
           const next: Record<string, string> = {}
-          const keys = QUICK_SCHEME_CONFIGS[schemeFamily(scheme)]?.fields.map((f) => f.key)
-            ?? meta?.fields.map((f) => f.name)
-            ?? []
+          const keys = /\+{1,2}$/.test(scheme)
+            ? (meta?.fields.map((f) => f.name) ?? [])
+            : QUICK_SCHEME_CONFIGS[schemeFamily(scheme)]?.fields.map((f) => f.key)
+              ?? meta?.fields.map((f) => f.name)
+              ?? []
           for (const key of keys) next[key] = prev[key] ?? ''
           return next
         })
       })
       .catch(() => {
         if (!cancelled) setTdtSchemeInputs(null)
+      })
+      .finally(() => {
+        if (!cancelled) setTdtFieldsLoading(false)
       })
     return () => {
       cancelled = true
@@ -1335,10 +1350,16 @@ export function DecoderTab() {
                     </div>
                   )}
                 </>
-              ) : (
+              ) : tdtFieldsLoading ? (
                 <p className="text-[11px] leading-relaxed text-muted-foreground">
                   Loading TDT field definitions for{' '}
                   <span className="font-mono text-foreground">{encodeScheme || 'SGTIN-96'}</span>…
+                </p>
+              ) : (
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  No quick fields for{' '}
+                  <span className="font-mono text-foreground">{encodeScheme || 'this scheme'}</span>
+                  . Paste an AI JSON, Digital Link, or bare identifier above.
                 </p>
               )}
             </div>

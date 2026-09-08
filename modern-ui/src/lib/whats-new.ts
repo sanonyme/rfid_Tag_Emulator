@@ -22,6 +22,24 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.1.1',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'TDS 2.3 decoder & encoder',
+        detail: 'Full support for + / ++ schemes (CPI++, SGTIN++, SSCC++, and more) via the TDT bridge.',
+      },
+      {
+        title: 'CPI++ encode & decode',
+        detail: 'Quick fields for CPI / serial / hostname, and reliable hex ↔ Digital Link / bare ID translation.',
+      },
+      {
+        title: 'Decoder reliability',
+        detail: 'Fixed TDTLevelNotFound on modern schemes and stuck “loading field definitions” on encode.',
+      },
+    ],
+  },
+  {
     version: '10.0.0',
     date: '2026-09',
     highlights: [

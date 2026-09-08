@@ -84,6 +84,33 @@ interface TDTtranslatorInstance {
   }
 }
 
+type TdtBridgeLevel =
+  | 'BINARY'
+  | 'HEX'
+  | 'PURE_IDENTITY'
+  | 'TAG_ENCODING'
+  | 'LEGACY'
+  | 'LEGACY_AI'
+  | 'BARE_IDENTIFIER'
+  | 'GS1_DIGITAL_LINK'
+  | 'GS1_AI_JSON'
+  | 'TEI'
+
+interface TdtBridgeResult {
+  ok: true
+  input: string
+  inputLevel: 'HEX' | 'BINARY' | 'OTHER'
+  scheme?: string
+  fields: Record<string, string>
+  outputs: Partial<Record<TdtBridgeLevel, string>>
+}
+
+type TdtBridgeResponse = TdtBridgeResult | { ok: false; error: string }
+
+function isTds23Scheme(scheme?: string): boolean {
+  return Boolean(scheme && /\+{1,2}$/.test(scheme.trim()))
+}
+
 export interface TdtSchemeField {
   name: string
   label: string
@@ -208,6 +235,158 @@ function hexToBinary(hex: string): string {
   return out
 }
 
+function bridgeSupported(): boolean {
+  return typeof window !== 'undefined' && typeof window.electronAPI?.tdtTranslate === 'function'
+}
+
+function bridgeTagLength(scheme?: string): number | undefined {
+  const match = scheme?.match(/-(\d+)$/)
+  if (!match) return undefined
+  const n = Number(match[1])
+  return Number.isFinite(n) ? n : undefined
+}
+
+async function tryBridgeTranslate(
+  input: string,
+  overrides: {
+    scheme?: string
+    gcpLength?: number
+    filter?: number
+    uriStem?: string
+    dataToggle?: number
+    outputLevel?: TdtOutputLevel
+  } = {},
+): Promise<TdtBridgeResponse | null> {
+  if (!bridgeSupported()) return null
+  try {
+    return await window.electronAPI!.tdtTranslate!(input, {
+      scheme: overrides.scheme,
+      outputLevel: overrides.outputLevel,
+      filter: overrides.filter,
+      gcpLength: overrides.gcpLength,
+      tagLength: bridgeTagLength(overrides.scheme),
+      uriStem: overrides.uriStem,
+      dataToggle: overrides.dataToggle,
+    })
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'TDT bridge failed' }
+  }
+}
+
+function bridgeToDecodeResult(
+  bridge: TdtBridgeResult,
+  detected: TdtDetectedScheme[],
+  forced?: string,
+): TdtDecodeResult {
+  const outputs: Partial<Record<TdtOutputLevel, string>> = {}
+  for (const level of ALL_LEVELS) {
+    const value = bridge.outputs[level]
+    if (value) outputs[level] = value
+  }
+
+  const gcpLength = Number(bridge.fields.gs1companyprefixlength)
+  const scheme = bridge.scheme || forced || 'TDS 2.3'
+  const supportedLevels = Object.keys(outputs)
+  const binary =
+    outputs.BINARY ||
+    (bridge.inputLevel === 'HEX' ? hexToBinary(bridge.input.replace(/[^0-9A-Fa-f]/g, '')) : undefined)
+
+  return {
+    scheme,
+    inputLevel: bridge.inputLevel,
+    detectedGCPLength: Number.isFinite(gcpLength) && gcpLength > 0 ? gcpLength : undefined,
+    detectedSchemes: detected.length
+      ? detected
+      : [{ scheme, level: bridge.inputLevel, supportedLevels }],
+    outputs,
+    ais: parseAiJson(outputs.GS1_AI_JSON),
+    binary,
+    input: bridge.input,
+  }
+}
+
+function bridgeOutputValue(
+  bridge: TdtBridgeResult,
+  outputLevel: TdtOutputLevel,
+): string | undefined {
+  if (outputLevel === 'HEX') return bridge.outputs.HEX || bridge.outputs.BINARY
+  if (outputLevel === 'LEGACY') return bridge.outputs.LEGACY || bridge.outputs.BARE_IDENTIFIER
+  return bridge.outputs[outputLevel]
+}
+
+/** Static encode-field defs for TDS 2.3 `+` / `++` schemes (not in browser TDT artefacts). */
+const PLUS_SCHEME_FIELDS: Record<string, { fields: string[]; aiSequence: string[] }> = {
+  'SGTIN+': { fields: ['gtin', 'serial'], aiSequence: ['01', '21'] },
+  'SGTIN++': { fields: ['gtin', 'serial', 'hostname'], aiSequence: ['01', '21'] },
+  'DSGTIN+': { fields: ['gtin', 'serial', 'prodDate'], aiSequence: ['01', '21', '11'] },
+  'DSGTIN++': { fields: ['gtin', 'serial', 'prodDate', 'hostname'], aiSequence: ['01', '21', '11'] },
+  'SSCC+': { fields: ['sscc'], aiSequence: ['00'] },
+  'SSCC++': { fields: ['sscc', 'hostname'], aiSequence: ['00'] },
+  'SGLN+': { fields: ['gln', 'serial'], aiSequence: ['414', '254'] },
+  'SGLN++': { fields: ['gln', 'serial', 'hostname'], aiSequence: ['414', '254'] },
+  'GRAI+': { fields: ['grai', 'serial'], aiSequence: ['8003'] },
+  'GRAI++': { fields: ['grai', 'serial', 'hostname'], aiSequence: ['8003'] },
+  'GIAI+': { fields: ['giai'], aiSequence: ['8004'] },
+  'GIAI++': { fields: ['giai', 'hostname'], aiSequence: ['8004'] },
+  'GDTI+': { fields: ['gdti', 'serial'], aiSequence: ['253'] },
+  'GDTI++': { fields: ['gdti', 'serial', 'hostname'], aiSequence: ['253'] },
+  'GSRN+': { fields: ['gsrn'], aiSequence: ['8018'] },
+  'GSRN++': { fields: ['gsrn', 'hostname'], aiSequence: ['8018'] },
+  'GSRNP+': { fields: ['gsrnp'], aiSequence: ['8017'] },
+  'GSRNP++': { fields: ['gsrnp', 'hostname'], aiSequence: ['8017'] },
+  'SGCN+': { fields: ['gcn', 'serial'], aiSequence: ['255'] },
+  'SGCN++': { fields: ['gcn', 'serial', 'hostname'], aiSequence: ['255'] },
+  'ITIP+': { fields: ['itip', 'serial'], aiSequence: ['8006', '21'] },
+  'ITIP++': { fields: ['itip', 'serial', 'hostname'], aiSequence: ['8006', '21'] },
+  'CPI+': { fields: ['cpi', 'serial'], aiSequence: ['8010', '8011'] },
+  'CPI++': { fields: ['cpi', 'serial', 'hostname'], aiSequence: ['8010', '8011'] },
+}
+
+function plusSchemeInputs(schemeName: string): TdtSchemeInputs | null {
+  const def = PLUS_SCHEME_FIELDS[schemeName]
+  if (!def) return null
+  const fields: TdtSchemeField[] = def.fields.map((name) => {
+    const sample = SAMPLE_FIELD_VALUES[name] || (name === 'hostname' ? 'example.com' : 'ABC123')
+    return {
+      name,
+      label: name === 'hostname' ? 'Hostname (Digital Link)' : humanizeFieldName(name),
+      placeholder: `e.g. ${sample}`,
+    }
+  })
+  const sampleValues: Record<string, string> = {}
+  for (const f of fields) {
+    sampleValues[f.name] =
+      SAMPLE_FIELD_VALUES[f.name] || (f.name === 'hostname' ? 'example.com' : 'ABC123')
+  }
+  const examples: Array<{ label: string; value: string }> = []
+  const bareId = buildTdtBareIdentifier(sampleValues)
+  if (bareId) examples.push({ label: 'Bare ID', value: bareId })
+  const ai = buildTdtAiJson(def.aiSequence, fields, sampleValues)
+  if (ai) examples.push({ label: 'AI JSON', value: ai })
+  if (sampleValues.hostname) {
+    // Digital Link sketch for CPI / SGTIN-style AIs
+    if (sampleValues.cpi && sampleValues.serial) {
+      examples.push({
+        label: 'Digital Link',
+        value: `https://${sampleValues.hostname}/8010/${sampleValues.cpi}/8011/${sampleValues.serial}`,
+      })
+    } else if (sampleValues.gtin && sampleValues.serial) {
+      examples.push({
+        label: 'Digital Link',
+        value: `https://${sampleValues.hostname}/01/${sampleValues.gtin}/21/${sampleValues.serial}`,
+      })
+    }
+  }
+  return {
+    scheme: schemeName,
+    fields,
+    aiSequence: def.aiSequence,
+    requiresGcpLength: false,
+    hasFilter: true,
+    examples,
+  }
+}
+
 const AI_LABELS: Record<string, string> = {
   '00': 'SSCC',
   '01': 'GTIN',
@@ -289,6 +468,33 @@ const ALL_LEVELS: TdtOutputLevel[] = [
 
 const PROVIDES_GCP_LENGTH = new Set(['BINARY', 'TAG_ENCODING', 'PURE_IDENTITY'])
 
+const TDS_2_3_SCHEMES = [
+  'SGTIN+',
+  'SGTIN++',
+  'DSGTIN+',
+  'DSGTIN++',
+  'ITIP+',
+  'ITIP++',
+  'SSCC+',
+  'SSCC++',
+  'SGLN+',
+  'SGLN++',
+  'GRAI+',
+  'GRAI++',
+  'GIAI+',
+  'GIAI++',
+  'GDTI+',
+  'GDTI++',
+  'GSRN+',
+  'GSRN++',
+  'GSRNP+',
+  'GSRNP++',
+  'SGCN+',
+  'SGCN++',
+  'CPI+',
+  'CPI++',
+]
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -302,7 +508,8 @@ export async function tdtAutodetect(rawInput: string): Promise<TdtDetectedScheme
 
 export async function tdtListSchemes(): Promise<string[]> {
   const t = await getTdtTranslator()
-  return (t.schemes?.() ?? []).sort((a, b) => a.localeCompare(b))
+  return Array.from(new Set([...(t.schemes?.() ?? []), ...TDS_2_3_SCHEMES]))
+    .sort((a, b) => a.localeCompare(b))
 }
 
 const TDT_CONTAINER = 'tdt:epcTagDataTranslation'
@@ -326,6 +533,7 @@ const SAMPLE_FIELD_VALUES: Record<string, string> = {
   gsrnp: '061414112345678901',
   cpi: '12345.ABC',
   cpiserial: '1',
+  hostname: 'example.com',
   cageordodaac: '2S194',
   cage: '2S194',
   urnEncodedSerial: '12345',
@@ -450,6 +658,10 @@ export async function tdtGetSchemeInputs(schemeName: string): Promise<TdtSchemeI
   const scheme = schemeName.trim()
   if (!scheme) return null
 
+  // TDS 2.3 +/++ schemes live in the Electron bridge, not browser artefacts.
+  const plus = plusSchemeInputs(scheme)
+  if (plus) return plus
+
   const t = await getTdtTranslator()
   const root = t.tdtData?.scheme?.[scheme]?.[TDT_CONTAINER]?.scheme
   if (!root?.level?.length) return null
@@ -526,21 +738,71 @@ export async function tdtDecode(
   const input = cleanInput(rawInput)
   if (!input) return { ok: false, error: 'Empty input' }
 
+  const forced = overrides.scheme?.trim()
+
+  // TDS 2.3 +/++ schemes (and anything unknown to browser TDT) go through the Electron bridge.
+  const preferBridge = isTds23Scheme(forced)
+  if (preferBridge) {
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, [], forced) }
+    }
+    // Fall through to classic TDT in case the browser artefacts also cover it.
+  }
+
   const t = await getTdtTranslator()
   const detected = (t.autodetect(input) || []).filter((d) => d && d.scheme)
-  const forced = overrides.scheme?.trim()
   if (!detected.length && !forced) {
-    return { ok: false, error: 'No TDT scheme matched this input', detected }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
+    }
+    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input', detected }
   }
 
   const known = t.schemes?.() ?? []
   if (forced && known.length && !known.includes(forced)) {
-    return { ok: false, error: `Unknown scheme: ${forced}`, detected }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
+    }
+    return { ok: false, error: bridge?.error || `Unknown scheme: ${forced}`, detected }
   }
 
   const chosen = pickTdtScheme(detected, forced)
   if (!chosen) {
-    return { ok: false, error: 'No TDT scheme matched this input', detected }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
+    }
+    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input', detected }
+  }
+
+  // If autodetection picked a +/++ scheme, prefer the bridge (browser TDT lacks those levels).
+  if (isTds23Scheme(chosen.scheme)) {
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: chosen.scheme,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, detected, chosen.scheme) }
+    }
   }
 
   const inputLevel = detected[0]?.level ?? chosen.level
@@ -602,6 +864,18 @@ export async function tdtDecode(
     } catch { /* ignore */ }
   }
 
+  // If classic TDT produced nothing useful, fall back to the bridge.
+  if (!Object.keys(outputs).length) {
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced || chosen.scheme,
+      outputLevel: 'BARE_IDENTIFIER',
+    })
+    if (bridge?.ok) {
+      return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced || chosen.scheme) }
+    }
+  }
+
   const ais = parseAiJson(outputs.GS1_AI_JSON)
 
   return {
@@ -623,25 +897,69 @@ export async function tdtDecode(
 export async function tdtEncode(
   rawInput: string,
   outputLevel: TdtOutputLevel,
-  overrides: { scheme?: string; gcpLength?: number; filter?: number; uriStem?: string } = {}
+  overrides: { scheme?: string; gcpLength?: number; filter?: number; uriStem?: string; dataToggle?: number } = {}
 ): Promise<{ ok: true; value: string; scheme: string } | { ok: false; error: string }> {
   const input = cleanInput(rawInput)
   if (!input) return { ok: false, error: 'Empty input' }
 
+  const forced = overrides.scheme?.trim()
+
+  // TDS 2.3 +/++ always encode through the bridge.
+  if (isTds23Scheme(forced)) {
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced,
+      outputLevel,
+    })
+    if (bridge?.ok) {
+      const value = bridgeOutputValue(bridge, outputLevel)
+      if (value) return { ok: true, value, scheme: bridge.scheme || forced }
+    }
+    return { ok: false, error: bridge?.error || `Failed to encode as ${forced}` }
+  }
+
   const t = await getTdtTranslator()
   const detected = (t.autodetect(input) || []).filter((d) => d && d.scheme)
-  const forced = overrides.scheme?.trim()
   if (!detected.length && !forced) {
-    return { ok: false, error: 'No TDT scheme matched this input' }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      outputLevel,
+    })
+    if (bridge?.ok) {
+      const value = bridgeOutputValue(bridge, outputLevel)
+      if (value) return { ok: true, value, scheme: bridge.scheme || 'TDS 2.3' }
+    }
+    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input' }
   }
 
   const known = t.schemes?.() ?? []
   if (forced && known.length && !known.includes(forced)) {
-    return { ok: false, error: `Unknown scheme: ${forced}` }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced,
+      outputLevel,
+    })
+    if (bridge?.ok) {
+      const value = bridgeOutputValue(bridge, outputLevel)
+      if (value) return { ok: true, value, scheme: bridge.scheme || forced }
+    }
+    return { ok: false, error: bridge?.error || `Unknown scheme: ${forced}` }
   }
 
   const chosen = pickTdtScheme(detected, forced)
   if (!chosen) return { ok: false, error: 'No TDT scheme matched this input' }
+
+  if (isTds23Scheme(chosen.scheme)) {
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: chosen.scheme,
+      outputLevel,
+    })
+    if (bridge?.ok) {
+      const value = bridgeOutputValue(bridge, outputLevel)
+      if (value) return { ok: true, value, scheme: bridge.scheme || chosen.scheme }
+    }
+  }
 
   const options: Record<string, unknown> = {
     filter: overrides.filter ?? 0,
@@ -662,6 +980,15 @@ export async function tdtEncode(
     if (!value) return { ok: false, error: `Failed to translate to ${outputLevel}` }
     return { ok: true, value, scheme: chosen.scheme }
   } catch (e) {
-    return { ok: false, error: (e as Error).message || 'Translation failed' }
+    const bridge = await tryBridgeTranslate(input, {
+      ...overrides,
+      scheme: forced || chosen.scheme,
+      outputLevel,
+    })
+    if (bridge?.ok) {
+      const value = bridgeOutputValue(bridge, outputLevel)
+      if (value) return { ok: true, value, scheme: bridge.scheme || forced || chosen.scheme }
+    }
+    return { ok: false, error: bridge?.error || (e as Error).message || 'Translation failed' }
   }
 }

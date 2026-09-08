@@ -82,6 +82,54 @@ export interface ElectronAPI {
   onCustomSuccess: (callback: (message: string) => void) => void
   onCustomError: (callback: (message: string) => void) => void
 
+  // TDT 2.3 bridge
+  tdtTranslate?: (
+    input: string,
+    options?: {
+      scheme?: string
+      outputLevel?:
+        | 'BINARY'
+        | 'HEX'
+        | 'PURE_IDENTITY'
+        | 'TAG_ENCODING'
+        | 'LEGACY'
+        | 'LEGACY_AI'
+        | 'BARE_IDENTIFIER'
+        | 'GS1_DIGITAL_LINK'
+        | 'GS1_AI_JSON'
+        | 'TEI'
+      filter?: number
+      gcpLength?: number
+      tagLength?: number
+      uriStem?: string
+      dataToggle?: number
+    },
+  ) => Promise<
+    | {
+        ok: true
+        input: string
+        inputLevel: 'HEX' | 'BINARY' | 'OTHER'
+        scheme?: string
+        fields: Record<string, string>
+        outputs: Partial<
+          Record<
+            | 'BINARY'
+            | 'HEX'
+            | 'PURE_IDENTITY'
+            | 'TAG_ENCODING'
+            | 'LEGACY'
+            | 'LEGACY_AI'
+            | 'BARE_IDENTIFIER'
+            | 'GS1_DIGITAL_LINK'
+            | 'GS1_AI_JSON'
+            | 'TEI',
+            string
+          >
+        >
+      }
+    | { ok: false; error: string }
+  >
+
   // Auto Updater
   checkForUpdate: () => void
   startDownload: () => void

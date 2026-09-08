@@ -79,6 +79,7 @@ import {
   startNetScan,
   type NetScanStartPayload,
 } from './net-scan-handler.js'
+import { tdtBridgeTranslate } from './tdt-handler.js'
 import {
   startUdpDiscovery,
   stopUdpDiscovery,
@@ -475,6 +476,10 @@ app.whenReady().then(() => {
     sendCustomMessage(host, port, message)
       .then(() => console.log('Custom: Send completed'))
       .catch((err) => console.error('Custom: Send error:', err))
+  })
+
+  ipcMain.handle('tdt-translate', async (_event, input: string, options?: Parameters<typeof tdtBridgeTranslate>[1]) => {
+    return tdtBridgeTranslate(input, options)
   })
 
   // Database IPC handlers

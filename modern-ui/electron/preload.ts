@@ -67,6 +67,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCustomError: (callback: (message: string) => void) => 
     ipcRenderer.on('custom-error', (_event, message) => callback(message)),
 
+  // TDT 2.3 bridge
+  tdtTranslate: (
+    input: string,
+    options?: {
+      scheme?: string
+      outputLevel?:
+        | 'BINARY'
+        | 'HEX'
+        | 'PURE_IDENTITY'
+        | 'TAG_ENCODING'
+        | 'LEGACY'
+        | 'LEGACY_AI'
+        | 'BARE_IDENTIFIER'
+        | 'GS1_DIGITAL_LINK'
+        | 'GS1_AI_JSON'
+        | 'TEI'
+      filter?: number
+      gcpLength?: number
+      tagLength?: number
+      uriStem?: string
+      dataToggle?: number
+    },
+  ) => ipcRenderer.invoke('tdt-translate', input, options),
+
   // Auto Updater
   checkForUpdate: () => ipcRenderer.send('check-for-update'),
   startDownload: () => ipcRenderer.send('start-download'),
