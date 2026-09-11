@@ -55,9 +55,10 @@ import {
   isObjectStoreConnection,
   isObjectStoreProtocol,
   loadSavedConnections,
-  persistSavedConnections,
+  mutateSavedConnections,
   protocolShortLabel,
   removeSavedConnection,
+  subscribeSavedConnections,
   resolvedConnectionName,
   upsertSavedConnection,
   type ExplorerProtocol,
@@ -715,8 +716,11 @@ export function SftpSessionPanel({
   }, [])
 
   useEffect(() => {
+    const unsub = subscribeSavedConnections(setSavedConnections)
+    let cancelled = false
     ;(async () => {
       const list = await loadSavedConnections(api)
+      if (cancelled) return
       setSavedConnections(list)
       const sftpSaved = list.find((c) => c.protocol === 'sftp')
       const ftpSaved = list.find((c) => c.protocol === 'ftp')
@@ -756,14 +760,20 @@ export function SftpSessionPanel({
       }
       setCredsLoaded(true)
     })()
+    return () => {
+      cancelled = true
+      unsub()
+    }
   }, [api, applyS3Fields])
 
-  const selectProtocol = useCallback((next: ExplorerProtocol) => {
+  const selectProtocol = useCallback((next: ExplorerProtocol, opts?: { preserveSaved?: boolean }) => {
     setProtocolChosen(true)
     setProtocol((prev) => {
       if (prev !== next) {
-        setSaveConnectionName('')
-        setActiveSavedId(null)
+        if (!opts?.preserveSaved) {
+          setSaveConnectionName('')
+          setActiveSavedId(null)
+        }
         if ((prev === 'sftp' || prev === 'ftp') && (next === 'sftp' || next === 'ftp')) {
           setSftpPort((port) => {
             const n = port.trim()
@@ -787,12 +797,12 @@ export function SftpSessionPanel({
       setActiveSavedId(c.id)
       setSaveConnectionName(c.name)
       if (isObjectStoreConnection(c)) {
-        selectProtocol(c.protocol)
+        selectProtocol(c.protocol, { preserveSaved: true })
         applyS3Fields(c)
         return
       }
       if (c.protocol === 'ftp') {
-        selectProtocol('ftp')
+        selectProtocol('ftp', { preserveSaved: true })
         setHost(c.host)
         setSftpPort(c.port || '21')
         setSftpUser(c.user)
@@ -800,7 +810,7 @@ export function SftpSessionPanel({
         setFtpSecure(c.secure)
         return
       }
-      selectProtocol('sftp')
+      selectProtocol('sftp', { preserveSaved: true })
       setHost(c.host)
       setSftpPort(c.port || '22')
       setSftpUser(c.user)
@@ -877,14 +887,6 @@ export function SftpSessionPanel({
     sftpKeyPass,
   ])
 
-  const commitSavedList = useCallback(
-    async (list: SavedExplorerConnection[]) => {
-      setSavedConnections(list)
-      await persistSavedConnections(list, api)
-    },
-    [api],
-  )
-
   const saveCurrentConnection = useCallback(async () => {
     const draft = draftFromForm()
     if ((draft.protocol === 'sftp' || draft.protocol === 'ftp') && (!draft.host || !draft.user)) {
@@ -903,40 +905,44 @@ export function SftpSessionPanel({
       toast.error('Endpoint is required for S3-compatible storage')
       return
     }
-    const next = upsertSavedConnection(savedConnections, {
-      ...draft,
-      pinned: true,
-      id: activeSavedId && savedConnections.find((c) => c.id === activeSavedId)?.protocol === protocol
-        ? activeSavedId
-        : undefined,
-    })
-    await commitSavedList(next)
-    const saved = next[0]
+    const next = await mutateSavedConnections(
+      (list) =>
+        upsertSavedConnection(list, {
+          ...draft,
+          pinned: true,
+          id: activeSavedId && list.find((c) => c.id === activeSavedId)?.protocol === protocol
+            ? activeSavedId
+            : undefined,
+        }),
+      api,
+    )
+    const saved = next.find((c) => connectionIdentity(c) === connectionIdentity(draft)) ?? next[0]
     if (saved) {
       setActiveSavedId(saved.id)
       setSaveConnectionName(saved.name)
       toast.success(`Saved ${saved.name}`)
     }
-  }, [activeSavedId, commitSavedList, draftFromForm, savedConnections])
+  }, [activeSavedId, api, draftFromForm, protocol])
 
   const pinSaved = useCallback(
     async (c: SavedExplorerConnection) => {
-      const next = upsertSavedConnection(savedConnections, { ...c, pinned: true })
-      await commitSavedList(next)
-      setActiveSavedId(next[0]?.id ?? c.id)
+      const next = await mutateSavedConnections(
+        (list) => upsertSavedConnection(list, { ...c, pinned: true }),
+        api,
+      )
+      setActiveSavedId(next.find((x) => x.id === c.id)?.id ?? c.id)
       toast.success(`Saved ${c.name}`)
     },
-    [commitSavedList, savedConnections],
+    [api],
   )
 
   const deleteSaved = useCallback(
     async (id: string) => {
-      const next = removeSavedConnection(savedConnections, id)
-      await commitSavedList(next)
+      await mutateSavedConnections((list) => removeSavedConnection(list, id), api)
       if (activeSavedId === id) setActiveSavedId(null)
-      toast.success('Removed saved connection')
+      toast.success('Removed')
     },
-    [activeSavedId, commitSavedList, savedConnections],
+    [activeSavedId, api],
   )
 
   useEffect(() => {
@@ -973,6 +979,7 @@ export function SftpSessionPanel({
 
   const handleConnect = useCallback(async (source?: SavedExplorerConnection) => {
     if (!api?.sftpConnect) return
+    if (connecting) return
     const fromSaved =
       source &&
       typeof source === 'object' &&
@@ -982,6 +989,7 @@ export function SftpSessionPanel({
         source.protocol === 's3compat')
         ? source
         : undefined
+    if (fromSaved) applySavedToForm(fromSaved)
     const proto = fromSaved?.protocol ?? protocol
     const hostValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.host : host
     const portValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.port : sftpPort
@@ -992,85 +1000,114 @@ export function SftpSessionPanel({
     const keyPassValue = fromSaved?.protocol === 'sftp' ? fromSaved.passphrase ?? '' : sftpKeyPass
     const ftpSecureValue = fromSaved?.protocol === 'ftp' ? fromSaved.secure : ftpSecure
     const s3 = fromSaved && isObjectStoreConnection(fromSaved) ? fromSaved : null
-    if ((proto === 'sftp' || proto === 'ftp') && (!userValue.trim() || !hostValue.trim())) return
-    if (proto === 'sftp' && !passValue && !keyPathValue.trim()) return
-    if (proto === 'ftp' && !passValue) return
-    if (
-      isObjectStoreProtocol(proto) &&
-      (!api.s3Connect ||
+    if ((proto === 'sftp' || proto === 'ftp') && (!userValue.trim() || !hostValue.trim())) {
+      toast.error('Host and username are required')
+      return
+    }
+    if (proto === 'sftp' && !passValue && !keyPathValue.trim()) {
+      toast.error('Password or private key is required')
+      return
+    }
+    if (proto === 'ftp' && !passValue) {
+      toast.error('Password is required')
+      return
+    }
+    if (isObjectStoreProtocol(proto)) {
+      if (!api.s3Connect) {
+        toast.error('Object storage is only available in the desktop app')
+        return
+      }
+      if (
         !(s3?.bucket ?? s3Bucket).trim() ||
         !(s3?.region ?? s3Region).trim() ||
         !(s3?.accessKeyId ?? s3AccessKey).trim() ||
-        !(s3?.secretAccessKey ?? s3Secret) ||
-        (proto === 's3compat' && !(s3?.endpoint ?? s3Endpoint).trim()) ||
-        (proto === 's3' &&
-          (s3?.assumeRole ?? s3AssumeRole) &&
-          (!(s3?.roleArn ?? s3RoleArn).trim() || !(s3?.roleSessionName ?? s3RoleSessionName).trim())))
-    ) {
-      return
+        !(s3?.secretAccessKey ?? s3Secret)
+      ) {
+        toast.error('Bucket, region, access key, and secret are required')
+        return
+      }
+      if (proto === 's3compat' && !(s3?.endpoint ?? s3Endpoint).trim()) {
+        toast.error('Endpoint is required for S3-compatible storage')
+        return
+      }
+      if (
+        proto === 's3' &&
+        (s3?.assumeRole ?? s3AssumeRole) &&
+        (!(s3?.roleArn ?? s3RoleArn).trim() || !(s3?.roleSessionName ?? s3RoleSessionName).trim())
+      ) {
+        toast.error('Role ARN and session name are required to assume a role')
+        return
+      }
     }
-    if (fromSaved) applySavedToForm(fromSaved)
     setConnecting(true)
     setConnError('')
-    const result =
-      isObjectStoreProtocol(proto)
-        ? await api.s3Connect!({
-            bucket: (s3?.bucket ?? s3Bucket).trim(),
-            region: (s3?.region ?? s3Region).trim(),
-            accessKeyId: (s3?.accessKeyId ?? s3AccessKey).trim(),
-            secretAccessKey: s3?.secretAccessKey ?? s3Secret,
-            sessionToken: (s3 ? s3.sessionToken : s3SessionToken)?.trim() || undefined,
-            prefix: (s3 ? s3.prefix : s3Prefix)?.trim() || undefined,
-            endpoint: (s3 ? s3.endpoint : s3Endpoint)?.trim() || undefined,
-            roleArn:
-              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
-                ? (s3 ? s3.roleArn : s3RoleArn)?.trim() || undefined
-                : undefined,
-            roleSessionName:
-              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
-                ? (s3 ? s3.roleSessionName : s3RoleSessionName)?.trim() || undefined
-                : undefined,
-            externalId:
-              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
-                ? (s3 ? s3.externalId : s3ExternalId)?.trim() || undefined
-                : undefined,
-            sourceIdentity:
-              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
-                ? (s3 ? s3.sourceIdentity : s3SourceIdentity)?.trim() || undefined
-                : undefined,
-          })
-        : proto === 'ftp'
-          ? await api.ftpConnect!({
-              host: hostValue.trim(),
-              port: parseInt(portValue, 10) || (ftpSecureValue === 'implicit' ? 990 : 21),
-              user: userValue.trim(),
-              password: passValue,
-              secure: ftpSecureValue,
+    try {
+      const result =
+        isObjectStoreProtocol(proto)
+          ? await api.s3Connect!({
+              bucket: (s3?.bucket ?? s3Bucket).trim(),
+              region: (s3?.region ?? s3Region).trim(),
+              accessKeyId: (s3?.accessKeyId ?? s3AccessKey).trim(),
+              secretAccessKey: s3?.secretAccessKey ?? s3Secret,
+              sessionToken: (s3 ? s3.sessionToken : s3SessionToken)?.trim() || undefined,
+              prefix: (s3 ? s3.prefix : s3Prefix)?.trim() || undefined,
+              endpoint: (s3 ? s3.endpoint : s3Endpoint)?.trim() || undefined,
+              roleArn:
+                proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                  ? (s3 ? s3.roleArn : s3RoleArn)?.trim() || undefined
+                  : undefined,
+              roleSessionName:
+                proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                  ? (s3 ? s3.roleSessionName : s3RoleSessionName)?.trim() || undefined
+                  : undefined,
+              externalId:
+                proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                  ? (s3 ? s3.externalId : s3ExternalId)?.trim() || undefined
+                  : undefined,
+              sourceIdentity:
+                proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                  ? (s3 ? s3.sourceIdentity : s3SourceIdentity)?.trim() || undefined
+                  : undefined,
             })
-          : await api.sftpConnect(
-              hostValue.trim(),
-              parseInt(portValue, 10) || 22,
-              userValue.trim(),
-              passValue,
-              keyPathValue.trim()
-                ? { privateKeyPath: keyPathValue.trim(), passphrase: keyPassValue || undefined }
-                : undefined,
-            )
-    if (result.ok) {
+          : proto === 'ftp'
+            ? await api.ftpConnect!({
+                host: hostValue.trim(),
+                port: parseInt(portValue, 10) || (ftpSecureValue === 'implicit' ? 990 : 21),
+                user: userValue.trim(),
+                password: passValue,
+                secure: ftpSecureValue,
+              })
+            : await api.sftpConnect(
+                hostValue.trim(),
+                parseInt(portValue, 10) || 22,
+                userValue.trim(),
+                passValue,
+                keyPathValue.trim()
+                  ? { privateKeyPath: keyPathValue.trim(), passphrase: keyPassValue || undefined }
+                  : undefined,
+              )
+      if (!result.ok) {
+        setConnError(result.error)
+        toast.error(result.error)
+        return
+      }
       setSessionId(result.sessionId)
       setConnected(true)
       const draft = fromSaved ?? draftFromForm()
-      const next = upsertSavedConnection(savedConnections, {
-        ...draft,
-        pinned: false,
-        id:
-          fromSaved?.id ??
-          (savedConnections.find((c) => c.id === activeSavedId)?.protocol === proto
-            ? activeSavedId ?? undefined
-            : undefined),
-        name: resolvedConnectionName(draft, fromSaved?.name || saveConnectionName),
-      })
-      await commitSavedList(next)
+      const next = await mutateSavedConnections(
+        (list) =>
+          upsertSavedConnection(list, {
+            ...draft,
+            pinned: false,
+            id:
+              fromSaved?.id ??
+              (list.find((c) => c.id === activeSavedId)?.protocol === proto
+                ? activeSavedId ?? undefined
+                : undefined),
+            name: resolvedConnectionName(draft, fromSaved?.name || saveConnectionName),
+          }),
+        api,
+      )
       const current = next.find((c) => connectionIdentity(c) === connectionIdentity(draft))
       if (current) {
         setActiveSavedId(current.id)
@@ -1102,17 +1139,23 @@ export function SftpSessionPanel({
         setExpandedPaths(new Set())
         toast.success(connectedToast(proto))
       } catch (e) {
-        setConnError(e instanceof Error ? e.message : 'Failed to list root')
+        const msg = e instanceof Error ? e.message : 'Failed to list root'
+        setConnError(msg)
+        toast.error(msg)
         await api.sftpDisconnect(result.sessionId)
         setSessionId(null)
         setConnected(false)
       }
-    } else {
-      setConnError(result.error)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Connection failed'
+      setConnError(msg)
+      toast.error(msg)
+    } finally {
+      setConnecting(false)
     }
-    setConnecting(false)
   }, [
     api,
+    connecting,
     protocol,
     sftpUser,
     host,
@@ -1135,11 +1178,9 @@ export function SftpSessionPanel({
     s3ExternalId,
     s3SourceIdentity,
     saveConnectionName,
-    savedConnections,
     activeSavedId,
     applySavedToForm,
     draftFromForm,
-    commitSavedList,
   ])
 
   const handleDisconnect = useCallback(async () => {
@@ -1849,7 +1890,10 @@ export function SftpSessionPanel({
           : Boolean(sftpUser.trim() && host.trim() && (sftpPass || (sftpUseKey && sftpKeyPath.trim()))))
     return (
       <div
-        className={cn('absolute inset-0 min-h-0 overflow-hidden', !isActive && 'hidden')}
+        className={cn(
+          'absolute inset-0 min-h-0 overflow-hidden',
+          isActive ? 'z-10' : 'pointer-events-none hidden',
+        )}
         data-tour="tour-sftp-connect"
       >
         <div className="flex h-full min-h-0">
@@ -2266,7 +2310,7 @@ export function SftpSessionPanel({
     uploadTargetDir === '/' ? [] : uploadTargetDir.replace(/\/+$/, '').split('/').filter(Boolean)
 
   return (
-    <div className={cn('flex h-full min-h-0 flex-col gap-2', !isActive && 'hidden')} data-tour="tour-sftp">
+    <div className={cn('flex h-full min-h-0 flex-col gap-2', isActive ? 'z-10' : 'pointer-events-none hidden')} data-tour="tour-sftp">
       <SftpToolbar
         connectionLabel={
           isObjectStoreProtocol(protocol)

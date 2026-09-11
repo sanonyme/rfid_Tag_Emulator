@@ -95,9 +95,13 @@ export type LegacyS3Creds = {
   sourceIdentity?: string
 }
 
+export const LEGACY_SFTP_CREDS_KEY = 'sftp-creds'
+export const LEGACY_S3_CREDS_KEY = 's3-creds'
+
 type StoreApi = {
   safeStoreGet?: (key: string) => Promise<string | null>
   safeStoreSet?: (key: string, value: string) => Promise<boolean>
+  safeStoreDelete?: (key: string) => Promise<void>
 }
 
 function newId(): string {
@@ -406,7 +410,8 @@ async function readKey(api: StoreApi | undefined, key: string): Promise<string |
   try {
     if (api?.safeStoreGet) {
       const raw = await api.safeStoreGet(key)
-      if (raw) return raw
+      // `"[]"` is a valid empty list — only skip when the key is actually missing.
+      if (raw != null) return raw
     }
   } catch {
     /* fall through */
@@ -418,28 +423,92 @@ async function readKey(api: StoreApi | undefined, key: string): Promise<string |
   }
 }
 
+async function deleteKey(api: StoreApi | undefined, key: string): Promise<void> {
+  try {
+    await api?.safeStoreDelete?.(key)
+  } catch {
+    /* ignore */
+  }
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function deleteLegacyCredKeys(api?: StoreApi): Promise<void> {
+  await deleteKey(api, LEGACY_SFTP_CREDS_KEY)
+  await deleteKey(api, LEGACY_S3_CREDS_KEY)
+}
+
+type SavedListListener = (list: SavedExplorerConnection[]) => void
+
+let memoryList: SavedExplorerConnection[] | null = null
+let loadInFlight: Promise<SavedExplorerConnection[]> | null = null
+let writeChain: Promise<void> = Promise.resolve()
+const listeners = new Set<SavedListListener>()
+
+function notifySavedList(list: SavedExplorerConnection[]): void {
+  memoryList = list
+  for (const listener of listeners) listener(list)
+}
+
+/** Keep every Files tab's sidebar in sync. Returns the current list if already loaded. */
+export function subscribeSavedConnections(listener: SavedListListener): () => void {
+  listeners.add(listener)
+  if (memoryList) listener(memoryList)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+export function peekSavedConnections(): SavedExplorerConnection[] | null {
+  return memoryList
+}
+
+/** Test-only: drop the in-memory cache so the next load hits storage. */
+export function resetSavedConnectionsCache(): void {
+  memoryList = null
+  loadInFlight = null
+  writeChain = Promise.resolve()
+  listeners.clear()
+}
+
 export async function loadSavedConnections(api?: StoreApi): Promise<SavedExplorerConnection[]> {
-  const raw = await readKey(api, SAVED_CONNECTIONS_KEY)
-  let list = parseSavedConnections(raw)
-  let sftp: LegacySftpCreds | null = null
-  let s3: LegacyS3Creds | null = null
+  if (memoryList) return memoryList
+  if (loadInFlight) return loadInFlight
+  loadInFlight = (async () => {
+    const raw = await readKey(api, SAVED_CONNECTIONS_KEY)
+    let list = parseSavedConnections(raw)
+    let sftp: LegacySftpCreds | null = null
+    let s3: LegacyS3Creds | null = null
+    try {
+      const sftpRaw = await readKey(api, LEGACY_SFTP_CREDS_KEY)
+      if (sftpRaw) sftp = JSON.parse(sftpRaw) as LegacySftpCreds
+    } catch {
+      sftp = null
+    }
+    try {
+      const s3Raw = await readKey(api, LEGACY_S3_CREDS_KEY)
+      if (s3Raw) s3 = JSON.parse(s3Raw) as LegacyS3Creds
+    } catch {
+      s3 = null
+    }
+    const migrated = migrateLegacyIntoSaved(list, { sftp, s3 })
+    const changed = migrated.length !== list.length
+    list = migrated
+    if (changed) await persistSavedConnections(list, api)
+    // Always drop leftover last-used creds so a deleted connection cannot be
+    // resurrected the next time a Files tab mounts.
+    if (sftp || s3) await deleteLegacyCredKeys(api)
+    notifySavedList(list)
+    return list
+  })()
   try {
-    const sftpRaw = await readKey(api, 'sftp-creds')
-    if (sftpRaw) sftp = JSON.parse(sftpRaw) as LegacySftpCreds
-  } catch {
-    sftp = null
+    return await loadInFlight
+  } finally {
+    loadInFlight = null
   }
-  try {
-    const s3Raw = await readKey(api, 's3-creds')
-    if (s3Raw) s3 = JSON.parse(s3Raw) as LegacyS3Creds
-  } catch {
-    s3 = null
-  }
-  const migrated = migrateLegacyIntoSaved(list, { sftp, s3 })
-  if (migrated.length !== list.length) {
-    await persistSavedConnections(migrated, api)
-  }
-  return migrated
 }
 
 export async function persistSavedConnections(list: SavedExplorerConnection[], api?: StoreApi): Promise<void> {
@@ -462,4 +531,26 @@ export async function persistSavedConnections(list: SavedExplorerConnection[], a
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Apply an update against the shared list and persist it. Serializes writes so
+ * a connect in one Files tab cannot overwrite a delete from another.
+ */
+export async function mutateSavedConnections(
+  updater: (list: SavedExplorerConnection[]) => SavedExplorerConnection[],
+  api?: StoreApi,
+): Promise<SavedExplorerConnection[]> {
+  const op = writeChain.then(async () => {
+    const current = memoryList ?? (await loadSavedConnections(api))
+    const next = updater(current)
+    notifySavedList(next)
+    await persistSavedConnections(next, api)
+    return next
+  })
+  writeChain = op.then(
+    () => undefined,
+    () => undefined,
+  )
+  return op
 }

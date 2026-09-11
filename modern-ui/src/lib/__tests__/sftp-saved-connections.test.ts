@@ -1,12 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   connectionIdentity,
   connectionSubtitle,
   defaultConnectionName,
+  LEGACY_SFTP_CREDS_KEY,
+  loadSavedConnections,
   migrateLegacyIntoSaved,
+  mutateSavedConnections,
   parseSavedConnections,
   removeSavedConnection,
+  resetSavedConnectionsCache,
   resolvedConnectionName,
+  SAVED_CONNECTIONS_KEY,
   upsertSavedConnection,
   partitionConnections,
   type SavedS3Connection,
@@ -220,5 +225,58 @@ describe('connectionSubtitle', () => {
     expect(connectionSubtitle(sftp())).toBe('10.0.0.8:22')
     expect(connectionSubtitle(s3())).toContain('us-east-1')
     expect(connectionSubtitle(s3())).toContain('assume role')
+  })
+})
+
+function memoryStore(initial: Record<string, string | null> = {}) {
+  const data = new Map<string, string>(
+    Object.entries(initial).filter((entry): entry is [string, string] => entry[1] != null),
+  )
+  return {
+    safeStoreGet: async (key: string) => data.get(key) ?? null,
+    safeStoreSet: async (key: string, value: string) => {
+      data.set(key, value)
+      return true
+    },
+    safeStoreDelete: async (key: string) => {
+      data.delete(key)
+    },
+    data,
+  }
+}
+
+describe('shared saved-connection store', () => {
+  afterEach(() => {
+    resetSavedConnectionsCache()
+  })
+
+  it('does not resurrect a deleted connection from leftover sftp-creds', async () => {
+    const api = memoryStore({
+      [SAVED_CONNECTIONS_KEY]: JSON.stringify([sftp({ pinned: true })]),
+      [LEGACY_SFTP_CREDS_KEY]: JSON.stringify({ host: '10.0.0.8', user: 'reader', pass: 'legacy' }),
+    })
+    await loadSavedConnections(api)
+    await mutateSavedConnections((list) => removeSavedConnection(list, 'sftp-1'), api)
+    resetSavedConnectionsCache()
+    const again = await loadSavedConnections(api)
+    expect(again.map((c) => c.id)).toEqual([])
+    expect(api.data.has(LEGACY_SFTP_CREDS_KEY)).toBe(false)
+  })
+
+  it('serializes a delete ahead of an upsert so the deleted row stays gone', async () => {
+    const api = memoryStore({
+      [SAVED_CONNECTIONS_KEY]: JSON.stringify([sftp({ pinned: true }), s3({ pinned: true })]),
+    })
+    await loadSavedConnections(api)
+    const deleteP = mutateSavedConnections((list) => removeSavedConnection(list, 'sftp-1'), api)
+    const upsertP = mutateSavedConnections(
+      (list) => upsertSavedConnection(list, { ...s3(), name: 'Renamed S3', updatedAt: 900 }),
+      api,
+    )
+    await Promise.all([deleteP, upsertP])
+    resetSavedConnectionsCache()
+    const again = await loadSavedConnections(api)
+    expect(again.map((c) => c.id).sort()).toEqual(['s3-1'])
+    expect(again[0]?.name).toBe('Renamed S3')
   })
 })

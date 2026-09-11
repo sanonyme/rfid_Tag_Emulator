@@ -94,7 +94,10 @@ function ConnectionRow({
           className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
           disabled={connecting}
           title="Save connection"
-          onClick={() => onPin(c)}
+          onClick={(e) => {
+            e.stopPropagation()
+            onPin(c)
+          }}
         >
           <BookmarkPlus className="h-3.5 w-3.5" />
         </Button>
@@ -106,7 +109,10 @@ function ConnectionRow({
         className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
         disabled={connecting}
         title="Remove"
-        onClick={() => onDelete(c.id)}
+        onClick={(e) => {
+          e.stopPropagation()
+          onDelete(c.id)
+        }}
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>

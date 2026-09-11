@@ -22,6 +22,20 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.2.2',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'Files: saved connections stay gone',
+        detail: 'Removing a saved host no longer comes back after another tab connects or the app reloads.',
+      },
+      {
+        title: 'Files: clicking a saved connection works',
+        detail: 'A stuck “Connecting…” state no longer swallows clicks; missing fields show an error instead of doing nothing.',
+      },
+    ],
+  },
+  {
     version: '10.2.1',
     date: '2026-09',
     highlights: [
