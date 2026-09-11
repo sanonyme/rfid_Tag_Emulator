@@ -30,6 +30,8 @@ export interface ExpandableTagFieldProps {
   onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
   /** Extra icon buttons stacked under the expand control (top-right of compact field). */
   cornerActions?: React.ReactNode
+  /** Grow the compact textarea to fill leftover card height. */
+  fill?: boolean
 }
 
 export function ExpandableTagField({
@@ -43,6 +45,7 @@ export function ExpandableTagField({
   kind,
   onKeyDown,
   cornerActions,
+  fill = false,
 }: ExpandableTagFieldProps) {
   const [open, setOpen] = useState(false)
   const [activeLine, setActiveLine] = useState(1)
@@ -68,18 +71,20 @@ export function ExpandableTagField({
 
   return (
     <>
-      <div className="space-y-2">
+      <div className={cn('space-y-2', fill && 'flex min-h-0 flex-1 flex-col')}>
         <div
           className={cn(
             'group/expand relative rounded-md transition-shadow',
             'ring-1 ring-transparent hover:ring-border/80 focus-within:ring-primary/25',
             'hover:shadow-sm focus-within:shadow-sm',
+            fill && 'flex min-h-0 flex-1 flex-col',
           )}
         >
           <DropTextarea
             value={value}
             onFileImport={onFileImport}
             kind={kind}
+            fill={fill}
             placeholder={placeholder}
             onKeyDown={onKeyDown}
             {...textareaHandlers}

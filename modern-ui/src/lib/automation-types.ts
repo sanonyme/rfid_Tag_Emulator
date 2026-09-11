@@ -221,6 +221,52 @@ export const CONDITION_OPS: { value: ConditionOp; label: string; needsRight: boo
 
 export type LogLevel = 'info' | 'warn' | 'error'
 
+/**
+ * What happens when a node throws (n8n-style "On Error" setting).
+ *  - `stop`        — fail the whole run (default, matches historical behaviour)
+ *  - `continue`    — log the error and follow the normal `out` edge
+ *  - `errorOutput` — route through a dedicated `error` output port
+ */
+export type NodeOnError = 'stop' | 'continue' | 'errorOutput'
+
+export const NODE_ON_ERROR_OPTIONS: { value: NodeOnError; label: string; hint: string }[] = [
+  { value: 'stop', label: 'Stop the run', hint: 'Fail immediately — the whole automation stops' },
+  { value: 'continue', label: 'Continue (regular output)', hint: 'Log it and keep going along the normal connection' },
+  { value: 'errorOutput', label: 'Continue (error output)', hint: 'Adds a red “err” port; the error path follows it' },
+]
+
+/** Handle id of the optional error output port. */
+export const ERROR_HANDLE = 'error'
+
+/** Node types that never execute an action, so retry / on-error settings don't apply. */
+export const NON_EXECUTING_TYPES: ReadonlySet<ActionType> = new Set<ActionType>([
+  'COMMENT',
+  'CONDITION',
+  'SWITCH',
+  'RANDOM',
+  'STOP',
+])
+
+export function nodeSupportsErrorPolicy(type: ActionType): boolean {
+  return !NON_EXECUTING_TYPES.has(type)
+}
+
+/** Effective retry / on-error policy for a node, with clamped defaults. */
+export function resolveNodePolicy(params: AutomationStep['params']): {
+  maxTries: number
+  retryWaitMs: number
+  onError: NodeOnError
+} {
+  const retry = params.retryOnFail === true
+  const rawTries = Number(params.retryMaxTries)
+  const maxTries = retry ? Math.min(10, Math.max(1, Number.isFinite(rawTries) ? Math.floor(rawTries) : 3)) : 1
+  const rawWait = Number(params.retryWaitMs)
+  const retryWaitMs = Math.min(60_000, Math.max(0, Number.isFinite(rawWait) ? Math.floor(rawWait) : 1000))
+  const onError: NodeOnError =
+    params.onError === 'continue' || params.onError === 'errorOutput' ? params.onError : 'stop'
+  return { maxTries, retryWaitMs, onError }
+}
+
 export interface AutomationStep {
   id: string
   type: ActionType
@@ -230,6 +276,19 @@ export interface AutomationStep {
     /** When true, the node is skipped at run time — execution passes straight
      * through to its first outgoing edge without running the node's action. */
     disabled?: boolean
+
+    // --- Node settings (apply to every executing node) ---
+    /** Retry the node when it throws (see retryMaxTries / retryWaitMs). */
+    retryOnFail?: boolean
+    /** Total attempts including the first (1–10, default 3). */
+    retryMaxTries?: number
+    /** Pause between attempts in ms (default 1000). */
+    retryWaitMs?: number
+    /** What to do when the node still fails after retries (default 'stop'). */
+    onError?: NodeOnError
+    /** Free-form note shown in the config dialog (n8n-style node notes). */
+    notes?: string
+
     duration?: number
     message?: string
     port?: string
@@ -435,7 +494,8 @@ export interface AutomationStep {
 /**
  * A directed connection between two steps in a sequence.
  * `sourceHandle` selects which output port of the source node the edge leaves:
- * `'out'` for ordinary nodes, `'true'` / `'false'` for a CONDITION node's branches.
+ * `'out'` for ordinary nodes, `'true'` / `'false'` for a CONDITION node's branches,
+ * `'error'` for a node whose On Error setting is “error output”.
  */
 export interface AutomationEdge {
   id: string

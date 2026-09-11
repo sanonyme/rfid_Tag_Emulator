@@ -1446,12 +1446,17 @@ export function SftpSessionPanel({
       const raw = e.dataTransfer.getData(SFTP_DND_MIME)
       if (raw) {
         try {
-          const { path: fromPath, name } = JSON.parse(raw) as {
+          const { path: fromPath, name, type } = JSON.parse(raw) as {
             path: string
             name: string
+            type?: string
           }
           const toPath = posixJoin(targetDir, name)
           if (fromPath === toPath) return
+          if (type === 'folder' && (targetDir === fromPath || targetDir.startsWith(`${fromPath}/`))) {
+            toast.error('Cannot move a folder into itself')
+            return
+          }
           const r = await sftp.rename(fromPath, toPath)
           if (r.ok) {
             toast.success('Moved')
@@ -1476,10 +1481,26 @@ export function SftpSessionPanel({
       if (files?.length) {
         let okCount = 0
         for (const f of Array.from(files)) {
+          const dest = posixJoin(targetDir, f.name)
           try {
+            // Desktop: stream from disk with progress (any size) instead of
+            // buffering the whole file as base64 through IPC.
+            const localPath = api?.getPathForFile?.(f)
+            if (localPath && sftp.uploadFromLocal) {
+              const id = nextOpId()
+              pushTransfer({ id, label: `${f.name} → remote`, kind: 'upload' })
+              const r = await sftp.uploadFromLocal(localPath, dest, id)
+              if (!r.ok) {
+                updateTransfer(id, { status: 'error', error: r.error })
+                toast.error(`${f.name}: ${r.error}`)
+                break
+              }
+              updateTransfer(id, { status: 'done', progress: 100 })
+              okCount++
+              continue
+            }
             const buf = await f.arrayBuffer()
             const b64 = arrayBufferToBase64(buf)
-            const dest = posixJoin(targetDir, f.name)
             const w = await sftp.writeFile(dest, b64)
             if (!w.ok) {
               toast.error(`${f.name}: ${w.error}`)
@@ -1495,7 +1516,7 @@ export function SftpSessionPanel({
         await refreshDirectory(targetDir, true)
       }
     },
-    [sftp, refreshRoot, refreshDirectory, selectedPath, pushTransfer, updateTransfer],
+    [api, sftp, refreshRoot, refreshDirectory, selectedPath, pushTransfer, updateTransfer],
   )
 
   const handleDropOnLocal = useCallback(
@@ -1592,17 +1613,24 @@ export function SftpSessionPanel({
   const onPickFiles = useCallback(
     async (list: FileList | null) => {
       if (!list?.length || !sftp) return
+      let okCount = 0
       for (const f of Array.from(list)) {
         const dest = posixJoin(uploadTargetDir, f.name)
-        const filePath = (f as File & { path?: string }).path
+        // `File.path` no longer exists in current Electron; resolve via preload.
+        const filePath = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
         if (filePath && sftp?.uploadFromLocal) {
           const id = nextOpId()
           pushTransfer({ id, label: f.name, kind: 'upload' })
-          const r = await sftp.uploadFromLocal(filePath, dest, id, localRoot ?? undefined)
-          if (r.ok) updateTransfer(id, { status: 'done', progress: 100 })
-          else {
+          // Picked files can live anywhere on disk — don't scope them to the
+          // local-panel root or the main process rejects them.
+          const r = await sftp.uploadFromLocal(filePath, dest, id)
+          if (r.ok) {
+            updateTransfer(id, { status: 'done', progress: 100 })
+            okCount++
+          } else {
             updateTransfer(id, { status: 'error', error: r.error })
             toast.error(`${f.name}: ${r.error}`)
+            break
           }
         } else {
           try {
@@ -1613,17 +1641,18 @@ export function SftpSessionPanel({
               toast.error(`${f.name}: ${w.error}`)
               break
             }
+            okCount++
           } catch {
             toast.error(`Upload failed: ${f.name}`)
             break
           }
         }
       }
-      toast.success('Upload finished')
-      await refreshDirectory(uploadTargetDir, true)
+      if (okCount > 0) toast.success(`Uploaded ${okCount} file(s)`)
+      if (okCount > 0) await refreshDirectory(uploadTargetDir, true)
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
-    [sftp, uploadTargetDir, refreshDirectory, pushTransfer, updateTransfer],
+    [api, sftp, uploadTargetDir, refreshDirectory, pushTransfer, updateTransfer],
   )
 
   const confirmDelete = useCallback(async () => {

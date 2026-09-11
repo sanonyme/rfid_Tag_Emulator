@@ -255,7 +255,7 @@ export async function s3Connect(
   if (!accessKeyId || !secretAccessKey) return { ok: false, error: 'Access key and secret are required' }
 
   const assumed = await resolveS3Credentials(options, region)
-  if (!assumed.ok) return assumed
+  if (!assumed.ok) return { ok: false, error: assumed.error }
   const usedAssumeRole = Boolean(options.roleArn?.trim())
 
   const endpoint = String(options.endpoint ?? '').trim()
@@ -582,6 +582,11 @@ export async function s3Rename(
     }
     const srcPrefix = uiDirToPrefix(from, session.prefix)
     const destPrefix = uiDirToPrefix(to, session.prefix)
+    // Copy-then-delete into our own subtree would leave the copies stranded
+    // under a prefix we then delete out from under them.
+    if (destPrefix.startsWith(srcPrefix)) {
+      return { ok: false, error: 'Cannot move a folder into itself' }
+    }
     const objects = await listAllKeys(session, srcPrefix)
     if (objects.length === 0) {
       await session.client.send(

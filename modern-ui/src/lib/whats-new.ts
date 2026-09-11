@@ -22,6 +22,28 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.2.1',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'Files: no more duplicate S3 uploads',
+        detail: 'Drag-and-drop onto a folder no longer also writes a second copy at the bucket root (same bug on SFTP/FTP).',
+      },
+      {
+        title: 'Files: reliable uploads',
+        detail: 'Picked and dropped files stream from disk with progress, including files outside the local panel folder.',
+      },
+      {
+        title: 'Automation: run another sequence',
+        detail: 'Starting a sequence individually no longer blocks the next one — Stop on the active row, Play elsewhere takes over.',
+      },
+      {
+        title: 'Automation: n8n-style extras',
+        detail: 'Retry / On error / Notes on nodes, Run from here, and an Executions history of recent runs.',
+      },
+    ],
+  },
+  {
     version: '10.2.0',
     date: '2026-09',
     highlights: [

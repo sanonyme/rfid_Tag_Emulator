@@ -13,6 +13,8 @@ interface DropTextareaProps extends TextareaProps {
    * detector if omitted.
    */
   kind?: TagListKind
+  /** Stretch to fill the parent height (used when the surrounding card is taller than the field). */
+  fill?: boolean
 }
 
 function looksLikeHeader(line: string): boolean {
@@ -36,7 +38,7 @@ function parseFileContent(raw: string, kind?: TagListKind): string {
   return naiveParse(raw)
 }
 
-export function DropTextarea({ onFileImport, className, kind, ...props }: DropTextareaProps) {
+export function DropTextarea({ onFileImport, className, kind, fill, ...props }: DropTextareaProps) {
   const [dragging, setDragging] = useState(false)
   const dragCounter = useRef(0)
 
@@ -88,7 +90,7 @@ export function DropTextarea({ onFileImport, className, kind, ...props }: DropTe
 
   return (
     <div
-      className="relative"
+      className={cn('relative', fill && 'flex h-full min-h-0 flex-1 flex-col')}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -97,6 +99,7 @@ export function DropTextarea({ onFileImport, className, kind, ...props }: DropTe
       <Textarea
         className={cn(
           className,
+          fill && 'h-full flex-1',
           dragging && "border-primary border-dashed border-2 opacity-50"
         )}
         {...props}

@@ -15,7 +15,7 @@ import { Textarea } from './ui/textarea'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
-import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2 } from 'lucide-react'
+import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2, Settings2 } from 'lucide-react'
 import { EdgeBlockNodeConfig, EdgeProcessNodeConfig } from './EdgeAutomationNodeConfig'
 import {
   Select,
@@ -27,8 +27,8 @@ import {
 import { Switch } from './ui/switch'
 import { UpcSerialModeToggle } from './UpcSerialModeToggle'
 import { StandardVariablesReference, VariablePresetPicker } from './VariablePresetPicker'
-import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch } from '@/lib/automation-types'
-import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS } from '@/lib/automation-types'
+import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError } from '@/lib/automation-types'
+import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
 
@@ -86,6 +86,9 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
 export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenChange, step: savedStep, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId }: NodeConfigDialogProps) {
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
   const [isLoadingDevices, setIsLoadingDevices] = useState(false)
+  // Settings section stays open once the user expands it (or when the node
+  // already has a non-default policy, so it's obvious at a glance).
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [apiClient] = useState(() => new AleApiClient())
 
   const [draftName, setDraftName] = useState(savedStep?.name ?? '')
@@ -130,6 +133,11 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
     setDraftSessionStepId(savedStep.id)
     setDraftName(savedStep.name)
     setDraftParams(savedStep.params)
+    setSettingsOpen(
+      savedStep.params.retryOnFail === true
+        || (!!savedStep.params.onError && savedStep.params.onError !== 'stop')
+        || !!savedStep.params.notes?.trim(),
+    )
     draftNameRef.current = savedStep.name
     draftParamsRef.current = savedStep.params
   } else if (!open && draftSessionOpen) {
@@ -1972,6 +1980,97 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   />
                 </div>
               </div>
+            )
+          })()}
+
+          {/* Node settings — shared by every executing node (n8n "Settings" tab). */}
+          {nodeSupportsErrorPolicy(step.type) && (() => {
+            const policy = resolveNodePolicy(step.params)
+            const retry = step.params.retryOnFail === true
+            return (
+              <details className="group rounded-xl border border-border/50 bg-muted/10 open:bg-muted/15" open={settingsOpen} onToggle={(e) => setSettingsOpen((e.target as HTMLDetailsElement).open)}>
+                <summary className="flex cursor-pointer select-none items-center gap-2 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+                  <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  Settings
+                  <span className="ml-auto flex items-center gap-1.5 text-[11px] font-normal text-muted-foreground">
+                    {retry && <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-amber-600 dark:text-amber-400">retry ×{policy.maxTries}</span>}
+                    {policy.onError !== 'stop' && (
+                      <span className="rounded bg-orange-500/15 px-1.5 py-0.5 text-orange-600 dark:text-orange-400">
+                        {policy.onError === 'errorOutput' ? 'error output' : 'continue on error'}
+                      </span>
+                    )}
+                    <ChevronsUpDown className="h-3.5 w-3.5" />
+                  </span>
+                </summary>
+                <div className="space-y-4 border-t border-border/40 px-4 pb-4 pt-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="node-retry-on-fail">Retry on fail</Label>
+                      <p className="text-xs text-muted-foreground">Re-run this node when it throws before giving up.</p>
+                    </div>
+                    <Switch
+                      id="node-retry-on-fail"
+                      checked={retry}
+                      onCheckedChange={(v) => patchParams({ retryOnFail: v })}
+                    />
+                  </div>
+                  {retry && (
+                    <div className="grid grid-cols-2 gap-3 pl-1">
+                      <div className="space-y-1">
+                        <Label className="text-xs">Max tries</Label>
+                        <Input
+                          type="number" min={1} max={10}
+                          value={step.params.retryMaxTries ?? 3}
+                          onChange={(e) => patchParams({ retryMaxTries: Math.min(10, Math.max(1, parseInt(e.target.value) || 1)) })}
+                          className="h-9 font-mono text-xs"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs">Wait between tries (ms)</Label>
+                        <Input
+                          type="number" min={0} max={60000} step={100}
+                          value={step.params.retryWaitMs ?? 1000}
+                          onChange={(e) => patchParams({ retryWaitMs: Math.min(60000, Math.max(0, parseInt(e.target.value) || 0)) })}
+                          className="h-9 font-mono text-xs"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label>On error</Label>
+                    <Select
+                      value={policy.onError}
+                      onValueChange={(v) => patchParams({ onError: v as NodeOnError })}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {NODE_ON_ERROR_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>
+                            <div className="flex flex-col">
+                              <span>{o.label}</span>
+                              <span className="text-[11px] text-muted-foreground">{o.hint}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      The error message is always available afterwards as <code className="rounded bg-muted px-1">{'{{lastError}}'}</code> and <code className="rounded bg-muted px-1">{'{{lastErrorNode}}'}</code>.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Notes</Label>
+                    <Textarea
+                      value={step.params.notes ?? ''}
+                      onChange={(e) => patchParams({ notes: e.target.value })}
+                      placeholder="Why this node exists, gotchas, links…"
+                      className="min-h-[60px] text-xs"
+                    />
+                  </div>
+                </div>
+              </details>
             )
           })()}
         </div>

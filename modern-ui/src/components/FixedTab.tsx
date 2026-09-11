@@ -34,6 +34,7 @@ import { InditexTempeGenerator } from './InditexTempeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { DefinedItemsPicker } from './DefinedItemsPicker'
 import { CartonUpcFill } from './CartonUpcFill'
+import { EpcListPeek } from './EpcListPeek'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
@@ -118,8 +119,14 @@ export function FixedTab({
   isPopout = false,
 }: FixedTabProps) {
   const [log, setLog] = useState<string[]>([])
+  const [lastSendSummary, setLastSendSummary] = useState<{
+    tags: number
+    antennas: number
+    delayMs: number
+  } | null>(null)
   const [sending, setSending] = useState(false)
   const [looping, setLooping] = useState(false)
+  const logIdle = log.length === 0
   const loopingRef = useRef(false)
   const logEndRef = useRef<HTMLDivElement>(null)
   const logScrollRef = useRef<HTMLDivElement>(null)
@@ -380,6 +387,13 @@ export function FixedTab({
     }
 
     const tagCount = tags.length
+    const deviceFactor = Math.max(selectedUids.length, 1)
+    const payloadCount = Math.max(1, Math.round(tagCount / selectedAntennas.length / deviceFactor))
+    setLastSendSummary({
+      tags: payloadCount,
+      antennas: selectedAntennas.length,
+      delayMs: Number.parseInt(delay, 10) || 0,
+    })
     addLog(`Sending ${tagCount} tag(s) with driver: ${driver} on antenna(s): ${selectedAntennas.join(', ')}`)
     if (!isLooping) {
       setSending(true)
@@ -478,7 +492,7 @@ export function FixedTab({
   return (
     <div
       className={cn(
-        'h-full min-h-0 overflow-hidden gap-4',
+        'flex-1 min-h-0 overflow-hidden gap-4',
         isPopout
           ? 'flex flex-col lg:grid lg:grid-cols-[minmax(260px,36%)_1fr] lg:gap-5'
           : 'grid grid-cols-[320px_1fr] xl:grid-cols-[348px_1fr] gap-5',
@@ -815,10 +829,16 @@ export function FixedTab({
       </div>
 
       {/* Right Side - Tag Management & Log */}
-      <div className={cn('flex flex-col gap-4 min-h-0 overflow-hidden', isPopout ? 'flex-1' : 'h-full')}>
+      <div className={cn('flex min-h-0 flex-col gap-4', isPopout ? 'flex-1' : 'h-full')}>
         {/* Tag Input */}
-        <div className="grid grid-cols-1 gap-4 min-[720px]:grid-cols-2" data-tour="tour-fixed-tags">
-          <Card className={sectionCard}>
+        <div
+          className={cn(
+            'grid grid-cols-1 items-stretch gap-4 min-[720px]:grid-cols-2',
+            logIdle && 'min-h-0 flex-1',
+          )}
+          data-tour="tour-fixed-tags"
+        >
+          <Card className={cn(sectionCard, 'flex h-full flex-col')}>
             <CardHeader className="space-y-3 pb-3 pt-5 px-5">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -863,9 +883,10 @@ export function FixedTab({
                 </CardDescription>
               </div>
             </CardHeader>
-            <CardContent className="space-y-4 px-5 pb-5 pt-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col space-y-4 px-5 pb-5 pt-0">
               <CartonUpcFill host={host} onApply={setUpcList} />
               <ExpandableTagField
+                fill
                 dialogTitle="UPC → EPC generation"
                 dialogDescription="Format: UPC,Count,TID[,userdata] (TID and userdata optional hex) — CSV columns auto-detected on drop"
                 value={upcList}
@@ -874,7 +895,7 @@ export function FixedTab({
                 kind="upc"
                 onKeyDown={upcShortcuts}
                 placeholder="00000000000000,5"
-                compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
+                compactClassName="min-h-[136px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
                 cornerActions={
                   <DefinedItemsPicker
                     host={host}
@@ -903,7 +924,7 @@ export function FixedTab({
             </CardContent>
           </Card>
 
-          <Card className={sectionCard}>
+          <Card className={cn(sectionCard, 'flex h-full flex-col')}>
             <CardHeader className="space-y-3 pb-3 pt-5 px-5">
               <div className="space-y-2">
                 <div className="flex items-start justify-between gap-3">
@@ -956,8 +977,9 @@ export function FixedTab({
                 </CardDescription>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3 px-5 pb-5 pt-0">
+            <CardContent className="flex min-h-0 flex-1 flex-col space-y-3 px-5 pb-5 pt-0">
               <ExpandableTagField
+                fill
                 dialogTitle="Direct EPC input"
                 dialogDescription="Format: EPC[,TID[,userdata]] (one per line; TID and userdata optional hex) — CSV columns auto-detected on drop"
                 value={epcList}
@@ -968,6 +990,7 @@ export function FixedTab({
                 placeholder="3034...&#10;3035...,CustomTID,DEADBEEF"
                 compactClassName="min-h-[120px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
               />
+              <EpcListPeek value={epcList} className="shrink-0" />
             </CardContent>
           </Card>
         </div>
@@ -1028,8 +1051,16 @@ export function FixedTab({
         </Card>
 
         {/* Log Area */}
-        <Card className={cn(sectionCard, 'flex min-h-[200px] flex-1 flex-col overflow-hidden')} data-tour="tour-fixed-log">
-          <CardHeader className="shrink-0 border-b border-border/40 bg-muted/10 py-3 px-4">
+        <Card
+          hover3d={false}
+          className={cn(
+            sectionCard,
+            'flex flex-col overflow-hidden rounded-xl backdrop-blur-none',
+            logIdle ? 'shrink-0' : 'min-h-0 flex-1',
+          )}
+          data-tour="tour-fixed-log"
+        >
+          <CardHeader className="shrink-0 rounded-t-xl border-b border-border/40 bg-muted/10 py-3 px-4">
             <div className="flex items-center justify-between gap-3">
               <CardTitle className="flex items-center gap-2 text-sm font-semibold">
                 <span className="flex h-7 w-7 items-center justify-center rounded-md bg-background/80 ring-1 ring-border/40">
@@ -1104,18 +1135,26 @@ export function FixedTab({
               </div>
             </div>
           </CardHeader>
-          <CardContent className="min-h-0 flex-1 bg-muted/15 p-0">
-            {log.length === 0 ? (
-              <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center">
-                <div className="max-w-[220px] space-y-3">
-                  <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15">
-                    <Radio className="h-5 w-5" />
+          <CardContent
+            className={cn(
+              'overflow-hidden rounded-b-xl bg-muted/15 p-0',
+              logIdle ? 'shrink-0' : 'min-h-0 flex-1',
+            )}
+          >
+            {logIdle ? (
+              <div className="px-4 py-2.5 font-mono text-[11px] leading-relaxed text-muted-foreground/60 sm:text-xs">
+                <div>— waiting —</div>
+                {lastSendSummary && (
+                  <div>
+                    last send {lastSendSummary.tags.toLocaleString()} tag
+                    {lastSendSummary.tags === 1 ? '' : 's'}
+                    {' · '}
+                    {lastSendSummary.antennas} antenna
+                    {lastSendSummary.antennas === 1 ? '' : 's'}
+                    {' · '}
+                    {lastSendSummary.delayMs} ms
                   </div>
-                  <p className="text-sm font-medium">Waiting for activity</p>
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Runs, device fetches, and tag sends will stream here in real time.
-                  </p>
-                </div>
+                )}
               </div>
             ) : (
               <ScrollArea ref={logScrollRef} className="h-full min-h-[140px]">

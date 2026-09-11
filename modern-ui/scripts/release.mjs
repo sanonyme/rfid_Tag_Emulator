@@ -9,8 +9,12 @@ import { uploadGithubReleaseAssets } from './upload-github-release-assets.mjs'
 
 const cwd = process.cwd()
 const envPath = path.join(cwd, '.env')
+const existingGithubToken = process.env.GH_TOKEN
 if (existsSync(envPath)) {
   dotenv.config({ path: envPath, override: true })
+}
+if (existingGithubToken && String(existingGithubToken).trim()) {
+  process.env.GH_TOKEN = existingGithubToken
 }
 
 const required = ['ZEUS_RELEASE_OWNER', 'ZEUS_RELEASE_REPO', 'GH_TOKEN']

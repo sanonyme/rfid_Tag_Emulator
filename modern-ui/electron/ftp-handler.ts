@@ -260,7 +260,9 @@ export async function ftpMkdir(
   const p = normalizeRemotePath(remotePath)
   try {
     await runExclusive(session, async (c) => {
-      await c.sendIgnoringError(`MKD ${p}`)
+      // Do not ignore errors here: a "550 already exists / permission denied"
+      // must surface instead of reporting a phantom success.
+      await c.send(`MKD ${p}`)
     })
     return { ok: true }
   } catch (e) {
@@ -392,9 +394,15 @@ export async function ftpCopyRemoteFile(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const tmp = path.join(os.tmpdir(), `zeus-ftp-copy-${randomUUID()}`)
   try {
-    const down = await ftpDownloadToLocalFile(sessionId, remoteSrc, tmp, onProgress)
+    // FTP has no server-side copy: download then re-upload. Report the two
+    // halves as one 0→100% progress bar instead of two full sweeps.
+    const down = await ftpDownloadToLocalFile(sessionId, remoteSrc, tmp, (loaded, total) =>
+      onProgress?.(loaded, total * 2),
+    )
     if (!down.ok) return down
-    return await ftpUploadFromLocalFile(sessionId, tmp, remoteDest, onProgress)
+    return await ftpUploadFromLocalFile(sessionId, tmp, remoteDest, (loaded, total) =>
+      onProgress?.(total + loaded, total * 2),
+    )
   } finally {
     try {
       fs.unlinkSync(tmp)

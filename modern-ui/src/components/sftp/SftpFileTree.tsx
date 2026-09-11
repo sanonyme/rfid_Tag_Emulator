@@ -371,10 +371,18 @@ function FileItem({
           if (isFolder) onFolderDragOver(null)
         }}
         onDrop={(e) => {
-          if (selectMode || !isFolder) return
+          if (selectMode) return
           e.preventDefault()
+          // Stop here: the remote panel container also listens for drops (to
+          // target the root), so letting this bubble would upload/move the same
+          // item twice — once into this folder and once into "/".
+          e.stopPropagation()
           onFolderDragOver(null)
-          onFolderDrop(node.path, e)
+          // Dropping onto a file lands in that file's folder, not the tree root.
+          const targetDir = isFolder
+            ? node.path
+            : node.path.slice(0, node.path.lastIndexOf('/')) || '/'
+          onFolderDrop(targetDir, e)
         }}
         className={cn(
           'group flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none overflow-hidden',

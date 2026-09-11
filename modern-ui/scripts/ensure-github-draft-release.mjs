@@ -92,6 +92,19 @@ export async function ensureGithubDraftRelease({ owner, repo, version, token }) 
     throw new Error(`Failed to check release ${tag} on ${repoLabel}: HTTP ${existingRes.status} ${body?.message ?? ''}`)
   }
 
+  // Drafts are often not reachable by tag. Prefer an existing draft (with assets if duplicates exist).
+  const listRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=30`, { headers })
+  if (listRes.ok) {
+    const releases = await githubJson(listRes)
+    const matches = Array.isArray(releases) ? releases.filter((release) => release.tag_name === tag) : []
+    const withAssets = matches.find((release) => Array.isArray(release.assets) && release.assets.length > 0)
+    const existing = withAssets ?? matches[0]
+    if (existing) {
+      console.log(`Using existing release ${tag} on ${repoLabel} (draft=${existing.draft === true})`)
+      return existing
+    }
+  }
+
   console.log(`Creating empty draft release ${tag} on ${repoLabel}...`)
   const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
     method: 'POST',

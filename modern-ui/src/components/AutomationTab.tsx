@@ -93,6 +93,11 @@ import {
   Eye,
   EyeOff,
   Frame,
+  History,
+  CheckCircle2 as CircleCheck,
+  XCircle as CircleX,
+  CircleSlash,
+  Loader2 as LoaderCircle,
 } from 'lucide-react'
 import { useEdgeSession } from '@/contexts/EdgeSessionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
@@ -122,7 +127,21 @@ import {
   DEFAULT_STEP_NAMES,
   defaultParamsForType,
   CONDITION_OPS,
+  ERROR_HANDLE,
+  nodeSupportsErrorPolicy,
+  resolveNodePolicy,
 } from '@/lib/automation-types'
+import {
+  loadExecutions,
+  saveExecutions,
+  pushExecution,
+  updateExecution,
+  snapshotLog,
+  formatDuration,
+  formatRelativeTime,
+  type ExecutionRecord,
+  type ExecutionStatus,
+} from '@/lib/automation-executions'
 import {
   createRunContext,
   applyTemplate,
@@ -300,6 +319,15 @@ interface NodeOutput {
  * configured.
  */
 function getNodeOutputs(step: AutomationStep): NodeOutput[] {
+  const base = getBranchOutputs(step)
+  // n8n-style "On Error → error output": every executing node can grow a red port.
+  if (nodeSupportsErrorPolicy(step.type) && step.params.onError === 'errorOutput') {
+    return [...base, { handle: ERROR_HANDLE, label: 'err', color: 'bg-orange-500' }]
+  }
+  return base
+}
+
+function getBranchOutputs(step: AutomationStep): NodeOutput[] {
   switch (step.type) {
     case 'CONDITION':
       return [
@@ -664,6 +692,16 @@ const WorkflowNode = memo(function WorkflowNode({
                 <EyeOff className="h-2.5 w-2.5" /> Off
               </span>
             )}
+            {!disabled && step.params.retryOnFail === true && (
+              <span className="flex shrink-0 items-center rounded bg-amber-500/15 px-1 py-0.5 text-[8px] font-bold text-amber-600 dark:text-amber-400" title={`Retry on fail (up to ${resolveNodePolicy(step.params).maxTries} tries)`}>
+                ↻{resolveNodePolicy(step.params).maxTries}
+              </span>
+            )}
+            {!disabled && step.params.onError === 'continue' && (
+              <span className="flex shrink-0 items-center rounded bg-orange-500/15 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wide text-orange-600 dark:text-orange-400" title="Continue on error">
+                cont
+              </span>
+            )}
             {/* Actions reveal on hover so they never crowd the name */}
             {!isRunning && (
               <div className="flex items-center gap-0.5 shrink-0 opacity-0 transition-opacity group-hover/node:opacity-100 focus-within:opacity-100">
@@ -772,6 +810,7 @@ const WorkflowEdge = memo(function WorkflowEdge({
     ? 'text-amber-500'
     : handle === 'true' ? 'text-green-500'
     : handle === 'false' ? 'text-red-500'
+    : handle === ERROR_HANDLE ? 'text-orange-500'
     : handle === 'default' ? 'text-stone-400'
     : handle.startsWith('case-') ? 'text-sky-500'
     : handle.startsWith('branch-') ? 'text-purple-500'
@@ -1034,6 +1073,27 @@ type CtxItem =
       danger?: boolean
     }
 
+/** Status glyph for an execution-history row. */
+function ExecutionStatusIcon({ status, className }: { status: ExecutionStatus; className?: string }) {
+  switch (status) {
+    case 'running':
+      return <LoaderCircle className={cn('animate-spin text-primary', className)} aria-label="Running" />
+    case 'success':
+      return <CircleCheck className={cn('text-emerald-500', className)} aria-label="Succeeded" />
+    case 'error':
+      return <CircleX className={cn('text-destructive', className)} aria-label="Failed" />
+    default:
+      return <CircleSlash className={cn('text-muted-foreground', className)} aria-label="Stopped" />
+  }
+}
+
+const EXECUTION_STATUS_LABEL: Record<ExecutionStatus, string> = {
+  running: 'Running',
+  success: 'Succeeded',
+  error: 'Failed',
+  stopped: 'Stopped',
+}
+
 /**
  * A lightweight right-click menu rendered at the cursor via a portal. Flips to
  * stay on-screen, and closes on outside-click, Escape, or after an action runs.
@@ -1291,6 +1351,24 @@ export function AutomationTab({
   const logFlushTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const runVarsTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const abortControllerRef = useRef<AbortController | null>(null)
+  /** Promise of the run in flight — awaited when a new run needs to take over. */
+  const runPromiseRef = useRef<Promise<void> | null>(null)
+  /** Every line logged during the current run (independent of the Detail toggle),
+   * used for the execution-history snapshot. Capped to keep memory bounded. */
+  const runLogRef = useRef<string[]>([])
+  /** Nodes executed in the current run (for the execution record). */
+  const runStepCountRef = useRef(0)
+  const [executions, setExecutions] = useState<ExecutionRecord[]>(() => loadExecutions())
+  const [executionsOpen, setExecutionsOpen] = useState<boolean>(() => localStorage.getItem('automation-executions-open') !== '0')
+  const [viewedExecution, setViewedExecution] = useState<ExecutionRecord | null>(null)
+  // Re-render every 30s so "x min ago" labels stay honest.
+  const [, setHistoryTick] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setHistoryTick((n) => n + 1), 30_000)
+    return () => clearInterval(t)
+  }, [])
+  useEffect(() => { saveExecutions(executions) }, [executions])
+  useEffect(() => { localStorage.setItem('automation-executions-open', executionsOpen ? '1' : '0') }, [executionsOpen])
   const runVarsRef = useRef<AutomationVars>({})
   // Live snapshot of run variables for the inspector (updated after each node).
   const [runVars, setRunVars] = useState<AutomationVars>({})
@@ -1359,8 +1437,14 @@ export function AutomationTab({
   }, [])
 
   const addLog = useCallback((msg: string) => {
+    const line = `[${formatTime()}] ${msg}`
+    // History snapshot records regardless of the Detail toggle so a failed run can
+    // always be inspected afterwards.
+    const hist = runLogRef.current
+    hist.push(line)
+    if (hist.length > 2000) hist.splice(0, hist.length - 1500)
     if (!fullActivityLogRef.current) return
-    logQueueRef.current.push(`[${formatTime()}] ${msg}`)
+    logQueueRef.current.push(line)
     if (logFlushTimerRef.current != null) return
     logFlushTimerRef.current = setTimeout(flushLogQueue, 80)
   }, [flushLogQueue])
@@ -2583,10 +2667,58 @@ export function AutomationTab({
    * run variables); every other node uses its single `out` port. A step counter
    * guards cyclic edges, and `callStack` guards recursive sequence calls.
    */
+  /**
+   * Run one executing node with its retry / on-error policy applied.
+   * Returns the output handle to follow next: `'out'` normally, or `'error'`
+   * when the node failed and is configured to route through its error port.
+   * Throws when the node (still) fails and its policy is `stop`.
+   */
+  const runNodeWithPolicy = async (
+    step: AutomationStep,
+    signal: AbortSignal,
+    action: () => Promise<void>,
+  ): Promise<string> => {
+    const policy = resolveNodePolicy(step.params)
+    let lastError: any = null
+    for (let attempt = 1; attempt <= policy.maxTries; attempt++) {
+      if (signal.aborted) throw new Error('Aborted')
+      try {
+        await action()
+        if (attempt > 1) addLog(`✓ "${step.name}" succeeded on attempt ${attempt}/${policy.maxTries}`)
+        return 'out'
+      } catch (error: any) {
+        // Control-flow signals and user aborts are never retried or swallowed.
+        if (error instanceof AutomationStopSignal || error?.message === 'Aborted') throw error
+        lastError = error
+        if (attempt < policy.maxTries) {
+          addLog(`↻ "${step.name}" failed (attempt ${attempt}/${policy.maxTries}): ${error.message} — retrying in ${policy.retryWaitMs}ms`)
+          await new Promise<void>((resolve) => {
+            const t = setTimeout(resolve, policy.retryWaitMs)
+            signal.addEventListener('abort', () => { clearTimeout(t); resolve() }, { once: true })
+          })
+        }
+      }
+    }
+    const msg = String(lastError?.message ?? lastError ?? 'Unknown error')
+    runVarsRef.current.lastError = msg
+    runVarsRef.current.lastErrorNode = step.name
+    if (policy.onError === 'stop') {
+      addLog(`Error at "${step.name}": ${msg}`)
+      throw lastError
+    }
+    if (policy.onError === 'errorOutput') {
+      addLog(`⚠ "${step.name}" failed: ${msg} → error output`)
+      return ERROR_HANDLE
+    }
+    addLog(`⚠ "${step.name}" failed: ${msg} → continuing`)
+    return 'out'
+  }
+
   const runSequenceGraph = async (
     seq: AutomationSequence,
     signal: AbortSignal,
     callStack: Set<string> = new Set(),
+    partial?: { startStepId: string; singleNode?: boolean },
   ) => {
     const steps = seq.steps
     if (steps.length === 0) return
@@ -2610,7 +2742,9 @@ export function AutomationTab({
       .filter(s => !hasIncoming.has(s.id))
       .sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
     // Pure-cycle fallback (no root): start at the first node so the run isn't a no-op.
-    const startNodes = roots.length > 0 ? roots : [steps[0]]
+    // Partial runs ("Run from here" / "Run this node") start at the chosen node instead.
+    const partialStart = partial ? byId.get(partial.startStepId) : undefined
+    const startNodes = partialStart ? [partialStart] : roots.length > 0 ? roots : [steps[0]]
 
     for (const root of startNodes) {
       if (signal.aborted) break
@@ -2621,6 +2755,8 @@ export function AutomationTab({
           addLog(`Stopped: exceeded ${MAX_GRAPH_STEPS} steps (possible infinite loop)`)
           break
         }
+        if (partial?.singleNode && guard > 1) break
+        runStepCountRef.current++
         setCurrentRunningStepId(current.id)
         // Disabled (muted) node: skip its action and pass straight through to its
         // first (non-self) outgoing edge, whatever the handle. Keeps the flow intact
@@ -2656,35 +2792,34 @@ export function AutomationTab({
           const saveAs = (current.params.randomSaveAs || '').trim()
           if (saveAs) runVarsRef.current[saveAs] = String(idx)
           addLog(`🎲 ${current.name}: → ${label}`)
-        } else if (current.type === 'CALL_SEQUENCE') {
-          try {
-            const target = sortedSeqs.find(s => s.id === current!.params.callSequenceId)
-            if (!target) throw new Error('Call Sequence: no target selected (or it was deleted)')
-            addLog(`↳ Call "${target.name}"`)
-            await runSequenceGraph(target, signal, stack)
-            if (signal.aborted) return
-            addLog(`↩ Return from "${target.name}"`)
-          } catch (error: any) {
-            if (error instanceof AutomationStopSignal) {
-              if (error.scope === 'run') throw error
-              return
+        } else {
+          // Every other node executes an action; wrap it in the node's retry /
+          // on-error policy so a failure can be retried, swallowed, or routed
+          // through the `error` port instead of always killing the run.
+          const node: AutomationStep = current
+          let action: () => Promise<void>
+          if (node.type === 'CALL_SEQUENCE') {
+            action = async () => {
+              const target = sortedSeqs.find(s => s.id === node.params.callSequenceId)
+              if (!target) throw new Error('Call Sequence: no target selected (or it was deleted)')
+              addLog(`↳ Call "${target.name}"`)
+              await runSequenceGraph(target, signal, stack)
+              if (signal.aborted) return
+              addLog(`↩ Return from "${target.name}"`)
             }
-            addLog(`Error at "${current.name}": ${error.message}`)
-            if (error.message === 'Aborted') return
-            throw error
-          }
-        } else if (current.type === 'FOR_EACH') {
-          try {
-            const source = applyTemplate(current.params.forEachSource || '', runVarsRef.current)
-            const items = parseListItems(source)
-            const itemAs = (current.params.forEachItemAs || 'item').trim() || 'item'
-            const indexAs = (current.params.forEachIndexAs || 'index').trim() || 'index'
-            const max = Math.max(1, current.params.forEachMax ?? 500)
-            const target = sortedSeqs.find(s => s.id === current!.params.forEachSequenceId)
-            if (!target) throw new Error('For Each: no target sequence selected (or it was deleted)')
-            if (items.length === 0) {
-              addLog(`For Each: empty list — skipped`)
-            } else {
+          } else if (node.type === 'FOR_EACH') {
+            action = async () => {
+              const source = applyTemplate(node.params.forEachSource || '', runVarsRef.current)
+              const items = parseListItems(source)
+              const itemAs = (node.params.forEachItemAs || 'item').trim() || 'item'
+              const indexAs = (node.params.forEachIndexAs || 'index').trim() || 'index'
+              const max = Math.max(1, node.params.forEachMax ?? 500)
+              const target = sortedSeqs.find(s => s.id === node.params.forEachSequenceId)
+              if (!target) throw new Error('For Each: no target sequence selected (or it was deleted)')
+              if (items.length === 0) {
+                addLog(`For Each: empty list — skipped`)
+                return
+              }
               const slice = items.slice(0, max)
               if (items.length > max) addLog(`For Each: capped at ${max} of ${items.length} items`)
               addLog(`For Each: ${slice.length} item(s) → "${target.name}"`)
@@ -2698,28 +2833,20 @@ export function AutomationTab({
               }
               addLog(`↩ For Each done`)
             }
-          } catch (error: any) {
-            if (error instanceof AutomationStopSignal) {
-              if (error.scope === 'run') throw error
-              return
-            }
-            addLog(`Error at "${current.name}": ${error.message}`)
-            if (error.message === 'Aborted') return
-            throw error
-          }
-        } else if (current.type === 'LOOP_N') {
-          try {
-            const rawCount = applyTemplate(current.params.loopCount || '', runVarsRef.current).trim()
-            const parsed = Math.floor(Number(rawCount))
-            const requested = Number.isFinite(parsed) ? parsed : 0
-            const cap = Math.max(1, current.params.loopMax ?? 1000)
-            const count = Math.min(Math.max(0, requested), cap)
-            const indexAs = (current.params.loopIndexAs || 'i').trim() || 'i'
-            const target = sortedSeqs.find(s => s.id === current!.params.loopSequenceId)
-            if (!target) throw new Error('Loop N: no target sequence selected (or it was deleted)')
-            if (count <= 0) {
-              addLog(`Loop N: count is ${requested} — skipped`)
-            } else {
+          } else if (node.type === 'LOOP_N') {
+            action = async () => {
+              const rawCount = applyTemplate(node.params.loopCount || '', runVarsRef.current).trim()
+              const parsed = Math.floor(Number(rawCount))
+              const requested = Number.isFinite(parsed) ? parsed : 0
+              const cap = Math.max(1, node.params.loopMax ?? 1000)
+              const count = Math.min(Math.max(0, requested), cap)
+              const indexAs = (node.params.loopIndexAs || 'i').trim() || 'i'
+              const target = sortedSeqs.find(s => s.id === node.params.loopSequenceId)
+              if (!target) throw new Error('Loop N: no target sequence selected (or it was deleted)')
+              if (count <= 0) {
+                addLog(`Loop N: count is ${requested} — skipped`)
+                return
+              }
               if (requested > cap) addLog(`Loop N: capped at ${cap} of ${requested} iterations`)
               addLog(`Loop N: ${count}× → "${target.name}"`)
               for (let i = 0; i < count; i++) {
@@ -2731,24 +2858,17 @@ export function AutomationTab({
               }
               addLog(`↩ Loop N done`)
             }
-          } catch (error: any) {
-            if (error instanceof AutomationStopSignal) {
-              if (error.scope === 'run') throw error
-              return
-            }
-            addLog(`Error at "${current.name}": ${error.message}`)
-            if (error.message === 'Aborted') return
-            throw error
+          } else {
+            action = () => executeStep(node, signal)
           }
-        } else {
+
           try {
-            await executeStep(current, signal)
+            handle = await runNodeWithPolicy(node, signal, action)
           } catch (error: any) {
             if (error instanceof AutomationStopSignal) {
               if (error.scope === 'run') throw error
               return
             }
-            addLog(`Error at "${current.name}": ${error.message}`)
             if (error.message === 'Aborted') return
             throw error
           }
@@ -2777,8 +2897,36 @@ export function AutomationTab({
     return topLevelSeqs.length > 0 ? topLevelSeqs : all
   }, [])
 
-  /** Start automation. Pass `onlyIds` to run specific sequence(s) regardless of the scope selector. */
-  const handleRun = async (onlyIds?: string[]) => {
+  type RunOptions = {
+    /** Run specific sequence(s) regardless of the scope selector. */
+    onlyIds?: string[]
+    /** Partial run: start at this node (its sequence must be the single `onlyIds` entry). */
+    startStepId?: string
+    /** With `startStepId`: execute just that node and stop. */
+    singleNode?: boolean
+  }
+
+  /**
+   * Start automation. If a run is already in flight it is stopped first and the
+   * new one starts as soon as it has wound down — so clicking ▶ on another
+   * sequence (or "Run from here") always works instead of being silently ignored.
+   */
+  const handleRun = async (onlyIds?: string[], options: Omit<RunOptions, 'onlyIds'> = {}) => {
+    const previous = runPromiseRef.current
+    if (previous) {
+      handleStop()
+      try { await previous } catch { /* previous run's own error handling already logged it */ }
+    }
+    const run = executeRun({ onlyIds, ...options })
+    runPromiseRef.current = run
+    try {
+      await run
+    } finally {
+      if (runPromiseRef.current === run) runPromiseRef.current = null
+    }
+  }
+
+  const executeRun = async ({ onlyIds, startStepId, singleNode }: RunOptions) => {
     let runnableSeqs: AutomationSequence[]
     if (onlyIds && onlyIds.length > 0) {
       const idSet = new Set(onlyIds)
@@ -2809,15 +2957,22 @@ export function AutomationTab({
       return
     }
 
-    const scopeLabel = onlyIds
-      ? (onlyIds.length === 1
-          ? `sequence "${runnableSeqs[0]?.name ?? onlyIds[0]}"`
-          : `${onlyIds.length} sequences`)
-      : sequenceRunScope === 'current'
-        ? `current sequence "${runnableSeqs[0]?.name ?? ''}"`
-        : sequenceRunScope === 'selected'
-          ? `${runnableSeqs.length} selected sequence${runnableSeqs.length === 1 ? '' : 's'}`
-          : `${runnableSeqs.length} top-level sequence${runnableSeqs.length === 1 ? '' : 's'}`
+    const partialStep = startStepId
+      ? runnableSeqs.flatMap(s => s.steps).find(st => st.id === startStepId)
+      : undefined
+    const partial = partialStep ? { startStepId: partialStep.id, singleNode } : undefined
+
+    const scopeLabel = partialStep
+      ? `${singleNode ? 'node' : 'from node'} "${partialStep.name}" in "${runnableSeqs[0]?.name ?? ''}"`
+      : onlyIds
+        ? (onlyIds.length === 1
+            ? `sequence "${runnableSeqs[0]?.name ?? onlyIds[0]}"`
+            : `${onlyIds.length} sequences`)
+        : sequenceRunScope === 'current'
+          ? `current sequence "${runnableSeqs[0]?.name ?? ''}"`
+          : sequenceRunScope === 'selected'
+            ? `${runnableSeqs.length} selected sequence${runnableSeqs.length === 1 ? '' : 's'}`
+            : `${runnableSeqs.length} top-level sequence${runnableSeqs.length === 1 ? '' : 's'}`
 
     setIsRunning(true)
     if (logFlushTimerRef.current) {
@@ -2825,31 +2980,56 @@ export function AutomationTab({
       logFlushTimerRef.current = undefined
     }
     logQueueRef.current = []
+    runLogRef.current = []
+    runStepCountRef.current = 0
     setLog([])
     addLog(`Starting automation (${scopeLabel})...`)
-    runVarsRef.current = createRunContext({
-      host,
-      alePort,
-      customPort,
-      port: '',
-    })
+    // Partial runs keep the variables from the last run so a node can be re-run
+    // against the state it would normally see; full runs start clean.
+    if (!partial) {
+      runVarsRef.current = createRunContext({
+        host,
+        alePort,
+        customPort,
+        port: '',
+      })
+    } else {
+      runVarsRef.current = { ...runVarsRef.current, ...createRunContext({ host, alePort, customPort, port: '' }) }
+    }
     publishRunVars(true)
+
+    const execution: ExecutionRecord = {
+      id: crypto.randomUUID(),
+      startedAt: Date.now(),
+      status: 'running',
+      scope: scopeLabel,
+      startedFrom: partialStep?.name,
+      stepsRun: 0,
+      log: [],
+      logTruncated: false,
+    }
+    setExecutions(prev => pushExecution(prev, execution))
 
     abortControllerRef.current = new AbortController()
     const signal = abortControllerRef.current.signal
 
-    const useDuration = runMode === 'duration'
+    // Partial runs are always a single pass — looping a "run from here" makes no sense.
+    const useDuration = !partial && runMode === 'duration'
     const durationSec = Math.max(1, parseInt(runDurationSeconds) || 300)
     const endTime = useDuration ? Date.now() + durationSec * 1000 : 0
 
-    const loops = useDuration
-      ? Infinity
-      : loopCount === 'Inf'
+    const loops = partial
+      ? 1
+      : useDuration
         ? Infinity
-        : loopCount === 'custom'
-          ? Math.max(1, parseInt(customLoopCount) || 1)
-          : parseInt(loopCount) || 1
+        : loopCount === 'Inf'
+          ? Infinity
+          : loopCount === 'custom'
+            ? Math.max(1, parseInt(customLoopCount) || 1)
+            : parseInt(loopCount) || 1
     let loopNum = 0
+    let status: ExecutionStatus = 'success'
+    let errorMessage: string | undefined
 
     try {
       for (let i = 0; i < loops; i++) {
@@ -2868,28 +3048,50 @@ export function AutomationTab({
           addLog(`▶ Sequence ${seqIdx + 1}: ${seq.name}`)
           setCurrentSequenceIndex(seqIdx)
           setRunningSeqId(seq.id)
-          await runSequenceGraph(seq, signal)
+          await runSequenceGraph(seq, signal, undefined, partial)
         }
       }
-      addLog('Automation completed successfully')
+      if (signal.aborted) {
+        status = 'stopped'
+        addLog('Automation stopped by user')
+      } else {
+        addLog('Automation completed successfully')
+      }
     } catch (error: any) {
       if (error instanceof AutomationStopSignal) {
         addLog(`Automation stopped by Stop node (${error.scope === 'run' ? 'end run' : 'end sequence'})`)
       } else if (error.message !== 'Aborted') {
+        status = 'error'
+        errorMessage = String(error.message ?? error)
         addLog(`Automation failed: ${error.message}`)
         toast.error('Automation failed')
       } else {
+        status = 'stopped'
         addLog('Automation stopped by user')
       }
     } finally {
       flushLogQueue()
       publishRunVars(true)
+      const snap = snapshotLog(runLogRef.current)
+      setExecutions(prev => updateExecution(prev, execution.id, {
+        status,
+        finishedAt: Date.now(),
+        stepsRun: runStepCountRef.current,
+        error: errorMessage,
+        ...snap,
+      }))
       setIsRunning(false)
       setCurrentSequenceIndex(null)
       setCurrentRunningStepId(null)
       setRunningSeqId(null)
       abortControllerRef.current = null
     }
+  }
+
+  /** Partial execution from the canvas context menu (n8n "Execute from here" / "Execute node"). */
+  const handleRunFromNode = (stepId: string, singleNode: boolean) => {
+    if (!selectedSequenceId) return
+    void handleRun([selectedSequenceId], { startStepId: stepId, singleNode })
   }
 
   const toggleSequenceChecked = (seqId: string) => {
@@ -3157,16 +3359,32 @@ export function AutomationTab({
                         <div className={`flex gap-0.5 shrink-0 transition-opacity ${selectedSequenceId === seq.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                className="p-0.5 rounded hover:bg-muted focus:outline-none select-none disabled:opacity-40"
-                                disabled={isRunning || seq.steps.length === 0}
-                                onClick={(e) => { e.stopPropagation(); void handleRun([seq.id]) }}
-                              >
-                                <Play className="h-3 w-3" />
-                              </button>
+                              {runningSeqId === seq.id ? (
+                                <button
+                                  type="button"
+                                  className="p-0.5 rounded text-destructive hover:bg-destructive/15 focus:outline-none select-none"
+                                  onClick={(e) => { e.stopPropagation(); handleStop() }}
+                                >
+                                  <Square className="h-3 w-3" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="p-0.5 rounded hover:bg-muted focus:outline-none select-none disabled:opacity-40"
+                                  disabled={seq.steps.length === 0}
+                                  onClick={(e) => { e.stopPropagation(); void handleRun([seq.id]) }}
+                                >
+                                  <Play className="h-3 w-3" />
+                                </button>
+                              )}
                             </TooltipTrigger>
-                            <TooltipContent side="right">Run this sequence only</TooltipContent>
+                            <TooltipContent side="right">
+                              {runningSeqId === seq.id
+                                ? 'Stop this run'
+                                : isRunning
+                                  ? 'Stop the current run and run this sequence'
+                                  : 'Run this sequence only'}
+                            </TooltipContent>
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -3851,6 +4069,71 @@ export function AutomationTab({
                 onExpand={() => setVarsExpandedOpen(true)}
                 isRunning={isRunning}
               />
+              {/* Executions — n8n-style run history. Collapsible so it never steals
+                  space from the live log unless the user wants it. */}
+              <div className="shrink-0 rounded-xl border border-border/50 bg-muted/10 overflow-hidden">
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
+                  onClick={() => setExecutionsOpen((o) => !o)}
+                  aria-expanded={executionsOpen}
+                >
+                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Executions</span>
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                    {executions.length}
+                  </span>
+                  {executions[0] && executions[0].status !== 'running' && (
+                    <ExecutionStatusIcon status={executions[0].status} className="ml-1 h-3 w-3" />
+                  )}
+                  <ChevronDown className={cn('ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform', executionsOpen && 'rotate-180')} />
+                </button>
+                {executionsOpen && (
+                  <div className="border-t border-border/50">
+                    {executions.length === 0 ? (
+                      <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">No runs yet</div>
+                    ) : (
+                      <div className="max-h-40 overflow-y-auto overscroll-contain">
+                        <ul className="divide-y divide-border/40">
+                          {executions.slice(0, 8).map((ex) => {
+                            const duration = ex.finishedAt ? ex.finishedAt - ex.startedAt : Date.now() - ex.startedAt
+                            return (
+                              <li key={ex.id}>
+                                <button
+                                  type="button"
+                                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-accent/40 transition-colors"
+                                  onClick={() => setViewedExecution(ex)}
+                                  title={ex.error ? ex.error : ex.scope}
+                                >
+                                  <ExecutionStatusIcon status={ex.status} className="h-3.5 w-3.5 shrink-0" />
+                                  <span className="min-w-0 flex-1 truncate text-[11px]">{ex.scope}</span>
+                                  <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">{formatDuration(duration)}</span>
+                                  <span className="shrink-0 text-[10px] text-muted-foreground">{formatRelativeTime(ex.startedAt)}</span>
+                                </button>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      </div>
+                    )}
+                    {executions.length > 0 && (
+                      <div className="flex items-center justify-between border-t border-border/40 px-3 py-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          {executions.length > 8 ? `Showing 8 of ${executions.length}` : `${executions.length} run${executions.length === 1 ? '' : 's'}`}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+                          disabled={isRunning}
+                          onClick={() => setExecutions([])}
+                        >
+                          Clear history
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
               {/* Activity log — one self-contained card: a fixed header of controls
                   over a scrollable body that fills the remaining panel height. Uses
                   flex-1 + min-h-0 so it can never overflow/clip into its neighbours. */}
@@ -4023,6 +4306,79 @@ export function AutomationTab({
         </DialogContent>
       </Dialog>
 
+      {/* Execution detail (history entry) */}
+      <Dialog open={!!viewedExecution} onOpenChange={(open) => !open && setViewedExecution(null)}>
+        <DialogContent className="sm:max-w-3xl h-[80vh] max-h-[80vh] overflow-hidden flex flex-col gap-0 p-0">
+          {viewedExecution && (() => {
+            // Prefer the live record so a still-running entry updates in place.
+            const ex = executions.find((e) => e.id === viewedExecution.id) ?? viewedExecution
+            const duration = ex.finishedAt ? ex.finishedAt - ex.startedAt : Date.now() - ex.startedAt
+            return (
+              <>
+                <DialogHeader className="px-6 pt-6 pb-3 shrink-0">
+                  <DialogTitle className="flex items-center gap-2">
+                    <ExecutionStatusIcon status={ex.status} className="h-5 w-5" />
+                    {EXECUTION_STATUS_LABEL[ex.status]} · {ex.scope}
+                  </DialogTitle>
+                  <DialogDescription className="flex flex-wrap gap-x-4 gap-y-1">
+                    <span>{new Date(ex.startedAt).toLocaleString()}</span>
+                    <span>Duration {formatDuration(duration)}</span>
+                    <span>{ex.stepsRun} node{ex.stepsRun === 1 ? '' : 's'} executed</span>
+                    {ex.startedFrom && <span>Started from “{ex.startedFrom}”</span>}
+                  </DialogDescription>
+                  {ex.error && (
+                    <div className="mt-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive break-words">
+                      {ex.error}
+                    </div>
+                  )}
+                </DialogHeader>
+                <div className="flex-1 min-h-0 mx-6 mb-4 border border-border/50 rounded-xl bg-muted/10 overflow-y-auto overscroll-contain">
+                  <div className="p-4 font-mono text-xs space-y-0">
+                    {ex.logTruncated && (
+                      <div className="mb-2 text-center text-[11px] text-muted-foreground">… earlier lines trimmed …</div>
+                    )}
+                    {ex.log.length === 0 && (
+                      <div className="text-muted-foreground text-center py-8">No log lines were recorded for this run</div>
+                    )}
+                    {ex.log.map((l, i) => (
+                      <div key={i} className="text-muted-foreground hover:text-foreground transition-colors py-0.5 px-2 rounded hover:bg-accent/30">
+                        {l}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <DialogFooter className="px-6 pb-6 pt-0 shrink-0">
+                  <Button
+                    variant="outline"
+                    className="gap-1.5"
+                    disabled={ex.log.length === 0}
+                    onClick={() => {
+                      void navigator.clipboard.writeText(ex.log.join('\n')).then(
+                        () => toast.success('Log copied'),
+                        () => toast.error('Could not copy log'),
+                      )
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" /> Copy log
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={isRunning}
+                    onClick={() => {
+                      setExecutions((prev) => prev.filter((e) => e.id !== ex.id))
+                      setViewedExecution(null)
+                    }}
+                  >
+                    Delete
+                  </Button>
+                  <Button onClick={() => setViewedExecution(null)}>Close</Button>
+                </DialogFooter>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
       {/* Delete sequence confirmation */}
       <Dialog open={!!deleteConfirmSeq} onOpenChange={(open) => !open && setDeleteConfirmSeq(null)}>
         <DialogContent className="sm:max-w-[400px]">
@@ -4053,6 +4409,8 @@ export function AutomationTab({
                   // "Disable" when any selected node is currently enabled, else "Enable".
                   const anyEnabled = [...selectedIds].some((id) => !steps.find((s) => s.id === id)?.params.disabled)
                   const n = selectedIds.size
+                  const ctxStep = steps.find((s) => s.id === ctxMenu.nodeId)
+                  const ctxRunnable = !!ctxStep && ctxStep.type !== 'COMMENT' && !ctxStep.params.disabled
                   return [
                     {
                       label: 'Configure',
@@ -4061,6 +4419,19 @@ export function AutomationTab({
                       onClick: () => handleConfigureNode(ctxMenu.nodeId!),
                       disabled: isRunning,
                     },
+                    {
+                      label: isRunning ? 'Stop & run from here' : 'Run from here',
+                      icon: <Play className="h-3.5 w-3.5" />,
+                      onClick: () => handleRunFromNode(ctxMenu.nodeId!, false),
+                      disabled: !ctxRunnable,
+                    },
+                    {
+                      label: isRunning ? 'Stop & run this node' : 'Run this node only',
+                      icon: <MousePointer2 className="h-3.5 w-3.5" />,
+                      onClick: () => handleRunFromNode(ctxMenu.nodeId!, true),
+                      disabled: !ctxRunnable,
+                    },
+                    { separator: true },
                     {
                       label: n > 1 ? `Duplicate ${n} nodes` : 'Duplicate',
                       icon: <Copy className="h-3.5 w-3.5" />,
