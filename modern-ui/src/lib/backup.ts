@@ -3,7 +3,7 @@ import packageJson from '../../package.json'
 /**
  * List of localStorage keys to include in a full backup.
  *
- * NOTE: credential keys like `sftp-creds` and `db-credentials` are intentionally
+ * NOTE: credential keys like `sftp-creds`, `s3-creds`, `sftp-saved-connections`, and `db-credentials` are intentionally
  * omitted — they are base64-wrapped passwords and should not travel in a plaintext
  * JSON backup file.
  */
@@ -21,7 +21,7 @@ const BACKUP_KEYS = [
   'rfid-emulator-last-seen-version',
 ] as const
 
-const EXCLUDED_CREDENTIAL_KEYS = ['sftp-creds', 'db-credentials']
+const EXCLUDED_CREDENTIAL_KEYS = ['sftp-creds', 's3-creds', 'db-credentials', 'sftp-saved-connections']
 
 export const BACKUP_FORMAT = 'zeus-rfid-emulator-backup'
 export const BACKUP_FORMAT_VERSION = 1

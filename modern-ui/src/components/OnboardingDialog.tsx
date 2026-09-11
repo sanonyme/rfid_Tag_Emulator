@@ -28,7 +28,7 @@ const STEPS = [
   {
     icon: Workflow,
     title: 'Automation & tools',
-    description: 'Automation chains steps on a canvas. Decoder, generator, DB, SFTP, and LAN scan live in the other tabs.',
+    description: 'Automation chains steps on a canvas. Decoder, generator, DB, Files, and LAN scan live in the other tabs.',
   },
   {
     icon: FolderOpen,

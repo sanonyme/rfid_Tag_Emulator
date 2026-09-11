@@ -46,6 +46,7 @@ import {
 } from './automation-blocks-handler.js'
 import {
   sftpConnect,
+  type SftpConnectAuth,
   sftpDisconnect,
   sftpDisconnectAll,
   sftpReaddir,
@@ -65,6 +66,52 @@ import {
   sftpFindFiles,
   cancelSftpFind,
 } from './sftp-handler.js'
+import {
+  cancelS3Find,
+  hasS3Session,
+  s3CalculateSize,
+  s3Connect,
+  s3CopyRemoteFile,
+  s3Disconnect,
+  s3DisconnectAll,
+  s3DownloadToLocalFile,
+  s3FindFiles,
+  s3Mkdir,
+  s3ReadFile,
+  s3Readdir,
+  s3Rename,
+  s3Rmrf,
+  s3SetAttributes,
+  s3Stat,
+  s3Unlink,
+  s3UploadFromLocalFile,
+  s3WriteFile,
+  s3WriteTextFile,
+  type S3ConnectOptions,
+} from './s3-handler.js'
+import {
+  cancelFtpFind,
+  ftpCalculateSize,
+  ftpConnect,
+  ftpCopyRemoteFile,
+  ftpDisconnect,
+  ftpDisconnectAll,
+  ftpDownloadToLocalFile,
+  ftpFindFiles,
+  ftpMkdir,
+  ftpReadFile,
+  ftpReaddir,
+  ftpRename,
+  ftpRmrf,
+  ftpSetAttributes,
+  ftpStat,
+  ftpUnlink,
+  ftpUploadFromLocalFile,
+  ftpWriteFile,
+  ftpWriteTextFile,
+  hasFtpSession,
+  type FtpConnectOptions,
+} from './ftp-handler.js'
 import { localReaddir, localWriteFileBase64, localParentDir, assertPathUnderRoot } from './local-fs-handler.js'
 import {
   getAleCredentials,
@@ -670,54 +717,135 @@ app.whenReady().then(() => {
     return dbGetDatabaseSchema(database)
   })
 
-  // SFTP (ssh2, multi-session)
+  const dispatchRemote = <T>(sessionId: string, handlers: { s3: () => T; ftp: () => T; sftp: () => T }): T => {
+    if (hasS3Session(sessionId)) return handlers.s3()
+    if (hasFtpSession(sessionId)) return handlers.ftp()
+    return handlers.sftp()
+  }
+  const remoteDownload = (sessionId: string, remotePath: string, localPath: string, onProgress?: (loaded: number, total: number) => void) =>
+    dispatchRemote(sessionId, {
+      s3: () => s3DownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
+      ftp: () => ftpDownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
+      sftp: () => sftpDownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
+    })
+  const remoteUpload = (sessionId: string, localPath: string, remotePath: string, onProgress?: (loaded: number, total: number) => void) =>
+    dispatchRemote(sessionId, {
+      s3: () => s3UploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
+      ftp: () => ftpUploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
+      sftp: () => sftpUploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
+    })
+  const remoteCopy = (sessionId: string, src: string, dest: string, onProgress?: (loaded: number, total: number) => void) =>
+    dispatchRemote(sessionId, {
+      s3: () => s3CopyRemoteFile(sessionId, src, dest, onProgress),
+      ftp: () => ftpCopyRemoteFile(sessionId, src, dest, onProgress),
+      sftp: () => sftpCopyRemoteFile(sessionId, src, dest, onProgress),
+    })
+
+  // SFTP (ssh2) + FTP/FTPS + S3 (same explorer IPC after connect)
   ipcMain.handle(
     'sftp-connect',
-    async (_event, host: string, port: number, username: string, password: string) => {
+    async (
+      _event,
+      host: string,
+      port: number,
+      username: string,
+      password: string,
+      auth?: SftpConnectAuth,
+    ) => {
       console.log(`SFTP: Connect ${host}:${port} as ${username}`)
-      return sftpConnect(host, port, username, password)
+      return sftpConnect(host, port, username, password, auth)
     }
   )
+  ipcMain.handle('ftp-connect', async (_event, options: FtpConnectOptions) => {
+    console.log(`FTP: Connect ${options?.host ?? ''}:${options?.port ?? 21} as ${options?.user ?? ''}`)
+    return ftpConnect(options)
+  })
+  ipcMain.handle('s3-connect', async (_event, options: S3ConnectOptions) => {
+    console.log(`S3: Connect ${options?.bucket ?? ''}`)
+    return s3Connect(options)
+  })
   ipcMain.handle('sftp-disconnect', async (_event, sessionId: string) => {
     console.log(`SFTP: Disconnect ${sessionId}`)
     await sftpDisconnect(sessionId)
+    await s3Disconnect(sessionId)
+    await ftpDisconnect(sessionId)
   })
   ipcMain.handle('sftp-readdir', async (_event, sessionId: string, remotePath: string) =>
-    sftpReaddir(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3Readdir(sessionId, remotePath),
+      ftp: () => ftpReaddir(sessionId, remotePath),
+      sftp: () => sftpReaddir(sessionId, remotePath),
+    }),
   )
   ipcMain.handle('sftp-read-file', async (_event, sessionId: string, remotePath: string) =>
-    sftpReadFile(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3ReadFile(sessionId, remotePath),
+      ftp: () => ftpReadFile(sessionId, remotePath),
+      sftp: () => sftpReadFile(sessionId, remotePath),
+    }),
   )
   ipcMain.handle(
     'sftp-write-file',
     async (_event, sessionId: string, remotePath: string, base64Data: string) =>
-      sftpWriteFile(sessionId, remotePath, base64Data),
+      dispatchRemote(sessionId, {
+        s3: () => s3WriteFile(sessionId, remotePath, base64Data),
+        ftp: () => ftpWriteFile(sessionId, remotePath, base64Data),
+        sftp: () => sftpWriteFile(sessionId, remotePath, base64Data),
+      }),
   )
   ipcMain.handle(
     'sftp-write-text-file',
     async (_event, sessionId: string, remotePath: string, text: string) =>
-      sftpWriteTextFile(sessionId, remotePath, text),
+      dispatchRemote(sessionId, {
+        s3: () => s3WriteTextFile(sessionId, remotePath, text),
+        ftp: () => ftpWriteTextFile(sessionId, remotePath, text),
+        sftp: () => sftpWriteTextFile(sessionId, remotePath, text),
+      }),
   )
   ipcMain.handle('sftp-mkdir', async (_event, sessionId: string, remotePath: string) =>
-    sftpMkdir(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3Mkdir(sessionId, remotePath),
+      ftp: () => ftpMkdir(sessionId, remotePath),
+      sftp: () => sftpMkdir(sessionId, remotePath),
+    }),
   )
   ipcMain.handle('sftp-rename', async (_event, sessionId: string, oldPath: string, newPath: string) =>
-    sftpRename(sessionId, oldPath, newPath),
+    dispatchRemote(sessionId, {
+      s3: () => s3Rename(sessionId, oldPath, newPath),
+      ftp: () => ftpRename(sessionId, oldPath, newPath),
+      sftp: () => sftpRename(sessionId, oldPath, newPath),
+    }),
   )
   ipcMain.handle('sftp-unlink', async (_event, sessionId: string, remotePath: string) =>
-    sftpUnlink(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3Unlink(sessionId, remotePath),
+      ftp: () => ftpUnlink(sessionId, remotePath),
+      sftp: () => sftpUnlink(sessionId, remotePath),
+    }),
   )
   ipcMain.handle('sftp-rmrf', async (event, sessionId: string, remotePath: string) => {
     if (!isAdminSender(event.sender)) {
       return { ok: false as const, error: 'Admin login required' }
     }
-    return sftpRmrf(sessionId, remotePath)
+    return dispatchRemote(sessionId, {
+      s3: () => s3Rmrf(sessionId, remotePath),
+      ftp: () => ftpRmrf(sessionId, remotePath),
+      sftp: () => sftpRmrf(sessionId, remotePath),
+    })
   })
   ipcMain.handle('sftp-stat', async (_event, sessionId: string, remotePath: string) =>
-    sftpStat(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3Stat(sessionId, remotePath),
+      ftp: () => ftpStat(sessionId, remotePath),
+      sftp: () => sftpStat(sessionId, remotePath),
+    }),
   )
   ipcMain.handle('sftp-calculate-size', async (_event, sessionId: string, remotePath: string) =>
-    sftpCalculateSize(sessionId, remotePath),
+    dispatchRemote(sessionId, {
+      s3: () => s3CalculateSize(sessionId, remotePath),
+      ftp: () => ftpCalculateSize(sessionId, remotePath),
+      sftp: () => sftpCalculateSize(sessionId, remotePath),
+    }),
   )
   ipcMain.handle(
     'sftp-set-attributes',
@@ -727,7 +855,12 @@ app.whenReady().then(() => {
       remotePath: string,
       attrs: { mode?: number; uid?: number; gid?: number },
       options?: { recursive?: boolean; addXToDirectories?: boolean },
-    ) => sftpSetAttributes(sessionId, remotePath, attrs, options),
+    ) =>
+      dispatchRemote(sessionId, {
+        s3: () => s3SetAttributes(),
+        ftp: () => ftpSetAttributes(),
+        sftp: () => sftpSetAttributes(sessionId, remotePath, attrs, options),
+      }),
   )
 
   ipcMain.handle(
@@ -745,18 +878,30 @@ app.whenReady().then(() => {
       },
       operationId: string,
     ) => {
-      return sftpFindFiles(sessionId, options, {
-        onProgress: (payload) => {
+      const callbacks = {
+        onProgress: (payload: {
+          scannedDirs: number
+          matchCount: number
+          currentDir: string
+          limitReached?: boolean
+        }) => {
           event.sender.send('sftp-find-progress', { operationId, ...payload })
         },
-        onMatch: (match) => {
+        onMatch: (match: { path: string; name: string; type: 'file' | 'folder'; size?: number; mtime?: number }) => {
           event.sender.send('sftp-find-match', { operationId, match })
         },
+      }
+      return dispatchRemote(sessionId, {
+        s3: () => s3FindFiles(sessionId, options, callbacks),
+        ftp: () => ftpFindFiles(sessionId, options, callbacks),
+        sftp: () => sftpFindFiles(sessionId, options, callbacks),
       })
     },
   )
   ipcMain.handle('sftp-find-cancel', (_event, sessionId: string) => {
     cancelSftpFind(sessionId)
+    cancelS3Find(sessionId)
+    cancelFtpFind(sessionId)
   })
 
   ipcMain.handle(
@@ -771,7 +916,7 @@ app.whenReady().then(() => {
       if (canceled || !filePath) {
         return { ok: false as const, cancelled: true as const }
       }
-      const r = await sftpDownloadToLocalFile(sessionId, remotePath, filePath, (loaded, total) => {
+      const r = await remoteDownload(sessionId, remotePath, filePath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
       return r.ok ? { ok: true as const, localPath: filePath } : r
@@ -793,10 +938,9 @@ app.whenReady().then(() => {
           ? assertPathUnderRoot(localRoot.trim(), localPath)
           : path.resolve(localPath)
       if (!safe) return { ok: false as const, error: 'Path outside local root' }
-      const r = await sftpDownloadToLocalFile(sessionId, remotePath, safe, (loaded, total) => {
+      return remoteDownload(sessionId, remotePath, safe, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
-      return r
     },
   )
 
@@ -815,20 +959,18 @@ app.whenReady().then(() => {
           ? assertPathUnderRoot(localRoot.trim(), localPath)
           : path.resolve(localPath)
       if (!safe) return { ok: false as const, error: 'Path outside local root' }
-      const r = await sftpUploadFromLocalFile(sessionId, safe, remotePath, (loaded, total) => {
+      return remoteUpload(sessionId, safe, remotePath, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
-      return r
     },
   )
 
   ipcMain.handle(
     'sftp-copy-remote-file',
     async (event, sessionId: string, remoteSrc: string, remoteDest: string, operationId: string) => {
-      const r = await sftpCopyRemoteFile(sessionId, remoteSrc, remoteDest, (loaded, total) => {
+      return remoteCopy(sessionId, remoteSrc, remoteDest, (loaded, total) => {
         event.sender.send('sftp-transfer-progress', { operationId, loaded, total })
       })
-      return r
     },
   )
 
@@ -1424,6 +1566,8 @@ app.on('window-all-closed', () => {
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()
+  void s3DisconnectAll()
+  void ftpDisconnectAll()
 
   if (process.platform !== 'darwin') {
     app.quit()
@@ -1442,5 +1586,7 @@ app.on('before-quit', () => {
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()
+  void s3DisconnectAll()
+  void ftpDisconnectAll()
 })
 // trigger rebuild 2

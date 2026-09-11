@@ -195,8 +195,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
   automationOpenScriptsFolder: () => ipcRenderer.invoke('automation-open-scripts-folder'),
   automationGetScriptsDir: () => ipcRenderer.invoke('automation-get-scripts-dir'),
 
-  sftpConnect: (host: string, port: number, username: string, password: string) =>
-    ipcRenderer.invoke('sftp-connect', host, port, username, password),
+  sftpConnect: (
+    host: string,
+    port: number,
+    username: string,
+    password: string,
+    auth?: { privateKeyPath?: string; passphrase?: string },
+  ) => ipcRenderer.invoke('sftp-connect', host, port, username, password, auth),
+  ftpConnect: (options: {
+    host: string
+    port?: number
+    user: string
+    password: string
+    secure?: 'off' | 'explicit' | 'implicit'
+  }) => ipcRenderer.invoke('ftp-connect', options),
+  s3Connect: (options: {
+    bucket: string
+    region: string
+    accessKeyId: string
+    secretAccessKey: string
+    sessionToken?: string
+    prefix?: string
+    endpoint?: string
+    roleArn?: string
+    roleSessionName?: string
+    externalId?: string
+    sourceIdentity?: string
+  }) => ipcRenderer.invoke('s3-connect', options),
   sftpDisconnect: (sessionId: string) => ipcRenderer.invoke('sftp-disconnect', sessionId),
   sftpReaddir: (sessionId: string, remotePath: string) =>
     ipcRenderer.invoke('sftp-readdir', sessionId, remotePath),

@@ -339,7 +339,7 @@ export const DbSidebar = forwardRef<HTMLDivElement, DbSidebarProps>(function DbS
 
       {/* Tree — plain overflow so row counts reflow when the sidebar is resized */}
       <div
-        className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden"
+        className="flex-1 min-h-0 w-full overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]"
         onContextMenu={onPaneContextMenu}
       >
         <div className="p-1.5 space-y-0.5 w-full min-w-0" onContextMenu={onPaneContextMenu}>

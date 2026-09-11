@@ -26,9 +26,10 @@ import {
   ListChecks,
   Database,
   ChevronDown,
+  ChevronUp,
   MoreHorizontal,
   FileText,
-  ChevronUp,
+  BookmarkPlus,
 } from 'lucide-react'
 
 function ToolbarSep() {
@@ -79,8 +80,7 @@ function IconAction({
 }
 
 export interface SftpToolbarProps {
-  host: string
-  sftpPort: string
+  connectionLabel: string
   foldersFirst: boolean
   onFoldersFirstChange: (v: boolean) => void
   selectMode: boolean
@@ -93,6 +93,7 @@ export interface SftpToolbarProps {
   onCollapseAll: () => void
   collapseAllDisabled?: boolean
   onFind: () => void
+  onSaveConnection?: () => void
   onPickLocal: () => void
   onMigrateOpen: () => void
   onSelectAllInTarget: () => void
@@ -107,11 +108,11 @@ export interface SftpToolbarProps {
   onMove: () => void
   onProperties: () => void
   onDelete: () => void
+  showMigrate?: boolean
 }
 
 export function SftpToolbar({
-  host,
-  sftpPort,
+  connectionLabel,
   foldersFirst,
   onFoldersFirstChange,
   selectMode,
@@ -124,6 +125,7 @@ export function SftpToolbar({
   onCollapseAll,
   collapseAllDisabled,
   onFind,
+  onSaveConnection,
   onPickLocal,
   onMigrateOpen,
   onSelectAllInTarget,
@@ -138,6 +140,7 @@ export function SftpToolbar({
   onMove,
   onProperties,
   onDelete,
+  showMigrate = true,
 }: SftpToolbarProps) {
   const [newOpen, setNewOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
@@ -176,8 +179,8 @@ export function SftpToolbar({
             className="flex items-center gap-1.5 rounded-md border border-border/40 bg-background/60 pl-2.5 pr-1 py-0.5 shrink-0"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" aria-hidden />
-            <span className="font-mono [font-family:var(--font-mono)] text-[11px] text-muted-foreground truncate max-w-[160px]">
-              {host}:{sftpPort}
+            <span className="font-mono [font-family:var(--font-mono)] text-[11px] text-muted-foreground truncate max-w-[200px]">
+              {connectionLabel}
             </span>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -206,6 +209,9 @@ export function SftpToolbar({
             disabled={collapseAllDisabled}
           />
           <IconAction icon={Search} label="Find files" shortcut="Ctrl+F" onClick={onFind} />
+          {onSaveConnection && (
+            <IconAction icon={BookmarkPlus} label="Save connection" onClick={onSaveConnection} />
+          )}
           <IconAction icon={FolderOpen} label="Local folder" onClick={onPickLocal} />
 
           <ToolbarSep />
@@ -293,40 +299,42 @@ export function SftpToolbar({
             Folders first
           </label>
 
-          <div className="relative shrink-0" ref={moreRef}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setMoreOpen((v) => !v)}
+          {showMigrate && (
+            <div className="relative shrink-0" ref={moreRef}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => setMoreOpen((v) => !v)}
+                  >
+                    <MoreHorizontal className="w-4 h-4" />
+                    <span className="sr-only">More</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">More tools</TooltipContent>
+              </Tooltip>
+              {moreOpen && (
+                <div
+                  className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border/60 bg-popover py-1 shadow-lg animate-in fade-in-0 zoom-in-95"
                 >
-                  <MoreHorizontal className="w-4 h-4" />
-                  <span className="sr-only">More</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">More tools</TooltipContent>
-            </Tooltip>
-            {moreOpen && (
-              <div
-                className="absolute right-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border/60 bg-popover py-1 shadow-lg animate-in fade-in-0 zoom-in-95"
-              >
-                <button
-                  type="button"
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent text-left text-amber-600 dark:text-amber-400"
-                  onClick={() => {
-                    setMoreOpen(false)
-                    onMigrateOpen()
-                  }}
-                >
-                  <Database className="w-3.5 h-3.5 shrink-0" />
-                  Migrate cleanup
-                </button>
-              </div>
-            )}
-          </div>
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-accent text-left text-amber-600 dark:text-amber-400"
+                    onClick={() => {
+                      setMoreOpen(false)
+                      onMigrateOpen()
+                    }}
+                  >
+                    <Database className="w-3.5 h-3.5 shrink-0" />
+                    Migrate cleanup
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {showActionsRow && (

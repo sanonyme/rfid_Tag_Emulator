@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { FolderInput, Plus, X, Monitor } from 'lucide-react'
+import { FolderInput, Plus, X, Monitor, Cloud, Server } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { pageShell } from '@/lib/ui-tokens'
 import { EmptyState } from './EmptyState'
@@ -100,8 +100,8 @@ export function SftpTab({ host }: SftpTabProps) {
       <EmptyState
         data-tour="tour-sftp"
         icon={Monitor}
-        title="SFTP explorer"
-        description="SFTP is only available in the desktop Electron app. Run the packaged or dev desktop build to connect over SSH and browse remote files."
+        title="File explorer"
+        description="SFTP, FTP, and object storage are only available in the desktop Electron app. Run the packaged or dev desktop build to connect and browse remote files."
       />
     )
   }
@@ -113,7 +113,7 @@ export function SftpTab({ host }: SftpTabProps) {
       <div
         className="flex shrink-0 items-center gap-1 overflow-x-auto rounded-lg border border-border/50 bg-muted/20 px-1 py-1"
         role="tablist"
-        aria-label="SFTP connections"
+        aria-label="File connections"
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId
@@ -135,7 +135,13 @@ export function SftpTab({ host }: SftpTabProps) {
                 onClick={() => setActiveTabId(tab.id)}
                 title={tab.label}
               >
-                <FolderInput className="h-3.5 w-3.5 shrink-0" />
+                {tab.label.startsWith('s3://') ? (
+                  <Cloud className="h-3.5 w-3.5 shrink-0" />
+                ) : tab.label.startsWith('ftp://') ? (
+                  <Server className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <FolderInput className="h-3.5 w-3.5 shrink-0" />
+                )}
                 <span className="truncate font-mono">{tab.label}</span>
               </button>
               <button
@@ -155,7 +161,7 @@ export function SftpTab({ host }: SftpTabProps) {
         <button
           type="button"
           className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-background/60 hover:text-foreground"
-          aria-label="New SFTP connection"
+          aria-label="New file connection"
           onClick={addTab}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -163,7 +169,7 @@ export function SftpTab({ host }: SftpTabProps) {
         </button>
       </div>
 
-      <div className="relative min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {tabs.map((tab) => (
           <SftpSessionPanel
             key={tab.id}

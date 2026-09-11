@@ -595,7 +595,7 @@ function App() {
       tcpConnected={connected}
       pollActive={effectiveActiveTab === 'edge' || effectiveActiveTab === 'automation'}
     >
-    <div className="h-screen flex flex-col bg-background relative overflow-hidden">
+    <div className="h-full flex flex-col bg-background relative overflow-hidden">
       {currentTheme === 'christmas' && <SnowOverlay />}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute inset-0 bg-[linear-gradient(hsl(var(--primary)/0.02)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--primary)/0.02)_1px,transparent_1px)] bg-[size:64px_64px] [mask-image:radial-gradient(ellipse_80%_50%_at_50%_50%,#000,transparent)]" />

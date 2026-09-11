@@ -501,7 +501,37 @@ class MockElectronAPI implements ElectronAPI {
     return { ok: false as const, error: 'SFTP is only available in the desktop app.' }
   }
 
-  async sftpConnect(_host: string, _port: number, _username: string, _password: string) {
+  async sftpConnect(
+    _host: string,
+    _port: number,
+    _username: string,
+    _password: string,
+    _auth?: { privateKeyPath?: string; passphrase?: string },
+  ) {
+    return this.sftpUnavailable()
+  }
+  async ftpConnect(_options: {
+    host: string
+    port?: number
+    user: string
+    password: string
+    secure?: 'off' | 'explicit' | 'implicit'
+  }) {
+    return this.sftpUnavailable()
+  }
+  async s3Connect(_options: {
+    bucket: string
+    region: string
+    accessKeyId: string
+    secretAccessKey: string
+    sessionToken?: string
+    prefix?: string
+    endpoint?: string
+    roleArn?: string
+    roleSessionName?: string
+    externalId?: string
+    sourceIdentity?: string
+  }) {
     return this.sftpUnavailable()
   }
   async sftpDisconnect(_sessionId: string) {}

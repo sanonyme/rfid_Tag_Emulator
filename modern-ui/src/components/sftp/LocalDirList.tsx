@@ -121,7 +121,7 @@ export function LocalDirList({
   return (
     <div
       className={cn(
-        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-h-[200px] min-w-0 flex flex-col',
+        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-h-[200px] min-w-0 flex flex-col overflow-hidden',
         dropHighlight && 'ring-2 ring-primary/50',
         className,
       )}
@@ -149,7 +149,7 @@ export function LocalDirList({
         {headerBtn('Changed', 'mtime', col.changed)}
         {headerBtn('Rights', 'mode', col.rights)}
       </div>
-      <div className="space-y-0.5 min-w-0 overflow-y-auto flex-1 min-h-0 px-0.5">
+      <div className="space-y-0.5 min-w-0 overflow-y-auto overflow-x-hidden overscroll-contain flex-1 min-h-0 px-0.5 [scrollbar-gutter:stable]">
         {canGoUp && (
           <button
             type="button"

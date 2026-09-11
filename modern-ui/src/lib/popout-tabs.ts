@@ -33,7 +33,7 @@ export const POPOUT_TAB_LABELS: Record<string, string> = {
   generator: 'Generator',
   jsonlint: 'JSON Lint',
   database: 'Database',
-  sftp: 'SFTP',
+  sftp: 'Files',
   netscan: 'LAN Scan',
   link2uid: 'Link → UID',
   terminal: 'Terminal',

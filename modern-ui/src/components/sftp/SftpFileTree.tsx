@@ -92,6 +92,7 @@ interface SftpFileTreeProps {
   expandedPaths: ReadonlySet<string>
   onRequestCollapse: (path: string) => void
   onCollapseAll?: () => void
+  hideUnixMeta?: boolean
 }
 
 interface FileItemProps {
@@ -146,11 +147,11 @@ function MetaCells({ node }: { node: SftpFileNode }) {
       <div className={cn(col.changed, 'text-muted-foreground')} title={formatSftpMtime(node.mtimeSec)}>
         {formatSftpMtime(node.mtimeSec)}
       </div>
-      <div className={cn(col.rights, 'text-muted-foreground')} title={formatUnixMode(node.mode)}>
+      <div className={cn(col.rights, 'sftp-unix-meta text-muted-foreground')} title={formatUnixMode(node.mode)}>
         {formatUnixMode(node.mode)}
       </div>
       <div
-        className={cn(col.owner, 'text-muted-foreground')}
+        className={cn(col.owner, 'sftp-unix-meta text-muted-foreground')}
         title={formatSftpOwner(node.uid, node.gid)}
       >
         {formatSftpOwner(node.uid, node.gid)}
@@ -164,8 +165,8 @@ function EmptyMetaCells() {
     <>
       <div className={col.size} />
       <div className={col.changed} />
-      <div className={col.rights} />
-      <div className={col.owner} />
+      <div className={cn(col.rights, 'sftp-unix-meta')} />
+      <div className={cn(col.owner, 'sftp-unix-meta')} />
     </>
   )
 }
@@ -251,7 +252,7 @@ function ColumnHeaderRow({
         onClick={() => onSortChange('mode')}
         className={cn(
           col.rights,
-          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors font-mono',
+          'sftp-unix-meta text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors font-mono',
           sortKey === 'mode' && 'text-primary',
         )}
       >
@@ -263,7 +264,7 @@ function ColumnHeaderRow({
         onClick={() => onSortChange('owner')}
         className={cn(
           col.owner,
-          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
+          'sftp-unix-meta text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
           sortKey === 'owner' && 'text-primary',
         )}
       >
@@ -376,8 +377,8 @@ function FileItem({
           onFolderDrop(node.path, e)
         }}
         className={cn(
-          'group flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none',
-          'transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
+          'group flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none overflow-hidden',
+          'transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
           isHovered && 'bg-fileTree-hover',
           isSelected && 'ring-1 ring-inset ring-primary/40 bg-primary/5',
           isInMultiSelect && 'ring-1 ring-inset ring-primary/50 bg-primary/10',
@@ -449,13 +450,13 @@ function FileItem({
 
           <div
             className={cn(
-              'flex items-center justify-center w-5 h-5 rounded transition-all duration-200 shrink-0 text-folderIcon',
+              'flex items-center justify-center w-5 h-5 rounded transition-opacity duration-200 shrink-0 text-folderIcon',
               isFolder
                 ? isHovered
-                  ? 'scale-110'
+                  ? 'opacity-100'
                   : 'opacity-90'
                 : isHovered
-                  ? cn(fileIcon.color, 'scale-110')
+                  ? cn(fileIcon.color, 'opacity-100')
                   : cn(fileIcon.color, 'opacity-70'),
             )}
           >
@@ -497,7 +498,7 @@ function FileItem({
         <div
           className={cn(
             'transition-[opacity] duration-200 ease-out',
-            isOpen ? 'opacity-100 overflow-visible' : 'max-h-0 overflow-hidden opacity-0 pointer-events-none',
+            isOpen ? 'opacity-100 overflow-hidden' : 'max-h-0 overflow-hidden opacity-0 pointer-events-none',
           )}
         >
           {node.loading && childList.length === 0 && (
@@ -561,6 +562,7 @@ export function SftpFileTree({
   expandedPaths,
   onRequestCollapse,
   onCollapseAll,
+  hideUnixMeta = false,
 }: SftpFileTreeProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -611,7 +613,8 @@ export function SftpFileTree({
   return (
     <div
       className={cn(
-        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-w-0 flex flex-col min-h-0 h-full',
+        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-w-0 flex flex-col min-h-0 h-full overflow-hidden',
+        hideUnixMeta && '[&_.sftp-unix-meta]:hidden',
         className,
       )}
     >
@@ -623,11 +626,12 @@ export function SftpFileTree({
         </div>
         <span className="text-xs text-muted-foreground ml-2">{title}</span>
         <div className="flex-1 min-w-0" />
-        {onCollapseAll && expandedPaths.size > 0 && (
+        {onCollapseAll && (
           <button
             type="button"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors shrink-0"
+            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors shrink-0 disabled:pointer-events-none disabled:opacity-40"
             onClick={onCollapseAll}
+            disabled={expandedPaths.size === 0}
             title="Collapse all folders"
           >
             <ChevronUp className="w-3 h-3 shrink-0" />
@@ -645,7 +649,7 @@ export function SftpFileTree({
 
       <div
         ref={scrollRef}
-        className="min-w-0 flex-1 min-h-0 overflow-auto px-0.5"
+        className="min-w-0 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-0.5 [scrollbar-gutter:stable]"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
       >
         <div style={{ height: virtual.totalHeight, position: 'relative' }}>
@@ -660,6 +664,7 @@ export function SftpFileTree({
                   left: 0,
                   right: 0,
                   height: SFTP_ROW_HEIGHT,
+                  overflow: 'hidden',
                 }}
               >
                 <FileItem

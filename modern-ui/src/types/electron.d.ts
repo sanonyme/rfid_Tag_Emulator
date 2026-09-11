@@ -320,8 +320,29 @@ export interface ElectronAPI {
     host: string,
     port: number,
     username: string,
-    password: string
+    password: string,
+    auth?: { privateKeyPath?: string; passphrase?: string },
   ) => Promise<{ ok: true; sessionId: string } | { ok: false; error: string }>
+  ftpConnect: (options: {
+    host: string
+    port?: number
+    user: string
+    password: string
+    secure?: 'off' | 'explicit' | 'implicit'
+  }) => Promise<{ ok: true; sessionId: string } | { ok: false; error: string }>
+  s3Connect: (options: {
+    bucket: string
+    region: string
+    accessKeyId: string
+    secretAccessKey: string
+    sessionToken?: string
+    prefix?: string
+    endpoint?: string
+    roleArn?: string
+    roleSessionName?: string
+    externalId?: string
+    sourceIdentity?: string
+  }) => Promise<{ ok: true; sessionId: string } | { ok: false; error: string }>
   sftpDisconnect: (sessionId: string) => Promise<void>
   sftpReaddir: (
     sessionId: string,

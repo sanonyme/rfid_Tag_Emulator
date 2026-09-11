@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import { Transform } from 'stream'
 import { pipeline } from 'stream/promises'
 import { Client } from 'ssh2'
-import type { SFTPWrapper, FileEntry, Stats } from 'ssh2'
+import type { ConnectConfig, SFTPWrapper, FileEntry, Stats } from 'ssh2'
 import { normalizeRemotePath } from '../src/lib/sftp-remote-path.js'
 
 const READ_MAX_BYTES = 2 * 1024 * 1024
@@ -71,13 +71,32 @@ async function closeSession(sessionId: string): Promise<void> {
   }
 }
 
+export interface SftpConnectAuth {
+  privateKeyPath?: string
+  passphrase?: string
+}
+
 export async function sftpConnect(
   host: string,
   port: number,
   username: string,
-  password: string
+  password: string,
+  auth?: SftpConnectAuth,
 ): Promise<{ ok: true; sessionId: string } | { ok: false; error: string }> {
   const sessionId = randomUUID()
+  const keyPath = auth?.privateKeyPath?.trim()
+  let privateKey: Buffer | undefined
+  if (keyPath) {
+    try {
+      privateKey = await fs.promises.readFile(keyPath)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      return { ok: false, error: `Could not read private key: ${msg}` }
+    }
+  }
+  if (!privateKey && !password) {
+    return { ok: false, error: 'Password or private key is required' }
+  }
   const c = new Client()
   return new Promise((resolve) => {
     let settled = false
@@ -131,13 +150,18 @@ export async function sftpConnect(
     })
 
     try {
-      c.connect({
+      const config: ConnectConfig = {
         host: host.trim(),
         port: port && port > 0 ? port : 22,
         username: username.trim(),
-        password,
         readyTimeout: 20000,
-      })
+      }
+      if (privateKey) {
+        config.privateKey = privateKey
+        if (auth?.passphrase) config.passphrase = auth.passphrase
+      }
+      if (password) config.password = password
+      c.connect(config)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       finish({ ok: false, error: msg })

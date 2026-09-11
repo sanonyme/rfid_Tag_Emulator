@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -39,11 +39,33 @@ import {
   ShieldAlert,
   FlaskConical,
   Rocket,
+  Cloud,
+  Server,
+  HardDrive,
+  KeyRound,
+  ChevronLeft,
+  type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
+import {
+  connectionIdentity,
+  isObjectStoreConnection,
+  isObjectStoreProtocol,
+  loadSavedConnections,
+  persistSavedConnections,
+  protocolShortLabel,
+  removeSavedConnection,
+  resolvedConnectionName,
+  upsertSavedConnection,
+  type ExplorerProtocol,
+  type SavedConnectionDraft,
+  type SavedExplorerConnection,
+  type SavedS3Connection,
+} from '@/lib/sftp-saved-connections'
+import { SftpSavedConnections } from './SftpSavedConnections'
 
 import {
   posixJoin,
@@ -61,8 +83,97 @@ import {
   rebuildSftpTreeWithExpanded,
 } from './sftp-tree-mutations'
 
-const SFTP_CREDS_KEY = 'sftp-creds'
+const PROTOCOL_KEY = 'sftp-explorer-protocol'
 const DB_CREDS_KEY = 'db-credentials'
+
+type S3Creds = {
+  bucket?: string
+  region?: string
+  accessKeyId?: string
+  secretAccessKey?: string
+  sessionToken?: string
+  prefix?: string
+  endpoint?: string
+  assumeRole?: boolean
+  roleArn?: string
+  roleSessionName?: string
+  externalId?: string
+  sourceIdentity?: string
+}
+
+const S3_REGIONS = [
+  'us-east-1',
+  'us-east-2',
+  'us-west-1',
+  'us-west-2',
+  'eu-west-1',
+  'eu-west-2',
+  'eu-central-1',
+  'ap-southeast-1',
+  'ap-northeast-1',
+  'me-south-1',
+]
+
+function s3ConnectionLabel(bucket: string, prefix: string): string {
+  const b = bucket.trim() || 'bucket'
+  const p = prefix.trim().replace(/^\/+|\/+$/g, '')
+  return p ? `s3://${b}/${p}` : `s3://${b}`
+}
+
+function parseStoredProtocol(raw: string | null): ExplorerProtocol {
+  if (raw === 's3' || raw === 'ftp' || raw === 's3compat') return raw
+  return 'sftp'
+}
+
+function protocolTitle(p: ExplorerProtocol): string {
+  if (p === 's3') return 'Amazon S3'
+  if (p === 's3compat') return 'S3-compatible'
+  if (p === 'ftp') return 'FTP'
+  return 'SFTP'
+}
+
+function protocolHint(p: ExplorerProtocol): string {
+  if (p === 's3') return 'IAM access key. Turn on Assume Role if the bucket needs STS.'
+  if (p === 's3compat') return 'MinIO, Cloudflare R2, Wasabi, and other S3 APIs.'
+  if (p === 'ftp') return 'Plain FTP or FTPS file drops.'
+  return 'SSH file transfer to Edge hosts and Linux servers.'
+}
+
+const PROTOCOL_CHOICES: { id: ExplorerProtocol; label: string; hint: string; icon: LucideIcon }[] = [
+  { id: 'sftp', label: 'SFTP', hint: 'SSH to Edge hosts and Linux servers', icon: FolderInput },
+  { id: 'ftp', label: 'FTP', hint: 'Classic FTP or FTPS file drops', icon: Server },
+  { id: 's3', label: 'Amazon S3', hint: 'IAM keys, optional Assume Role', icon: Cloud },
+  { id: 's3compat', label: 'S3-compatible', hint: 'MinIO, R2, Wasabi, LocalStack', icon: HardDrive },
+]
+
+function connectedToast(p: ExplorerProtocol): string {
+  if (p === 's3') return 'S3 connected'
+  if (p === 's3compat') return 'S3-compatible connected'
+  if (p === 'ftp') return 'FTP connected'
+  return 'SFTP connected'
+}
+
+function ProtocolGlyph({ protocol, className }: { protocol: ExplorerProtocol; className?: string }) {
+  if (protocol === 's3') return <Cloud className={className} />
+  if (protocol === 's3compat') return <HardDrive className={className} />
+  if (protocol === 'ftp') return <Server className={className} />
+  return <FolderInput className={className} />
+}
+
+function ExpandSection({ open, children }: { open: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'grid transition-[grid-template-rows] duration-200 ease-out',
+        open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+      )}
+    >
+      <div className="min-h-0 overflow-hidden">
+        <div className={cn('space-y-3', open && 'pt-3')}>{children}</div>
+      </div>
+    </div>
+  )
+}
 
 type MigrateEnv = 'prod' | 'staging'
 
@@ -118,8 +229,36 @@ export function SftpSessionPanel({
   const [sftpPort, setSftpPort] = useState('22')
   const [sftpUser, setSftpUser] = useState('')
   const [sftpPass, setSftpPass] = useState('')
-  const [rememberCreds, setRememberCreds] = useState(false)
+  const [sftpUseKey, setSftpUseKey] = useState(false)
+  const [sftpKeyPath, setSftpKeyPath] = useState('')
+  const [sftpKeyPass, setSftpKeyPass] = useState('')
+  const [ftpSecure, setFtpSecure] = useState<'off' | 'explicit' | 'implicit'>('off')
+  const keyFileInputRef = useRef<HTMLInputElement>(null)
+  const [saveConnectionName, setSaveConnectionName] = useState('')
+  const [savedConnections, setSavedConnections] = useState<SavedExplorerConnection[]>([])
+  const [activeSavedId, setActiveSavedId] = useState<string | null>(null)
   const [credsLoaded, setCredsLoaded] = useState(false)
+  const [protocol, setProtocol] = useState<ExplorerProtocol>(() => {
+    try {
+      return parseStoredProtocol(localStorage.getItem(PROTOCOL_KEY))
+    } catch {
+      return 'sftp'
+    }
+  })
+  const [protocolChosen, setProtocolChosen] = useState(false)
+  const [s3Bucket, setS3Bucket] = useState('')
+  const [s3Region, setS3Region] = useState('eu-west-1')
+  const [s3AccessKey, setS3AccessKey] = useState('')
+  const [s3Secret, setS3Secret] = useState('')
+  const [s3Prefix, setS3Prefix] = useState('')
+  const [s3Endpoint, setS3Endpoint] = useState('')
+  const [s3SessionToken, setS3SessionToken] = useState('')
+  const [s3AssumeRole, setS3AssumeRole] = useState(false)
+  const [s3RoleArn, setS3RoleArn] = useState('')
+  const [s3RoleSessionName, setS3RoleSessionName] = useState('')
+  const [s3ExternalId, setS3ExternalId] = useState('')
+  const [s3SourceIdentity, setS3SourceIdentity] = useState('')
+  const [showS3Advanced, setShowS3Advanced] = useState(false)
 
   const [connected, setConnected] = useState(false)
   const [connecting, setConnecting] = useState(false)
@@ -127,27 +266,40 @@ export function SftpSessionPanel({
   useEffect(() => {
     if (!isActive) return
     if (connected) {
+      const label = isObjectStoreProtocol(protocol)
+        ? s3ConnectionLabel(s3Bucket, s3Prefix)
+        : protocol === 'ftp'
+          ? `ftp://${host}:${sftpPort}`
+          : `${host}:${sftpPort}`
       publishStatus('sftp', {
         status: 'connected',
-        host: host || undefined,
-        port: parseInt(sftpPort, 10) || 22,
-        label: 'SFTP',
+        host: isObjectStoreProtocol(protocol) ? s3Bucket || undefined : host || undefined,
+        port: isObjectStoreProtocol(protocol) ? undefined : parseInt(sftpPort, 10) || (protocol === 'ftp' ? 21 : 22),
+        label: protocolShortLabel(protocol),
       })
       onConnectionChange?.({
         connected: true,
-        host: host || undefined,
-        port: parseInt(sftpPort, 10) || 22,
-        label: `${host}:${sftpPort}`,
+        host: isObjectStoreProtocol(protocol) ? s3Bucket || undefined : host || undefined,
+        port: isObjectStoreProtocol(protocol) ? undefined : parseInt(sftpPort, 10) || (protocol === 'ftp' ? 21 : 22),
+        label,
       })
     } else if (connecting) {
-      publishStatus('sftp', { status: 'connecting', host: host || undefined, label: 'SFTP' })
-      onConnectionChange?.({ connected: false, host: host || undefined, label: 'Connecting…' })
+      publishStatus('sftp', {
+        status: 'connecting',
+        host: isObjectStoreProtocol(protocol) ? s3Bucket || undefined : host || undefined,
+        label: protocolShortLabel(protocol),
+      })
+      onConnectionChange?.({
+        connected: false,
+        host: isObjectStoreProtocol(protocol) ? s3Bucket || undefined : host || undefined,
+        label: 'Connecting…',
+      })
     } else {
       clearStatus('sftp')
       onConnectionChange?.({ connected: false, label: 'New connection' })
     }
     return () => { /* keep status across re-renders */ }
-  }, [connected, connecting, host, sftpPort, isActive, onConnectionChange])
+  }, [connected, connecting, host, sftpPort, isActive, onConnectionChange, protocol, s3Bucket, s3Prefix])
 
   useEffect(() => {
     if (!isActive) return
@@ -540,69 +692,252 @@ export function SftpSessionPanel({
     setPathGoInput(uploadTargetDir)
   }, [uploadTargetDir])
 
+  const applyS3Fields = useCallback((parsed: SavedS3Connection | S3Creds) => {
+    if (parsed.bucket) setS3Bucket(parsed.bucket)
+    if (parsed.region) setS3Region(parsed.region)
+    setS3AccessKey(parsed.accessKeyId || '')
+    setS3Secret(parsed.secretAccessKey || '')
+    setS3SessionToken(parsed.sessionToken || '')
+    setS3Prefix(parsed.prefix || '')
+    setS3Endpoint(parsed.endpoint || '')
+    setS3RoleArn(parsed.roleArn || '')
+    setS3RoleSessionName(parsed.roleSessionName || '')
+    setS3ExternalId(parsed.externalId || '')
+    setS3SourceIdentity(parsed.sourceIdentity || '')
+    setS3AssumeRole(parsed.assumeRole === true || Boolean(parsed.roleArn))
+    if (
+      parsed.sessionToken ||
+      parsed.prefix ||
+      (parsed.endpoint && !('protocol' in parsed && parsed.protocol === 's3compat'))
+    ) {
+      setShowS3Advanced(true)
+    }
+  }, [])
+
   useEffect(() => {
-    (async () => {
-      try {
-        if (api?.safeStoreGet) {
-          const raw = await api.safeStoreGet(SFTP_CREDS_KEY)
-          if (raw) {
-            const parsed = JSON.parse(raw) as { host?: string; port?: string; user?: string; pass?: string }
-            if (parsed.host) setHost(parsed.host)
-            if (parsed.port) setSftpPort(parsed.port)
-            setSftpUser(parsed.user || '')
-            setSftpPass(parsed.pass || '')
-            setRememberCreds(true)
-            setCredsLoaded(true)
-            return
-          }
-        }
-      } catch {
-        /* fall through */
+    ;(async () => {
+      const list = await loadSavedConnections(api)
+      setSavedConnections(list)
+      const sftpSaved = list.find((c) => c.protocol === 'sftp')
+      const ftpSaved = list.find((c) => c.protocol === 'ftp')
+      const s3Saved = list.find((c) => c.protocol === 's3' || c.protocol === 's3compat')
+      if (sftpSaved) {
+        setHost(sftpSaved.host)
+        setSftpPort(sftpSaved.port || '22')
+        setSftpUser(sftpSaved.user)
+        setSftpPass(sftpSaved.pass)
+        setSftpKeyPath(sftpSaved.privateKeyPath || '')
+        setSftpKeyPass(sftpSaved.passphrase || '')
+        setSftpUseKey(Boolean(sftpSaved.privateKeyPath))
       }
+      if (ftpSaved && !sftpSaved) {
+        setHost(ftpSaved.host)
+        setSftpPort(ftpSaved.port || '21')
+        setSftpUser(ftpSaved.user)
+        setSftpPass(ftpSaved.pass)
+        setFtpSecure(ftpSaved.secure)
+      }
+      if (s3Saved && isObjectStoreConnection(s3Saved)) applyS3Fields(s3Saved)
+      let preferredProtocol: ExplorerProtocol = 'sftp'
       try {
-        const raw = localStorage.getItem(SFTP_CREDS_KEY)
-        if (raw) {
-          const parsed = JSON.parse(raw) as { host?: string; port?: string; user?: string; pass?: string }
-          if (parsed.host) setHost(parsed.host)
-          if (parsed.port) setSftpPort(parsed.port)
-          setSftpUser(parsed.user || '')
-          setSftpPass(parsed.pass || '')
-          setRememberCreds(true)
-        }
+        preferredProtocol = parseStoredProtocol(localStorage.getItem(PROTOCOL_KEY))
       } catch {
         /* ignore */
       }
+      const preferred =
+        (preferredProtocol === 's3' || preferredProtocol === 's3compat'
+          ? list.find((c) => c.protocol === preferredProtocol) ?? s3Saved
+          : preferredProtocol === 'ftp'
+            ? ftpSaved
+            : sftpSaved) ?? list[0] ?? null
+      if (preferred) {
+        setSaveConnectionName(preferred.name)
+        setActiveSavedId(preferred.id)
+      }
       setCredsLoaded(true)
     })()
-  }, [api])
+  }, [api, applyS3Fields])
 
-  const persistCreds = useCallback(async () => {
-    const payload = JSON.stringify({
-      host,
-      port: sftpPort,
-      user: sftpUser,
-      pass: sftpPass,
+  const selectProtocol = useCallback((next: ExplorerProtocol) => {
+    setProtocolChosen(true)
+    setProtocol((prev) => {
+      if (prev !== next) {
+        setSaveConnectionName('')
+        setActiveSavedId(null)
+        if ((prev === 'sftp' || prev === 'ftp') && (next === 'sftp' || next === 'ftp')) {
+          setSftpPort((port) => {
+            const n = port.trim()
+            if (prev === 'sftp' && (n === '' || n === '22')) return '21'
+            if (prev === 'ftp' && (n === '' || n === '21' || n === '990')) return '22'
+            return port
+          })
+        }
+      }
+      return next
     })
     try {
-      if (api?.safeStoreSet) {
-        await api.safeStoreSet(SFTP_CREDS_KEY, payload)
-        localStorage.removeItem(SFTP_CREDS_KEY)
-        return
-      }
-    } catch {
-      /* fall through */
-    }
-    localStorage.setItem(SFTP_CREDS_KEY, payload)
-  }, [api, host, sftpPort, sftpUser, sftpPass])
-
-  const clearCreds = useCallback(async () => {
-    try {
-      if (api?.safeStoreDelete) await api.safeStoreDelete(SFTP_CREDS_KEY)
+      localStorage.setItem(PROTOCOL_KEY, next)
     } catch {
       /* ignore */
     }
-    localStorage.removeItem(SFTP_CREDS_KEY)
-  }, [api])
+  }, [])
+
+  const applySavedToForm = useCallback(
+    (c: SavedExplorerConnection) => {
+      setActiveSavedId(c.id)
+      setSaveConnectionName(c.name)
+      if (isObjectStoreConnection(c)) {
+        selectProtocol(c.protocol)
+        applyS3Fields(c)
+        return
+      }
+      if (c.protocol === 'ftp') {
+        selectProtocol('ftp')
+        setHost(c.host)
+        setSftpPort(c.port || '21')
+        setSftpUser(c.user)
+        setSftpPass(c.pass)
+        setFtpSecure(c.secure)
+        return
+      }
+      selectProtocol('sftp')
+      setHost(c.host)
+      setSftpPort(c.port || '22')
+      setSftpUser(c.user)
+      setSftpPass(c.pass)
+      setSftpKeyPath(c.privateKeyPath || '')
+      setSftpKeyPass(c.passphrase || '')
+      setSftpUseKey(Boolean(c.privateKeyPath))
+    },
+    [applyS3Fields, selectProtocol],
+  )
+
+  const draftFromForm = useCallback((): SavedConnectionDraft => {
+    if (isObjectStoreProtocol(protocol)) {
+      return {
+        protocol,
+        name: saveConnectionName,
+        bucket: s3Bucket.trim(),
+        region: s3Region.trim(),
+        accessKeyId: s3AccessKey.trim(),
+        secretAccessKey: s3Secret,
+        sessionToken: s3SessionToken.trim() || undefined,
+        prefix: s3Prefix.trim() || undefined,
+        endpoint: s3Endpoint.trim() || undefined,
+        assumeRole: protocol === 's3' && s3AssumeRole,
+        roleArn: protocol === 's3' ? s3RoleArn.trim() || undefined : undefined,
+        roleSessionName: protocol === 's3' ? s3RoleSessionName.trim() || undefined : undefined,
+        externalId: protocol === 's3' ? s3ExternalId.trim() || undefined : undefined,
+        sourceIdentity: protocol === 's3' ? s3SourceIdentity.trim() || undefined : undefined,
+      }
+    }
+    if (protocol === 'ftp') {
+      return {
+        protocol: 'ftp',
+        name: saveConnectionName,
+        host: host.trim(),
+        port: sftpPort.trim() || '21',
+        user: sftpUser.trim(),
+        pass: sftpPass,
+        secure: ftpSecure,
+      }
+    }
+    return {
+      protocol: 'sftp',
+      name: saveConnectionName,
+      host: host.trim(),
+      port: sftpPort.trim() || '22',
+      user: sftpUser.trim(),
+      pass: sftpPass,
+      privateKeyPath: sftpUseKey ? sftpKeyPath.trim() || undefined : undefined,
+      passphrase: sftpUseKey ? sftpKeyPass || undefined : undefined,
+    }
+  }, [
+    protocol,
+    saveConnectionName,
+    s3Bucket,
+    s3Region,
+    s3AccessKey,
+    s3Secret,
+    s3SessionToken,
+    s3Prefix,
+    s3Endpoint,
+    s3AssumeRole,
+    s3RoleArn,
+    s3RoleSessionName,
+    s3ExternalId,
+    s3SourceIdentity,
+    host,
+    sftpPort,
+    sftpUser,
+    sftpPass,
+    ftpSecure,
+    sftpUseKey,
+    sftpKeyPath,
+    sftpKeyPass,
+  ])
+
+  const commitSavedList = useCallback(
+    async (list: SavedExplorerConnection[]) => {
+      setSavedConnections(list)
+      await persistSavedConnections(list, api)
+    },
+    [api],
+  )
+
+  const saveCurrentConnection = useCallback(async () => {
+    const draft = draftFromForm()
+    if ((draft.protocol === 'sftp' || draft.protocol === 'ftp') && (!draft.host || !draft.user)) {
+      toast.error('Host and username are required to save')
+      return
+    }
+    if (draft.protocol === 'sftp' && !draft.pass && !draft.privateKeyPath) {
+      toast.error('Password or private key is required to save')
+      return
+    }
+    if (isObjectStoreConnection(draft) && (!draft.bucket || !draft.accessKeyId || !draft.secretAccessKey)) {
+      toast.error('Bucket, access key, and secret are required to save')
+      return
+    }
+    if (draft.protocol === 's3compat' && !draft.endpoint?.trim()) {
+      toast.error('Endpoint is required for S3-compatible storage')
+      return
+    }
+    const next = upsertSavedConnection(savedConnections, {
+      ...draft,
+      pinned: true,
+      id: activeSavedId && savedConnections.find((c) => c.id === activeSavedId)?.protocol === protocol
+        ? activeSavedId
+        : undefined,
+    })
+    await commitSavedList(next)
+    const saved = next[0]
+    if (saved) {
+      setActiveSavedId(saved.id)
+      setSaveConnectionName(saved.name)
+      toast.success(`Saved ${saved.name}`)
+    }
+  }, [activeSavedId, commitSavedList, draftFromForm, savedConnections])
+
+  const pinSaved = useCallback(
+    async (c: SavedExplorerConnection) => {
+      const next = upsertSavedConnection(savedConnections, { ...c, pinned: true })
+      await commitSavedList(next)
+      setActiveSavedId(next[0]?.id ?? c.id)
+      toast.success(`Saved ${c.name}`)
+    },
+    [commitSavedList, savedConnections],
+  )
+
+  const deleteSaved = useCallback(
+    async (id: string) => {
+      const next = removeSavedConnection(savedConnections, id)
+      await commitSavedList(next)
+      if (activeSavedId === id) setActiveSavedId(null)
+      toast.success('Removed saved connection')
+    },
+    [activeSavedId, commitSavedList, savedConnections],
+  )
 
   useEffect(() => {
     if (!migrateOpen) return
@@ -636,17 +971,111 @@ export function SftpSessionPanel({
     })()
   }, [api, migrateOpen])
 
-  const handleConnect = useCallback(async () => {
-    if (!api?.sftpConnect || !sftpUser.trim() || !host.trim()) return
+  const handleConnect = useCallback(async (source?: SavedExplorerConnection) => {
+    if (!api?.sftpConnect) return
+    const fromSaved =
+      source &&
+      typeof source === 'object' &&
+      (source.protocol === 'sftp' ||
+        source.protocol === 'ftp' ||
+        source.protocol === 's3' ||
+        source.protocol === 's3compat')
+        ? source
+        : undefined
+    const proto = fromSaved?.protocol ?? protocol
+    const hostValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.host : host
+    const portValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.port : sftpPort
+    const userValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.user : sftpUser
+    const passValue = fromSaved && (fromSaved.protocol === 'sftp' || fromSaved.protocol === 'ftp') ? fromSaved.pass : sftpPass
+    const keyPathValue =
+      fromSaved?.protocol === 'sftp' ? fromSaved.privateKeyPath ?? '' : sftpUseKey ? sftpKeyPath : ''
+    const keyPassValue = fromSaved?.protocol === 'sftp' ? fromSaved.passphrase ?? '' : sftpKeyPass
+    const ftpSecureValue = fromSaved?.protocol === 'ftp' ? fromSaved.secure : ftpSecure
+    const s3 = fromSaved && isObjectStoreConnection(fromSaved) ? fromSaved : null
+    if ((proto === 'sftp' || proto === 'ftp') && (!userValue.trim() || !hostValue.trim())) return
+    if (proto === 'sftp' && !passValue && !keyPathValue.trim()) return
+    if (proto === 'ftp' && !passValue) return
+    if (
+      isObjectStoreProtocol(proto) &&
+      (!api.s3Connect ||
+        !(s3?.bucket ?? s3Bucket).trim() ||
+        !(s3?.region ?? s3Region).trim() ||
+        !(s3?.accessKeyId ?? s3AccessKey).trim() ||
+        !(s3?.secretAccessKey ?? s3Secret) ||
+        (proto === 's3compat' && !(s3?.endpoint ?? s3Endpoint).trim()) ||
+        (proto === 's3' &&
+          (s3?.assumeRole ?? s3AssumeRole) &&
+          (!(s3?.roleArn ?? s3RoleArn).trim() || !(s3?.roleSessionName ?? s3RoleSessionName).trim())))
+    ) {
+      return
+    }
+    if (fromSaved) applySavedToForm(fromSaved)
     setConnecting(true)
     setConnError('')
-    const portNum = parseInt(sftpPort, 10) || 22
-    const result = await api.sftpConnect(host.trim(), portNum, sftpUser.trim(), sftpPass)
+    const result =
+      isObjectStoreProtocol(proto)
+        ? await api.s3Connect!({
+            bucket: (s3?.bucket ?? s3Bucket).trim(),
+            region: (s3?.region ?? s3Region).trim(),
+            accessKeyId: (s3?.accessKeyId ?? s3AccessKey).trim(),
+            secretAccessKey: s3?.secretAccessKey ?? s3Secret,
+            sessionToken: (s3 ? s3.sessionToken : s3SessionToken)?.trim() || undefined,
+            prefix: (s3 ? s3.prefix : s3Prefix)?.trim() || undefined,
+            endpoint: (s3 ? s3.endpoint : s3Endpoint)?.trim() || undefined,
+            roleArn:
+              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                ? (s3 ? s3.roleArn : s3RoleArn)?.trim() || undefined
+                : undefined,
+            roleSessionName:
+              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                ? (s3 ? s3.roleSessionName : s3RoleSessionName)?.trim() || undefined
+                : undefined,
+            externalId:
+              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                ? (s3 ? s3.externalId : s3ExternalId)?.trim() || undefined
+                : undefined,
+            sourceIdentity:
+              proto === 's3' && (s3 ? s3.assumeRole : s3AssumeRole)
+                ? (s3 ? s3.sourceIdentity : s3SourceIdentity)?.trim() || undefined
+                : undefined,
+          })
+        : proto === 'ftp'
+          ? await api.ftpConnect!({
+              host: hostValue.trim(),
+              port: parseInt(portValue, 10) || (ftpSecureValue === 'implicit' ? 990 : 21),
+              user: userValue.trim(),
+              password: passValue,
+              secure: ftpSecureValue,
+            })
+          : await api.sftpConnect(
+              hostValue.trim(),
+              parseInt(portValue, 10) || 22,
+              userValue.trim(),
+              passValue,
+              keyPathValue.trim()
+                ? { privateKeyPath: keyPathValue.trim(), passphrase: keyPassValue || undefined }
+                : undefined,
+            )
     if (result.ok) {
       setSessionId(result.sessionId)
       setConnected(true)
-      if (rememberCreds) await persistCreds()
-      else await clearCreds()
+      const draft = fromSaved ?? draftFromForm()
+      const next = upsertSavedConnection(savedConnections, {
+        ...draft,
+        pinned: false,
+        id:
+          fromSaved?.id ??
+          (savedConnections.find((c) => c.id === activeSavedId)?.protocol === proto
+            ? activeSavedId ?? undefined
+            : undefined),
+        name: resolvedConnectionName(draft, fromSaved?.name || saveConnectionName),
+      })
+      await commitSavedList(next)
+      const current = next.find((c) => connectionIdentity(c) === connectionIdentity(draft))
+      if (current) {
+        setActiveSavedId(current.id)
+        setSaveConnectionName(current.name)
+      }
       try {
         const bound = bindSftpSession(api, result.sessionId)
         const nodes = await bound.readdir('/').then((r) => {
@@ -671,7 +1100,7 @@ export function SftpSessionPanel({
         setSelectedPaths(new Set())
         setSelectMode(false)
         setExpandedPaths(new Set())
-        toast.success('SFTP connected')
+        toast.success(connectedToast(proto))
       } catch (e) {
         setConnError(e instanceof Error ? e.message : 'Failed to list root')
         await api.sftpDisconnect(result.sessionId)
@@ -682,7 +1111,36 @@ export function SftpSessionPanel({
       setConnError(result.error)
     }
     setConnecting(false)
-  }, [api, sftpUser, host, sftpPort, sftpPass, rememberCreds, persistCreds, clearCreds])
+  }, [
+    api,
+    protocol,
+    sftpUser,
+    host,
+    sftpPort,
+    sftpPass,
+    sftpUseKey,
+    sftpKeyPath,
+    sftpKeyPass,
+    ftpSecure,
+    s3Bucket,
+    s3Region,
+    s3AccessKey,
+    s3Secret,
+    s3SessionToken,
+    s3Prefix,
+    s3Endpoint,
+    s3AssumeRole,
+    s3RoleArn,
+    s3RoleSessionName,
+    s3ExternalId,
+    s3SourceIdentity,
+    saveConnectionName,
+    savedConnections,
+    activeSavedId,
+    applySavedToForm,
+    draftFromForm,
+    commitSavedList,
+  ])
 
   const handleDisconnect = useCallback(async () => {
     if (sessionId && api) await api.sftpDisconnect(sessionId)
@@ -862,7 +1320,7 @@ export function SftpSessionPanel({
       if (node.type !== 'file') return
       const client = sftpRef.current
       if (!client?.readFile) {
-        toast.error('Not connected to SFTP')
+        toast.error('Not connected')
         return
       }
       const r = await client.readFile(node.path)
@@ -1334,10 +1792,10 @@ export function SftpSessionPanel({
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-6" data-tour="tour-sftp">
         <Monitor className="w-12 h-12 text-muted-foreground" />
         <div>
-          <h2 className="text-lg font-semibold text-foreground">SFTP explorer</h2>
+          <h2 className="text-lg font-semibold text-foreground">File explorer</h2>
           <p className="text-sm text-muted-foreground mt-2 max-w-md">
-            SFTP is only available in the desktop Electron app. Run the packaged or dev desktop build to
-            connect over SSH and browse remote files.
+            SFTP, FTP, and object storage are only available in the desktop Electron app. Run the packaged or dev desktop
+            build to connect and browse remote files.
           </p>
         </div>
       </div>
@@ -1345,82 +1803,432 @@ export function SftpSessionPanel({
   }
 
   if (!connected) {
+    const canConnect =
+      credsLoaded &&
+      !connecting &&
+      (isObjectStoreProtocol(protocol)
+        ? Boolean(
+            s3Bucket.trim() &&
+              s3Region.trim() &&
+              s3AccessKey.trim() &&
+              s3Secret &&
+              (protocol !== 's3compat' || s3Endpoint.trim()) &&
+              (protocol !== 's3' || !s3AssumeRole || (s3RoleArn.trim() && s3RoleSessionName.trim())),
+          )
+        : protocol === 'ftp'
+          ? Boolean(sftpUser.trim() && host.trim() && sftpPass)
+          : Boolean(sftpUser.trim() && host.trim() && (sftpPass || (sftpUseKey && sftpKeyPath.trim()))))
     return (
-      <div className={cn('flex flex-col items-center justify-center gap-6 py-10 px-6 max-w-lg mx-auto', !isActive && 'hidden')} data-tour="tour-sftp-connect">
-        <div className="flex items-center gap-3 text-primary">
-          <FolderInput className="w-10 h-10" />
-          <h2 className="text-xl font-semibold text-foreground">SFTP</h2>
+      <div
+        className={cn('absolute inset-0 min-h-0 overflow-hidden', !isActive && 'hidden')}
+        data-tour="tour-sftp-connect"
+      >
+        <div className="flex h-full min-h-0">
+          <SftpSavedConnections
+            connections={savedConnections}
+            connecting={connecting}
+            activeId={activeSavedId}
+            onConnect={(c) => void handleConnect(c)}
+            onDelete={(id) => void deleteSaved(id)}
+            onPin={(c) => void pinSaved(c)}
+          />
+          <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
+            {!protocolChosen ? (
+              <div className="flex min-h-full flex-col items-center justify-center px-6 py-8">
+                <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-5">
+                  <div className="text-center">
+                    <h2 className="text-xl font-semibold text-foreground">Connect to files</h2>
+                    <p className="mt-1.5 text-sm text-muted-foreground">
+                      Choose a protocol to continue. Saved connections on the left skip this step.
+                    </p>
+                  </div>
+                  <div className="grid w-full grid-cols-2 gap-3">
+                    {PROTOCOL_CHOICES.map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => selectProtocol(opt.id)}
+                        className="group flex flex-col items-start gap-2 rounded-xl border border-border/50 bg-card/80 px-4 py-4 text-left shadow-sm ring-1 ring-border/20 transition-colors hover:border-primary/40 hover:bg-accent/30 hover:ring-primary/15"
+                      >
+                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                          <opt.icon className="h-4 w-4" />
+                        </div>
+                        <div className="text-sm font-semibold text-foreground">{opt.label}</div>
+                        <div className="text-xs leading-relaxed text-muted-foreground">{opt.hint}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-6 py-6">
+        <div className="flex flex-col items-start gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setProtocolChosen(false)
+              setConnError('')
+            }}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ChevronLeft className="h-3.5 w-3.5" />
+            Change protocol
+          </button>
+          <div className="flex items-center gap-3 text-primary">
+            <ProtocolGlyph protocol={protocol} className="h-8 w-8" />
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">{protocolTitle(protocol)}</h2>
+              <p className="text-xs text-muted-foreground">{protocolHint(protocol)}</p>
+            </div>
+          </div>
         </div>
-        <p className="text-sm text-muted-foreground text-center">
-          Connect with the same reader host (or edit below), SSH port, and your credentials.
-        </p>
         <div className="w-full space-y-3">
+          {isObjectStoreProtocol(protocol) ? (
+            <>
+              {protocol === 's3compat' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Endpoint</Label>
+                  <Input
+                    value={s3Endpoint}
+                    onChange={(e) => setS3Endpoint(e.target.value)}
+                    placeholder="https://minio.example.com"
+                    className="font-mono"
+                    disabled={!credsLoaded}
+                    onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Full URL, including https. R2 example: https://&lt;accountid&gt;.r2.cloudflarestorage.com
+                  </p>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Bucket</Label>
+                <Input
+                  value={s3Bucket}
+                  onChange={(e) => setS3Bucket(e.target.value)}
+                  placeholder="my-bucket"
+                  className="font-mono"
+                  disabled={!credsLoaded}
+                  onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Region</Label>
+                <Input
+                  value={s3Region}
+                  onChange={(e) => setS3Region(e.target.value)}
+                  placeholder="eu-west-1"
+                  className="font-mono"
+                  list="s3-regions"
+                />
+                <datalist id="s3-regions">
+                  {S3_REGIONS.map((r) => (
+                    <option key={r} value={r} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Access key ID</Label>
+                <Input
+                  value={s3AccessKey}
+                  onChange={(e) => setS3AccessKey(e.target.value)}
+                  className="font-mono"
+                  autoComplete="off"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Secret access key</Label>
+                <Input
+                  type="password"
+                  value={s3Secret}
+                  onChange={(e) => setS3Secret(e.target.value)}
+                  className="font-mono"
+                  autoComplete="off"
+                  onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                />
+              </div>
+              {protocol === 's3' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={s3AssumeRole}
+                  onChange={(e) => setS3AssumeRole(e.target.checked)}
+                  className="rounded border-border/50 accent-primary w-3.5 h-3.5"
+                />
+                <span className="text-xs text-muted-foreground">Assume Role</span>
+              </label>
+              )}
+              <ExpandSection open={protocol === 's3' && s3AssumeRole}>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Role ARN</Label>
+                    <Input
+                      value={s3RoleArn}
+                      onChange={(e) => setS3RoleArn(e.target.value)}
+                      placeholder="arn:aws:iam::123456789012:role/..."
+                      className="font-mono"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Session name</Label>
+                    <Input
+                      value={s3RoleSessionName}
+                      onChange={(e) => setS3RoleSessionName(e.target.value)}
+                      placeholder="zeus-s3"
+                      className="font-mono"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">External ID</Label>
+                    <Input
+                      type="password"
+                      value={s3ExternalId}
+                      onChange={(e) => setS3ExternalId(e.target.value)}
+                      className="font-mono"
+                      autoComplete="off"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Required for most cross-account roles. Paste the same value as the working tool — AccessDenied
+                      usually means this field is missing or from a different connection.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Source identity (optional)</Label>
+                    <Input
+                      value={s3SourceIdentity}
+                      onChange={(e) => setS3SourceIdentity(e.target.value)}
+                      className="font-mono"
+                      autoComplete="off"
+                    />
+                  </div>
+              </ExpandSection>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setShowS3Advanced((v) => !v)}
+              >
+                {showS3Advanced ? 'Hide advanced' : protocol === 's3compat' ? 'Advanced: prefix, session token' : 'Advanced: prefix, endpoint, session token'}
+              </button>
+              <ExpandSection open={showS3Advanced}>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Prefix (optional)</Label>
+                    <Input
+                      value={s3Prefix}
+                      onChange={(e) => setS3Prefix(e.target.value)}
+                      placeholder="exports/edge"
+                      className="font-mono"
+                    />
+                  </div>
+                  {protocol === 's3' && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Endpoint (optional)</Label>
+                    <Input
+                      value={s3Endpoint}
+                      onChange={(e) => setS3Endpoint(e.target.value)}
+                      placeholder="https://s3.example.com"
+                      className="font-mono"
+                    />
+                    <p className="text-[11px] text-muted-foreground">Use a custom endpoint for MinIO or LocalStack.</p>
+                  </div>
+                  )}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Session token for keys (optional)</Label>
+                    <Input
+                      type="password"
+                      value={s3SessionToken}
+                      onChange={(e) => setS3SessionToken(e.target.value)}
+                      className="font-mono"
+                      autoComplete="off"
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Only if the access keys themselves are temporary. Assume Role does not use this field.
+                    </p>
+                  </div>
+              </ExpandSection>
+            </>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Host</Label>
+                <Input
+                  value={host}
+                  onChange={(e) => setHost(e.target.value)}
+                  placeholder="192.168.x.x"
+                  className="font-mono"
+                  disabled={!credsLoaded}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">{protocol === 'ftp' ? 'Port' : 'SSH port'}</Label>
+                <Input
+                  value={sftpPort}
+                  onChange={(e) => setSftpPort(e.target.value)}
+                  placeholder={protocol === 'ftp' ? (ftpSecure === 'implicit' ? '990' : '21') : '22'}
+                  className="font-mono w-32"
+                />
+              </div>
+              {protocol === 'ftp' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Encryption</Label>
+                  <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/35 p-1 ring-1 ring-border/25">
+                    {([
+                      { id: 'off' as const, label: 'None' },
+                      { id: 'explicit' as const, label: 'FTPS' },
+                      { id: 'implicit' as const, label: 'Implicit' },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          setFtpSecure(opt.id)
+                          setSftpPort((prev) => {
+                            const n = prev.trim()
+                            if (opt.id === 'implicit' && (n === '' || n === '21')) return '990'
+                            if (opt.id !== 'implicit' && (n === '' || n === '990')) return '21'
+                            return prev
+                          })
+                        }}
+                        className={cn(
+                          'rounded-md px-2 py-1.5 text-xs font-medium',
+                          ftpSecure === opt.id
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground',
+                        )}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Username</Label>
+                <Input
+                  value={sftpUser}
+                  onChange={(e) => setSftpUser(e.target.value)}
+                  className="font-mono"
+                  onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  {protocol === 'sftp' && sftpUseKey ? 'Password (optional)' : 'Password'}
+                </Label>
+                <Input
+                  type="password"
+                  value={sftpPass}
+                  onChange={(e) => setSftpPass(e.target.value)}
+                  className="font-mono"
+                  onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                />
+              </div>
+              {protocol === 'sftp' && (
+                <>
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={sftpUseKey}
+                      onChange={(e) => setSftpUseKey(e.target.checked)}
+                      className="rounded border-border/50 accent-primary w-3.5 h-3.5"
+                    />
+                    <span className="text-xs text-muted-foreground">Private key</span>
+                  </label>
+                  <ExpandSection open={sftpUseKey}>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Key file</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={sftpKeyPath}
+                            onChange={(e) => setSftpKeyPath(e.target.value)}
+                            placeholder="C:\Users\me\.ssh\id_ed25519"
+                            className="font-mono"
+                          />
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="h-9 shrink-0 gap-1"
+                            onClick={() => keyFileInputRef.current?.click()}
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Browse
+                          </Button>
+                        </div>
+                        <input
+                          ref={keyFileInputRef}
+                          type="file"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0]
+                            e.target.value = ''
+                            if (!file) return
+                            const picked = api?.getPathForFile?.(file)
+                            if (picked) setSftpKeyPath(picked)
+                            else toast.error('Could not read the key path. Type it in, or use the desktop app.')
+                          }}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground">Key passphrase (optional)</Label>
+                        <Input
+                          type="password"
+                          value={sftpKeyPass}
+                          onChange={(e) => setSftpKeyPass(e.target.value)}
+                          className="font-mono"
+                          autoComplete="off"
+                          onKeyDown={(e) => e.key === 'Enter' && void handleConnect()}
+                        />
+                      </div>
+                  </ExpandSection>
+                </>
+              )}
+            </>
+          )}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Host</Label>
+            <Label className="text-xs text-muted-foreground">Connection name</Label>
             <Input
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="192.168.x.x"
-              className="font-mono"
-              disabled={!credsLoaded}
+              value={saveConnectionName}
+              onChange={(e) => setSaveConnectionName(e.target.value)}
+              placeholder={
+                isObjectStoreProtocol(protocol)
+                  ? s3ConnectionLabel(s3Bucket, s3Prefix)
+                  : `${sftpUser.trim() ? `${sftpUser.trim()}@` : ''}${host.trim() || 'host'}`
+              }
             />
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">SSH port</Label>
-            <Input
-              value={sftpPort}
-              onChange={(e) => setSftpPort(e.target.value)}
-              placeholder="22"
-              className="font-mono w-32"
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8"
+              disabled={!canConnect}
+              onClick={() => void saveCurrentConnection()}
+            >
+              Save connection
+            </Button>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Username</Label>
-            <Input
-              value={sftpUser}
-              onChange={(e) => setSftpUser(e.target.value)}
-              className="font-mono"
-              onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Password</Label>
-            <Input
-              type="password"
-              value={sftpPass}
-              onChange={(e) => setSftpPass(e.target.value)}
-              className="font-mono"
-              onKeyDown={(e) => e.key === 'Enter' && handleConnect()}
-            />
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={rememberCreds}
-              onChange={(e) => {
-                setRememberCreds(e.target.checked)
-                if (!e.target.checked) void clearCreds()
-              }}
-              className="rounded border-border/50 accent-primary w-3.5 h-3.5"
-            />
-            <span className="text-xs text-muted-foreground">Remember credentials</span>
-          </label>
         </div>
         {connError && (
-          <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm w-full">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            <span className="truncate">{connError}</span>
+          <div className="flex items-start gap-2 px-4 py-2.5 rounded-lg bg-destructive/10 text-destructive text-sm w-full">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span className="min-w-0 break-words">{connError}</span>
           </div>
         )}
         <Button
           onClick={() => void handleConnect()}
-          disabled={connecting || !sftpUser.trim() || !host.trim() || !credsLoaded}
+          disabled={!canConnect}
           size="lg"
-          className="gap-2"
+          className="w-full gap-2"
         >
           {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
           {connecting ? 'Connecting…' : 'Connect'}
         </Button>
+            </div>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
@@ -1431,8 +2239,13 @@ export function SftpSessionPanel({
   return (
     <div className={cn('flex h-full min-h-0 flex-col gap-2', !isActive && 'hidden')} data-tour="tour-sftp">
       <SftpToolbar
-        host={host}
-        sftpPort={sftpPort}
+        connectionLabel={
+          isObjectStoreProtocol(protocol)
+            ? s3ConnectionLabel(s3Bucket, s3Prefix)
+            : protocol === 'ftp'
+              ? `ftp://${host}:${sftpPort}`
+              : `${host}:${sftpPort}`
+        }
         foldersFirst={foldersFirst}
         onFoldersFirstChange={setFoldersFirst}
         selectMode={selectMode}
@@ -1450,6 +2263,7 @@ export function SftpSessionPanel({
         onCollapseAll={collapseAllFolders}
         collapseAllDisabled={expandedPaths.size === 0}
         onFind={() => setFindOpen(true)}
+        onSaveConnection={() => void saveCurrentConnection()}
         onPickLocal={() => void pickLocalRoot()}
         onMigrateOpen={() => {
           setMigrateConfirmText('')
@@ -1472,6 +2286,7 @@ export function SftpSessionPanel({
         onDuplicate={() => void duplicateForNode(selectedNode!)}
         onMove={() => openMoveForNode(selectedNode!)}
         onProperties={() => openPropertiesForNode(selectedNode!)}
+        showMigrate={protocol !== 's3'}
         onDelete={() => {
           if (selectMode && selectedPaths.size > 0) {
             const items = Array.from(selectedPaths)
@@ -1502,9 +2317,9 @@ export function SftpSessionPanel({
         onChange={(e) => void onPickFiles(e.target.files)}
       />
 
-      <div className="flex flex-wrap items-center gap-2 shrink-0 text-xs">
-        <span className="text-muted-foreground">Remote path</span>
-        <div className="flex flex-wrap items-center gap-0.5 font-mono">
+      <div className="flex flex-nowrap items-center gap-2 shrink-0 overflow-hidden text-xs">
+        <span className="text-muted-foreground shrink-0">Remote path</span>
+        <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden font-mono">
           <button
             type="button"
             className="text-primary hover:underline px-0.5"
@@ -1543,8 +2358,8 @@ export function SftpSessionPanel({
         </Button>
       </div>
 
-      <p className="text-xs text-muted-foreground shrink-0 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span>
+      <p className="text-xs text-muted-foreground shrink-0 flex min-w-0 items-center gap-x-3 overflow-hidden">
+        <span className="min-w-0 truncate">
           Upload / new items go to: <span className="font-mono text-foreground">{uploadTargetDir}</span>
         </span>
         {selectMode && (
@@ -1649,6 +2464,7 @@ export function SftpSessionPanel({
               expandedPaths={expandedPaths}
               onRequestCollapse={onRequestCollapse}
               onCollapseAll={collapseAllFolders}
+              hideUnixMeta={protocol !== 'sftp'}
           />
         </div>
       </div>
@@ -1983,6 +2799,7 @@ export function SftpSessionPanel({
         node={propertiesNode}
         onApplied={() => void refreshRoot(true)}
         sftp={sftp}
+        unixEditable={protocol !== 's3'}
       />
       <SftpMoveDialog
         open={moveOpen}

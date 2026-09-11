@@ -22,6 +22,28 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.2.0',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'Files tab',
+        detail: 'SFTP, FTP/FTPS, Amazon S3, and S3-compatible storage (MinIO, R2) in one explorer.',
+      },
+      {
+        title: 'SSH private-key login',
+        detail: 'Connect over SFTP with a key file and optional passphrase — password is optional.',
+      },
+      {
+        title: 'Saved & recent connections',
+        detail: 'Pin hosts you use often; recents fill in without auto-saving credentials.',
+      },
+      {
+        title: 'Protocol picker',
+        detail: 'Choose SFTP, FTP, Amazon S3, or S3-compatible first, then fill in only what that protocol needs.',
+      },
+    ],
+  },
+  {
     version: '10.1.1',
     date: '2026-09',
     highlights: [

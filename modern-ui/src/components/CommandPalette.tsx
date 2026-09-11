@@ -55,7 +55,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'automation', label: 'Auto', icon: <Sparkles className="w-4 h-4" />, num: 8 },
   { value: 'generator', label: 'Gen', icon: <QrCode className="w-4 h-4" />, num: 9 },
   { value: 'database', label: 'Database (DB)', icon: <Database className="w-4 h-4" />, num: 0 },
-  { value: 'sftp', label: 'SFTP', icon: <FolderInput className="w-4 h-4" /> },
+  { value: 'sftp', label: 'Files', icon: <FolderInput className="w-4 h-4" /> },
   { value: 'netscan', label: 'LAN scan', icon: <Radar className="w-4 h-4" /> },
   { value: 'jsonlint', label: 'JSON Lint', icon: <Braces className="w-4 h-4" /> },
 ]
@@ -268,7 +268,7 @@ export function CommandPalette({
     },
     {
       id: 'open-sftp',
-      label: 'Open SFTP',
+      label: 'Open Files',
       icon: <FolderInput className="w-4 h-4" />,
       action: () => { onSwitchTab('sftp'); onOpenChange(false) },
       group: 'Quick Jump',

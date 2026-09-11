@@ -37,7 +37,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'automation', label: 'Auto', icon: Sparkles },
   { value: 'generator', label: 'Gen', icon: QrCode },
   { value: 'database', label: 'DB', icon: Database },
-  { value: 'sftp', label: 'SFTP', icon: FolderInput },
+  { value: 'sftp', label: 'Files', icon: FolderInput },
   { value: 'netscan', label: 'LAN', icon: Radar },
 ]
 

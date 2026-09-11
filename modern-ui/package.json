@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "10.1.1",
+  "version": "10.2.0",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Samy Chemaly",
@@ -37,6 +37,9 @@
     "ci": "npm run typecheck && npm run test:run && vite build"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1129.0",
+    "@aws-sdk/client-sts": "^3.1129.0",
+    "@aws-sdk/lib-storage": "^3.1129.0",
     "@codemirror/lang-json": "^6.0.2",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/lint": "^6.9.7",
@@ -56,6 +59,7 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "@xyflow/react": "^12.10.2",
+    "basic-ftp": "^6.2.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",

@@ -53,7 +53,7 @@ const GROUPS: TabGroup[] = [
       { value: 'automation', label: 'Automation', icon: Sparkles },
       { value: 'generator', label: 'Generator', icon: QrCode },
       { value: 'database', label: 'Database', icon: Database },
-      { value: 'sftp', label: 'SFTP', icon: FolderInput },
+      { value: 'sftp', label: 'Files', icon: FolderInput },
     ],
   },
   {

@@ -165,7 +165,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'center',
       title: 'Welcome to Zeus',
       content:
-        'This tour walks the UI and includes optional hands-on steps (connect, database, SFTP). Next may stay disabled until you complete a step — use Skip this step to move on, or Skip tour to exit anytime.',
+        'This tour walks the UI and includes optional hands-on steps (connect, database, files). Next may stay disabled until you complete a step — use Skip this step to move on, or Skip tour to exit anytime.',
       data: { tab: 'fixed' } satisfies TourStepData,
     },
     {
@@ -182,7 +182,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'bottom',
       title: 'Main tabs',
       content:
-        'Switch modes here: fixed reader, handheld, OCR, automation, database, SFTP, LAN scan, and more. Keyboard: Ctrl/Cmd+1–9 jump to tabs (0 is the 10th tab).',
+        'Switch modes here: fixed reader, handheld, OCR, automation, database, Files, LAN scan, and more. Keyboard: Ctrl/Cmd+1–9 jump to tabs (0 is the 10th tab).',
       data: { tab: 'fixed' } satisfies TourStepData,
     },
     {
@@ -396,15 +396,15 @@ function buildSteps(isAdmin: boolean): Step[] {
     {
       target: tourTarget('tour-sftp', 'tour-sftp-connect'),
       placement: 'center',
-      title: 'SFTP',
+      title: 'Files',
       content:
-        'Desktop Electron: SSH into the reader host, browse the remote tree, pick a local folder, then drag-and-drop or use upload/download and batch actions.',
+        'Desktop Electron: connect over SFTP or Amazon S3, browse the remote tree, pick a local folder, then drag-and-drop or use upload/download and batch actions.',
       data: { tab: 'sftp' } satisfies TourStepData,
     },
     {
       target: tourTarget('tour-sftp-connect', 'tour-sftp'),
       placement: 'auto',
-      title: 'SFTP — connect',
+      title: 'Files — connect',
       content:
         'Use the same host as the reader (or edit it), SSH port, username, and password. Next enables after a successful SSH session.',
       data: { tab: 'sftp', interactive: 'sftp_connect' } satisfies TourStepData,
@@ -412,7 +412,7 @@ function buildSteps(isAdmin: boolean): Step[] {
     {
       target: tourTarget('tour-sftp-remote', 'tour-sftp'),
       placement: 'left',
-      title: 'SFTP — remote tree',
+      title: 'Files — remote tree',
       content:
         'Browse folders and files on the server, set upload target, refresh, and use the toolbar for new files, downloads, and more.',
       data: { tab: 'sftp', interactive: 'sftp_browse' } satisfies TourStepData,

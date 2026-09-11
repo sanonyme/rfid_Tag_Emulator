@@ -90,6 +90,7 @@ interface SftpPropertiesDialogProps {
   node: SftpFileNode | null
   onApplied?: () => void
   sftp: SftpSessionApi | null
+  unixEditable?: boolean
 }
 
 export function SftpPropertiesDialog({
@@ -98,6 +99,7 @@ export function SftpPropertiesDialog({
   node,
   onApplied,
   sftp,
+  unixEditable = true,
 }: SftpPropertiesDialogProps) {
   const sftpRef = useRef(sftp)
   sftpRef.current = sftp
@@ -258,7 +260,9 @@ export function SftpPropertiesDialog({
             )}
             Properties — {node?.name ?? ''}
           </DialogTitle>
-          <DialogDescription>Owner, group, and permissions (Common)</DialogDescription>
+          <DialogDescription>
+            {unixEditable ? 'Owner, group, and permissions (Common)' : 'Amazon S3 object details'}
+          </DialogDescription>
         </DialogHeader>
 
         {loading ? (
@@ -292,6 +296,8 @@ export function SftpPropertiesDialog({
               </div>
             </div>
 
+            {unixEditable && (
+            <>
             <div className="space-y-2">
               <Label>Ownership</Label>
               <div className="grid grid-cols-2 gap-3">
@@ -416,16 +422,26 @@ export function SftpPropertiesDialog({
               />
               <span>Set owner, group and permissions recursively</span>
             </label>
+            </>
+            )}
           </div>
         )}
 
         <DialogFooter className="gap-2 sm:gap-0">
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button disabled={loading || saving} onClick={() => void onSubmit()}>
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'OK'}
-          </Button>
+          {unixEditable ? (
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button disabled={loading || saving} onClick={() => void onSubmit()}>
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : 'OK'}
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
