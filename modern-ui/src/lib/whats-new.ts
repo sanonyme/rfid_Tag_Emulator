@@ -27,19 +27,19 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     highlights: [
       {
         title: 'Files: resizable columns',
-        detail: 'Name fills the panel; drag Size/Changed (and other) boundaries to resize. Headers stay aligned with the rows.',
+        detail: 'Drag column edges like a spreadsheet. Name expands to fill the panel; Size, Changed, and the rest stay aligned under their headers.',
+      },
+      {
+        title: 'Files: open, compare, and checksum',
+        detail: 'View remote files in-app, diff against a local copy, and verify checksums from the Files tab.',
       },
       {
         title: 'Files: delete folders without admin',
-        detail: 'Recursive folder delete works for any connected session — no admin login required.',
+        detail: 'You can remove remote folders (and their contents) without signing in as admin.',
       },
       {
-        title: 'Files: view, diff, checksum, favorites',
-        detail: 'Open remote files in a viewer, compare with local, checksum, and star favorite paths.',
-      },
-      {
-        title: 'Automation: triggers and variables',
-        detail: 'Workflow triggers dialog and variable autocomplete when configuring nodes.',
+        title: 'Automation: triggers & variables',
+        detail: 'Configure workflow triggers, and pick variables with autocomplete while editing nodes.',
       },
     ],
   },
