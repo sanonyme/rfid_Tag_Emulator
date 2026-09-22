@@ -1388,14 +1388,15 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
   }, [])
 
   useEffect(() => {
-    if (!packingLookupOpen || !window.electronAPI) return
+    const api = window.electronAPI
+    if (!packingLookupOpen || !api) return
     let cancelled = false
     ;(async () => {
       setPackingChoicesLoading(true)
       try {
         let schema = schemaData
         if (!schema && selectedDb) {
-          const res = await window.electronAPI.dbGetDatabaseSchema(selectedDb)
+          const res = await api.dbGetDatabaseSchema(selectedDb)
           if (res.ok) {
             schema = { tables: res.tables, foreignKeys: res.foreignKeys }
             setSchemaData(schema)
@@ -1405,8 +1406,8 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
         const orderSql = buildOrderListSql(schema)
         const cartonSql = buildCartonListSql(schema)
         const [orderRes, cartonRes] = await Promise.all([
-          orderSql.ok ? window.electronAPI.dbExecuteQuery(orderSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
-          cartonSql.ok ? window.electronAPI.dbExecuteQuery(cartonSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
+          orderSql.ok ? api.dbExecuteQuery(orderSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
+          cartonSql.ok ? api.dbExecuteQuery(cartonSql.sql, db, PACKING_QUERY_MAX_ROWS) : Promise.resolve(null),
         ])
         if (cancelled) return
         setPackingOrderChoices(orderRes?.ok ? parsePackingChoices(orderRes.rows) : [])

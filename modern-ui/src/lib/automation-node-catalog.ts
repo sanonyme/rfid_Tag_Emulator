@@ -43,6 +43,9 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
   { type: 'HTTP_REQUEST', label: 'HTTP Request', category: 'data', description: 'Call a REST endpoint; capture status/body/JSON', keywords: ['rest', 'api', 'get', 'post', 'fetch', 'webhook'] },
   { type: 'CODE', label: 'Code (JavaScript)', category: 'data', description: 'Run JavaScript in-process over the variables', keywords: ['js', 'script', 'function', 'compute'] },
   { type: 'RUN_SCRIPT', label: 'Run Script', category: 'data', description: 'Execute a shell / PowerShell script', keywords: ['shell', 'powershell', 'bash', 'exec', 'process'] },
+  { type: 'FILE_READ', label: 'Read File', category: 'data', description: 'Read local, SFTP, or S3 file into a variable', keywords: ['file', 'read', 'load', 'csv', 'json', 'sftp', 's3', 'storage'] },
+  { type: 'FILE_WRITE', label: 'Write File', category: 'data', description: 'Write or append text/data to local, SFTP, or S3', keywords: ['file', 'write', 'save', 'append', 'csv', 'export', 'sftp', 's3'] },
+  { type: 'FILE_LIST', label: 'List Files', category: 'data', description: 'List files in directory with filter and count', keywords: ['file', 'directory', 'list', 'folder', 'ls', 'glob', 'sftp', 's3'] },
 
   // Flow Control
   { type: 'DELAY', label: 'Delay', category: 'flow', description: 'Wait a fixed number of milliseconds', keywords: ['wait', 'sleep', 'pause', 'timer'] },

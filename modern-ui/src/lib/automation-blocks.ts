@@ -597,3 +597,191 @@ export async function executeComment(
 ): Promise<BlockExecResult> {
   return {}
 }
+
+export async function executeFileRead(
+  step: AutomationStep,
+  vars: AutomationVars,
+  log: BlockLog,
+): Promise<BlockExecResult> {
+  const api = requireElectron()
+  const location = step.params.fileLocation || 'local'
+  const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
+  if (!rawPath) throw new Error('File Read: File path is required')
+
+  const encoding = (step.params.fileEncoding || 'utf-8') as 'utf-8' | 'base64' | 'json' | 'hex'
+  const saveAs = (step.params.fileSaveAs || 'fileContent').trim()
+  if (!isValidVarName(saveAs)) throw new Error(`Invalid variable name: ${saveAs}`)
+
+  log(`File Read [${location}]: ${rawPath} (${encoding})`)
+
+  if (location === 'local') {
+    if (!api.localReadFile) throw new Error('Local file operations require Electron environment')
+    const enc = encoding === 'base64' ? 'base64' : 'utf-8'
+    const result = await api.localReadFile(rawPath, enc)
+    if (!result.ok || result.content === undefined) throw new Error(result.error || 'Failed to read file')
+
+    let content = result.content
+    if (encoding === 'hex') {
+      const bytes = Buffer.from(result.content, 'utf-8')
+      content = bytes.toString('hex')
+    } else if (encoding === 'json') {
+      try {
+        const parsed = JSON.parse(result.content)
+        content = JSON.stringify(parsed)
+      } catch (err: any) {
+        throw new Error(`File Read: Failed to parse JSON: ${err.message}`)
+      }
+    }
+
+    const size = Buffer.byteLength(content, 'utf-8')
+    setVar(vars, saveAs, content)
+    setVar(vars, `${saveAs}Size`, String(size))
+    const preview = content.length > 80 ? content.slice(0, 80) + '…' : content
+    log(`Read OK: ${size} bytes → ${saveAs}="${preview}"`)
+    return {}
+  }
+
+  if (location === 'sftp') {
+    const sessionId = step.params.fileConnectionId || 'default'
+    const result = await api.sftpReadFile(sessionId, rawPath)
+    if (!result.ok) throw new Error(result.error)
+
+    let content = ''
+    if ('previewBase64' in result && result.previewBase64) {
+      if (encoding === 'base64') content = result.previewBase64
+      else {
+        const buf = Buffer.from(result.previewBase64, 'base64')
+        if (encoding === 'hex') content = buf.toString('hex')
+        else content = buf.toString('utf-8')
+      }
+    } else if ('text' in result && result.text) {
+      if (encoding === 'base64') content = Buffer.from(result.text, 'utf-8').toString('base64')
+      else if (encoding === 'hex') content = Buffer.from(result.text, 'utf-8').toString('hex')
+      else content = result.text
+    }
+
+    setVar(vars, saveAs, content)
+    setVar(vars, `${saveAs}Size`, String(result.size))
+    const preview = content.length > 80 ? content.slice(0, 80) + '…' : content
+    log(`SFTP Read OK: ${result.size} bytes → ${saveAs}="${preview}"`)
+    return {}
+  }
+
+  throw new Error(`File Read: Storage location "${location}" is not supported`)
+}
+
+export async function executeFileWrite(
+  step: AutomationStep,
+  vars: AutomationVars,
+  log: BlockLog,
+): Promise<BlockExecResult> {
+  const api = requireElectron()
+  const location = step.params.fileLocation || 'local'
+  const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
+  if (!rawPath) throw new Error('File Write: Destination file path is required')
+
+  const content = applyTemplate(step.params.fileContent || '', vars)
+  const isAppend = step.params.fileAppend === true
+  const saveAs = (step.params.fileSaveAs || '').trim()
+
+  log(`File Write [${location}]: ${rawPath} (${isAppend ? 'append' : 'overwrite'}, ${content.length} chars)`)
+
+  if (location === 'local') {
+    if (!api.localWriteFile) throw new Error('Local file operations require Electron environment')
+    let textToWrite = content
+    if (isAppend && api.localReadFile) {
+      const prev = await api.localReadFile(rawPath, 'utf-8')
+      if (prev.ok && prev.content) {
+        textToWrite = prev.content + textToWrite
+      }
+    }
+    const result = await api.localWriteFile(rawPath, textToWrite, 'utf-8')
+    if (!result.ok) throw new Error(result.error)
+
+    const bytesWritten = Buffer.byteLength(textToWrite, 'utf-8')
+    if (saveAs && isValidVarName(saveAs)) {
+      setVar(vars, saveAs, String(bytesWritten))
+    }
+    log(`Write OK: ${bytesWritten} bytes written to ${rawPath}`)
+    return {}
+  }
+
+  if (location === 'sftp') {
+    const sessionId = step.params.fileConnectionId || 'default'
+    let textToWrite = content
+    if (isAppend) {
+      const existing = await api.sftpReadFile(sessionId, rawPath)
+      if (existing.ok) {
+        let prevText = ''
+        if ('text' in existing && existing.text) prevText = existing.text
+        else if ('previewBase64' in existing && existing.previewBase64) {
+          prevText = Buffer.from(existing.previewBase64, 'base64').toString('utf-8')
+        }
+        textToWrite = prevText + textToWrite
+      }
+    }
+    const result = await api.sftpWriteTextFile(sessionId, rawPath, textToWrite)
+    if (!result.ok) throw new Error(result.error)
+
+    if (saveAs && isValidVarName(saveAs)) {
+      setVar(vars, saveAs, 'OK')
+    }
+    log(`SFTP Write OK: ${textToWrite.length} chars written to ${rawPath}`)
+    return {}
+  }
+
+  throw new Error(`File Write: Storage location "${location}" is not supported`)
+}
+
+export async function executeFileList(
+  step: AutomationStep,
+  vars: AutomationVars,
+  log: BlockLog,
+): Promise<BlockExecResult> {
+  const api = requireElectron()
+  const location = step.params.fileLocation || 'local'
+  const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
+  if (!rawPath) throw new Error('File List: Directory path is required')
+
+  const filter = applyTemplate(step.params.fileFilter || '', vars).trim() || undefined
+  const saveAs = (step.params.fileSaveAs || 'fileList').trim()
+  if (!isValidVarName(saveAs)) throw new Error(`Invalid variable name: ${saveAs}`)
+
+  log(`File List [${location}]: ${rawPath}${filter ? ` (filter: ${filter})` : ''}`)
+
+  if (location === 'local') {
+    if (!api.localListFiles) throw new Error('Local file operations require Electron environment')
+    const result = await api.localListFiles(rawPath, filter)
+    if (!result.ok || !result.files) throw new Error(result.error || 'Failed to list directory')
+
+    const filePaths = result.files
+    const fileNames = result.filenames || filePaths.map((p) => p.split(/[\\/]/).pop() || p)
+
+    setVar(vars, saveAs, JSON.stringify(fileNames))
+    setVar(vars, `${saveAs}Count`, String(fileNames.length))
+    setVar(vars, `${saveAs}Paths`, JSON.stringify(filePaths))
+
+    log(`List OK: Found ${fileNames.length} file(s) in ${rawPath} → ${saveAs}`)
+    return {}
+  }
+
+  if (location === 'sftp') {
+    const sessionId = step.params.fileConnectionId || 'default'
+    const result = await api.sftpReaddir(sessionId, rawPath)
+    if (!result.ok) throw new Error(result.error)
+
+    const entries = result.entries.filter((e) => e.name !== '.' && e.name !== '..')
+    const fileNames = entries.map((e) => e.name)
+    const filePaths = entries.map((e) => `${rawPath.replace(/\/+$/, '')}/${e.name}`)
+
+    setVar(vars, saveAs, JSON.stringify(fileNames))
+    setVar(vars, `${saveAs}Count`, String(entries.length))
+    setVar(vars, `${saveAs}Paths`, JSON.stringify(filePaths))
+
+    log(`SFTP List OK: Found ${entries.length} entry/entries in ${rawPath} → ${saveAs}`)
+    return {}
+  }
+
+  throw new Error(`File List: Storage location "${location}" is not supported`)
+}
+

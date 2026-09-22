@@ -440,7 +440,7 @@ const ORDER_FIELD_SPECS: { key: string; label: string; format?: (v: string) => s
   { key: 'orderDestOrg', label: 'Destination organization' },
   { key: 'orderSourceLoc', label: 'Source location' },
   { key: 'orderDestLoc', label: 'Destination location' },
-  ...CUSTOM_FIELD_KEYS.map((key, i) => ({ key: `orderField${i + 1}`, label: `Field ${i + 1}` })),
+  ...CUSTOM_FIELD_KEYS.map((_key, i) => ({ key: `orderField${i + 1}`, label: `Field ${i + 1}` })),
   { key: 'orderCreateTs', label: 'Created', format: formatTs },
   { key: 'orderUpdateTs', label: 'Updated', format: formatTs },
 ]
@@ -460,7 +460,7 @@ const CARTON_FIELD_SPECS: { key: string; label: string; format?: (v: string) => 
   { key: 'cartonSourceLoc', label: 'Source location' },
   { key: 'cartonDestLoc', label: 'Destination location' },
   { key: 'cartonCurrentLoc', label: 'Current location' },
-  ...CUSTOM_FIELD_KEYS.map((key, i) => ({ key: `cartonField${i + 1}`, label: `Field ${i + 1}` })),
+  ...CUSTOM_FIELD_KEYS.map((_key, i) => ({ key: `cartonField${i + 1}`, label: `Field ${i + 1}` })),
   { key: 'cartonCreateTs', label: 'Created', format: formatTs },
   { key: 'cartonUpdateTs', label: 'Updated', format: formatTs },
 ]

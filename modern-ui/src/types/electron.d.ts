@@ -461,6 +461,11 @@ export interface ElectronAPI {
     operationId: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>
   localPickFolder: () => Promise<{ ok: true; path: string } | { ok: false; cancelled?: boolean }>
+  localPickFile: (options?: { title?: string; defaultPath?: string }) => Promise<{
+    ok: boolean
+    path?: string
+    cancelled?: boolean
+  }>
   localReaddir: (
     root: string,
     dirPath: string,
@@ -652,7 +657,78 @@ export interface ElectronAPI {
   onPopoutStateUpdate?: (
     callback: (state: Record<string, unknown>, connected: boolean) => void,
   ) => () => void
+
+  // Checksum & Integrity
+  fileCalculateChecksum?: (payload: { filePath?: string; base64Content?: string }) => Promise<{
+    ok: boolean
+    md5?: string
+    sha256?: string
+    sha1?: string
+    size?: number
+    error?: string
+  }>
+
+  // Local File Ops for File Nodes
+  localReadFile?: (filePath: string, encoding?: string) => Promise<{
+    ok: boolean
+    content?: string
+    error?: string
+  }>
+  localWriteFile?: (filePath: string, content: string, encoding?: string) => Promise<{
+    ok: boolean
+    error?: string
+  }>
+  localListFiles?: (dirPath: string, pattern?: string) => Promise<{
+    ok: boolean
+    files?: string[]
+    filenames?: string[]
+    error?: string
+  }>
+
+  // Automation Webhook Server
+  automationWebhookStart?: (port?: number) => Promise<{
+    ok: boolean
+    port?: number
+    error?: string
+  }>
+  automationWebhookStop?: () => Promise<{ ok: boolean }>
+  automationWebhookStatus?: () => Promise<{
+    ok: boolean
+    running: boolean
+    port?: number | null
+  }>
+  onAutomationWebhookReceived?: (
+    callback: (event: {
+      port: number
+      method: string
+      path: string
+      query: Record<string, string>
+      headers: Record<string, string | string[] | undefined>
+      body: any
+      rawBody: string
+      timestamp: number
+    }) => void,
+  ) => () => void
+
+  // Automation File Watcher
+  automationFileWatchStart?: (watchId: string, dirPath: string, pattern?: string) => Promise<{
+    ok: boolean
+    error?: string
+  }>
+  automationFileWatchStop?: (watchId: string) => Promise<{ ok: boolean }>
+  onAutomationFileWatchEvent?: (
+    callback: (event: {
+      watchId: string
+      eventType: string
+      filename: string
+      dirPath: string
+      fullPath: string
+      size: number
+      timestamp: number
+    }) => void,
+  ) => () => void
 }
+
 
 declare global {
   interface Window {

@@ -10,6 +10,10 @@ import {
   Info,
   ChevronRight,
   FolderInput,
+  Eye,
+  GitCompare,
+  ShieldCheck,
+  Star,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SftpFileNode } from './SftpFileTree'
@@ -75,6 +79,11 @@ export interface SftpRemoteContextMenuProps {
   onCopyName: () => void
   onCopyParent: () => void
   onProperties: () => void
+  onInspect?: () => void
+  onDiff?: () => void
+  onChecksum?: () => void
+  onToggleFavorite?: () => void
+  isFavorite?: boolean
 }
 
 export function SftpRemoteContextMenu({
@@ -93,6 +102,11 @@ export function SftpRemoteContextMenu({
   onCopyName,
   onCopyParent,
   onProperties,
+  onInspect,
+  onDiff,
+  onChecksum,
+  onToggleFavorite,
+  isFavorite,
 }: SftpRemoteContextMenuProps) {
   const [fileNamesOpen, setFileNamesOpen] = useState(false)
   const [submenuSide, setSubmenuSide] = useState<'right' | 'left'>('right')
@@ -142,12 +156,42 @@ export function SftpRemoteContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <CtxButton icon={FolderOpen} label="Open" onClick={() => run(onOpen)} />
+      {isFile && onInspect && (
+        <CtxButton
+          icon={Eye}
+          label="Inspect / View"
+          shortcut="F3"
+          onClick={() => run(onInspect)}
+        />
+      )}
       <CtxButton
         icon={FileText}
-        label="Edit"
+        label="Edit…"
         disabled={!isFile}
         onClick={() => run(onEdit)}
       />
+      {isFile && onDiff && (
+        <CtxButton
+          icon={GitCompare}
+          label="Compare with Local"
+          onClick={() => run(onDiff)}
+        />
+      )}
+      {isFile && onChecksum && (
+        <CtxButton
+          icon={ShieldCheck}
+          label="Calculate Checksum"
+          onClick={() => run(onChecksum)}
+        />
+      )}
+      {!isFile && onToggleFavorite && (
+        <CtxButton
+          icon={Star}
+          label={isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+          className={isFavorite ? 'text-amber-500' : ''}
+          onClick={() => run(onToggleFavorite)}
+        />
+      )}
       <CtxButton
         icon={Download}
         label="Download…"

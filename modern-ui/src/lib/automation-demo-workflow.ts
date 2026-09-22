@@ -893,6 +893,76 @@ export const DEMO_WORKFLOW = {
           "sourceHandle": "out"
         }
       ]
+    },
+    {
+      "id": "seq-9-files",
+      "name": "9 · Files & Storage",
+      "order": 8,
+      "steps": [
+        {
+          "id": "f-list",
+          "type": "FILE_LIST",
+          "name": "Scan files",
+          "position": {
+            "x": 40,
+            "y": 120
+          },
+          "params": {
+            "storageTarget": "local",
+            "filePath": "./data",
+            "fileGlob": "*.csv",
+            "fileRecursive": false,
+            "fileSaveListAs": "files",
+            "fileSaveCountAs": "fileCount",
+            "fileSaveFirstAs": "firstFile"
+          }
+        },
+        {
+          "id": "f-read",
+          "type": "FILE_READ",
+          "name": "Read input",
+          "position": {
+            "x": 330,
+            "y": 120
+          },
+          "params": {
+            "storageTarget": "local",
+            "filePath": "./data/sample.csv",
+            "fileEncoding": "utf-8",
+            "fileSaveAs": "content",
+            "fileSaveSizeAs": "size"
+          }
+        },
+        {
+          "id": "f-write",
+          "type": "FILE_WRITE",
+          "name": "Write output",
+          "position": {
+            "x": 620,
+            "y": 120
+          },
+          "params": {
+            "storageTarget": "local",
+            "filePath": "./data/output.txt",
+            "fileContent": "Processed content: {{content}}",
+            "fileAppend": false
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "e36",
+          "from": "f-list",
+          "to": "f-read",
+          "sourceHandle": "out"
+        },
+        {
+          "id": "e37",
+          "from": "f-read",
+          "to": "f-write",
+          "sourceHandle": "out"
+        }
+      ]
     }
   ]
 } as const

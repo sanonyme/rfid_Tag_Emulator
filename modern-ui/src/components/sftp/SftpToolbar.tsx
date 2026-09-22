@@ -30,6 +30,9 @@ import {
   MoreHorizontal,
   FileText,
   BookmarkPlus,
+  Eye,
+  GitCompare,
+  ShieldCheck,
 } from 'lucide-react'
 
 function ToolbarSep() {
@@ -108,6 +111,9 @@ export interface SftpToolbarProps {
   onMove: () => void
   onProperties: () => void
   onDelete: () => void
+  onInspect?: () => void
+  onDiff?: () => void
+  onChecksum?: () => void
   showMigrate?: boolean
 }
 
@@ -140,6 +146,9 @@ export function SftpToolbar({
   onMove,
   onProperties,
   onDelete,
+  onInspect,
+  onDiff,
+  onChecksum,
   showMigrate = true,
 }: SftpToolbarProps) {
   const [newOpen, setNewOpen] = useState(false)
@@ -353,6 +362,13 @@ export function SftpToolbar({
               disabled={!hasSelection}
             />
             <IconAction
+              icon={Eye}
+              label="Inspect / View"
+              shortcut="F3"
+              onClick={onInspect || (() => {})}
+              disabled={!onInspect || !hasSelection || selectedNode?.type !== 'file'}
+            />
+            <IconAction
               icon={Pencil}
               label="Rename"
               shortcut="F2"
@@ -364,6 +380,18 @@ export function SftpToolbar({
               label="Edit"
               onClick={onEdit}
               disabled={!hasSelection || selectedNode?.type !== 'file'}
+            />
+            <IconAction
+              icon={GitCompare}
+              label="Compare with Local"
+              onClick={onDiff || (() => {})}
+              disabled={!onDiff || !hasSelection || selectedNode?.type !== 'file'}
+            />
+            <IconAction
+              icon={ShieldCheck}
+              label="Checksum"
+              onClick={onChecksum || (() => {})}
+              disabled={!onChecksum || !hasSelection || selectedNode?.type !== 'file'}
             />
             <IconAction
               icon={Copy}
@@ -413,8 +441,11 @@ export function SftpToolbar({
               <div className="absolute left-0 top-full z-50 mt-1 min-w-[180px] rounded-md border border-border/60 bg-popover py-1 shadow-lg animate-in fade-in-0 zoom-in-95">
                 {[
                   { label: 'Download', onClick: onDownload, disabled: !hasSelection },
+                  { label: 'Inspect / View', onClick: onInspect || (() => {}), disabled: !onInspect || !hasSelection || selectedNode?.type !== 'file' },
                   { label: 'Rename', onClick: onRename, disabled: !hasSelection },
                   { label: 'Edit', onClick: onEdit, disabled: !hasSelection || selectedNode?.type !== 'file' },
+                  { label: 'Compare with Local', onClick: onDiff || (() => {}), disabled: !onDiff || !hasSelection || selectedNode?.type !== 'file' },
+                  { label: 'Calculate Checksum', onClick: onChecksum || (() => {}), disabled: !onChecksum || !hasSelection || selectedNode?.type !== 'file' },
                   { label: 'Duplicate', onClick: onDuplicate, disabled: !hasSelection || selectedNode?.type !== 'file' },
                   { label: 'Move to…', onClick: onMove, disabled: !hasSelection },
                   { label: 'Properties', onClick: onProperties, disabled: !hasSelection },

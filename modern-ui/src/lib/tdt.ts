@@ -107,7 +107,7 @@ interface TdtBridgeResult {
 
 type TdtBridgeResponse = TdtBridgeResult | { ok: false; error: string }
 
-function isTds23Scheme(scheme?: string): boolean {
+function isTds23Scheme(scheme?: string): scheme is string {
   return Boolean(scheme && /\+{1,2}$/.test(scheme.trim()))
 }
 
@@ -271,6 +271,10 @@ async function tryBridgeTranslate(
   } catch (e) {
     return { ok: false, error: (e as Error).message || 'TDT bridge failed' }
   }
+}
+
+function getBridgeError(bridge: TdtBridgeResponse | null | undefined): string | undefined {
+  return bridge && !bridge.ok ? bridge.error : undefined
 }
 
 function bridgeToDecodeResult(
@@ -764,7 +768,7 @@ export async function tdtDecode(
     if (bridge?.ok) {
       return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
     }
-    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input', detected }
+    return { ok: false, error: getBridgeError(bridge) || 'No TDT scheme matched this input', detected }
   }
 
   const known = t.schemes?.() ?? []
@@ -777,7 +781,7 @@ export async function tdtDecode(
     if (bridge?.ok) {
       return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
     }
-    return { ok: false, error: bridge?.error || `Unknown scheme: ${forced}`, detected }
+    return { ok: false, error: getBridgeError(bridge) || `Unknown scheme: ${forced}`, detected }
   }
 
   const chosen = pickTdtScheme(detected, forced)
@@ -790,7 +794,7 @@ export async function tdtDecode(
     if (bridge?.ok) {
       return { ok: true, result: bridgeToDecodeResult(bridge, detected, forced) }
     }
-    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input', detected }
+    return { ok: false, error: getBridgeError(bridge) || 'No TDT scheme matched this input', detected }
   }
 
   // If autodetection picked a +/++ scheme, prefer the bridge (browser TDT lacks those levels).
@@ -915,7 +919,7 @@ export async function tdtEncode(
       const value = bridgeOutputValue(bridge, outputLevel)
       if (value) return { ok: true, value, scheme: bridge.scheme || forced }
     }
-    return { ok: false, error: bridge?.error || `Failed to encode as ${forced}` }
+    return { ok: false, error: getBridgeError(bridge) || `Failed to encode as ${forced}` }
   }
 
   const t = await getTdtTranslator()
@@ -929,7 +933,7 @@ export async function tdtEncode(
       const value = bridgeOutputValue(bridge, outputLevel)
       if (value) return { ok: true, value, scheme: bridge.scheme || 'TDS 2.3' }
     }
-    return { ok: false, error: bridge?.error || 'No TDT scheme matched this input' }
+    return { ok: false, error: getBridgeError(bridge) || 'No TDT scheme matched this input' }
   }
 
   const known = t.schemes?.() ?? []
@@ -943,7 +947,7 @@ export async function tdtEncode(
       const value = bridgeOutputValue(bridge, outputLevel)
       if (value) return { ok: true, value, scheme: bridge.scheme || forced }
     }
-    return { ok: false, error: bridge?.error || `Unknown scheme: ${forced}` }
+    return { ok: false, error: getBridgeError(bridge) || `Unknown scheme: ${forced}` }
   }
 
   const chosen = pickTdtScheme(detected, forced)
@@ -959,6 +963,7 @@ export async function tdtEncode(
       const value = bridgeOutputValue(bridge, outputLevel)
       if (value) return { ok: true, value, scheme: bridge.scheme || chosen.scheme }
     }
+    return { ok: false, error: getBridgeError(bridge) || `Failed to encode with bridge: ${chosen.scheme}` }
   }
 
   const options: Record<string, unknown> = {
@@ -989,6 +994,6 @@ export async function tdtEncode(
       const value = bridgeOutputValue(bridge, outputLevel)
       if (value) return { ok: true, value, scheme: bridge.scheme || forced || chosen.scheme }
     }
-    return { ok: false, error: bridge?.error || (e as Error).message || 'Translation failed' }
+    return { ok: false, error: getBridgeError(bridge) || (e as Error).message || 'Translation failed' }
   }
 }

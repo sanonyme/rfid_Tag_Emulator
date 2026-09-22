@@ -41,6 +41,22 @@ export function getDirectChildPaths(nodes: SftpFileNode[], dir: string): string[
   return parent.children.map((c) => c.path)
 }
 
+/** Folder path plus every loaded descendant (files and nested folders). */
+export function collectSubtreePaths(node: SftpFileNode): string[] {
+  const out: string[] = [node.path]
+  if (!node.children?.length) return out
+  for (const child of node.children) {
+    out.push(...collectSubtreePaths(child))
+  }
+  return out
+}
+
+/** True when `path` is strictly under `folderPath` in the remote tree. */
+export function isPathUnderFolder(folderPath: string, path: string): boolean {
+  if (folderPath === '/') return path !== '/' && path.startsWith('/')
+  return path.startsWith(`${folderPath}/`)
+}
+
 /** Reload root and re-fetch children for previously expanded folders. */
 export async function rebuildSftpTreeWithExpanded(
   loadDir: (remotePath: string) => Promise<SftpFileNode[]>,

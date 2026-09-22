@@ -257,12 +257,11 @@ export async function sftpReadFile(
     if (isMostlyText(buf)) {
       return { ok: true, text: buf.toString('utf8'), isBinary: false, size }
     }
-    const preview = buf.subarray(0, Math.min(buf.length, 512))
     return {
       ok: true,
       isBinary: true,
       size,
-      previewBase64: preview.toString('base64'),
+      previewBase64: buf.toString('base64'),
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

@@ -5,6 +5,7 @@ import {
   Search, Clock, ScanLine, Radio, Smartphone, Terminal, Box, Workflow, Variable,
   Database, FileCode2, Globe, Server, Network, Code2, GitBranch, FileText, ShieldCheck,
   Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, CornerDownLeft,
+  FolderOpen, Save, ListOrdered,
 } from 'lucide-react'
 import type { ActionType } from '@/lib/automation-types'
 import {
@@ -44,6 +45,9 @@ const PALETTE_ICON: Record<ActionType, { Icon: typeof Clock; accent: string }> =
   LOOP_N: { Icon: Repeat2, accent: 'text-purple-400' },
   SWITCH: { Icon: Split, accent: 'text-blue-400' },
   RANDOM: { Icon: Shuffle, accent: 'text-purple-400' },
+  FILE_READ: { Icon: FolderOpen, accent: 'text-emerald-400' },
+  FILE_WRITE: { Icon: Save, accent: 'text-blue-400' },
+  FILE_LIST: { Icon: ListOrdered, accent: 'text-cyan-400' },
 }
 
 interface NodePaletteProps {

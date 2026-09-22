@@ -26,6 +26,42 @@ export type ActionType =
   | 'LOOP_N'
   | 'SWITCH'
   | 'RANDOM'
+  | 'FILE_READ'
+  | 'FILE_WRITE'
+  | 'FILE_LIST'
+
+export type FrameColor = 'blue' | 'emerald' | 'amber' | 'purple' | 'cyan' | 'rose' | 'slate'
+
+export interface AutomationFrame {
+  id: string
+  name: string
+  color: FrameColor
+  x: number
+  y: number
+  width: number
+  height: number
+  notes?: string
+}
+
+export type TriggerType = 'webhook' | 'file_watcher' | 'interval'
+
+export interface AutomationTrigger {
+  id: string
+  name: string
+  type: TriggerType
+  enabled: boolean
+  targetSequenceId: string
+  // Webhook settings
+  webhookPath?: string
+  webhookPort?: number
+  webhookMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'ANY'
+  // File watcher settings
+  watcherPath?: string
+  watcherPattern?: string
+  watchEvents?: 'all' | 'change' | 'add' | 'unlink'
+  // Interval settings
+  intervalSeconds?: number
+}
 
 export type EdgeProcessAction = 'start' | 'stop'
 
@@ -488,6 +524,20 @@ export interface AutomationStep {
     randomBranches?: RandomBranch[]
     /** Optional variable to store the chosen branch index (0-based) */
     randomSaveAs?: string
+
+    // --- FILE_READ, FILE_WRITE, FILE_LIST ---
+    fileLocation?: 'local' | 'sftp' | 's3'
+    fileStorageProvider?: 'local' | 'sftp' | 's3'
+    fileConnectionId?: string
+    filePath?: string
+    fileContent?: string
+    fileSaveAs?: string
+    fileEncoding?: 'utf8' | 'utf-8' | 'json' | 'base64' | 'hex'
+    filePattern?: string
+    fileFilter?: string
+    fileRecursive?: boolean
+    fileSaveListAs?: string
+    fileAppend?: boolean
   }
 }
 
@@ -519,6 +569,8 @@ export interface AutomationSequence {
    * (see `deriveLinearEdges` / `ensureSequenceEdges`).
    */
   edges?: AutomationEdge[]
+  /** Visual group frames on canvas */
+  frames?: AutomationFrame[]
 }
 
 export const ALL_ACTION_TYPES: ActionType[] = [
@@ -549,6 +601,9 @@ export const ALL_ACTION_TYPES: ActionType[] = [
   'LOOP_N',
   'SWITCH',
   'RANDOM',
+  'FILE_READ',
+  'FILE_WRITE',
+  'FILE_LIST',
 ]
 
 /**
@@ -645,12 +700,27 @@ export function parseWorkflowSequences(raw: unknown): AutomationSequence[] | nul
             sourceHandle: typeof e.sourceHandle === 'string' ? e.sourceHandle : 'out',
           }))
       : undefined
+    const frames: AutomationFrame[] | undefined = Array.isArray(s.frames)
+      ? s.frames.map((f: any) => ({
+          id: typeof f.id === 'string' ? f.id : crypto.randomUUID(),
+          name: String(f.name || 'Group').slice(0, 80),
+          color: (['blue', 'emerald', 'amber', 'purple', 'cyan', 'rose', 'slate'].includes(f.color)
+            ? f.color
+            : 'blue') as FrameColor,
+          x: typeof f.x === 'number' ? f.x : 0,
+          y: typeof f.y === 'number' ? f.y : 0,
+          width: typeof f.width === 'number' ? Math.max(100, f.width) : 400,
+          height: typeof f.height === 'number' ? Math.max(60, f.height) : 260,
+          notes: typeof f.notes === 'string' ? f.notes : undefined,
+        }))
+      : []
     return {
       id: (typeof s.id === 'string' && seqIdMap.get(s.id)) || crypto.randomUUID(),
       name: String(s.name || 'Imported').slice(0, 100),
       order: typeof s.order === 'number' ? s.order : 0,
       steps,
       edges,
+      frames,
     }
   }))
 }
@@ -659,7 +729,7 @@ export function parseWorkflowSequences(raw: unknown): AutomationSequence[] | nul
 export function normalizeSequences(seqs: AutomationSequence[]): AutomationSequence[] {
   return [...seqs]
     .sort((a, b) => a.order - b.order)
-    .map((s, i) => ({ ...ensureSequenceEdges(s), order: i }))
+    .map((s, i) => ({ ...ensureSequenceEdges(s), frames: s.frames ?? [], order: i }))
 }
 
 export const DEFAULT_STEP_NAMES: Record<ActionType, string> = {
@@ -690,6 +760,9 @@ export const DEFAULT_STEP_NAMES: Record<ActionType, string> = {
   LOOP_N: 'Loop N Times',
   SWITCH: 'Switch',
   RANDOM: 'Random Branch',
+  FILE_READ: 'Read File',
+  FILE_WRITE: 'Write File',
+  FILE_LIST: 'List Files',
 }
 
 export function defaultParamsForType(type: ActionType, extras?: { customPort?: string }): AutomationStep['params'] {
@@ -900,6 +973,34 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
         { weight: 1, label: 'B' },
       ],
       randomSaveAs: '',
+    }
+  }
+  if (type === 'FILE_READ') {
+    return {
+      ...base,
+      fileStorageProvider: 'local',
+      filePath: './data/tags.csv',
+      fileEncoding: 'utf8',
+      fileSaveAs: 'fileContent',
+    }
+  }
+  if (type === 'FILE_WRITE') {
+    return {
+      ...base,
+      fileStorageProvider: 'local',
+      filePath: './data/output.csv',
+      fileContent: '{{epcList}}',
+      fileEncoding: 'utf8',
+      fileAppend: false,
+    }
+  }
+  if (type === 'FILE_LIST') {
+    return {
+      ...base,
+      fileStorageProvider: 'local',
+      filePath: './data',
+      filePattern: '*.csv',
+      fileSaveListAs: 'fileList',
     }
   }
   return base

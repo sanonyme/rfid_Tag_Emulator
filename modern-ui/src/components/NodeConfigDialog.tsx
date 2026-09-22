@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, memo } from 'react'
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import { Textarea } from './ui/textarea'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
-import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2, Settings2 } from 'lucide-react'
+import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2, Settings2, FolderOpen, Save, ListOrdered } from 'lucide-react'
 import { EdgeBlockNodeConfig, EdgeProcessNodeConfig } from './EdgeAutomationNodeConfig'
 import {
   Select,
@@ -27,6 +27,7 @@ import {
 import { Switch } from './ui/switch'
 import { UpcSerialModeToggle } from './UpcSerialModeToggle'
 import { StandardVariablesReference, VariablePresetPicker } from './VariablePresetPicker'
+import { VariableAutocompleteInput } from './automation/VariableAutocompleteInput'
 import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError } from '@/lib/automation-types'
 import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
@@ -81,6 +82,9 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   LOOP_N: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400' },
   SWITCH: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
   RANDOM: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400' },
+  FILE_READ: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400' },
+  FILE_WRITE: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
+  FILE_LIST: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400' },
 }
 
 export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenChange, step: savedStep, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId }: NodeConfigDialogProps) {
@@ -208,6 +212,30 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
     }
   }, [open, savedStep?.type, savedStep?.id, host, alePort])
 
+  const upstreamVariables = useMemo(() => {
+    const vars = new Set<string>()
+    if (sequences) {
+      for (const seq of sequences) {
+        for (const s of seq.steps) {
+          if (s.params?.varName) vars.add(s.params.varName)
+          if (s.params?.dbSaveAs) vars.add(s.params.dbSaveAs)
+          if (s.params?.httpSaveBodyAs) vars.add(s.params.httpSaveBodyAs)
+          if (s.params?.httpSaveStatusAs) vars.add(s.params.httpSaveStatusAs)
+          if (s.params?.fileSaveAs) vars.add(s.params.fileSaveAs)
+          if (s.params?.fileSaveListAs) vars.add(s.params.fileSaveListAs)
+          if (s.params?.generateSaveAs) vars.add(s.params.generateSaveAs)
+          if (s.params?.transformSaveAs) vars.add(s.params.transformSaveAs)
+          if (s.params?.scriptSaveStdoutAs) vars.add(s.params.scriptSaveStdoutAs)
+          if (s.params?.forEachItemAs) vars.add(s.params.forEachItemAs)
+          if (s.params?.forEachIndexAs) vars.add(s.params.forEachIndexAs)
+          if (s.params?.loopIndexAs) vars.add(s.params.loopIndexAs)
+          if (s.params?.randomSaveAs) vars.add(s.params.randomSaveAs)
+        }
+      }
+    }
+    return Array.from(vars)
+  }, [sequences])
+
   if (!savedStep) return null
 
   const step: AutomationStep = { ...savedStep, name: draftNameRef.current, params: draftParamsRef.current }
@@ -261,6 +289,9 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               {step.type === 'LOOP_N' && <Repeat2 className="h-3 w-3" />}
               {step.type === 'SWITCH' && <Split className="h-3 w-3" />}
               {step.type === 'RANDOM' && <Shuffle className="h-3 w-3" />}
+              {step.type === 'FILE_READ' && <FolderOpen className="h-3 w-3" />}
+              {step.type === 'FILE_WRITE' && <Save className="h-3 w-3" />}
+              {step.type === 'FILE_LIST' && <ListOrdered className="h-3 w-3" />}
               {step.type}
             </span>
             {step.name}
@@ -724,10 +755,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
               </div>
               <Label>Value</Label>
-              <Textarea
-                value={step.params.varValue || ''}
-                onChange={(e) => patchParams( { varValue: e.target.value })}
+              <VariableAutocompleteInput
+                multiline
                 rows={3}
+                value={step.params.varValue || ''}
+                onChange={(next) => patchParams({ varValue: next })}
+                upstreamVariables={upstreamVariables}
                 className="font-mono text-sm"
                 placeholder={
                   varType === 'number' ? '3.5 or {{tagCount}}'
@@ -736,7 +769,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     : varType === 'array' ? '["a","b"] or one item per line / comma-separated'
                     : varType === 'object' ? '{"key":"value"}'
                     : varType === 'json' ? '{"key":"value"} or [1,2,3]'
-                    : 'literal or pick a variable below'
+                    : 'literal or type {{ to pick a variable'
                 }
               />
               <p className="text-[11px] text-muted-foreground">
@@ -763,10 +796,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 placeholder="Leave empty for current connection default"
               />
               <Label>SQL</Label>
-              <Textarea
-                value={step.params.dbSql || ''}
-                onChange={(e) => patchParams( { dbSql: e.target.value })}
+              <VariableAutocompleteInput
+                multiline
                 rows={6}
+                value={step.params.dbSql || ''}
+                onChange={(next) => patchParams({ dbSql: next })}
+                upstreamVariables={upstreamVariables}
                 className="font-mono text-sm"
                 placeholder={"SELECT * FROM inventory WHERE epc IN ({{epcsSql}})"}
               />
@@ -951,9 +986,10 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </p>
                 <div className="space-y-2">
                   <Label>Left value</Label>
-                  <Input
+                  <VariableAutocompleteInput
                     value={step.params.condLeft || ''}
-                    onChange={(e) => patchParams( { condLeft: e.target.value })}
+                    onChange={(next) => patchParams({ condLeft: next })}
+                    upstreamVariables={upstreamVariables}
                     className="h-10 font-mono"
                     placeholder="{{tagCount}}"
                   />
@@ -980,9 +1016,10 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 {needsRight && (
                   <div className="space-y-2">
                     <Label>Right value</Label>
-                    <Input
+                    <VariableAutocompleteInput
                       value={step.params.condRight || ''}
-                      onChange={(e) => patchParams( { condRight: e.target.value })}
+                      onChange={(next) => patchParams({ condRight: next })}
+                      upstreamVariables={upstreamVariables}
                       className="h-10 font-mono"
                       placeholder={op === 'matches' ? '^\\d+$ (regex)' : '0'}
                     />
@@ -1024,9 +1061,10 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </p>
                 <div className="space-y-2">
                   <Label>Left value</Label>
-                  <Input
+                  <VariableAutocompleteInput
                     value={step.params.condLeft || ''}
-                    onChange={(e) => patchParams( { condLeft: e.target.value })}
+                    onChange={(next) => patchParams({ condLeft: next })}
+                    upstreamVariables={upstreamVariables}
                     className="h-10 font-mono"
                     placeholder="{{tagCount}}"
                   />
@@ -1053,9 +1091,10 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 {needsRight && (
                   <div className="space-y-2">
                     <Label>Right value</Label>
-                    <Input
+                    <VariableAutocompleteInput
                       value={step.params.condRight || ''}
-                      onChange={(e) => patchParams( { condRight: e.target.value })}
+                      onChange={(next) => patchParams({ condRight: next })}
+                      upstreamVariables={upstreamVariables}
                       className="h-10 font-mono"
                       placeholder="0"
                     />
@@ -1751,10 +1790,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               </div>
               <div className="space-y-2">
                 <Label>Message</Label>
-                <Textarea
-                  value={step.params.notifyMessage || ''}
-                  onChange={(e) => patchParams( { notifyMessage: e.target.value })}
+                <VariableAutocompleteInput
+                  multiline
                   rows={3}
+                  value={step.params.notifyMessage || ''}
+                  onChange={(next) => patchParams({ notifyMessage: next })}
+                  upstreamVariables={upstreamVariables}
                   className="font-mono text-sm"
                   placeholder="Sent {{tagCount}} tag(s) to {{host}}"
                 />
@@ -1982,6 +2023,238 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               </div>
             )
           })()}
+
+          {step.type === 'FILE_READ' && (
+            <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Storage Location</Label>
+                <span className="text-[11px] text-muted-foreground">Local disk, remote SFTP, or S3 bucket</span>
+              </div>
+              <Select
+                value={step.params.fileLocation || 'local'}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
+                  <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="s3">AWS S3 Bucket</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {step.params.fileLocation === 'sftp' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Input
+                    value={step.params.fileConnectionId || ''}
+                    onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
+                    placeholder="Leave empty for active SFTP session"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>File Path</Label>
+                <VariableAutocompleteInput
+                  value={step.params.filePath || ''}
+                  onChange={(v) => patchParams({ filePath: v })}
+                  upstreamVariables={upstreamVariables}
+                  placeholder={step.params.fileLocation === 'sftp' ? '/var/data/tags.csv or {{path}}' : 'C:\\data\\tags.csv or {{path}}'}
+                  className="h-10 font-mono text-sm"
+                />
+                <p className="text-[11px] text-muted-foreground">Type <code className="font-mono">{'{{'}</code> to insert variables like <code className="font-mono">{'{{epc}}'}</code> or <code className="font-mono">{'{{timestamp}}'}</code></p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Read Encoding</Label>
+                  <Select
+                    value={step.params.fileEncoding || 'utf-8'}
+                    onValueChange={(v) => patchParams({ fileEncoding: v as 'utf-8' | 'base64' | 'json' | 'hex' })}
+                  >
+                    <SelectTrigger className="h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="utf-8">UTF-8 (Plain Text / CSV)</SelectItem>
+                      <SelectItem value="json">JSON (Parsed Object)</SelectItem>
+                      <SelectItem value="base64">Base64 (Binary / Image)</SelectItem>
+                      <SelectItem value="hex">Hex Dump</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Save Content As</Label>
+                  <Input
+                    value={step.params.fileSaveAs || 'fileContent'}
+                    onChange={(e) => patchParams({ fileSaveAs: e.target.value })}
+                    placeholder="fileContent"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Content is saved to <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileContent') + '}}'}</code> and byte size to <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileContent') + 'Size}}'}</code>.
+              </p>
+            </div>
+          )}
+
+          {step.type === 'FILE_WRITE' && (
+            <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Storage Location</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="file-append-mode"
+                    checked={step.params.fileAppend === true}
+                    onCheckedChange={(v) => patchParams({ fileAppend: v })}
+                  />
+                  <Label htmlFor="file-append-mode" className="text-xs cursor-pointer">
+                    {step.params.fileAppend ? 'Append Mode' : 'Overwrite Mode'}
+                  </Label>
+                </div>
+              </div>
+              <Select
+                value={step.params.fileLocation || 'local'}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
+                  <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="s3">AWS S3 Bucket</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {step.params.fileLocation === 'sftp' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Input
+                    value={step.params.fileConnectionId || ''}
+                    onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
+                    placeholder="Leave empty for active SFTP session"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Destination Path</Label>
+                <VariableAutocompleteInput
+                  value={step.params.filePath || ''}
+                  onChange={(v) => patchParams({ filePath: v })}
+                  upstreamVariables={upstreamVariables}
+                  placeholder={step.params.fileLocation === 'sftp' ? '/var/log/audit.csv' : 'C:\\export\\scanned_tags.csv'}
+                  className="h-10 font-mono text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Content / Template to Write</Label>
+                <VariableAutocompleteInput
+                  multiline
+                  rows={5}
+                  value={step.params.fileContent || ''}
+                  onChange={(v) => patchParams({ fileContent: v })}
+                  upstreamVariables={upstreamVariables}
+                  placeholder={'{{epc}},{{timestamp}},{{host}},PASS\n'}
+                  className="font-mono text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">Type <code className="font-mono">{'{{'}</code> to insert dynamic variables (e.g. <code className="font-mono">{'{{epc}}'}</code>, <code className="font-mono">{'{{tagCount}}'}</code>, <code className="font-mono">{'{{timestamp}}'}</code>).</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Save status as (optional)</Label>
+                <Input
+                  value={step.params.fileSaveAs || ''}
+                  onChange={(e) => patchParams({ fileSaveAs: e.target.value })}
+                  placeholder="writeStatus"
+                  className="h-9 font-mono text-xs"
+                />
+              </div>
+            </div>
+          )}
+
+          {step.type === 'FILE_LIST' && (
+            <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Storage Location</Label>
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id="file-recursive-mode"
+                    checked={step.params.fileRecursive === true}
+                    onCheckedChange={(v) => patchParams({ fileRecursive: v })}
+                  />
+                  <Label htmlFor="file-recursive-mode" className="text-xs cursor-pointer">Recursive</Label>
+                </div>
+              </div>
+              <Select
+                value={step.params.fileLocation || 'local'}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+              >
+                <SelectTrigger className="h-10">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
+                  <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="s3">AWS S3 Bucket</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {step.params.fileLocation === 'sftp' && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Input
+                    value={step.params.fileConnectionId || ''}
+                    onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
+                    placeholder="Leave empty for active SFTP session"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label>Directory Path</Label>
+                <VariableAutocompleteInput
+                  value={step.params.filePath || ''}
+                  onChange={(v) => patchParams({ filePath: v })}
+                  upstreamVariables={upstreamVariables}
+                  placeholder={step.params.fileLocation === 'sftp' ? '/var/data' : 'C:\\data\\rfid_records'}
+                  className="h-10 font-mono text-sm"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Filter Pattern (optional)</Label>
+                  <Input
+                    value={step.params.fileFilter || ''}
+                    onChange={(e) => patchParams({ fileFilter: e.target.value })}
+                    placeholder="*.csv, *.json"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Save List As</Label>
+                  <Input
+                    value={step.params.fileSaveAs || 'fileList'}
+                    onChange={(e) => patchParams({ fileSaveAs: e.target.value })}
+                    placeholder="fileList"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Output variables: <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + '}}'}</code> (JSON array of names), <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + 'Count}}'}</code> (count), and <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + 'Paths}}'}</code> (full paths).
+              </p>
+            </div>
+          )}
 
           {/* Node settings — shared by every executing node (n8n "Settings" tab). */}
           {nodeSupportsErrorPolicy(step.type) && (() => {

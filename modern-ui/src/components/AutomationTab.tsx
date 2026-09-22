@@ -98,6 +98,10 @@ import {
   XCircle as CircleX,
   CircleSlash,
   Loader2 as LoaderCircle,
+  Zap,
+  FolderOpen,
+  Save,
+  Palette,
 } from 'lucide-react'
 import { useEdgeSession } from '@/contexts/EdgeSessionContext'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
@@ -119,7 +123,7 @@ import {
   setAutomationFullActivityLog,
 } from '@/lib/automation-log-settings'
 import { Switch } from './ui/switch'
-import type { AutomationStep, AutomationSequence, AutomationEdge, ActionType } from '@/lib/automation-types'
+import type { AutomationStep, AutomationSequence, AutomationEdge, ActionType, AutomationFrame, AutomationTrigger, FrameColor } from '@/lib/automation-types'
 import {
   normalizeSequences,
   parseWorkflowSequences,
@@ -167,7 +171,11 @@ import {
   executeGenerate,
   executeComment,
   executeTransform,
+  executeFileRead,
+  executeFileWrite,
+  executeFileList,
 } from '@/lib/automation-blocks'
+import { AutomationTriggersDialog, loadSavedTriggers, TRIGGERS_STORAGE_KEY } from './automation/AutomationTriggersDialog'
 import { NodeConfigDialog } from './NodeConfigDialog'
 import { NodePalette } from './NodePalette'
 import { DEMO_WORKFLOW } from '@/lib/automation-demo-workflow'
@@ -247,7 +255,7 @@ const INPUT_PORT_Y = NODE_HEIGHT / 2
 /** How connections are drawn between nodes (user-selectable, persisted). */
 export type EdgeStyle = 'curved' | 'step' | 'straight'
 
-export const EDGE_STYLE_META: Record<EdgeStyle, { label: string; hint: string }> = {
+const EDGE_STYLE_META: Record<EdgeStyle, { label: string; hint: string }> = {
   curved: { label: 'Curved', hint: 'Smooth bezier curves' },
   step: { label: 'Step', hint: 'Right-angled elbows' },
   straight: { label: 'Straight', hint: 'Direct straight lines' },
@@ -405,6 +413,9 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   LOOP_N: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'LOOP' },
   SWITCH: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400', label: 'SWITCH' },
   RANDOM: { border: 'border-purple-400/40', bg: 'bg-purple-400/10', icon: 'text-purple-400', label: 'RAND' },
+  FILE_READ: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400', label: 'READ' },
+  FILE_WRITE: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400', label: 'WRITE' },
+  FILE_LIST: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400', label: 'LIST' },
 }
 
 function StepTypeIcon({ type, className }: { type: ActionType; className?: string }) {
@@ -436,9 +447,194 @@ function StepTypeIcon({ type, className }: { type: ActionType; className?: strin
     case 'LOOP_N': return <Repeat2 className={className} />
     case 'SWITCH': return <Split className={className} />
     case 'RANDOM': return <Shuffle className={className} />
+    case 'FILE_READ': return <FolderOpen className={className} />
+    case 'FILE_WRITE': return <Save className={className} />
+    case 'FILE_LIST': return <ListOrdered className={className} />
     default: return null
   }
 }
+
+const FRAME_COLORS: Record<FrameColor, { border: string; bg: string; text: string; header: string; dot: string }> = {
+  slate: { border: 'border-slate-500/40', bg: 'bg-slate-500/5', text: 'text-slate-300', header: 'bg-slate-500/15', dot: 'bg-slate-400' },
+  blue: { border: 'border-blue-500/40', bg: 'bg-blue-500/5', text: 'text-blue-400', header: 'bg-blue-500/15', dot: 'bg-blue-400' },
+  emerald: { border: 'border-emerald-500/40', bg: 'bg-emerald-500/5', text: 'text-emerald-400', header: 'bg-emerald-500/15', dot: 'bg-emerald-400' },
+  amber: { border: 'border-amber-500/40', bg: 'bg-amber-500/5', text: 'text-amber-400', header: 'bg-amber-500/15', dot: 'bg-amber-400' },
+  purple: { border: 'border-purple-500/40', bg: 'bg-purple-500/5', text: 'text-purple-400', header: 'bg-purple-500/15', dot: 'bg-purple-400' },
+  rose: { border: 'border-rose-500/40', bg: 'bg-rose-500/5', text: 'text-rose-400', header: 'bg-rose-500/15', dot: 'bg-rose-400' },
+  cyan: { border: 'border-cyan-500/40', bg: 'bg-cyan-500/5', text: 'text-cyan-400', header: 'bg-cyan-500/15', dot: 'bg-cyan-400' },
+}
+
+const FRAME_COLOR_KEYS: FrameColor[] = ['slate', 'blue', 'emerald', 'amber', 'purple', 'rose', 'cyan']
+
+interface WorkflowFrameProps {
+  frame: AutomationFrame
+  canvasZoom: number
+  isRunning: boolean
+  frameDragPreview?: { frameId: string; dx: number; dy: number } | null
+  frameResizePreview?: { frameId: string; width: number; height: number } | null
+  onUpdate: (id: string, updates: Partial<AutomationFrame>) => void
+  onDelete: (id: string) => void
+  onFrameDragStart: (frame: AutomationFrame, e: React.PointerEvent) => void
+  onFrameResizeStart: (frame: AutomationFrame, e: React.PointerEvent) => void
+}
+
+const WorkflowFrame = memo(function WorkflowFrame({
+  frame,
+  isRunning,
+  frameDragPreview,
+  frameResizePreview,
+  onUpdate,
+  onDelete,
+  onFrameDragStart,
+  onFrameResizeStart,
+}: WorkflowFrameProps) {
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(frame.name)
+  const [showColorPicker, setShowColorPicker] = useState(false)
+  const c = FRAME_COLORS[frame.color] ?? FRAME_COLORS.slate
+
+  const isDragging = frameDragPreview?.frameId === frame.id
+  const isResizing = frameResizePreview?.frameId === frame.id
+  const curX = isDragging ? Math.round(frame.x + frameDragPreview!.dx) : frame.x
+  const curY = isDragging ? Math.round(frame.y + frameDragPreview!.dy) : frame.y
+  const curW = isResizing ? frameResizePreview!.width : frame.width
+  const curH = isResizing ? frameResizePreview!.height : frame.height
+
+  const handleTitleSubmit = () => {
+    setEditingTitle(false)
+    if (draftTitle.trim() && draftTitle !== frame.name) {
+      onUpdate(frame.id, { name: draftTitle.trim() })
+    }
+  }
+
+  return (
+    <div
+      className={cn(
+        'group absolute rounded-2xl border-2 border-dashed transition-[border-color,box-shadow]',
+        c.border,
+        c.bg,
+        'select-none pointer-events-none',
+        (isDragging || isResizing) && 'ring-2 ring-primary/40 shadow-xl opacity-90',
+      )}
+      style={{
+        left: curX,
+        top: curY,
+        width: curW,
+        height: curH,
+        zIndex: 1,
+      }}
+    >
+      {/* Frame Header / Drag Bar */}
+      <div
+        className={cn(
+          'flex items-center justify-between px-3 py-1.5 rounded-t-2xl cursor-grab active:cursor-grabbing border-b border-inherit/40 pointer-events-auto',
+          c.header,
+        )}
+        onPointerDown={(e) => {
+          if ((e.target as HTMLElement).closest('button, input')) return
+          onFrameDragStart(frame, e)
+        }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <Frame className={cn('h-3.5 w-3.5 shrink-0', c.text)} />
+          {editingTitle ? (
+            <input
+              type="text"
+              value={draftTitle}
+              autoFocus
+              onChange={(e) => setDraftTitle(e.target.value)}
+              onBlur={handleTitleSubmit}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleTitleSubmit()
+                if (e.key === 'Escape') {
+                  setDraftTitle(frame.name)
+                  setEditingTitle(false)
+                }
+              }}
+              className="h-6 px-1.5 py-0 text-xs font-semibold rounded bg-background/80 border border-primary/50 text-foreground outline-none"
+            />
+          ) : (
+            <span
+              onDoubleClick={() => {
+                if (!isRunning) {
+                  setDraftTitle(frame.name)
+                  setEditingTitle(true)
+                }
+              }}
+              className={cn('text-xs font-semibold tracking-wide truncate max-w-[240px]', c.text)}
+              title="Double-click to rename"
+            >
+              {frame.name}
+            </span>
+          )}
+        </div>
+
+        {/* Frame Action Controls */}
+        <div className="flex items-center gap-1 opacity-60 group-hover:opacity-100 transition-opacity pointer-events-auto">
+          {/* Color Switcher */}
+          <div className="relative">
+            <button
+              type="button"
+              className="h-5 w-5 rounded flex items-center justify-center hover:bg-background/40 transition-colors"
+              onClick={() => setShowColorPicker(!showColorPicker)}
+              title="Change frame color"
+            >
+              <Palette className="h-3 w-3" />
+            </button>
+            {showColorPicker && (
+              <div
+                className="absolute right-0 top-full mt-1 z-30 flex items-center gap-1 p-1 rounded-lg bg-card/95 border border-border/80 shadow-lg pointer-events-auto"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                {FRAME_COLOR_KEYS.map((clr) => (
+                  <button
+                    key={clr}
+                    type="button"
+                    className={cn(
+                      'h-4 w-4 rounded-full transition-transform',
+                      FRAME_COLORS[clr].header,
+                      FRAME_COLORS[clr].border,
+                      'border',
+                      frame.color === clr && 'scale-125 ring-2 ring-primary',
+                    )}
+                    onClick={() => {
+                      onUpdate(frame.id, { color: clr })
+                      setShowColorPicker(false)
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+
+          {!isRunning && (
+            <button
+              type="button"
+              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/15 transition-colors pointer-events-auto"
+              onClick={() => onDelete(frame.id)}
+              title="Delete frame (keeps enclosed nodes)"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Frame Resize Handle (bottom-right corner) */}
+      {!isRunning && (
+        <div
+          className="absolute bottom-1 right-1 h-5 w-5 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity pointer-events-auto"
+          onPointerDown={(e) => onFrameResizeStart(frame, e)}
+          title="Drag to resize frame"
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-muted-foreground">
+            <path d="M7 2L2 7M9 5L5 9M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+      )}
+    </div>
+  )
+})
 
 const WorkflowNode = memo(function WorkflowNode({
   step,
@@ -451,6 +647,7 @@ const WorkflowNode = memo(function WorkflowNode({
   isRunning,
   isLinkTarget,
   groupDelta,
+  frameDelta,
   onDragStart,
   onDrag,
   onDragEnd,
@@ -471,6 +668,8 @@ const WorkflowNode = memo(function WorkflowNode({
   isLinkTarget: boolean
   /** Live offset applied while this node is part of a group being dragged by another node */
   groupDelta: { x: number; y: number } | null
+  /** Live offset applied while this node is enclosed in a moving frame */
+  frameDelta?: { x: number; y: number } | null
   onDragStart: (id: string) => void
   onDrag: (id: string, x: number, y: number) => void
   onDragEnd: (id: string, x: number, y: number) => void
@@ -486,13 +685,15 @@ const WorkflowNode = memo(function WorkflowNode({
   // node shifts by the same delta (committed to real positions on drop).
   const gdx = groupDelta && isSelected && !isDragging ? groupDelta.x : 0
   const gdy = groupDelta && isSelected && !isDragging ? groupDelta.y : 0
+  const fdx = frameDelta && !isDragging ? frameDelta.x : 0
+  const fdy = frameDelta && !isDragging ? frameDelta.y : 0
 
   useEffect(() => {
     if (!isDragging) {
-      x.set(pos.x + gdx)
-      y.set(pos.y + gdy)
+      x.set(pos.x + gdx + fdx)
+      y.set(pos.y + gdy + fdy)
     }
-  }, [pos.x, pos.y, isDragging, x, y, gdx, gdy])
+  }, [pos.x, pos.y, isDragging, x, y, gdx, gdy, fdx, fdy])
 
   const handleGripPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     // Left button only — right/middle clicks bubble up for the context menu / pan.
@@ -595,6 +796,9 @@ const WorkflowNode = memo(function WorkflowNode({
         const n = step.params.randomBranches?.length ?? 0
         return `${n} branch${n !== 1 ? 'es' : ''}`
       }
+      case 'FILE_READ': return step.params.filePath ? `Read ${step.params.filePath.slice(0, 24)}` : 'Configure'
+      case 'FILE_WRITE': return step.params.filePath ? `Write ${step.params.filePath.slice(0, 24)}` : 'Configure'
+      case 'FILE_LIST': return step.params.filePath ? `List ${step.params.filePath.slice(0, 24)}` : 'Configure'
       default: return ''
     }
   }
@@ -627,7 +831,10 @@ const WorkflowNode = memo(function WorkflowNode({
   return (
     <motion.div
       style={{ x, y, width: NODE_WIDTH, height: NODE_HEIGHT, transformOrigin: '0 0' }}
-      className={cn('absolute pointer-events-auto', isDragging && 'z-50 cursor-grabbing')}
+      className={cn(
+        'absolute pointer-events-auto',
+        isDragging ? 'z-50 cursor-grabbing' : isSelected ? 'z-20' : 'z-10',
+      )}
       data-node-id={step.id}
       initial={false}
       whileHover={isDragging ? undefined : { scale: 1.02 }}
@@ -746,6 +953,7 @@ const WorkflowEdge = memo(function WorkflowEdge({
   edge,
   steps,
   dragPreview,
+  frameDragPreview,
   isRunning,
   edgeStyle,
   isLinking,
@@ -755,6 +963,7 @@ const WorkflowEdge = memo(function WorkflowEdge({
   edge: AutomationEdge
   steps: AutomationStep[]
   dragPreview: { nodeId: string; x: number; y: number } | null
+  frameDragPreview?: { frameId: string; dx: number; dy: number; enclosedNodeIds: string[] } | null
   isRunning: boolean
   /** How connections are drawn (curved / step / straight). */
   edgeStyle: EdgeStyle
@@ -769,15 +978,22 @@ const WorkflowEdge = memo(function WorkflowEdge({
   if (!fromStep || !toStep) return null
 
   const isSelfLoop = edge.from === edge.to
+  const fromEnclosed = frameDragPreview?.enclosedNodeIds.includes(edge.from)
+  const toEnclosed = frameDragPreview?.enclosedNodeIds.includes(edge.to)
+
   const fromPos =
     dragPreview?.nodeId === edge.from
       ? { x: dragPreview.x, y: dragPreview.y }
-      : (fromStep.position ?? { x: 0, y: 0 })
+      : fromEnclosed
+        ? { x: (fromStep.position?.x ?? 0) + frameDragPreview!.dx, y: (fromStep.position?.y ?? 0) + frameDragPreview!.dy }
+        : (fromStep.position ?? { x: 0, y: 0 })
   const toPos = isSelfLoop
     ? fromPos
     : dragPreview?.nodeId === edge.to
       ? { x: dragPreview.x, y: dragPreview.y }
-      : (toStep.position ?? { x: 0, y: 0 })
+      : toEnclosed
+        ? { x: (toStep.position?.x ?? 0) + frameDragPreview!.dx, y: (toStep.position?.y ?? 0) + frameDragPreview!.dy }
+        : (toStep.position ?? { x: 0, y: 0 })
 
   const startX = fromPos.x + NODE_WIDTH
   const startY = fromPos.y + sourcePortY(fromStep, edge.sourceHandle)
@@ -1209,6 +1425,45 @@ export function AutomationTab({
     () => selectedSequence?.edges ?? deriveLinearEdges(selectedSequence?.steps ?? []),
     [selectedSequence],
   )
+  const frames = useMemo<AutomationFrame[]>(
+    () => selectedSequence?.frames ?? [],
+    [selectedSequence],
+  )
+  const [frameDragPreview, setFrameDragPreview] = useState<{
+    frameId: string
+    dx: number
+    dy: number
+    enclosedNodeIds: string[]
+  } | null>(null)
+  const pendingFrameDragRef = useRef<{
+    frameId: string
+    dx: number
+    dy: number
+    enclosedNodeIds: string[]
+  } | null>(null)
+  const frameDragRafRef = useRef<number | null>(null)
+
+  const [frameResizePreview, setFrameResizePreview] = useState<{
+    frameId: string
+    width: number
+    height: number
+  } | null>(null)
+  const pendingFrameResizeRef = useRef<{
+    frameId: string
+    width: number
+    height: number
+  } | null>(null)
+  const frameResizeRafRef = useRef<number | null>(null)
+
+  const [triggers, setTriggers] = useState<AutomationTrigger[]>(() => loadSavedTriggers())
+  const [triggersDialogOpen, setTriggersDialogOpen] = useState(false)
+  const activeTriggerCount = useMemo(() => triggers.filter(t => t.enabled).length, [triggers])
+  const triggersRef = useRef(triggers)
+  triggersRef.current = triggers
+
+  useEffect(() => {
+    localStorage.setItem(TRIGGERS_STORAGE_KEY, JSON.stringify(triggers))
+  }, [triggers])
 
   const [isRunning, setIsRunning] = useState(false)
 
@@ -1510,6 +1765,200 @@ export function AutomationTab({
     ))
   }, [setSequences])
 
+  const updateFramesForSequence = useCallback((seqId: string, updater: (frames: AutomationFrame[]) => AutomationFrame[]) => {
+    setSequences(prev => prev.map(seq =>
+      seq.id === seqId ? { ...seq, frames: updater(seq.frames ?? []) } : seq
+    ))
+  }, [setSequences])
+
+  const handleDeleteFrame = useCallback((frameId: string) => {
+    if (!selectedSequenceId) return
+    updateFramesForSequence(selectedSequenceId, (prev) => prev.filter(f => f.id !== frameId))
+  }, [selectedSequenceId, updateFramesForSequence])
+
+  const handleUpdateFrame = useCallback((frameId: string, updates: Partial<AutomationFrame>) => {
+    if (!selectedSequenceId) return
+    updateFramesForSequence(selectedSequenceId, (prev) =>
+      prev.map(f => (f.id === frameId ? { ...f, ...updates } : f))
+    )
+  }, [selectedSequenceId, updateFramesForSequence])
+
+  // Frame drag handling (moves frame and all enclosed steps)
+  const frameDragRef = useRef<{
+    frameId: string
+    startX: number
+    startY: number
+    startFrameX: number
+    startFrameY: number
+    enclosedNodeIds: string[]
+    nodeStartPos: Map<string, { x: number; y: number }>
+  } | null>(null)
+
+  const handleFrameDragStart = useCallback((frame: AutomationFrame, e: React.PointerEvent) => {
+    if (isRunning || !selectedSequenceId) return
+    e.stopPropagation()
+
+    const enclosed: string[] = []
+    const nodeStartPos = new Map<string, { x: number; y: number }>()
+
+    for (const s of steps) {
+      const pos = s.position ?? { x: 0, y: 0 }
+      const cx = pos.x + NODE_WIDTH / 2
+      const cy = pos.y + NODE_HEIGHT / 2
+      if (cx >= frame.x && cx <= frame.x + frame.width && cy >= frame.y && cy <= frame.y + frame.height) {
+        enclosed.push(s.id)
+        nodeStartPos.set(s.id, { x: pos.x, y: pos.y })
+      }
+    }
+
+    frameDragRef.current = {
+      frameId: frame.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      startFrameX: frame.x,
+      startFrameY: frame.y,
+      enclosedNodeIds: enclosed,
+      nodeStartPos,
+    }
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const cur = frameDragRef.current
+      if (!cur) return
+      const zoom = Math.max(canvasZoomRef.current, 0.01)
+      const dx = (ev.clientX - cur.startX) / zoom
+      const dy = (ev.clientY - cur.startY) / zoom
+
+      pendingFrameDragRef.current = {
+        frameId: cur.frameId,
+        dx,
+        dy,
+        enclosedNodeIds: cur.enclosedNodeIds,
+      }
+
+      if (frameDragRafRef.current == null) {
+        frameDragRafRef.current = requestAnimationFrame(() => {
+          frameDragRafRef.current = null
+          const p = pendingFrameDragRef.current
+          if (p) setFrameDragPreview({ ...p })
+        })
+      }
+    }
+
+    const onPointerUp = (ev: PointerEvent) => {
+      if (frameDragRafRef.current != null) {
+        cancelAnimationFrame(frameDragRafRef.current)
+        frameDragRafRef.current = null
+      }
+      const cur = frameDragRef.current
+      frameDragRef.current = null
+      pendingFrameDragRef.current = null
+      setFrameDragPreview(null)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+
+      if (!cur || !selectedSequenceId) return
+      const zoom = Math.max(canvasZoomRef.current, 0.01)
+      const dx = Math.round((ev.clientX - cur.startX) / zoom)
+      const dy = Math.round((ev.clientY - cur.startY) / zoom)
+      if (dx === 0 && dy === 0) return
+
+      setSequences((prev) =>
+        prev.map((seq) => {
+          if (seq.id !== selectedSequenceId) return seq
+          const updatedFrames = (seq.frames ?? []).map((f) =>
+            f.id === cur.frameId ? { ...f, x: Math.round(cur.startFrameX + dx), y: Math.round(cur.startFrameY + dy) } : f
+          )
+          const enclosedSet = new Set(cur.enclosedNodeIds)
+          const updatedSteps = seq.steps.map((s) => {
+            if (enclosedSet.has(s.id)) {
+              const sp = cur.nodeStartPos.get(s.id)
+              if (sp) {
+                return { ...s, position: { x: Math.round(sp.x + dx), y: Math.round(sp.y + dy) } }
+              }
+            }
+            return s
+          })
+          return { ...seq, frames: updatedFrames, steps: updatedSteps }
+        })
+      )
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }, [isRunning, selectedSequenceId, steps, setSequences])
+
+  // Frame resize handling
+  const frameResizeRef = useRef<{
+    frameId: string
+    startX: number
+    startY: number
+    startW: number
+    startH: number
+  } | null>(null)
+
+  const handleFrameResizeStart = useCallback((frame: AutomationFrame, e: React.PointerEvent) => {
+    if (isRunning || !selectedSequenceId) return
+    e.stopPropagation()
+
+    frameResizeRef.current = {
+      frameId: frame.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      startW: frame.width,
+      startH: frame.height,
+    }
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const cur = frameResizeRef.current
+      if (!cur) return
+      const zoom = Math.max(canvasZoomRef.current, 0.01)
+      const dw = (ev.clientX - cur.startX) / zoom
+      const dh = (ev.clientY - cur.startY) / zoom
+
+      const newW = Math.max(220, Math.round(cur.startW + dw))
+      const newH = Math.max(140, Math.round(cur.startH + dh))
+
+      pendingFrameResizeRef.current = {
+        frameId: cur.frameId,
+        width: newW,
+        height: newH,
+      }
+
+      if (frameResizeRafRef.current == null) {
+        frameResizeRafRef.current = requestAnimationFrame(() => {
+          frameResizeRafRef.current = null
+          const p = pendingFrameResizeRef.current
+          if (p) setFrameResizePreview({ ...p })
+        })
+      }
+    }
+
+    const onPointerUp = (ev: PointerEvent) => {
+      if (frameResizeRafRef.current != null) {
+        cancelAnimationFrame(frameResizeRafRef.current)
+        frameResizeRafRef.current = null
+      }
+      const cur = frameResizeRef.current
+      frameResizeRef.current = null
+      pendingFrameResizeRef.current = null
+      setFrameResizePreview(null)
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', onPointerUp)
+
+      if (!cur || !selectedSequenceId) return
+      const zoom = Math.max(canvasZoomRef.current, 0.01)
+      const finalW = Math.max(220, Math.round(cur.startW + (ev.clientX - cur.startX) / zoom))
+      const finalH = Math.max(140, Math.round(cur.startH + (ev.clientY - cur.startY) / zoom))
+
+      updateFramesForSequence(selectedSequenceId, (prev) =>
+        prev.map((f) => (f.id === cur.frameId ? { ...f, width: finalW, height: finalH } : f))
+      )
+    }
+
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }, [isRunning, selectedSequenceId, updateFramesForSequence])
+
   // One-time migration: give any legacy sequence (no `edges`) an explicit linear
   // chain so it keeps its original run order under the new graph engine.
   useEffect(() => {
@@ -1729,8 +2178,8 @@ export function AutomationTab({
     )
   }, [isRunning, selectedSequenceId, updateStepsForSequence])
 
-  // --- Undo / redo (observes the selected sequence's steps + edges) ------
-  type SeqSnapshot = { steps: AutomationStep[]; edges: AutomationEdge[] }
+  // --- Undo / redo (observes the selected sequence's steps + edges + frames) ------
+  type SeqSnapshot = { steps: AutomationStep[]; edges: AutomationEdge[]; frames?: AutomationFrame[] }
   const historyRef = useRef<{ past: SeqSnapshot[]; future: SeqSnapshot[] }>({ past: [], future: [] })
   const applyingHistoryRef = useRef(false)
   const lastSnapRef = useRef<string>('')
@@ -1741,7 +2190,7 @@ export function AutomationTab({
   useEffect(() => {
     const seq = sortedSeqs.find((s) => s.id === selectedSequenceId)
     historyRef.current = { past: [], future: [] }
-    lastSnapRef.current = seq ? JSON.stringify({ steps: seq.steps, edges: seq.edges ?? [] }) : ''
+    lastSnapRef.current = seq ? JSON.stringify({ steps: seq.steps, edges: seq.edges ?? [], frames: seq.frames ?? [] }) : ''
     setCanUndo(false)
     setCanRedo(false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1750,7 +2199,7 @@ export function AutomationTab({
   // Record structural changes as history, coalescing rapid config typing into one entry.
   useEffect(() => {
     if (!selectedSequence) return
-    const snap = JSON.stringify({ steps: selectedSequence.steps, edges: selectedSequence.edges ?? [] })
+    const snap = JSON.stringify({ steps: selectedSequence.steps, edges: selectedSequence.edges ?? [], frames: selectedSequence.frames ?? [] })
     if (applyingHistoryRef.current) {
       applyingHistoryRef.current = false
       lastSnapRef.current = snap
@@ -1775,7 +2224,7 @@ export function AutomationTab({
     applyingHistoryRef.current = true
     lastSnapRef.current = JSON.stringify(snapshot)
     setSequences((seqs) =>
-      seqs.map((s) => (s.id === selectedSequenceId ? { ...s, steps: snapshot.steps, edges: snapshot.edges } : s)),
+      seqs.map((s) => (s.id === selectedSequenceId ? { ...s, steps: snapshot.steps, edges: snapshot.edges, frames: snapshot.frames ?? [] } : s)),
     )
   }, [selectedSequenceId, setSequences])
 
@@ -1963,8 +2412,25 @@ export function AutomationTab({
   // While a link is in progress, track the cursor and complete/cancel on release.
   useEffect(() => {
     if (!linking) return
-    const onMove = (ev: PointerEvent) => setLinkCursor(clientToContent(ev.clientX, ev.clientY))
+    let rafId: number | null = null
+    let latestEv: { x: number; y: number } | null = null
+
+    const onMove = (ev: PointerEvent) => {
+      latestEv = { x: ev.clientX, y: ev.clientY }
+      if (rafId === null) {
+        rafId = requestAnimationFrame(() => {
+          rafId = null
+          if (latestEv) {
+            setLinkCursor(clientToContent(latestEv.x, latestEv.y))
+          }
+        })
+      }
+    }
     const onUp = (ev: PointerEvent) => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
       // Prefer dropping on a node; otherwise, dropping on an existing arrow routes
       // the new connection to that arrow's own target node (arrow → arrow).
@@ -1984,6 +2450,9 @@ export function AutomationTab({
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onUp)
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
       window.removeEventListener('pointermove', onMove)
       window.removeEventListener('pointerup', onUp)
       window.removeEventListener('pointercancel', onUp)
@@ -2066,6 +2535,46 @@ export function AutomationTab({
       return next
     })
   }, [selectedSequenceId, selectedStepId, setSequences])
+
+  const handleAddFrame = useCallback(() => {
+    if (!selectedSequenceId) return
+    const rect = canvasRef.current?.getBoundingClientRect()
+    const center = rect ? clientToContent(rect.left + rect.width / 2, rect.top + rect.height / 2) : { x: 80, y: 80 }
+    const newFrame: AutomationFrame = {
+      id: crypto.randomUUID(),
+      name: `Group ${frames.length + 1}`,
+      color: 'slate',
+      x: Math.round(center.x - 240),
+      y: Math.round(center.y - 150),
+      width: 480,
+      height: 320,
+    }
+    updateFramesForSequence(selectedSequenceId, (prev) => [...prev, newFrame])
+    toast.success('Added visual frame')
+  }, [selectedSequenceId, clientToContent, frames.length, updateFramesForSequence])
+
+  const handleCreateFrameFromSelected = useCallback(() => {
+    if (!selectedSequenceId || selectedIds.size === 0) return
+    const sel = steps.filter((s) => selectedIds.has(s.id))
+    if (sel.length === 0) return
+
+    const minX = Math.min(...sel.map((s) => s.position?.x ?? 0)) - 30
+    const minY = Math.min(...sel.map((s) => s.position?.y ?? 0)) - 48
+    const maxX = Math.max(...sel.map((s) => (s.position?.x ?? 0) + NODE_WIDTH)) + 30
+    const maxY = Math.max(...sel.map((s) => (s.position?.y ?? 0) + NODE_HEIGHT)) + 30
+
+    const newFrame: AutomationFrame = {
+      id: crypto.randomUUID(),
+      name: `Group ${frames.length + 1}`,
+      color: 'blue',
+      x: Math.round(minX),
+      y: Math.round(minY),
+      width: Math.max(260, Math.round(maxX - minX)),
+      height: Math.max(160, Math.round(maxY - minY)),
+    }
+    updateFramesForSequence(selectedSequenceId, (prev) => [...prev, newFrame])
+    toast.success(`Created frame around ${sel.length} nodes`)
+  }, [selectedSequenceId, selectedIds, steps, frames.length, updateFramesForSequence])
 
   /** Reconnect all nodes into a left-to-right chain based on their X position. */
   const handleAutoLink = () => {
@@ -2288,7 +2797,33 @@ export function AutomationTab({
       }
       return hit
     }
+
+    let rafId: number | null = null
+    let latestClientX = 0
+    let latestClientY = 0
+
+    const updateMovement = () => {
+      rafId = null
+      if (panStartRef.current) {
+        setCanvasPan({
+          x: panStartRef.current.startPanX + latestClientX - panStartRef.current.x,
+          y: panStartRef.current.startPanY + latestClientY - panStartRef.current.y,
+        })
+      } else if (marqueeStartRef.current) {
+        const p = clientToContent(latestClientX, latestClientY)
+        const rect = { x0: marqueeStartRef.current.x, y0: marqueeStartRef.current.y, x1: p.x, y1: p.y }
+        marqueeRectRef.current = rect
+        setMarquee(rect)
+        // Live highlight: update the selection as the box sweeps over nodes.
+        setSelectedIds(selectionForRect(rect))
+      }
+    }
+
     const onMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+        rafId = null
+      }
       if (marqueeStartRef.current && marqueeRectRef.current) {
         setSelectedIds(selectionForRect(marqueeRectRef.current))
       }
@@ -2297,24 +2832,22 @@ export function AutomationTab({
       marqueeRectRef.current = null
       setMarquee(null)
     }
+
     const onMouseMove = (e: MouseEvent) => {
-      if (panStartRef.current) {
-        setCanvasPan({
-          x: panStartRef.current.startPanX + e.clientX - panStartRef.current.x,
-          y: panStartRef.current.startPanY + e.clientY - panStartRef.current.y,
-        })
-      } else if (marqueeStartRef.current) {
-        const p = clientToContent(e.clientX, e.clientY)
-        const rect = { x0: marqueeStartRef.current.x, y0: marqueeStartRef.current.y, x1: p.x, y1: p.y }
-        marqueeRectRef.current = rect
-        setMarquee(rect)
-        // Live highlight: update the selection as the box sweeps over nodes.
-        setSelectedIds(selectionForRect(rect))
+      if (!panStartRef.current && !marqueeStartRef.current) return
+      latestClientX = e.clientX
+      latestClientY = e.clientY
+      if (rafId === null) {
+        rafId = requestAnimationFrame(updateMovement)
       }
     }
+
     window.addEventListener('mouseup', onMouseUp)
     window.addEventListener('mousemove', onMouseMove)
     return () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
       window.removeEventListener('mouseup', onMouseUp)
       window.removeEventListener('mousemove', onMouseMove)
     }
@@ -2623,6 +3156,15 @@ export function AutomationTab({
       case 'COMMENT':
         await executeComment(step, runVarsRef.current, addLog)
         break
+      case 'FILE_READ':
+        await executeFileRead(step, runVarsRef.current, addLog)
+        break
+      case 'FILE_WRITE':
+        await executeFileWrite(step, runVarsRef.current, addLog)
+        break
+      case 'FILE_LIST':
+        await executeFileList(step, runVarsRef.current, addLog)
+        break
 
       case 'NOTIFY': {
         const level = step.params.notifyLevel ?? 'info'
@@ -2904,6 +3446,8 @@ export function AutomationTab({
     startStepId?: string
     /** With `startStepId`: execute just that node and stop. */
     singleNode?: boolean
+    /** Additional initial variables to seed into the run context (e.g. from Webhooks or Triggers) */
+    initialVars?: Record<string, string>
   }
 
   /**
@@ -2926,7 +3470,7 @@ export function AutomationTab({
     }
   }
 
-  const executeRun = async ({ onlyIds, startStepId, singleNode }: RunOptions) => {
+  const executeRun = async ({ onlyIds, startStepId, singleNode, initialVars }: RunOptions) => {
     let runnableSeqs: AutomationSequence[]
     if (onlyIds && onlyIds.length > 0) {
       const idSet = new Set(onlyIds)
@@ -2987,14 +3531,21 @@ export function AutomationTab({
     // Partial runs keep the variables from the last run so a node can be re-run
     // against the state it would normally see; full runs start clean.
     if (!partial) {
-      runVarsRef.current = createRunContext({
-        host,
-        alePort,
-        customPort,
-        port: '',
-      })
+      runVarsRef.current = {
+        ...createRunContext({
+          host,
+          alePort,
+          customPort,
+          port: '',
+        }),
+        ...(initialVars ?? {}),
+      }
     } else {
-      runVarsRef.current = { ...runVarsRef.current, ...createRunContext({ host, alePort, customPort, port: '' }) }
+      runVarsRef.current = {
+        ...runVarsRef.current,
+        ...createRunContext({ host, alePort, customPort, port: '' }),
+        ...(initialVars ?? {}),
+      }
     }
     publishRunVars(true)
 
@@ -3110,6 +3661,122 @@ export function AutomationTab({
       handheldServer.cancelSend()
     }
   }
+
+  // --- Event-Driven Triggers Execution (Webhook, File Watcher, Interval) ---
+  useEffect(() => {
+    const hasActiveWebhook = triggers.some(t => t.type === 'webhook' && t.enabled)
+    const api = window.electronAPI
+    if (!api?.automationWebhookStart) return
+
+    if (hasActiveWebhook) {
+      const activePort = triggers.find(t => t.type === 'webhook' && t.enabled)?.webhookPort || 8989
+      void api.automationWebhookStart(activePort).then((res) => {
+        if (!res.ok) console.warn('Automation webhook server failed to start:', res.error)
+      })
+    }
+
+    const unsubscribe = api.onAutomationWebhookReceived?.((payload) => {
+      const curTriggers = triggersRef.current
+      for (const t of curTriggers) {
+        if (t.type !== 'webhook' || !t.enabled) continue
+        if (t.webhookMethod && t.webhookMethod !== 'ANY' && t.webhookMethod.toUpperCase() !== payload.method.toUpperCase()) {
+          continue
+        }
+        if (t.webhookPath && t.webhookPath.trim()) {
+          const targetPath = t.webhookPath.trim().startsWith('/') ? t.webhookPath.trim() : `/${t.webhookPath.trim()}`
+          if (payload.path !== targetPath) continue
+        }
+
+        const initialVars: Record<string, string> = {
+          trigger_type: 'webhook',
+          trigger_name: t.name,
+          webhook_method: payload.method,
+          webhook_path: payload.path,
+          webhook_raw: payload.rawBody,
+        }
+        if (payload.body && typeof payload.body === 'object') {
+          for (const [k, v] of Object.entries(payload.body)) {
+            if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+              initialVars[`webhook_${k}`] = String(v)
+              initialVars[`body_${k}`] = String(v)
+            }
+          }
+        }
+        addLog(`⚡ Webhook trigger "${t.name}" matched ${payload.method} ${payload.path} → running "${sortedSeqs.find(s => s.id === t.targetSequenceId)?.name ?? t.targetSequenceId}"`)
+        void handleRun([t.targetSequenceId], { initialVars })
+      }
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [triggers, addLog, sortedSeqs])
+
+  useEffect(() => {
+    const api = window.electronAPI
+    if (!api?.automationFileWatchStart) return
+
+    const activeWatchers = triggers.filter(t => t.type === 'file_watcher' && t.enabled && t.watcherPath)
+    for (const t of activeWatchers) {
+      void api.automationFileWatchStart(t.id, t.watcherPath!, t.watcherPattern)
+    }
+
+    const unsubscribe = api.onAutomationFileWatchEvent?.((event) => {
+      const curTriggers = triggersRef.current
+      for (const t of curTriggers) {
+        if (t.type !== 'file_watcher' || !t.enabled) continue
+        if (t.id !== event.watchId && t.watcherPath !== event.dirPath) continue
+        if (t.watchEvents && t.watchEvents !== 'all') {
+          if (t.watchEvents === 'change' && event.eventType !== 'change') continue
+          if (t.watchEvents === 'add' && (event.eventType !== 'add' && event.eventType !== 'rename')) continue
+          if (t.watchEvents === 'unlink' && event.eventType !== 'unlink') continue
+        }
+
+        const initialVars: Record<string, string> = {
+          trigger_type: 'file_watcher',
+          trigger_name: t.name,
+          watch_event: event.eventType,
+          watch_file: event.filename,
+          watch_dir: event.dirPath,
+          watch_path: event.fullPath,
+          watch_size: String(event.size),
+        }
+        addLog(`⚡ File watch trigger "${t.name}" detected ${event.eventType} on ${event.filename} → running "${sortedSeqs.find(s => s.id === t.targetSequenceId)?.name ?? t.targetSequenceId}"`)
+        void handleRun([t.targetSequenceId], { initialVars })
+      }
+    })
+
+    return () => {
+      unsubscribe?.()
+      for (const t of activeWatchers) {
+        void api.automationFileWatchStop?.(t.id)
+      }
+    }
+  }, [triggers, addLog, sortedSeqs])
+
+  useEffect(() => {
+    const activeIntervals = triggers.filter(t => t.type === 'interval' && t.enabled && (t.intervalSeconds || 60) > 0)
+    if (activeIntervals.length === 0) return
+
+    const timers: ReturnType<typeof setInterval>[] = []
+    for (const t of activeIntervals) {
+      const ms = Math.max(5, t.intervalSeconds || 60) * 1000
+      const timer = setInterval(() => {
+        const initialVars: Record<string, string> = {
+          trigger_type: 'interval',
+          trigger_name: t.name,
+          trigger_interval: String(t.intervalSeconds || 60),
+        }
+        addLog(`⚡ Interval trigger "${t.name}" fired (${t.intervalSeconds || 60}s) → running "${sortedSeqs.find(s => s.id === t.targetSequenceId)?.name ?? t.targetSequenceId}"`)
+        void handleRun([t.targetSequenceId], { initialVars })
+      }, ms)
+      timers.push(timer)
+    }
+
+    return () => {
+      timers.forEach(clearInterval)
+    }
+  }, [triggers, addLog, sortedSeqs])
 
   const WORKFLOW_FILE_VERSION = 1
   const handleExportWorkflow = () => {
@@ -3577,6 +4244,43 @@ export function AutomationTab({
                 <TooltipContent side="bottom">Connection style: {EDGE_STYLE_META[edgeStyle].hint} — click to cycle</TooltipContent>
               </Tooltip>
             </div>
+            {/* Visual Frames & Triggers group */}
+            <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2"
+                    onClick={handleAddFrame}
+                    disabled={isRunning || !selectedSequenceId}
+                  >
+                    <Frame className="h-3.5 w-3.5" />
+                    <span className="text-xs font-medium">Add Frame</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Create a visual grouping container</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={activeTriggerCount > 0 ? 'secondary' : 'ghost'}
+                    size="sm"
+                    className={cn('h-7 gap-1.5 px-2 relative', activeTriggerCount > 0 && 'text-amber-500 font-semibold')}
+                    onClick={() => setTriggersDialogOpen(true)}
+                  >
+                    <Zap className="h-3.5 w-3.5" />
+                    <span className="text-xs">Triggers</span>
+                    {activeTriggerCount > 0 && (
+                      <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500/20 text-amber-500 px-1 text-[10px] font-bold">
+                        {activeTriggerCount}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Event triggers (Webhooks, File Watcher, Intervals)</TooltipContent>
+              </Tooltip>
+            </div>
             {/* Alignment — only while a multi-selection is active */}
             {selectedIds.size >= 2 && !isRunning && (
               <div className="flex items-center gap-0.5 rounded-lg border border-primary/40 bg-card/90 px-1 py-1 shadow-sm">
@@ -3596,6 +4300,15 @@ export function AutomationTab({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Align vertical centers</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-7 gap-1 px-1.5 text-xs" onClick={handleCreateFrameFromSelected}>
+                      <Frame className="h-3.5 w-3.5" />
+                      <span>Frame</span>
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Wrap selected nodes in a visual frame</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -3812,6 +4525,22 @@ export function AutomationTab({
                 transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
               }}
             >
+              {/* Visual Frames */}
+              {frames.map((frame) => (
+                <WorkflowFrame
+                  key={frame.id}
+                  frame={frame}
+                  canvasZoom={canvasZoom}
+                  isRunning={isRunning}
+                  frameDragPreview={frameDragPreview}
+                  frameResizePreview={frameResizePreview}
+                  onUpdate={handleUpdateFrame}
+                  onDelete={handleDeleteFrame}
+                  onFrameDragStart={handleFrameDragStart}
+                  onFrameResizeStart={handleFrameResizeStart}
+                />
+              ))}
+
               {/* Marquee selection rectangle */}
               {marquee && (
                 <div
@@ -3851,6 +4580,7 @@ export function AutomationTab({
                     edge={edge}
                     steps={steps}
                     dragPreview={dragPreview}
+                    frameDragPreview={frameDragPreview}
                     isRunning={isRunning}
                     edgeStyle={edgeStyle}
                     isLinking={!!linking}
@@ -3894,6 +4624,11 @@ export function AutomationTab({
                   isSelected={selectedIds.has(step.id)}
                   isRunning={isRunning}
                   groupDelta={groupDrag && groupDrag.anchor !== step.id ? { x: groupDrag.dx, y: groupDrag.dy } : null}
+                  frameDelta={
+                    frameDragPreview && frameDragPreview.enclosedNodeIds.includes(step.id)
+                      ? { x: frameDragPreview.dx, y: frameDragPreview.dy }
+                      : null
+                  }
                   // Every node's input pulses while linking — dropping back onto the
                   // source node itself is valid and creates a self-loop.
                   isLinkTarget={!!linking}
@@ -4475,6 +5210,12 @@ export function AutomationTab({
                       shortcut: 'Shift+F',
                       onClick: handleZoomToSelection,
                     },
+                    {
+                      label: n > 1 ? `Group ${n} nodes into frame` : 'Wrap in frame',
+                      icon: <Frame className="h-3.5 w-3.5" />,
+                      onClick: handleCreateFrameFromSelected,
+                      disabled: isRunning,
+                    },
                     { separator: true },
                     {
                       label: n > 1 ? `Delete ${n} nodes` : 'Delete',
@@ -4495,6 +5236,12 @@ export function AutomationTab({
                       paletteAddPosRef.current = clientToContent(ctxMenu.x, ctxMenu.y)
                       setPaletteOpen(true)
                     },
+                    disabled: isRunning || !selectedSequenceId,
+                  },
+                  {
+                    label: 'Add visual frame here',
+                    icon: <Frame className="h-3.5 w-3.5" />,
+                    onClick: handleAddFrame,
                     disabled: isRunning || !selectedSequenceId,
                   },
                   {
@@ -4555,6 +5302,15 @@ export function AutomationTab({
         handheldTabDelay={handheldDelay}
         sequences={sortedSeqs}
         currentSequenceId={selectedSequenceId}
+      />
+
+      {/* Triggers Manager Dialog */}
+      <AutomationTriggersDialog
+        open={triggersDialogOpen}
+        onOpenChange={setTriggersDialogOpen}
+        sequences={sequences}
+        triggers={triggers}
+        onSaveTriggers={setTriggers}
       />
     </div>
   )

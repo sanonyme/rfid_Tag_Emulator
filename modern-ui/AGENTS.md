@@ -18,7 +18,7 @@ npm run electron:build
 - **Edge / ALE**: Prefer `ZEUS_ALE_USERNAME` / `ZEUS_ALE_PASSWORD` in main process (`electron/ale-credentials.ts`). Renderer must not receive raw passwords; use `aleGetCredentialMeta` / `aleGetBasicAuthHeader` IPC.
 - **SFTP**: Session IPC in `electron/main.ts`; local download/upload paths are validated against browse `localRoot` via `assertPathUnderRoot`.
 - **Database**: `electron/db-handler.ts` — `useDatabase()` + `assertSafeSqlIdentifier`; ad-hoc SELECTs capped at 1000 rows.
-- **Admin**: Destructive IPC (`sftp-rmrf`, `log-aggregator-run`, admin terminal shell) requires admin sender gate in main.
+- **Admin**: Destructive IPC (`log-aggregator-run`, admin terminal shell) requires admin sender gate in main. Folder delete (`sftp-rmrf`) does not.
 
 ## Tab loading
 

@@ -283,6 +283,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   sftpCopyRemoteFile: (sessionId: string, remoteSrc: string, remoteDest: string, operationId: string) =>
     ipcRenderer.invoke('sftp-copy-remote-file', sessionId, remoteSrc, remoteDest, operationId),
   localPickFolder: () => ipcRenderer.invoke('local-pick-folder'),
+  localPickFile: (options?: { title?: string; defaultPath?: string }) =>
+    ipcRenderer.invoke('local-pick-file', options) as Promise<{ ok: boolean; path?: string; cancelled?: boolean }>,
   localReaddir: (root: string, dirPath: string) => ipcRenderer.invoke('local-readdir', root, dirPath),
   localWriteFileBase64: (root: string, filePath: string, base64Data: string) =>
     ipcRenderer.invoke('local-write-file-base64', root, filePath, base64Data),
@@ -541,5 +543,93 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('popout-state-update', handler)
     return () => ipcRenderer.removeListener('popout-state-update', handler)
   },
+
+  // Checksum & Integrity
+  fileCalculateChecksum: (payload: { filePath?: string; base64Content?: string }) =>
+    ipcRenderer.invoke('file-calculate-checksum', payload) as Promise<{
+      ok: boolean
+      md5?: string
+      sha256?: string
+      sha1?: string
+      size?: number
+      error?: string
+    }>,
+
+  // Local File Ops for File Nodes
+  localReadFile: (filePath: string, encoding?: string) =>
+    ipcRenderer.invoke('local-read-file', filePath, encoding) as Promise<{
+      ok: boolean
+      content?: string
+      error?: string
+    }>,
+  localWriteFile: (filePath: string, content: string, encoding?: string) =>
+    ipcRenderer.invoke('local-write-file', filePath, content, encoding) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  localListFiles: (dirPath: string, pattern?: string) =>
+    ipcRenderer.invoke('local-list-files', dirPath, pattern) as Promise<{
+      ok: boolean
+      files?: string[]
+      filenames?: string[]
+      error?: string
+    }>,
+
+  // Automation Webhook Server
+  automationWebhookStart: (port?: number) =>
+    ipcRenderer.invoke('automation-webhook-start', port) as Promise<{
+      ok: boolean
+      port?: number
+      error?: string
+    }>,
+  automationWebhookStop: () =>
+    ipcRenderer.invoke('automation-webhook-stop') as Promise<{ ok: boolean }>,
+  automationWebhookStatus: () =>
+    ipcRenderer.invoke('automation-webhook-status') as Promise<{
+      ok: boolean
+      running: boolean
+      port?: number | null
+    }>,
+  onAutomationWebhookReceived: (
+    callback: (event: {
+      port: number
+      method: string
+      path: string
+      query: Record<string, string>
+      headers: Record<string, string | string[] | undefined>
+      body: any
+      rawBody: string
+      timestamp: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, payload: Parameters<typeof callback>[0]) => callback(payload)
+    ipcRenderer.on('automation-webhook-received', handler)
+    return () => ipcRenderer.removeListener('automation-webhook-received', handler)
+  },
+
+  // Automation File Watcher
+  automationFileWatchStart: (watchId: string, dirPath: string, pattern?: string) =>
+    ipcRenderer.invoke('automation-file-watch-start', watchId, dirPath, pattern) as Promise<{
+      ok: boolean
+      error?: string
+    }>,
+  automationFileWatchStop: (watchId: string) =>
+    ipcRenderer.invoke('automation-file-watch-stop', watchId) as Promise<{ ok: boolean }>,
+  onAutomationFileWatchEvent: (
+    callback: (event: {
+      watchId: string
+      eventType: string
+      filename: string
+      dirPath: string
+      fullPath: string
+      size: number
+      timestamp: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, payload: Parameters<typeof callback>[0]) => callback(payload)
+    ipcRenderer.on('automation-file-watch-event', handler)
+    return () => ipcRenderer.removeListener('automation-file-watch-event', handler)
+  },
 })
+
 

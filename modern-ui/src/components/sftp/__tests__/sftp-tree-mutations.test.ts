@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SftpFileNode } from '../SftpFileTree'
-import { findNode, rebuildSftpTreeWithExpanded } from '../sftp-tree-mutations'
+import {
+  collectSubtreePaths,
+  findNode,
+  isPathUnderFolder,
+  rebuildSftpTreeWithExpanded,
+} from '../sftp-tree-mutations'
 
 function folder(path: string, name: string, children?: SftpFileNode[]): SftpFileNode {
   return {
@@ -15,6 +20,28 @@ function folder(path: string, name: string, children?: SftpFileNode[]): SftpFile
 function file(path: string, name: string): SftpFileNode {
   return { path, name, type: 'file', loaded: true }
 }
+
+describe('collectSubtreePaths', () => {
+  it('includes the folder and every nested child', () => {
+    const root = folder('/docs', 'docs', [
+      file('/docs/a.txt', 'a.txt'),
+      folder('/docs/sub', 'sub', [file('/docs/sub/b.txt', 'b.txt')]),
+    ])
+    expect(collectSubtreePaths(root)).toEqual([
+      '/docs',
+      '/docs/a.txt',
+      '/docs/sub',
+      '/docs/sub/b.txt',
+    ])
+  })
+
+  it('detects paths under a folder', () => {
+    expect(isPathUnderFolder('/docs', '/docs/a.txt')).toBe(true)
+    expect(isPathUnderFolder('/docs', '/docs')).toBe(false)
+    expect(isPathUnderFolder('/', '/readme.txt')).toBe(true)
+    expect(isPathUnderFolder('/', '/')).toBe(false)
+  })
+})
 
 describe('rebuildSftpTreeWithExpanded', () => {
   it('reloads children for expanded folders after a root refresh', async () => {

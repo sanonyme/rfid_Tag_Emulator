@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
-import { ChevronUp } from 'lucide-react'
+import { useState, useMemo, useRef, useEffect, memo, createContext, useContext, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react'
+import { ChevronUp, UploadCloud } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { flattenVisibleSftpRows } from '@/lib/sftp-tree-flatten'
 import {
@@ -8,6 +8,13 @@ import {
   formatUnixMode,
   formatSftpOwner,
 } from './sftp-column-format'
+import {
+  sftpColumnGridStyle,
+  sftpVisibleColOrder,
+  useSftpColumnWidths,
+  type SftpColumnWidths,
+  type SftpColKey,
+} from './sftp-column-widths'
 
 export const SFTP_DND_MIME = 'application/x-rfid-sftp-node'
 
@@ -28,12 +35,50 @@ export interface SftpFileNode {
   gid?: number
 }
 
-/** Fixed meta column widths so Name flexes and values align (WinSCP-style). */
-const col = {
-  size: 'w-[4.75rem] min-w-[4.75rem] shrink-0 text-right tabular-nums',
-  changed: 'w-[10.5rem] min-w-[10.5rem] shrink-0 truncate',
-  rights: 'w-[6.75rem] min-w-[6.75rem] shrink-0 truncate font-mono',
-  owner: 'w-[4.75rem] min-w-[4.75rem] shrink-0 truncate',
+type ColWidthApi = {
+  widths: SftpColumnWidths
+  beginResize: (key: SftpColKey, e: ReactPointerEvent | ReactMouseEvent, neighborKey?: SftpColKey) => void
+  resetColWidth: (key: SftpColKey, neighborKey?: SftpColKey) => void
+  showUnixMeta: boolean
+}
+
+const ColWidthContext = createContext<ColWidthApi | null>(null)
+
+function useColWidths(): ColWidthApi {
+  const ctx = useContext(ColWidthContext)
+  if (!ctx) throw new Error('Sftp column width context missing')
+  return ctx
+}
+
+function ColResizeHandle({
+  colKey,
+  neighborKey,
+}: {
+  colKey: SftpColKey
+  neighborKey?: SftpColKey
+}) {
+  const { beginResize, resetColWidth } = useColWidths()
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize ${colKey} column`}
+      title="Drag to resize · double-click to reset"
+      onPointerDown={(e) => beginResize(colKey, e, neighborKey)}
+      onDoubleClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        resetColWidth(colKey, neighborKey)
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className="absolute inset-y-0 right-0 z-20 flex w-2.5 translate-x-1/2 cursor-col-resize touch-none items-stretch justify-center"
+    >
+      <span
+        aria-hidden
+        className="pointer-events-none w-px bg-border group-hover/col:bg-primary/70"
+      />
+    </span>
+  )
 }
 
 function sortChildren(
@@ -77,7 +122,7 @@ interface SftpFileTreeProps {
   selectedPath: string | null
   selectMode: boolean
   selectedPaths: ReadonlySet<string>
-  onTogglePath: (path: string) => void
+  onTogglePath: (path: string) => void | Promise<void>
   onSelect: (node: SftpFileNode) => void
   onToggleFolder: (node: SftpFileNode) => void
   dropHighlightPath: string | null
@@ -102,7 +147,7 @@ interface FileItemProps {
   selectedPath: string | null
   selectMode: boolean
   selectedPaths: ReadonlySet<string>
-  onTogglePath: (path: string) => void
+  onTogglePath: (path: string) => void | Promise<void>
   onSelect: (node: SftpFileNode) => void
   onToggleFolder: (node: SftpFileNode) => void
   dropHighlightPath: string | null
@@ -138,68 +183,93 @@ const getFileIcon = (extension?: string) => {
 }
 
 function MetaCells({ node }: { node: SftpFileNode }) {
+  const { showUnixMeta } = useColWidths()
   const isFolder = node.type === 'folder'
   return (
     <>
-      <div className={cn(col.size, 'text-muted-foreground')} title={String(node.sizeBytes ?? '')}>
+      <div
+        className="min-w-0 truncate px-1 text-right tabular-nums text-muted-foreground"
+        title={String(node.sizeBytes ?? '')}
+      >
         {formatSftpSize(node.sizeBytes, isFolder)}
       </div>
-      <div className={cn(col.changed, 'text-muted-foreground')} title={formatSftpMtime(node.mtimeSec)}>
+      <div
+        className="min-w-0 truncate px-1 text-muted-foreground"
+        title={formatSftpMtime(node.mtimeSec)}
+      >
         {formatSftpMtime(node.mtimeSec)}
       </div>
-      <div className={cn(col.rights, 'sftp-unix-meta text-muted-foreground')} title={formatUnixMode(node.mode)}>
-        {formatUnixMode(node.mode)}
-      </div>
-      <div
-        className={cn(col.owner, 'sftp-unix-meta text-muted-foreground')}
-        title={formatSftpOwner(node.uid, node.gid)}
-      >
-        {formatSftpOwner(node.uid, node.gid)}
-      </div>
+      {showUnixMeta && (
+        <>
+          <div
+            className="min-w-0 truncate px-1 font-mono text-muted-foreground"
+            title={formatUnixMode(node.mode)}
+          >
+            {formatUnixMode(node.mode)}
+          </div>
+          <div
+            className="min-w-0 truncate px-1 text-muted-foreground"
+            title={formatSftpOwner(node.uid, node.gid)}
+          >
+            {formatSftpOwner(node.uid, node.gid)}
+          </div>
+        </>
+      )}
     </>
   )
 }
 
 function EmptyMetaCells() {
+  const { showUnixMeta } = useColWidths()
   return (
     <>
-      <div className={col.size} />
-      <div className={col.changed} />
-      <div className={cn(col.rights, 'sftp-unix-meta')} />
-      <div className={cn(col.owner, 'sftp-unix-meta')} />
+      <div className="min-w-0" />
+      <div className="min-w-0" />
+      {showUnixMeta && (
+        <>
+          <div className="min-w-0" />
+          <div className="min-w-0" />
+        </>
+      )}
     </>
   )
 }
 
 function HeaderCell({
   label,
+  colKey,
+  neighborKey,
   active,
   sortDir,
   align,
   onClick,
 }: {
   label: string
+  colKey: SftpColKey
+  neighborKey?: SftpColKey
   active: boolean
   sortDir: 'asc' | 'desc'
   align?: 'right'
   onClick: () => void
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        align === 'right' ? col.size : '',
-        align !== 'right' && label === 'Name' && 'min-w-0 flex-1 pl-2 text-left',
-        align !== 'right' && label !== 'Name' && col[label === 'Changed' ? 'changed' : label === 'Rights' ? 'rights' : 'owner'],
-        'rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
-        align === 'right' && 'text-right',
-        active && 'text-primary',
-      )}
-    >
-      {label}
-      {active && <span className="ml-0.5 tabular-nums">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-    </button>
+    <div className="group/col relative min-w-0 h-full overflow-visible">
+      <button
+        type="button"
+        onClick={onClick}
+        className={cn(
+          'w-full truncate rounded px-1 pr-2.5 transition-colors hover:bg-accent/40 hover:text-foreground',
+          align === 'right' && 'text-right tabular-nums',
+          align !== 'right' && 'text-left',
+          colKey === 'rights' && 'font-mono',
+          active && 'text-primary',
+        )}
+      >
+        {label}
+        {active && <span className="ml-0.5 tabular-nums">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </button>
+      <ColResizeHandle colKey={colKey} neighborKey={neighborKey} />
+    </div>
   )
 }
 
@@ -214,68 +284,69 @@ function ColumnHeaderRow({
   sortDir: 'asc' | 'desc'
   onSortChange: (key: SftpSortKey) => void
 }) {
+  const { widths, showUnixMeta } = useColWidths()
+  const order = sftpVisibleColOrder({ showUnixMeta })
+  const neighborOf = (key: SftpColKey) => {
+    const i = order.indexOf(key)
+    return i >= 0 && i < order.length - 1 ? order[i + 1] : undefined
+  }
+
   return (
     <div
-      className={cn(
-        'flex shrink-0 w-full min-w-0 items-center gap-1.5 border-b border-border/40 pb-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground',
-        'sm:text-xs',
-      )}
+      className="shrink-0 border-b border-border/40 pb-1.5 mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground sm:text-xs"
+      style={sftpColumnGridStyle(widths, { selectMode, showUnixMeta })}
     >
-      {selectMode && <div className="w-3.5 shrink-0" aria-hidden />}
+      {selectMode && <div aria-hidden />}
       <HeaderCell
         label="Name"
+        colKey="name"
+        neighborKey={neighborOf('name')}
         active={sortKey === 'name'}
         sortDir={sortDir}
         onClick={() => onSortChange('name')}
       />
       <HeaderCell
         label="Size"
+        colKey="size"
+        neighborKey={neighborOf('size')}
         active={sortKey === 'size'}
         sortDir={sortDir}
         align="right"
         onClick={() => onSortChange('size')}
       />
-      <button
-        type="button"
+      <HeaderCell
+        label="Changed"
+        colKey="changed"
+        neighborKey={neighborOf('changed')}
+        active={sortKey === 'mtime'}
+        sortDir={sortDir}
         onClick={() => onSortChange('mtime')}
-        className={cn(
-          col.changed,
-          'text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
-          sortKey === 'mtime' && 'text-primary',
-        )}
-      >
-        Changed
-        {sortKey === 'mtime' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSortChange('mode')}
-        className={cn(
-          col.rights,
-          'sftp-unix-meta text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors font-mono',
-          sortKey === 'mode' && 'text-primary',
-        )}
-      >
-        Rights
-        {sortKey === 'mode' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-      </button>
-      <button
-        type="button"
-        onClick={() => onSortChange('owner')}
-        className={cn(
-          col.owner,
-          'sftp-unix-meta text-left rounded px-0.5 hover:text-foreground hover:bg-accent/40 transition-colors',
-          sortKey === 'owner' && 'text-primary',
-        )}
-      >
-        Owner
-        {sortKey === 'owner' && <span className="ml-0.5">{sortDir === 'asc' ? '↑' : '↓'}</span>}
-      </button>
+      />
+      {showUnixMeta && (
+        <>
+          <HeaderCell
+            label="Rights"
+            colKey="rights"
+            neighborKey={neighborOf('rights')}
+            active={sortKey === 'mode'}
+            sortDir={sortDir}
+            onClick={() => onSortChange('mode')}
+          />
+          <HeaderCell
+            label="Owner"
+            colKey="owner"
+            neighborKey={neighborOf('owner')}
+            active={sortKey === 'owner'}
+            sortDir={sortDir}
+            onClick={() => onSortChange('owner')}
+          />
+        </>
+      )}
     </div>
   )
 }
 
-function FileItem({
+const FileItem = memo(function FileItem({
   node,
   depth,
   isLast: _isLast,
@@ -297,8 +368,6 @@ function FileItem({
   onRequestCollapse,
   flatMode = false,
 }: FileItemProps) {
-  const [isHovered, setIsHovered] = useState(false)
-
   const isFolder = node.type === 'folder'
   const isMarkedExpanded = expandedPaths.has(node.path)
   const isOpen =
@@ -312,8 +381,17 @@ function FileItem({
   const isSelected = !selectMode && selectedPath === node.path
   const isInMultiSelect = selectMode && selectedPaths.has(node.path)
   const isDropTarget = isFolder && dropHighlightPath === node.path
+  const { widths, showUnixMeta } = useColWidths()
+  const folderPartialSelected =
+    selectMode &&
+    isFolder &&
+    !selectedPaths.has(node.path) &&
+    Array.from(selectedPaths).some((p) =>
+      node.path === '/' ? p !== '/' : p.startsWith(`${node.path}/`),
+    )
 
   const namePaddingLeft = depth * 16 + 8
+  const rowGridStyle = sftpColumnGridStyle(widths, { selectMode, showUnixMeta })
 
   const toggleFolderOpen = (e?: React.SyntheticEvent) => {
     e?.stopPropagation()
@@ -340,7 +418,7 @@ function FileItem({
   }
 
   return (
-    <div className="select-none">
+    <div className="select-none h-full w-full">
       <div
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -361,60 +439,73 @@ function FileItem({
           }
           onNodeDragStart(node, e)
         }}
-        onDragOver={(e) => {
-          if (selectMode || !isFolder) return
+        onDragEnter={(e) => {
+          if (selectMode) return
           e.preventDefault()
-          e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
-          onFolderDragOver(node.path)
+          e.stopPropagation()
+          const targetDir = isFolder
+            ? node.path
+            : node.path.slice(0, node.path.lastIndexOf('/')) || '/'
+          if (dropHighlightPath !== targetDir) {
+            onFolderDragOver(targetDir)
+          }
         }}
-        onDragLeave={() => {
-          if (isFolder) onFolderDragOver(null)
+        onDragOver={(e) => {
+          if (selectMode) return
+          e.preventDefault()
+          e.stopPropagation()
+          e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
+          const targetDir = isFolder
+            ? node.path
+            : node.path.slice(0, node.path.lastIndexOf('/')) || '/'
+          if (dropHighlightPath !== targetDir) {
+            onFolderDragOver(targetDir)
+          }
         }}
         onDrop={(e) => {
           if (selectMode) return
           e.preventDefault()
-          // Stop here: the remote panel container also listens for drops (to
-          // target the root), so letting this bubble would upload/move the same
-          // item twice — once into this folder and once into "/".
+          // Stop propagation so container doesn't also handle as root drop
           e.stopPropagation()
-          onFolderDragOver(null)
-          // Dropping onto a file lands in that file's folder, not the tree root.
           const targetDir = isFolder
             ? node.path
             : node.path.slice(0, node.path.lastIndexOf('/')) || '/'
           onFolderDrop(targetDir, e)
         }}
         className={cn(
-          'group flex w-full min-w-0 items-center gap-1.5 py-1 px-2 rounded-md cursor-pointer outline-none overflow-hidden',
-          'transition-colors duration-200 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
-          isHovered && 'bg-fileTree-hover',
+          'group h-full cursor-pointer rounded-md px-2 outline-none overflow-hidden',
+          'transition-colors duration-150 ease-out focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/30',
+          'hover:bg-fileTree-hover',
           isSelected && 'ring-1 ring-inset ring-primary/40 bg-primary/5',
           isInMultiSelect && 'ring-1 ring-inset ring-primary/50 bg-primary/10',
-          isDropTarget && 'ring-2 ring-inset ring-primary/60 bg-primary/10',
+          isDropTarget &&
+            'border-l-4 border-l-primary bg-primary/20 shadow-[inset_0_0_12px_hsl(var(--primary)/0.25)] z-10 font-semibold',
         )}
+        style={rowGridStyle}
         onClick={handleRowClick}
         onContextMenu={(e) => {
           if (onNodeContextMenu) onNodeContextMenu(node, e)
         }}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
       >
         {selectMode && (
           <input
             type="checkbox"
             checked={selectedPaths.has(node.path)}
+            ref={(el) => {
+              if (el) el.indeterminate = folderPartialSelected
+            }}
             onChange={(e) => {
               e.stopPropagation()
-              onTogglePath(node.path)
+              void onTogglePath(node.path)
             }}
             onClick={(e) => e.stopPropagation()}
-            className="rounded border-border/50 accent-primary w-3.5 h-3.5 shrink-0 cursor-pointer"
+            className="rounded border-border/50 accent-primary w-3.5 h-3.5 justify-self-center cursor-pointer"
             aria-label={`Select ${node.name}`}
           />
         )}
 
         <div
-          className="flex min-w-0 flex-1 items-center gap-1.5"
+          className="flex min-w-0 items-center gap-1.5 overflow-hidden"
           style={{ paddingLeft: namePaddingLeft }}
         >
           {isFolder ? (
@@ -434,10 +525,7 @@ function FileItem({
                 height="8"
                 viewBox="0 0 6 8"
                 fill="none"
-                className={cn(
-                  'transition-colors duration-200',
-                  isHovered ? 'text-primary' : 'text-muted-foreground',
-                )}
+                className="transition-colors duration-200 text-muted-foreground group-hover:text-primary"
               >
                 <path
                   d="M1 1L5 4L1 7"
@@ -449,7 +537,7 @@ function FileItem({
               </svg>
             </button>
           ) : (
-            <div className="flex items-center justify-center w-4 h-4 shrink-0">
+            <div className="flex items-center justify-center w-4 h-4 shrink-0 pointer-events-none">
               <span className={cn('text-xs transition-opacity duration-200', fileIcon.color)}>
                 {fileIcon.icon}
               </span>
@@ -458,14 +546,12 @@ function FileItem({
 
           <div
             className={cn(
-              'flex items-center justify-center w-5 h-5 rounded transition-opacity duration-200 shrink-0 text-folderIcon',
+              'flex items-center justify-center w-5 h-5 rounded transition-all duration-200 shrink-0 text-folderIcon pointer-events-none',
               isFolder
-                ? isHovered
-                  ? 'opacity-100'
-                  : 'opacity-90'
-                : isHovered
-                  ? cn(fileIcon.color, 'opacity-100')
-                  : cn(fileIcon.color, 'opacity-70'),
+                ? isDropTarget
+                  ? 'text-primary scale-110 drop-shadow-sm'
+                  : 'opacity-90 group-hover:opacity-100'
+                : cn(fileIcon.color, 'opacity-70 group-hover:opacity-100'),
             )}
           >
             {isFolder ? (
@@ -482,14 +568,12 @@ function FileItem({
 
           <span
             className={cn(
-              'font-mono text-sm transition-colors duration-200 min-w-0 flex-1 break-all',
+              'font-mono text-sm transition-colors duration-200 min-w-0 flex-1 truncate pointer-events-none',
               isFolder
-                ? isHovered
-                  ? 'text-foreground'
-                  : 'text-foreground/90'
-                : isHovered
-                  ? 'text-foreground'
-                  : 'text-muted-foreground',
+                ? isDropTarget
+                  ? 'text-primary font-bold'
+                  : 'text-foreground/90 group-hover:text-foreground'
+                : 'text-muted-foreground group-hover:text-foreground',
             )}
           >
             {node.name}
@@ -497,6 +581,13 @@ function FileItem({
               <span className="ml-2 text-xs text-muted-foreground">…</span>
             )}
           </span>
+
+          {isDropTarget && (
+            <span className="ml-auto mr-1 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide bg-primary text-primary-foreground shadow-md shrink-0 pointer-events-none animate-in fade-in zoom-in-95 duration-100">
+              <UploadCloud className="w-3 h-3 shrink-0 animate-pulse" />
+              Upload here
+            </span>
+          )}
         </div>
 
         <MetaCells node={node} />
@@ -510,9 +601,15 @@ function FileItem({
           )}
         >
           {node.loading && childList.length === 0 && (
-            <div className="flex w-full items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground font-mono">
-              {selectMode && <div className="w-3.5 shrink-0" />}
-              <div className="flex flex-1 items-center" style={{ paddingLeft: (depth + 1) * 16 + 8 }}>
+            <div
+              className="px-2 py-1 text-xs text-muted-foreground font-mono"
+              style={rowGridStyle}
+            >
+              {selectMode && <div />}
+              <div
+                className="flex min-w-0 items-center overflow-hidden"
+                style={{ paddingLeft: (depth + 1) * 16 + 8 }}
+              >
                 Loading…
               </div>
               <EmptyMetaCells />
@@ -546,7 +643,7 @@ function FileItem({
       )}
     </div>
   )
-}
+})
 
 export function SftpFileTree({
   data,
@@ -575,6 +672,8 @@ export function SftpFileTree({
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(480)
+  const colWidths = useSftpColumnWidths()
+  const showUnixMeta = !hideUnixMeta
 
   const flatRows = useMemo(
     () => flattenVisibleSftpRows(data ?? [], expandedPaths, sortKey, sortDir, foldersFirst),
@@ -619,13 +718,23 @@ export function SftpFileTree({
   }
 
   return (
+    <ColWidthContext.Provider value={{ ...colWidths, showUnixMeta }}>
     <div
       className={cn(
-        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-w-0 flex flex-col min-h-0 h-full overflow-hidden',
-        hideUnixMeta && '[&_.sftp-unix-meta]:hidden',
+        'bg-fileTree-bg rounded-lg border border-border/50 p-3 font-mono min-w-0 flex flex-col min-h-0 h-full overflow-hidden relative transition-all duration-150',
+        dropHighlightPath === '/' && 'border-primary/70 shadow-[inset_0_0_24px_rgba(59,130,246,0.1)]',
         className,
       )}
     >
+      {dropHighlightPath && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex items-center gap-2 px-3.5 py-1 rounded-full bg-card/95 backdrop-blur-md text-foreground shadow-2xl border border-primary/40 text-xs font-medium animate-in fade-in zoom-in-95 duration-150">
+          <UploadCloud className="w-3.5 h-3.5 text-primary shrink-0 animate-pulse" />
+          <span className="truncate max-w-[280px]">
+            Upload target: <strong className="font-semibold text-primary">{dropHighlightPath === '/' ? '/ (Root Directory)' : dropHighlightPath}</strong>
+          </span>
+        </div>
+      )}
+
       <div className="flex shrink-0 items-center gap-2 pb-2 mb-1 border-b border-border/30">
         <div className="flex gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-red-500/80" />
@@ -648,18 +757,28 @@ export function SftpFileTree({
         )}
       </div>
 
-      <ColumnHeaderRow
-        selectMode={selectMode}
-        sortKey={sortKey}
-        sortDir={sortDir}
-        onSortChange={onSortChange}
-      />
-
       <div
         ref={scrollRef}
-        className="min-w-0 flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-0.5 [scrollbar-gutter:stable]"
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain [scrollbar-gutter:stable]"
         onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+        onDragOver={(e) => {
+          if (selectMode) return
+          e.preventDefault()
+          e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
+          if (dropHighlightPath !== '/') {
+            onFolderDragOver('/')
+          }
+        }}
       >
+        <div className="sticky top-0 z-10 bg-fileTree-bg">
+          <ColumnHeaderRow
+            selectMode={selectMode}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            onSortChange={onSortChange}
+          />
+        </div>
+
         <div style={{ height: virtual.totalHeight, position: 'relative' }}>
           {virtual.slice.map(({ node, depth }, i) => {
             const index = virtual.start + i
@@ -670,7 +789,7 @@ export function SftpFileTree({
                   position: 'absolute',
                   top: index * SFTP_ROW_HEIGHT,
                   left: 0,
-                  right: 0,
+                  width: '100%',
                   height: SFTP_ROW_HEIGHT,
                   overflow: 'hidden',
                 }}
@@ -685,7 +804,15 @@ export function SftpFileTree({
             )
           })}
         </div>
+
+        {dropHighlightPath === '/' && (
+          <div className="mx-2 my-2 py-2.5 px-3 rounded-lg border border-dashed border-primary/50 bg-primary/5 flex items-center justify-center gap-2 text-xs text-primary/90 pointer-events-none animate-in fade-in zoom-in-95 duration-150">
+            <UploadCloud className="w-3.5 h-3.5 text-primary shrink-0 animate-bounce" />
+            <span>Drop anywhere here to upload to <strong>/ (Root Directory)</strong></span>
+          </div>
+        )}
       </div>
     </div>
+    </ColWidthContext.Provider>
   )
 }

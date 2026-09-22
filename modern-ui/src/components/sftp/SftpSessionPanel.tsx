@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
+import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
 import { Label } from '../ui/label'
@@ -33,8 +34,6 @@ import {
   AlertCircle,
   Monitor,
   ChevronRight,
-  ChevronDown,
-  PanelBottom,
   Database,
   ShieldAlert,
   FlaskConical,
@@ -44,8 +43,26 @@ import {
   HardDrive,
   KeyRound,
   ChevronLeft,
+  Star,
+  Bookmark,
+  Trash2,
+  UploadCloud,
+  DownloadCloud,
+  Copy,
+  X,
   type LucideIcon,
 } from 'lucide-react'
+import { formatSftpSize } from './sftp-column-format'
+import { SftpFileViewerDialog } from './SftpFileViewerDialog'
+import { SftpFileDiffDialog } from './SftpFileDiffDialog'
+import { SftpChecksumDialog } from './SftpChecksumDialog'
+import {
+  loadFavorites,
+  toggleFavorite,
+  isFavorite,
+  removeFavorite,
+  type FavoriteEntry,
+} from '@/lib/sftp-favorites'
 import { cn } from '@/lib/utils'
 import { toast } from 'sonner'
 import { useTourInteractionOptional } from '@/contexts/TourInteractionContext'
@@ -81,6 +98,8 @@ import {
   setChildrenAtPath,
   findNode,
   getDirectChildPaths,
+  collectSubtreePaths,
+  isPathUnderFolder,
   rebuildSftpTreeWithExpanded,
 } from './sftp-tree-mutations'
 
@@ -185,6 +204,19 @@ type TransferItem = {
   status: 'running' | 'done' | 'error'
   progress: number
   error?: string
+}
+
+export interface LiveUploadProgress {
+  id: string
+  fileName: string
+  targetDir: string
+  progress: number
+  status: 'uploading' | 'completed' | 'error'
+  error?: string
+  totalFiles?: number
+  currentFileIndex?: number
+  bytesLoaded?: number
+  bytesTotal?: number
 }
 
 interface SftpSessionPanelProps {
@@ -341,7 +373,34 @@ export function SftpSessionPanel({
   const [editPath, setEditPath] = useState<string | null>(null)
 
   const [transferQueue, setTransferQueue] = useState<TransferItem[]>([])
-  const [queueOpen, setQueueOpen] = useState(true)
+
+  const [liveUpload, setLiveUpload] = useState<LiveUploadProgress | null>(null)
+  const liveUploadDismissTimer = useRef<NodeJS.Timeout | null>(null)
+
+  const clearLiveUploadWithDelay = useCallback((delayMs = 3500) => {
+    if (liveUploadDismissTimer.current) clearTimeout(liveUploadDismissTimer.current)
+    liveUploadDismissTimer.current = setTimeout(() => {
+      setLiveUpload((curr) => (curr?.status === 'completed' ? null : curr))
+    }, delayMs)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (liveUploadDismissTimer.current) clearTimeout(liveUploadDismissTimer.current)
+    }
+  }, [])
+
+  // Global dragend safety net: clears all drag highlights when any drag
+  // operation ends (drop, ESC, or dragging outside the window).
+  useEffect(() => {
+    const clearDragState = () => {
+      setDropHighlightPath(null)
+      setLocalDropHighlight(false)
+    }
+    document.addEventListener('dragend', clearDragState)
+    return () => document.removeEventListener('dragend', clearDragState)
+  }, [])
+
   const [migrateOpen, setMigrateOpen] = useState(false)
   const [migrateEnv, setMigrateEnv] = useState<MigrateEnv>('staging')
   const [migrateConfirmText, setMigrateConfirmText] = useState('')
@@ -349,6 +408,38 @@ export function SftpSessionPanel({
   const [migrateDbUser, setMigrateDbUser] = useState('')
   const [migrateDbPass, setMigrateDbPass] = useState('')
   const [migrateCredsLoaded, setMigrateCredsLoaded] = useState(false)
+
+  // Dialogs: Viewer, Diff, Checksum
+  const [viewerOpen, setViewerOpen] = useState(false)
+  const [viewerPath, setViewerPath] = useState<string | null>(null)
+  const [viewerName, setViewerName] = useState('')
+  const [viewerContent, setViewerContent] = useState('')
+  const [viewerIsBinary, setViewerIsBinary] = useState(false)
+
+  const [diffOpen, setDiffOpen] = useState(false)
+  const [diffNameA, setDiffNameA] = useState('')
+  const [diffContentA, setDiffContentA] = useState('')
+  const [diffNameB, setDiffNameB] = useState('')
+  const [diffContentB, setDiffContentB] = useState('')
+  const [diffLocalPath, setDiffLocalPath] = useState<string | undefined>(undefined)
+
+  const [checksumOpen, setChecksumOpen] = useState(false)
+  const [checksumName, setChecksumName] = useState('')
+  const [checksumPath, setChecksumPath] = useState('')
+  const [checksumBase64, setChecksumBase64] = useState<string | undefined>(undefined)
+  const [checksumLocalPath, setChecksumLocalPath] = useState<string | undefined>(undefined)
+  const [checksumLocalName, setChecksumLocalName] = useState<string | undefined>(undefined)
+
+  const connectionKey = isObjectStoreProtocol(protocol)
+    ? `s3:${s3Bucket}:${s3Prefix}`
+    : `${protocol}:${host}:${sftpPort}`
+
+  const [favorites, setFavorites] = useState<FavoriteEntry[]>(() => loadFavorites(connectionKey))
+  const [favoritesOpen, setFavoritesOpen] = useState(false)
+
+  useEffect(() => {
+    setFavorites(loadFavorites(connectionKey))
+  }, [connectionKey])
 
   const [localRoot, setLocalRoot] = useState<string | null>(null)
   const [localCwd, setLocalCwd] = useState<string | null>(null)
@@ -359,6 +450,7 @@ export function SftpSessionPanel({
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<SftpFileNode[]>([])
+  const selectedPathsRef = useRef(selectedPaths)
   const expandedPathsRef = useRef(expandedPaths)
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; node: SftpFileNode } | null>(null)
   const [propertiesOpen, setPropertiesOpen] = useState(false)
@@ -369,6 +461,10 @@ export function SftpSessionPanel({
   useEffect(() => {
     treeRef.current = tree
   }, [tree])
+
+  useEffect(() => {
+    selectedPathsRef.current = selectedPaths
+  }, [selectedPaths])
 
   useEffect(() => {
     expandedPathsRef.current = expandedPaths
@@ -427,6 +523,15 @@ export function SftpSessionPanel({
       setTransferQueue((q) =>
         q.map((t) => (t.id === operationId ? { ...t, progress: pct } : t)),
       )
+      setLiveUpload((prev) => {
+        if (!prev || prev.id !== operationId) return prev
+        return {
+          ...prev,
+          progress: pct,
+          bytesLoaded: loaded,
+          bytesTotal: total,
+        }
+      })
     })
   }, [api])
 
@@ -1233,14 +1338,87 @@ export function SftpSessionPanel({
     setExpandedPaths(new Set())
   }, [])
 
-  const togglePathSelection = useCallback((path: string) => {
-    setSelectedPaths((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }, [])
+  /** Load a folder and every nested folder so selection can cover the full subtree. */
+  const ensureFolderLoadedDeep = useCallback(
+    async (folderPath: string): Promise<SftpFileNode | null> => {
+      const walk = async (path: string): Promise<SftpFileNode | null> => {
+        let node = findNode(treeRef.current, path)
+        if (!node || node.type !== 'folder') return node
+        if (node.loading) return node
+        if (!node.loaded) {
+          setTree((prev) => setNodeLoading(prev, path, true))
+          try {
+            const children = await loadDir(path)
+            setTree((prev) => {
+              const next = setChildrenAtPath(prev, path, children)
+              treeRef.current = next
+              return next
+            })
+          } catch (e) {
+            setTree((prev) => setNodeLoading(prev, path, false))
+            toast.error(e instanceof Error ? e.message : 'Failed to open folder')
+            return findNode(treeRef.current, path)
+          }
+        }
+        setExpandedPaths((prev) => new Set(prev).add(path))
+        node = findNode(treeRef.current, path)
+        const children = node?.children ?? []
+        for (const child of children) {
+          if (child.type === 'folder') await walk(child.path)
+        }
+        return findNode(treeRef.current, path)
+      }
+      return walk(folderPath)
+    },
+    [loadDir],
+  )
+
+  const togglePathSelection = useCallback(
+    async (path: string) => {
+      const node = findNode(treeRef.current, path)
+      const wasSelected = selectedPathsRef.current.has(path)
+
+      if (node?.type === 'folder') {
+        if (!wasSelected) {
+          const loaded = await ensureFolderLoadedDeep(path)
+          const paths = loaded ? collectSubtreePaths(loaded) : [path]
+          setSelectedPaths((prev) => {
+            const next = new Set(prev)
+            for (const p of paths) next.add(p)
+            return next
+          })
+        } else {
+          setSelectedPaths((prev) => {
+            const next = new Set(prev)
+            next.delete(path)
+            for (const p of Array.from(next)) {
+              if (isPathUnderFolder(path, p)) next.delete(p)
+            }
+            return next
+          })
+        }
+        return
+      }
+
+      setSelectedPaths((prev) => {
+        const next = new Set(prev)
+        if (next.has(path)) {
+          next.delete(path)
+          // Uncheck ancestors so a partially unchecked folder isn't left fully selected.
+          let cursor = parentDir(path)
+          while (true) {
+            next.delete(cursor)
+            if (cursor === '/') break
+            cursor = parentDir(cursor)
+          }
+        } else {
+          next.add(path)
+        }
+        return next
+      })
+    },
+    [ensureFolderLoadedDeep],
+  )
 
   const handleSelectNode = useCallback((node: SftpFileNode) => {
     setSelectedPath(node.path)
@@ -1385,6 +1563,275 @@ export function SftpSessionPanel({
     [handleSelectNode],
   )
 
+  const handleInspectFile = useCallback(
+    async (targetNode?: SftpFileNode) => {
+      const node = targetNode ?? (selectedPath ? findNode(treeRef.current, selectedPath) : null)
+      if (!node || node.type !== 'file') return
+      const client = sftpRef.current
+      if (!client?.readFile) {
+        toast.error('Not connected')
+        return
+      }
+      const r = await client.readFile(node.path)
+      if (!r.ok) {
+        toast.error(r.error)
+        return
+      }
+      setViewerPath(node.path)
+      setViewerName(node.name)
+      if ('isBinary' in r && r.isBinary) {
+        setViewerIsBinary(true)
+        setViewerContent('previewBase64' in r ? r.previewBase64 : '')
+      } else {
+        setViewerIsBinary(false)
+        setViewerContent('text' in r ? r.text || '' : '')
+      }
+      setViewerOpen(true)
+    },
+    [selectedPath],
+  )
+
+  const handleDiffFile = useCallback(
+    async (targetNode?: SftpFileNode) => {
+      const node = targetNode ?? (selectedPath ? findNode(treeRef.current, selectedPath) : null)
+      if (!node || node.type !== 'file') return
+      const client = sftpRef.current
+      if (!client?.readFile) {
+        toast.error('Not connected')
+        return
+      }
+      const r = await client.readFile(node.path)
+      if (!r.ok) {
+        toast.error(r.error)
+        return
+      }
+      const remoteText = 'text' in r && r.text ? r.text : ''
+      setDiffNameA(`Remote (${node.name})`)
+      setDiffContentA(remoteText)
+
+      let localText = ''
+      let localName = `Local (${node.name})`
+      let foundPath: string | undefined = undefined
+
+      const api = window.electronAPI
+
+      // 1. Check if user currently has an explicit local file selected in the local table
+      if (localSelectedPath && api?.localReadFile) {
+        const selRow = localRows.find((row) => row.path === localSelectedPath)
+        if (selRow && selRow.type === 'file') {
+          const loc = await api.localReadFile(localSelectedPath)
+          if (loc.ok && loc.content !== undefined) {
+            localText = loc.content
+            localName = `Local (${selRow.name})`
+            foundPath = localSelectedPath
+          }
+        }
+      }
+
+      // 2. Check if a local file with matching name exists in the local directory listing
+      if (!localText && localRows.length > 0 && api?.localReadFile) {
+        const matchingRow = localRows.find(
+          (row) => row.type === 'file' && row.name.toLowerCase() === node.name.toLowerCase()
+        )
+        if (matchingRow) {
+          const loc = await api.localReadFile(matchingRow.path)
+          if (loc.ok && loc.content !== undefined) {
+            localText = loc.content
+            localName = `Local (${matchingRow.name})`
+            foundPath = matchingRow.path
+          }
+        }
+      }
+
+      // 3. Fallback: check candidate path directly in localCwd
+      if (!localText && localCwd && api?.localReadFile) {
+        const candidatePath = joinLocalSegments(localCwd, node.name)
+        const loc = await api.localReadFile(candidatePath)
+        if (loc.ok && loc.content !== undefined) {
+          localText = loc.content
+          localName = `Local (${node.name})`
+          foundPath = candidatePath
+        }
+      }
+
+      if (!localText) {
+        localName = `Local (${node.name} - not loaded)`
+      }
+
+      setDiffNameB(localName)
+      setDiffContentB(localText)
+      setDiffLocalPath(foundPath)
+      setDiffOpen(true)
+    },
+    [selectedPath, localCwd, localSelectedPath, localRows],
+  )
+
+  const handleDiffFromLocal = useCallback(
+    async (localRow: LocalEntryRow) => {
+      if (localRow.type !== 'file') return
+      const api = window.electronAPI
+      if (!api?.localReadFile) return
+      const loc = await api.localReadFile(localRow.path)
+      if (!loc.ok || loc.content === undefined) {
+        toast.error('Failed to read local file')
+        return
+      }
+
+      const client = sftpRef.current
+      if (!client?.readFile) {
+        toast.error('Not connected')
+        return
+      }
+
+      const curSelectedNode = selectedPath ? findNode(treeRef.current, selectedPath) : null
+      let remoteNode: SftpFileNode | null = null
+      if (curSelectedNode && curSelectedNode.type === 'file') {
+        remoteNode = curSelectedNode
+      } else {
+        const findByName = (nodes: SftpFileNode[]): SftpFileNode | null => {
+          for (const n of nodes) {
+            if (n.type === 'file' && n.name.toLowerCase() === localRow.name.toLowerCase()) return n
+            if (n.children) {
+              const res = findByName(n.children)
+              if (res) return res
+            }
+          }
+          return null
+        }
+        remoteNode = findByName(treeRef.current)
+      }
+
+      if (remoteNode) {
+        const r = await client.readFile(remoteNode.path)
+        if (r.ok) {
+          const remoteText = 'text' in r && r.text ? r.text : ''
+          setDiffNameA(`Remote (${remoteNode.name})`)
+          setDiffContentA(remoteText)
+        } else {
+          setDiffNameA(`Remote (${remoteNode.name} - error)`)
+          setDiffContentA('')
+        }
+      } else {
+        setDiffNameA(`Remote (${localRow.name} - not found)`)
+        setDiffContentA('')
+      }
+
+      setDiffNameB(`Local (${localRow.name})`)
+      setDiffContentB(loc.content)
+      setDiffLocalPath(localRow.path)
+      setDiffOpen(true)
+    },
+    [selectedPath],
+  )
+
+  const handleChecksumFile = useCallback(
+    async (targetNode?: SftpFileNode) => {
+      const node = targetNode ?? (selectedPath ? findNode(treeRef.current, selectedPath) : null)
+      if (!node || node.type !== 'file') return
+      const client = sftpRef.current
+      if (!client?.readFile) {
+        toast.error('Not connected')
+        return
+      }
+      let b64: string | undefined
+      const r = await client.readFile(node.path)
+      if (r.ok) {
+        if ('previewBase64' in r && r.previewBase64) b64 = r.previewBase64
+        else if ('text' in r && r.text) b64 = btoa(unescape(encodeURIComponent(r.text)))
+      }
+      if (!b64) {
+        toast.error('Could not read remote file content for hashing')
+        return
+      }
+
+      setChecksumName(node.name)
+      setChecksumPath(node.path)
+      setChecksumBase64(b64)
+
+      if (
+        localCwd &&
+        localRows.some((row) => row.name.toLowerCase() === node.name.toLowerCase() && row.type === 'file')
+      ) {
+        const candidatePath = joinLocalSegments(localCwd, node.name)
+        setChecksumLocalPath(candidatePath)
+        setChecksumLocalName(node.name)
+      } else {
+        setChecksumLocalPath(undefined)
+        setChecksumLocalName(undefined)
+      }
+
+      setChecksumOpen(true)
+    },
+    [selectedPath, localCwd, localRows],
+  )
+
+  const handleToggleFavoriteCurrent = () => {
+    const added = toggleFavorite(connectionKey, uploadTargetDir)
+    setFavorites(loadFavorites(connectionKey))
+    if (added) {
+      toast.success(`Pinned ${uploadTargetDir} to favorites`)
+    } else {
+      toast.info(`Removed ${uploadTargetDir} from favorites`)
+    }
+  }
+
+  const handleToggleFavorite = (targetPath: string) => {
+    const added = toggleFavorite(connectionKey, targetPath)
+    setFavorites(loadFavorites(connectionKey))
+    if (added) {
+      toast.success(`Pinned ${targetPath} to favorites`)
+    } else {
+      toast.info(`Removed ${targetPath} from favorites`)
+    }
+  }
+
+  const handleRemoveFavorite = (targetPath: string) => {
+    removeFavorite(connectionKey, targetPath)
+    setFavorites(loadFavorites(connectionKey))
+    toast.info(`Removed ${targetPath} from favorites`)
+  }
+
+  const isCurrentFavorite = isFavorite(connectionKey, uploadTargetDir)
+
+  const knownDirectoryPaths = useMemo(() => {
+    const paths: string[] = ['/']
+    const traverse = (nodes: SftpFileNode[]) => {
+      for (const n of nodes) {
+        if (n.type === 'folder') {
+          if (!paths.includes(n.path)) paths.push(n.path)
+          if (n.children) traverse(n.children)
+        }
+      }
+    }
+    traverse(tree)
+    for (const f of favorites) {
+      if (!paths.includes(f.path)) paths.push(f.path)
+    }
+    return paths
+  }, [tree, favorites])
+
+  const handleSendToFixed = (epcs: string[]) => {
+    if (window.electronAPI?.tcpSendTags) {
+      const tags = epcs.map((epc) => ({ epc, tid: '', antenna: '1', rssi: '-45.0' }))
+      window.electronAPI.tcpSendTags(tags, 'llrp', 100)
+      toast.success(`Emulating ${epcs.length} tags on Fixed Reader`)
+    } else {
+      void navigator.clipboard.writeText(epcs.join('\n'))
+      toast.success(`Copied ${epcs.length} EPCs`)
+    }
+  }
+
+  const handleSendToHandheld = (epcs: string[]) => {
+    if (window.electronAPI?.handheldSendEpcs) {
+      const tags = epcs.map((epc) => ({ epc, tid: '', antenna: '1', rssi: '-45.0' }))
+      window.electronAPI.handheldSendEpcs(5084, tags, 100)
+      toast.success(`Emulating ${epcs.length} tags on Handheld server :5084`)
+    } else {
+      void navigator.clipboard.writeText(epcs.join('\n'))
+      toast.success(`Copied ${epcs.length} EPCs`)
+    }
+  }
+
   const duplicateForNode = useCallback(
     async (node: SftpFileNode) => {
       const client = sftpRef.current
@@ -1462,24 +1909,46 @@ export function SftpSessionPanel({
 
   const handleDropOnDir = useCallback(
     async (targetDir: string, e: React.DragEvent) => {
+      // Always clear the drop highlight immediately on drop
+      setDropHighlightPath(null)
       if (!sftp) return
       const localRaw = e.dataTransfer.getData(LOCAL_DND_MIME)
       if (localRaw && sftp?.uploadFromLocal) {
         try {
           const { path: localPath, name } = JSON.parse(localRaw) as { path: string; name: string }
           const id = nextOpId()
+          if (liveUploadDismissTimer.current) clearTimeout(liveUploadDismissTimer.current)
+          setLiveUpload({
+            id,
+            fileName: name,
+            targetDir,
+            progress: 0,
+            status: 'uploading',
+            totalFiles: 1,
+            currentFileIndex: 1,
+          })
           pushTransfer({ id, label: `${name} → remote`, kind: 'upload' })
           const dest = posixJoin(targetDir, name)
           const r = await sftp.uploadFromLocal(localPath, dest, id, localRoot ?? undefined)
           if (r.ok) {
             updateTransfer(id, { status: 'done', progress: 100 })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, progress: 100, status: 'completed' } : prev,
+            )
+            clearLiveUploadWithDelay()
             toast.success('Uploaded')
             await refreshDirectory(targetDir, true)
           } else {
             updateTransfer(id, { status: 'error', error: r.error })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, status: 'error', error: r.error } : prev,
+            )
             toast.error(r.error)
           }
         } catch {
+          setLiveUpload((prev) =>
+            prev ? { ...prev, status: 'error', error: 'Upload failed' } : prev,
+          )
           toast.error('Upload failed')
         }
         return
@@ -1521,43 +1990,90 @@ export function SftpSessionPanel({
       const files = e.dataTransfer.files
       if (files?.length) {
         let okCount = 0
-        for (const f of Array.from(files)) {
+        const total = files.length
+        if (liveUploadDismissTimer.current) clearTimeout(liveUploadDismissTimer.current)
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i]
           const dest = posixJoin(targetDir, f.name)
+          const id = nextOpId()
+          setLiveUpload({
+            id,
+            fileName: f.name,
+            targetDir,
+            progress: 0,
+            status: 'uploading',
+            totalFiles: total,
+            currentFileIndex: i + 1,
+            bytesTotal: f.size,
+          })
           try {
             // Desktop: stream from disk with progress (any size) instead of
             // buffering the whole file as base64 through IPC.
             const localPath = api?.getPathForFile?.(f)
             if (localPath && sftp.uploadFromLocal) {
-              const id = nextOpId()
               pushTransfer({ id, label: `${f.name} → remote`, kind: 'upload' })
               const r = await sftp.uploadFromLocal(localPath, dest, id)
               if (!r.ok) {
                 updateTransfer(id, { status: 'error', error: r.error })
+                setLiveUpload((prev) =>
+                  prev?.id === id ? { ...prev, status: 'error', error: r.error } : prev,
+                )
                 toast.error(`${f.name}: ${r.error}`)
                 break
               }
               updateTransfer(id, { status: 'done', progress: 100 })
+              setLiveUpload((prev) =>
+                prev?.id === id ? { ...prev, progress: 100 } : prev,
+              )
               okCount++
               continue
             }
+            pushTransfer({ id, label: `${f.name} → remote`, kind: 'upload' })
+            setLiveUpload((prev) => (prev?.id === id ? { ...prev, progress: 50 } : prev))
             const buf = await f.arrayBuffer()
             const b64 = arrayBufferToBase64(buf)
             const w = await sftp.writeFile(dest, b64)
             if (!w.ok) {
+              updateTransfer(id, { status: 'error', error: w.error })
+              setLiveUpload((prev) =>
+                prev?.id === id ? { ...prev, status: 'error', error: w.error } : prev,
+              )
               toast.error(`${f.name}: ${w.error}`)
               break
             }
+            updateTransfer(id, { status: 'done', progress: 100 })
+            setLiveUpload((prev) => (prev?.id === id ? { ...prev, progress: 100 } : prev))
             okCount++
           } catch {
+            updateTransfer(id, { status: 'error', error: 'Upload failed' })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, status: 'error', error: 'Upload failed' } : prev,
+            )
             toast.error(`Upload failed: ${f.name}`)
             break
           }
         }
-        if (okCount > 0) toast.success(`Uploaded ${okCount} file(s)`)
+        if (okCount > 0) {
+          setLiveUpload((prev) =>
+            prev ? { ...prev, status: 'completed', progress: 100 } : prev,
+          )
+          clearLiveUploadWithDelay()
+          toast.success(`Uploaded ${okCount} file(s)`)
+        }
         await refreshDirectory(targetDir, true)
       }
     },
-    [api, sftp, refreshRoot, refreshDirectory, selectedPath, pushTransfer, updateTransfer],
+    [
+      api,
+      sftp,
+      refreshRoot,
+      refreshDirectory,
+      selectedPath,
+      pushTransfer,
+      updateTransfer,
+      localRoot,
+      clearLiveUploadWithDelay,
+    ],
   )
 
   const handleDropOnLocal = useCallback(
@@ -1655,45 +2171,87 @@ export function SftpSessionPanel({
     async (list: FileList | null) => {
       if (!list?.length || !sftp) return
       let okCount = 0
-      for (const f of Array.from(list)) {
+      const total = list.length
+      if (liveUploadDismissTimer.current) clearTimeout(liveUploadDismissTimer.current)
+      for (let i = 0; i < list.length; i++) {
+        const f = list[i]
         const dest = posixJoin(uploadTargetDir, f.name)
+        const id = nextOpId()
+        setLiveUpload({
+          id,
+          fileName: f.name,
+          targetDir: uploadTargetDir,
+          progress: 0,
+          status: 'uploading',
+          totalFiles: total,
+          currentFileIndex: i + 1,
+          bytesTotal: f.size,
+        })
+        pushTransfer({ id, label: f.name, kind: 'upload' })
         // `File.path` no longer exists in current Electron; resolve via preload.
         const filePath = api?.getPathForFile?.(f) || (f as File & { path?: string }).path
         if (filePath && sftp?.uploadFromLocal) {
-          const id = nextOpId()
-          pushTransfer({ id, label: f.name, kind: 'upload' })
-          // Picked files can live anywhere on disk — don't scope them to the
-          // local-panel root or the main process rejects them.
           const r = await sftp.uploadFromLocal(filePath, dest, id)
           if (r.ok) {
             updateTransfer(id, { status: 'done', progress: 100 })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, progress: 100 } : prev,
+            )
             okCount++
           } else {
             updateTransfer(id, { status: 'error', error: r.error })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, status: 'error', error: r.error } : prev,
+            )
             toast.error(`${f.name}: ${r.error}`)
             break
           }
         } else {
           try {
+            setLiveUpload((prev) => (prev?.id === id ? { ...prev, progress: 50 } : prev))
             const buf = await f.arrayBuffer()
             const b64 = arrayBufferToBase64(buf)
             const w = await sftp.writeFile(dest, b64)
             if (!w.ok) {
+              updateTransfer(id, { status: 'error', error: w.error })
+              setLiveUpload((prev) =>
+                prev?.id === id ? { ...prev, status: 'error', error: w.error } : prev,
+              )
               toast.error(`${f.name}: ${w.error}`)
               break
             }
+            updateTransfer(id, { status: 'done', progress: 100 })
+            setLiveUpload((prev) => (prev?.id === id ? { ...prev, progress: 100 } : prev))
             okCount++
           } catch {
+            updateTransfer(id, { status: 'error', error: 'Upload failed' })
+            setLiveUpload((prev) =>
+              prev?.id === id ? { ...prev, status: 'error', error: 'Upload failed' } : prev,
+            )
             toast.error(`Upload failed: ${f.name}`)
             break
           }
         }
       }
-      if (okCount > 0) toast.success(`Uploaded ${okCount} file(s)`)
+      if (okCount > 0) {
+        setLiveUpload((prev) =>
+          prev ? { ...prev, status: 'completed', progress: 100 } : prev,
+        )
+        clearLiveUploadWithDelay()
+        toast.success(`Uploaded ${okCount} file(s)`)
+      }
       if (okCount > 0) await refreshDirectory(uploadTargetDir, true)
       if (fileInputRef.current) fileInputRef.current.value = ''
     },
-    [api, sftp, uploadTargetDir, refreshDirectory, pushTransfer, updateTransfer],
+    [
+      api,
+      sftp,
+      uploadTargetDir,
+      refreshDirectory,
+      pushTransfer,
+      updateTransfer,
+      clearLiveUploadWithDelay,
+    ],
   )
 
   const confirmDelete = useCallback(async () => {
@@ -2359,6 +2917,9 @@ export function SftpSessionPanel({
         onDuplicate={() => void duplicateForNode(selectedNode!)}
         onMove={() => openMoveForNode(selectedNode!)}
         onProperties={() => openPropertiesForNode(selectedNode!)}
+        onInspect={() => selectedNode && void handleInspectFile(selectedNode)}
+        onDiff={() => selectedNode && void handleDiffFile(selectedNode)}
+        onChecksum={() => selectedNode && void handleChecksumFile(selectedNode)}
         showMigrate={protocol !== 's3'}
         onDelete={() => {
           if (selectMode && selectedPaths.size > 0) {
@@ -2391,7 +2952,73 @@ export function SftpSessionPanel({
       />
 
       <div className="flex flex-nowrap items-center gap-2 shrink-0 overflow-hidden text-xs">
-        <span className="text-muted-foreground shrink-0">Remote path</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-muted-foreground">Remote path</span>
+          <button
+            type="button"
+            className="p-1 rounded hover:bg-muted/40 transition-colors"
+            onClick={handleToggleFavoriteCurrent}
+            title={isCurrentFavorite ? 'Remove from Favorites' : 'Add current path to Favorites'}
+          >
+            <Star
+              className={cn(
+                'w-3.5 h-3.5 transition-colors',
+                isCurrentFavorite
+                  ? 'fill-amber-400 text-amber-400'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            />
+          </button>
+          {favorites.length > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-muted/40 transition-colors text-muted-foreground hover:text-foreground"
+                onClick={() => setFavoritesOpen((v) => !v)}
+                title="Favorite locations"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+              </button>
+              {favoritesOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 min-w-[220px] max-w-[340px] rounded-lg border border-border/60 bg-popover shadow-xl py-1 animate-in fade-in-0 zoom-in-95">
+                  <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/40">
+                    Favorite Locations ({favorites.length})
+                  </div>
+                  {favorites.map((f) => (
+                    <div
+                      key={f.path}
+                      className="flex items-center justify-between px-3 py-1.5 hover:bg-accent text-xs"
+                    >
+                      <button
+                        type="button"
+                        className="flex-1 text-left truncate font-mono text-primary hover:underline"
+                        onClick={() => {
+                          setFavoritesOpen(false)
+                          void navigateRemotePath(f.path)
+                        }}
+                        title={f.path}
+                      >
+                        {f.label || f.path}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-destructive p-1 rounded"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          handleRemoveFavorite(f.path)
+                        }}
+                        title="Remove bookmark"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-0.5 overflow-hidden font-mono">
           <button
             type="button"
@@ -2402,6 +3029,8 @@ export function SftpSessionPanel({
           </button>
           {breadcrumbSegments.map((seg, i) => {
             const full = '/' + breadcrumbSegments.slice(0, i + 1).join('/')
+            const nodeAtSeg = findNode(tree, full)
+            const subfolders = nodeAtSeg?.children?.filter((c) => c.type === 'folder') || []
             return (
               <span key={full} className="flex items-center text-muted-foreground">
                 <ChevronRight className="w-3 h-3 shrink-0" />
@@ -2413,6 +3042,29 @@ export function SftpSessionPanel({
                 >
                   {seg}
                 </button>
+                {subfolders.length > 0 && (
+                  <select
+                    className="w-3 h-4 bg-transparent border-0 text-transparent cursor-pointer p-0 opacity-40 hover:opacity-100"
+                    title={`Jump to subfolder in ${seg}`}
+                    value=""
+                    onChange={(e) => {
+                      if (e.target.value) void navigateRemotePath(e.target.value)
+                    }}
+                  >
+                    <option value="" disabled>
+                      Subfolders...
+                    </option>
+                    {subfolders.map((sub) => (
+                      <option
+                        key={sub.path}
+                        value={sub.path}
+                        className="text-foreground bg-popover font-mono text-xs"
+                      >
+                        {sub.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </span>
             )
           })}
@@ -2420,13 +3072,24 @@ export function SftpSessionPanel({
         <Input
           value={pathGoInput}
           onChange={(e) => setPathGoInput(e.target.value)}
+          list={`path-suggestions-${tabId}`}
           className="h-7 max-w-xs font-mono text-xs"
           placeholder="/path/on/server"
           onKeyDown={(e) => {
             if (e.key === 'Enter') void navigateRemotePath(pathGoInput.trim() || '/')
           }}
         />
-        <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => void navigateRemotePath(pathGoInput.trim() || '/')}>
+        <datalist id={`path-suggestions-${tabId}`}>
+          {knownDirectoryPaths.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
+        <Button
+          size="sm"
+          variant="secondary"
+          className="h-7 text-xs"
+          onClick={() => void navigateRemotePath(pathGoInput.trim() || '/')}
+        >
           Go
         </Button>
       </div>
@@ -2457,6 +3120,7 @@ export function SftpSessionPanel({
                   /* noop */
                 }
               }}
+              onDiffWithRemote={handleDiffFromLocal}
               onOpenFolder={(row) => setLocalCwd(row.path)}
               onGoUp={async () => {
                 if (!api?.localPathParent || !localRoot) return
@@ -2490,18 +3154,31 @@ export function SftpSessionPanel({
         )}
 
         <div
-          className={cn(
-            'flex flex-1 min-h-0 min-w-0 flex-col rounded-xl border border-border/50 p-2',
-            dropHighlightPath === '/' && 'ring-2 ring-primary/50',
-          )}
+          className="flex flex-1 min-h-0 min-w-0 flex-col rounded-xl border border-border/50 p-2 relative"
           data-tour="tour-sftp-remote"
           onDragOver={(e) => {
             if (selectMode) return
             e.preventDefault()
             e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
-            setDropHighlightPath('/')
+            // If dropHighlightPath is not set, initialize to '/'
+            if (!dropHighlightPath) {
+              setDropHighlightPath('/')
+            }
           }}
-          onDragLeave={() => setDropHighlightPath(null)}
+          onDragLeave={(e) => {
+            const next = e.relatedTarget as Node | null
+            if (next && e.currentTarget.contains(next)) return
+            const rect = e.currentTarget.getBoundingClientRect()
+            if (
+              e.clientX >= rect.left &&
+              e.clientX <= rect.right &&
+              e.clientY >= rect.top &&
+              e.clientY <= rect.bottom
+            ) {
+              return
+            }
+            setDropHighlightPath(null)
+          }}
           onDrop={(e) => {
             if (selectMode) return
             e.preventDefault()
@@ -2512,79 +3189,250 @@ export function SftpSessionPanel({
           <SftpFileTree
             className="flex-1 min-h-0"
             data={tree}
-              title="Remote"
-              selectedPath={selectedPath}
-              selectMode={selectMode}
-              selectedPaths={selectedPaths}
-              onTogglePath={togglePathSelection}
-              onSelect={handleSelectNode}
-              onToggleFolder={(n) => void handleToggleFolder(n)}
-              dropHighlightPath={dropHighlightPath}
-              onFolderDragOver={setDropHighlightPath}
-              onFolderDrop={(dir, ev) => void handleDropOnDir(dir, ev)}
-              onNodeDragStart={(node, ev) => {
-                ev.dataTransfer.setData(
-                  SFTP_DND_MIME,
-                  JSON.stringify({ path: node.path, name: node.name, type: node.type }),
-                )
-                ev.dataTransfer.effectAllowed = 'move'
-              }}
-              onNodeContextMenu={openRemoteCtxMenu}
-              sortKey={sortKey}
-              sortDir={sortDir}
-              foldersFirst={foldersFirst}
-              onSortChange={handleSortChange}
-              expandedPaths={expandedPaths}
-              onRequestCollapse={onRequestCollapse}
-              onCollapseAll={collapseAllFolders}
-              hideUnixMeta={protocol !== 'sftp'}
+            title="Remote"
+            selectedPath={selectedPath}
+            selectMode={selectMode}
+            selectedPaths={selectedPaths}
+            onTogglePath={togglePathSelection}
+            onSelect={handleSelectNode}
+            onToggleFolder={(n) => void handleToggleFolder(n)}
+            dropHighlightPath={dropHighlightPath}
+            onFolderDragOver={setDropHighlightPath}
+            onFolderDrop={(dir, ev) => {
+              setDropHighlightPath(null)
+              void handleDropOnDir(dir, ev)
+            }}
+            onNodeDragStart={(node, ev) => {
+              ev.dataTransfer.setData(
+                SFTP_DND_MIME,
+                JSON.stringify({ path: node.path, name: node.name, type: node.type }),
+              )
+              ev.dataTransfer.effectAllowed = 'move'
+            }}
+            onNodeContextMenu={openRemoteCtxMenu}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            foldersFirst={foldersFirst}
+            onSortChange={handleSortChange}
+            expandedPaths={expandedPaths}
+            onRequestCollapse={onRequestCollapse}
+            onCollapseAll={collapseAllFolders}
+            hideUnixMeta={protocol !== 'sftp'}
           />
+
+          {/* Transfer progress */}
+          <AnimatePresence>
+            {(liveUpload || transferQueue.some((t) => t.status === 'running')) && (() => {
+              const activeTransfers = transferQueue.filter((t) => t.status === 'running')
+              const queuedExtras = activeTransfers.filter((t) => t.id !== liveUpload?.id)
+              const doneCount = transferQueue.filter((t) => t.status === 'done').length
+              const errorCount = transferQueue.filter((t) => t.status === 'error').length
+              const KindIcon =
+                liveUpload
+                  ? UploadCloud
+                  : activeTransfers.some((t) => t.kind === 'download')
+                    ? DownloadCloud
+                    : activeTransfers.some((t) => t.kind === 'copy')
+                      ? Copy
+                      : UploadCloud
+              const statusLabel =
+                liveUpload?.status === 'completed'
+                  ? 'Complete'
+                  : liveUpload?.status === 'error'
+                    ? 'Failed'
+                    : liveUpload
+                      ? 'Uploading'
+                      : 'Transferring'
+              const accent =
+                liveUpload?.status === 'error'
+                  ? 'border-destructive/30'
+                  : liveUpload?.status === 'completed'
+                    ? 'border-border'
+                    : 'border-border'
+
+              return (
+                <motion.div
+                  key="transfer-dock"
+                  role="status"
+                  aria-live="polite"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 6 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className={cn(
+                    'absolute bottom-3 left-3 right-3 z-30 overflow-hidden rounded-lg border bg-card shadow-sm',
+                    accent,
+                  )}
+                >
+                  <div className="px-3 py-2.5 space-y-2.5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <KindIcon
+                          className={cn(
+                            'h-4 w-4 shrink-0',
+                            liveUpload?.status === 'error'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground',
+                          )}
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium leading-tight text-foreground">
+                            {liveUpload?.fileName ||
+                              (activeTransfers[0]?.label ?? 'Transfer')}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                            {statusLabel}
+                            {liveUpload?.targetDir
+                              ? ` · ${liveUpload.targetDir === '/' ? '/' : liveUpload.targetDir}`
+                              : activeTransfers.length > 1
+                                ? ` · ${activeTransfers.length} active`
+                                : null}
+                            {liveUpload?.totalFiles && liveUpload.totalFiles > 1
+                              ? ` · ${liveUpload.currentFileIndex}/${liveUpload.totalFiles}`
+                              : null}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {(doneCount > 0 || errorCount > 0) && (
+                          <span className="text-[10px] tabular-nums text-muted-foreground">
+                            {doneCount > 0 ? `${doneCount} done` : null}
+                            {doneCount > 0 && errorCount > 0 ? ' · ' : null}
+                            {errorCount > 0 ? (
+                              <span className="text-destructive">{errorCount} failed</span>
+                            ) : null}
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            'w-9 text-right font-mono text-xs tabular-nums',
+                            liveUpload?.status === 'error'
+                              ? 'text-destructive'
+                              : 'text-muted-foreground',
+                          )}
+                        >
+                          {liveUpload?.status === 'error'
+                            ? '—'
+                            : `${liveUpload?.progress ?? activeTransfers[0]?.progress ?? 0}%`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLiveUpload(null)
+                            setTransferQueue((q) => q.filter((t) => t.status === 'running'))
+                          }}
+                          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                          title="Dismiss"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {liveUpload && (
+                      <div className="space-y-1.5">
+                        {liveUpload.bytesTotal ? (
+                          <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                            {formatSftpSize(liveUpload.bytesLoaded ?? 0, false)}
+                            <span className="mx-1 text-muted-foreground/50">/</span>
+                            {formatSftpSize(liveUpload.bytesTotal, false)}
+                            {liveUpload.status === 'error' && liveUpload.error
+                              ? ` · ${liveUpload.error}`
+                              : null}
+                          </p>
+                        ) : liveUpload.status === 'error' && liveUpload.error ? (
+                          <p className="text-[10px] text-destructive">{liveUpload.error}</p>
+                        ) : null}
+                        <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
+                          <motion.div
+                            className={cn(
+                              'h-full rounded-full',
+                              liveUpload.status === 'error'
+                                ? 'bg-destructive'
+                                : liveUpload.status === 'completed'
+                                  ? 'bg-foreground/70'
+                                  : 'bg-primary',
+                            )}
+                            initial={false}
+                            animate={{ width: `${liveUpload.progress}%` }}
+                            transition={{ duration: 0.25, ease: 'easeOut' }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {queuedExtras.length > 0 && (
+                      <ul className="space-y-1.5 border-t border-border/60 pt-2">
+                        {queuedExtras.map((t) => {
+                          const Icon =
+                            t.kind === 'download'
+                              ? DownloadCloud
+                              : t.kind === 'copy'
+                                ? Copy
+                                : UploadCloud
+                          return (
+                            <li key={t.id} className="flex items-center gap-2">
+                              <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                              <span className="min-w-0 flex-1 truncate text-[11px] text-foreground">
+                                {t.label}
+                              </span>
+                              <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                                {t.progress}%
+                              </span>
+                              <div className="h-0.5 w-16 overflow-hidden rounded-full bg-muted">
+                                <div
+                                  className="h-full rounded-full bg-primary/80"
+                                  style={{ width: `${t.progress}%` }}
+                                />
+                              </div>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </motion.div>
+              )
+            })()}
+          </AnimatePresence>
         </div>
       </div>
 
-      {transferQueue.length > 0 && (
-        <div className="shrink-0 rounded-lg border border-border/50 bg-background/80">
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-accent/30"
-            onClick={() => setQueueOpen((o) => !o)}
-          >
-            <PanelBottom className="w-3.5 h-3.5" />
-            Transfers ({transferQueue.length})
-            {queueOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
-          </button>
-          {queueOpen && (
-            <ul className="max-h-32 overflow-y-auto border-t border-border/40 px-3 py-2 space-y-2 text-xs">
-              {transferQueue.map((t) => (
-                <li key={t.id} className="space-y-1">
-                  <div className="flex justify-between gap-2">
-                    <span className="truncate font-mono">{t.label}</span>
-                    <span
-                      className={cn(
-                        'shrink-0',
-                        t.status === 'error' && 'text-destructive',
-                        t.status === 'done' && 'text-emerald-600',
-                      )}
-                    >
-                      {t.status === 'running' && `${t.progress}%`}
-                      {t.status === 'done' && 'Done'}
-                      {t.status === 'error' && (t.error || 'Error')}
-                    </span>
-                  </div>
-                  {t.status === 'running' && (
-                    <div className="h-1 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all"
-                        style={{ width: `${t.progress}%` }}
-                      />
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+      {/* Compact transfer history — only when dock isn't showing */}
+      <AnimatePresence>
+        {transferQueue.length > 0 && !liveUpload && !transferQueue.some((t) => t.status === 'running') && (() => {
+          const done = transferQueue.filter((t) => t.status === 'done')
+          const errors = transferQueue.filter((t) => t.status === 'error')
+          return (
+            <motion.div
+              key="transfer-summary"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.15 }}
+              className="shrink-0 overflow-hidden"
+            >
+              <div className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-muted/20 px-2.5 py-1.5 text-xs text-muted-foreground">
+                <span>
+                  {done.length > 0 ? `${done.length} completed` : null}
+                  {done.length > 0 && errors.length > 0 ? ' · ' : null}
+                  {errors.length > 0 ? (
+                    <span className="text-destructive">{errors.length} failed</span>
+                  ) : null}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTransferQueue([])}
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  title="Clear history"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            </motion.div>
+          )
+        })()}
+      </AnimatePresence>
 
       <Dialog open={migrateOpen} onOpenChange={setMigrateOpen}>
         <DialogContent className="sm:max-w-2xl">
@@ -2859,6 +3707,11 @@ export function SftpSessionPanel({
               void copyTextToClipboard(parentDir(ctxMenu.node.path), 'Parent directory copied')
             }
             onProperties={() => openPropertiesForNode(ctxMenu.node)}
+            onInspect={() => void handleInspectFile(ctxMenu.node)}
+            onDiff={() => void handleDiffFile(ctxMenu.node)}
+            onChecksum={() => void handleChecksumFile(ctxMenu.node)}
+            onToggleFavorite={() => handleToggleFavorite(ctxMenu.node.path)}
+            isFavorite={isFavorite(connectionKey, ctxMenu.node.path)}
           />,
           document.body,
         )}
@@ -2887,6 +3740,59 @@ export function SftpSessionPanel({
         defaultRootPath={uploadTargetDir}
         onGoToPath={(path) => void navigateRemotePath(path)}
         sftp={sftp}
+      />
+
+      <SftpFileViewerDialog
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+        filePath={viewerPath}
+        fileName={viewerName}
+        content={viewerContent}
+        isBinary={viewerIsBinary}
+        readOnly={false}
+        onSave={async (updated) => {
+          const client = sftpRef.current
+          if (!client || !viewerPath) throw new Error('Not connected')
+          if (client.writeTextFile) {
+            const w = await client.writeTextFile(viewerPath, updated)
+            if (!w.ok) throw new Error(w.error)
+          } else {
+            const b64 = btoa(unescape(encodeURIComponent(updated)))
+            const w = await client.writeFile(viewerPath, b64)
+            if (!w.ok) throw new Error(w.error)
+          }
+          setViewerContent(updated)
+          await refreshDirectory(parentDir(viewerPath), true)
+        }}
+        onSendToFixed={handleSendToFixed}
+        onSendToHandheld={handleSendToHandheld}
+      />
+
+      <SftpFileDiffDialog
+        open={diffOpen}
+        onOpenChange={setDiffOpen}
+        nameA={diffNameA}
+        contentA={diffContentA}
+        nameB={diffNameB}
+        contentB={diffContentB}
+        localFilePath={diffLocalPath}
+        expectedLocalName={selectedNode?.name}
+        localRows={localRows}
+        onLocalFileLoaded={(name, content, path) => {
+          setDiffNameB(`Local (${name})`)
+          setDiffContentB(content)
+          if (path) setDiffLocalPath(path)
+        }}
+      />
+
+      <SftpChecksumDialog
+        open={checksumOpen}
+        onOpenChange={setChecksumOpen}
+        fileName={checksumName}
+        remotePath={checksumPath}
+        remoteContentBase64={checksumBase64}
+        localFilePath={checksumLocalPath}
+        localFileName={checksumLocalName}
       />
     </div>
   )

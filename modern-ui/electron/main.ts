@@ -151,9 +151,15 @@ import {
 } from './popout-windows.js'
 import { broadcastToAllWindows } from './window-broadcast.js'
 
-// Load environment variables
 import dotenv from 'dotenv'
 import fs from 'fs'
+import crypto from 'crypto'
+import http from 'http'
+
+// --- Automation Webhook & File Watcher Services ---
+let automationWebhookServer: http.Server | null = null
+let automationWebhookPort: number | null = null
+const automationFileWatchers = new Map<string, fs.FSWatcher>()
 
 // Dev: load .env from project root. Packaged: load .env from same folder as exe (user places it there)
 if (app.isPackaged) {
@@ -823,16 +829,13 @@ app.whenReady().then(() => {
       sftp: () => sftpUnlink(sessionId, remotePath),
     }),
   )
-  ipcMain.handle('sftp-rmrf', async (event, sessionId: string, remotePath: string) => {
-    if (!isAdminSender(event.sender)) {
-      return { ok: false as const, error: 'Admin login required' }
-    }
-    return dispatchRemote(sessionId, {
+  ipcMain.handle('sftp-rmrf', async (_event, sessionId: string, remotePath: string) =>
+    dispatchRemote(sessionId, {
       s3: () => s3Rmrf(sessionId, remotePath),
       ftp: () => ftpRmrf(sessionId, remotePath),
       sftp: () => sftpRmrf(sessionId, remotePath),
-    })
-  })
+    }),
+  )
   ipcMain.handle('sftp-stat', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
       s3: () => s3Stat(sessionId, remotePath),
@@ -983,6 +986,20 @@ app.whenReady().then(() => {
     return { ok: true as const, path: filePaths[0] }
   })
 
+  ipcMain.handle(
+    'local-pick-file',
+    async (event, options?: { title?: string; defaultPath?: string }) => {
+      const win = BrowserWindow.fromWebContents(event.sender)
+      const { canceled, filePaths } = await dialog.showOpenDialog(win ?? undefined, {
+        title: options?.title || 'Select File to Compare',
+        defaultPath: options?.defaultPath,
+        properties: ['openFile'],
+      })
+      if (canceled || !filePaths?.[0]) return { ok: false as const, cancelled: true as const }
+      return { ok: true as const, path: filePaths[0] }
+    },
+  )
+
   ipcMain.handle('local-readdir', async (_event, root: string, dirPath: string) =>
     localReaddir(root, dirPath),
   )
@@ -1037,6 +1054,279 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('net-scan-cancel', () => {
     cancelNetScan()
+    return { ok: true as const }
+  })
+
+  // --- Checksum & Integrity Verification ---
+  ipcMain.handle(
+    'file-calculate-checksum',
+    async (_event, payload: { filePath?: string; base64Content?: string }) => {
+      try {
+        let buf: Buffer
+        if (payload.base64Content) {
+          buf = Buffer.from(payload.base64Content, 'base64')
+        } else if (payload.filePath && fs.existsSync(payload.filePath)) {
+          buf = await fs.promises.readFile(payload.filePath)
+        } else {
+          return { ok: false as const, error: 'No valid file path or base64 content provided' }
+        }
+        const md5 = crypto.createHash('md5').update(buf).digest('hex')
+        const sha256 = crypto.createHash('sha256').update(buf).digest('hex')
+        const sha1 = crypto.createHash('sha1').update(buf).digest('hex')
+        return { ok: true as const, md5, sha256, sha1, size: buf.length }
+      } catch (e: any) {
+        return { ok: false as const, error: e?.message || String(e) }
+      }
+    },
+  )
+
+  // --- Local File Operations for File Nodes ---
+  ipcMain.handle(
+    'local-read-file',
+    async (_event, filePath: string, encoding: BufferEncoding = 'utf-8') => {
+      try {
+        if (!fs.existsSync(filePath)) {
+          return { ok: false as const, error: `File not found: ${filePath}` }
+        }
+        const content = await fs.promises.readFile(filePath, { encoding })
+        return { ok: true as const, content }
+      } catch (e: any) {
+        return { ok: false as const, error: e?.message || String(e) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'local-write-file',
+    async (_event, filePath: string, content: string, encoding: BufferEncoding = 'utf-8') => {
+      try {
+        await fs.promises.mkdir(path.dirname(filePath), { recursive: true })
+        await fs.promises.writeFile(filePath, content, { encoding })
+        return { ok: true as const }
+      } catch (e: any) {
+        return { ok: false as const, error: e?.message || String(e) }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'local-list-files',
+    async (_event, dirPath: string, pattern?: string) => {
+      try {
+        if (!fs.existsSync(dirPath)) {
+          return { ok: false as const, error: `Directory not found: ${dirPath}` }
+        }
+        const filenames = await fs.promises.readdir(dirPath)
+        let matches = filenames
+        if (pattern && pattern.trim()) {
+          const p = pattern.trim().toLowerCase()
+          if (p.startsWith('*.')) {
+            const ext = p.slice(1)
+            matches = filenames.filter((f) => f.toLowerCase().endsWith(ext))
+          } else if (p.includes('*')) {
+            const regex = new RegExp('^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$', 'i')
+            matches = filenames.filter((f) => regex.test(f))
+          } else {
+            matches = filenames.filter((f) => f.toLowerCase().includes(p))
+          }
+        }
+        return {
+          ok: true as const,
+          files: matches.map((name) => path.join(dirPath, name)),
+          filenames: matches,
+        }
+      } catch (e: any) {
+        return { ok: false as const, error: e?.message || String(e) }
+      }
+    },
+  )
+
+  // --- Automation Webhook Inbound Server ---
+  ipcMain.handle('automation-webhook-start', async (event, port: number = 8989) => {
+    if (automationWebhookServer) {
+      if (automationWebhookPort === port) {
+        return { ok: true as const, port: automationWebhookPort, message: 'Already listening' }
+      }
+      try {
+        automationWebhookServer.close()
+      } catch {
+        /* noop */
+      }
+      automationWebhookServer = null
+      automationWebhookPort = null
+    }
+
+    return new Promise<{ ok: boolean; port?: number; error?: string }>((resolve) => {
+      try {
+        const server = http.createServer((req, res) => {
+          res.setHeader('Access-Control-Allow-Origin', '*')
+          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+          res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With')
+
+          if (req.method === 'OPTIONS') {
+            res.writeHead(204)
+            res.end()
+            return
+          }
+
+          const chunks: Buffer[] = []
+          req.on('data', (c) => chunks.push(c))
+          req.on('end', () => {
+            const rawBody = Buffer.concat(chunks).toString('utf-8')
+            let parsedBody: any = rawBody
+            try {
+              if (rawBody.trim().startsWith('{') || rawBody.trim().startsWith('[')) {
+                parsedBody = JSON.parse(rawBody)
+              }
+            } catch {
+              /* keep string */
+            }
+
+            const parsedUrl = new URL(req.url || '/', `http://localhost:${port}`)
+            const queryParams: Record<string, string> = {}
+            parsedUrl.searchParams.forEach((v, k) => {
+              queryParams[k] = v
+            })
+
+            const payload = {
+              port,
+              method: req.method || 'POST',
+              path: parsedUrl.pathname,
+              query: queryParams,
+              headers: req.headers,
+              body: parsedBody,
+              rawBody,
+              timestamp: Date.now(),
+            }
+
+            event.sender.send('automation-webhook-received', payload)
+
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ ok: true, received: true, timestamp: Date.now() }))
+          })
+        })
+
+        server.on('error', (err: any) => {
+          automationWebhookServer = null
+          automationWebhookPort = null
+          resolve({ ok: false, error: err?.message || 'Server error' })
+        })
+
+        server.listen(port, '0.0.0.0', () => {
+          automationWebhookServer = server
+          automationWebhookPort = port
+          resolve({ ok: true, port })
+        })
+      } catch (e: any) {
+        resolve({ ok: false, error: e?.message || String(e) })
+      }
+    })
+  })
+
+  ipcMain.handle('automation-webhook-stop', async () => {
+    if (automationWebhookServer) {
+      try {
+        automationWebhookServer.close()
+      } catch {
+        /* noop */
+      }
+      automationWebhookServer = null
+      automationWebhookPort = null
+    }
+    return { ok: true as const }
+  })
+
+  ipcMain.handle('automation-webhook-status', () => {
+    return {
+      ok: true as const,
+      running: Boolean(automationWebhookServer),
+      port: automationWebhookPort,
+    }
+  })
+
+  // --- Automation File Watcher ---
+  ipcMain.handle(
+    'automation-file-watch-start',
+    async (event, watchId: string, dirPath: string, pattern?: string) => {
+      try {
+        if (!fs.existsSync(dirPath)) {
+          return { ok: false as const, error: `Directory does not exist: ${dirPath}` }
+        }
+        if (automationFileWatchers.has(watchId)) {
+          try {
+            automationFileWatchers.get(watchId)?.close()
+          } catch {
+            /* noop */
+          }
+          automationFileWatchers.delete(watchId)
+        }
+
+        const debounceMap = new Map<string, NodeJS.Timeout>()
+
+        const watcher = fs.watch(dirPath, (eventType, filename) => {
+          if (!filename) return
+          if (pattern && pattern.trim()) {
+            const p = pattern.trim().toLowerCase()
+            if (p.startsWith('*.')) {
+              if (!filename.toLowerCase().endsWith(p.slice(1))) return
+            } else if (p.includes('*')) {
+              const regex = new RegExp(
+                '^' + p.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$',
+                'i',
+              )
+              if (!regex.test(filename)) return
+            } else if (!filename.toLowerCase().includes(p)) {
+              return
+            }
+          }
+
+          const fullPath = path.join(dirPath, filename)
+          const key = `${eventType}:${fullPath}`
+          if (debounceMap.has(key)) {
+            clearTimeout(debounceMap.get(key)!)
+          }
+          debounceMap.set(
+            key,
+            setTimeout(async () => {
+              debounceMap.delete(key)
+              let size = 0
+              try {
+                const st = await fs.promises.stat(fullPath)
+                size = st.size
+              } catch {
+                /* deleted */
+              }
+
+              event.sender.send('automation-file-watch-event', {
+                watchId,
+                eventType,
+                filename,
+                dirPath,
+                fullPath,
+                size,
+                timestamp: Date.now(),
+              })
+            }, 300),
+          )
+        })
+
+        automationFileWatchers.set(watchId, watcher)
+        return { ok: true as const }
+      } catch (e: any) {
+        return { ok: false as const, error: e?.message || String(e) }
+      }
+    },
+  )
+
+  ipcMain.handle('automation-file-watch-stop', async (_event, watchId: string) => {
+    if (automationFileWatchers.has(watchId)) {
+      try {
+        automationFileWatchers.get(watchId)?.close()
+      } catch {
+        /* noop */
+      }
+      automationFileWatchers.delete(watchId)
+    }
     return { ok: true as const }
   })
 
@@ -1568,6 +1858,22 @@ app.on('window-all-closed', () => {
   void sftpDisconnectAll()
   void s3DisconnectAll()
   void ftpDisconnectAll()
+  if (automationWebhookServer) {
+    try {
+      automationWebhookServer.close()
+    } catch {
+      /* noop */
+    }
+    automationWebhookServer = null
+  }
+  for (const watcher of automationFileWatchers.values()) {
+    try {
+      watcher.close()
+    } catch {
+      /* noop */
+    }
+  }
+  automationFileWatchers.clear()
 
   if (process.platform !== 'darwin') {
     app.quit()

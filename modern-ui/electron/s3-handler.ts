@@ -466,8 +466,7 @@ export async function s3ReadFile(
     if (isMostlyText(buf)) {
       return { ok: true, text: buf.toString('utf8'), isBinary: false, size: buf.length }
     }
-    const preview = buf.subarray(0, Math.min(buf.length, 512))
-    return { ok: true, isBinary: true, size: buf.length, previewBase64: preview.toString('base64') }
+    return { ok: true, isBinary: true, size: buf.length, previewBase64: buf.toString('base64') }
   } catch (e) {
     return { ok: false, error: errMsg(e) }
   }

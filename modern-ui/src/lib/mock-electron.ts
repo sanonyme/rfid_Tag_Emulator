@@ -620,6 +620,9 @@ class MockElectronAPI implements ElectronAPI {
   async localPickFolder() {
     return { ok: false as const, cancelled: true as const }
   }
+  async localPickFile(_options?: { title?: string; defaultPath?: string }) {
+    return { ok: false as const, cancelled: true as const }
+  }
   async localReaddir(_root: string, _dirPath: string) {
     return this.sftpUnavailable()
   }

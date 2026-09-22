@@ -505,19 +505,34 @@ button, a, input, select, textarea {
   contain-intrinsic-size: auto 2rem;
 }
 
-/* Page transition - fade + subtle lift when a tab becomes active */
+/* Page transition - hardware accelerated fade + subtle lift when a tab becomes active */
 [data-state="active"].tab-content-animate {
-  animation: tabSlideIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: tabSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 @keyframes tabSlideIn {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.995);
+    transform: translateY(4px) scale(0.998) translateZ(0);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) scale(1) translateZ(0);
   }
+}
+
+/* Tab panel layout & rendering containment for 60+ FPS tab performance */
+.tab-content-panel[data-state="inactive"] {
+  display: none !important;
+  content-visibility: hidden;
+  contain: strict;
+}
+
+.tab-content-panel[data-state="active"] {
+  content-visibility: visible;
+  contain: layout style;
 }
 
 /*

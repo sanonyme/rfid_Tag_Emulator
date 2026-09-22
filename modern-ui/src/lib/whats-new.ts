@@ -22,6 +22,28 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.2.3',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'Files: resizable columns',
+        detail: 'Name fills the panel; drag Size/Changed (and other) boundaries to resize. Headers stay aligned with the rows.',
+      },
+      {
+        title: 'Files: delete folders without admin',
+        detail: 'Recursive folder delete works for any connected session — no admin login required.',
+      },
+      {
+        title: 'Files: view, diff, checksum, favorites',
+        detail: 'Open remote files in a viewer, compare with local, checksum, and star favorite paths.',
+      },
+      {
+        title: 'Automation: triggers and variables',
+        detail: 'Workflow triggers dialog and variable autocomplete when configuring nodes.',
+      },
+    ],
+  },
+  {
     version: '10.2.2',
     date: '2026-09',
     highlights: [
