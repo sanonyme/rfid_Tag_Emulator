@@ -135,10 +135,10 @@ export function SftpChecksumDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl bg-background p-0 overflow-hidden">
-        <DialogHeader className="p-4 border-b border-border/50">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-primary" />
-            <div>
+        <DialogHeader className="p-4 pr-12 border-b border-border/50">
+          <div className="flex items-center gap-2 min-w-0">
+            <ShieldCheck className="w-5 h-5 text-primary shrink-0" />
+            <div className="min-w-0 pr-2">
               <DialogTitle className="text-base font-semibold">
                 File Integrity & Checksums
               </DialogTitle>

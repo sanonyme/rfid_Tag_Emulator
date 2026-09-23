@@ -285,7 +285,7 @@ export function SftpFileViewerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-background">
-        <DialogHeader className="p-4 border-b border-border/50 shrink-0">
+        <DialogHeader className="p-4 pr-12 border-b border-border/50 shrink-0">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0">
               <FileText className="w-5 h-5 text-primary shrink-0" />
@@ -299,8 +299,8 @@ export function SftpFileViewerDialog({
               </div>
             </div>
 
-            {/* View Mode Selector Tabs */}
-            <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-lg border border-border/50 shrink-0">
+            {/* View Mode Selector Tabs — keep clear of DialogContent close (absolute right-4 top-4) */}
+            <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-lg border border-border/50 shrink-0 mr-1">
               {(isCsv || isTsv) && (
                 <Button
                   variant={mode === 'table' ? 'secondary' : 'ghost'}
