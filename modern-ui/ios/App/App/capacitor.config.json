@@ -1,20 +1,6 @@
 {
 	"appId": "com.edge.rfidemulator",
-	"appName": "Zeus",
+	"appName": "Zeus RFID Emulator",
 	"webDir": "dist",
-	"zoomEnabled": false,
-	"ios": {
-		"zoomEnabled": false
-	},
-	"android": {
-		"zoomEnabled": false
-	},
-	"plugins": {
-		"CapacitorHttp": {
-			"enabled": true
-		}
-	},
-	"packageClassList": [
-		"HapticsPlugin"
-	]
+	"packageClassList": []
 }
