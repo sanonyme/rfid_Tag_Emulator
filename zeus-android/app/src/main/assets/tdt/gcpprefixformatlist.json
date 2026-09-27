@@ -1,0 +1,17 @@
+{
+  "GCPPrefixFormatList": {
+    "date": "2026-09-24",
+    "entry": [
+      { "prefix": "00", "gcpLength": 12 },
+      { "prefix": "01", "gcpLength": 11 },
+      { "prefix": "02", "gcpLength": 10 },
+      { "prefix": "03", "gcpLength": 9 },
+      { "prefix": "04", "gcpLength": 8 },
+      { "prefix": "05", "gcpLength": 7 },
+      { "prefix": "06", "gcpLength": 6 },
+      { "prefix": "07", "gcpLength": 7 },
+      { "prefix": "08", "gcpLength": 8 },
+      { "prefix": "09", "gcpLength": 9 }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Zeus RFID</string>
+    <string name="hce_service_desc">Zeus NFC Tag Emulation Service</string>
+    <string name="hce_aid_desc">Zeus NFC Forum Type 4 Tag Emulation</string>
+</resources>
