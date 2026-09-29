@@ -14,8 +14,6 @@ import {
   Server,
   Plus,
   Trash2,
-  Upload,
-  Download,
   Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -25,7 +23,6 @@ import { formatTime, cn } from '@/lib/utils'
 import { TagPresetMenu, type TagPresetMenuHandle } from './TagPresetMenu'
 import { TagSchemeGenerator } from './TagSchemeGenerator'
 import { InditexTempeGenerator } from './InditexTempeGenerator'
-import { TagListSummary } from './TagListSummary'
 import { SendButton, LoopSendButton } from './SendControls'
 import { sectionCard } from '@/lib/ui-tokens'
 import { handheldAccent } from '@/lib/handheld-colors'
@@ -563,10 +560,9 @@ function HandheldSlotCard({
   onStopSend,
   canRemove,
 }: HandheldSlotCardProps) {
-  const fileInputUpcRef = useRef<HTMLInputElement>(null)
-  const fileInputEpcRef = useRef<HTMLInputElement>(null)
   const upcPresetRef = useRef<TagPresetMenuHandle>(null)
   const epcPresetRef = useRef<TagPresetMenuHandle>(null)
+  const [inputMode, setInputMode] = useState<'upc' | 'epc'>('upc')
   const accent = handheldAccent(slot.port || slot.id)
   const debouncedSlot = useDebouncedValue(slot, 200)
   const hasTags = useMemo(() => countHandheldSlotTags(debouncedSlot) > 0, [debouncedSlot])
@@ -588,58 +584,14 @@ function HandheldSlotCard({
     onLoop: canLoop ? (isSending ? onStopSend : onLoopSend) : undefined,
   })
 
-  const handleImportUpc = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const content = ev.target?.result as string
-      if (content) onUpdate({ upcList: content })
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
-
-  const handleExportUpc = () => {
-    const blob = new Blob([slot.upcList], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `upc_port${slot.port}_${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const handleImportEpc = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      const content = ev.target?.result as string
-      if (content) onUpdate({ epcList: content })
-    }
-    reader.readAsText(file)
-    e.target.value = ''
-  }
-
-  const handleExportEpc = () => {
-    const blob = new Blob([slot.epcList], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `epc_port${slot.port}_${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
   return (
     <Card
       className={cn(sectionCard, 'relative flex min-h-0 flex-col overflow-hidden')}
       style={{ borderTopColor: accent.color, borderTopWidth: 2 }}
     >
-      <CardHeader className="shrink-0 px-4 pb-3 pt-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
+      <CardHeader className="shrink-0 space-y-3 border-b border-border/40 bg-muted/10 px-4 pb-3 pt-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
             <div
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
               style={{ backgroundColor: accent.tint, color: accent.color, boxShadow: `inset 0 0 0 1px ${accent.ring}` }}
@@ -647,112 +599,182 @@ function HandheldSlotCard({
               <Smartphone className="h-4 w-4" />
             </div>
             <div className="min-w-0">
-              <CardTitle className="truncate text-base font-semibold tracking-tight">Port {slot.port}</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle className="truncate text-base font-semibold tracking-tight">
+                  Port {slot.port}
+                </CardTitle>
+                {isRunning ? (
+                  <Badge
+                    variant="outline"
+                    className="inline-flex shrink-0 items-center gap-1.5 border-success/40 bg-success/10 py-0 px-2 text-[10px] text-success"
+                  >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current shadow-[0_0_6px_hsl(var(--success)/0.85)]" />
+                    Listening
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-border/50 bg-background/60 py-0 px-2 text-[10px] font-normal text-muted-foreground"
+                  >
+                    Idle
+                  </Badge>
+                )}
+              </div>
+              <CardDescription className="mt-0.5 text-[11px] leading-relaxed">
+                VSBL Debug → this machine on{' '}
+                <span className="font-mono text-foreground/85">:{slot.port}</span>
+              </CardDescription>
             </div>
-            {isRunning && (
-              <Badge
-                variant="outline"
-                className="inline-flex shrink-0 items-center gap-1.5 border-success/40 bg-success/10 py-0 px-2 text-xs text-success"
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-0.5">
+            {inputMode === 'epc' ? (
+              <>
+                <InditexTempeGenerator
+                  variant="compact"
+                  onGenerated={(epcs) =>
+                    onUpdate({
+                      epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
+                    })
+                  }
+                />
+                <TagSchemeGenerator
+                  variant="compact"
+                  onGenerated={(epcs) =>
+                    onUpdate({
+                      epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
+                    })
+                  }
+                />
+                <TagPresetMenu
+                  ref={epcPresetRef}
+                  kind="epc"
+                  variant="compact"
+                  currentValue={slot.epcList}
+                  onLoad={(content, mode) =>
+                    onUpdate({
+                      epcList: mode === 'append' && slot.epcList ? slot.epcList + '\n' + content : content,
+                    })
+                  }
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="EPC line format"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-xs">
+                    <p className="font-mono text-[11px]">EPC[,TID[,userdata]]</p>
+                    <p className="mt-1 text-muted-foreground">
+                      TID and userdata are optional hex. Example:{' '}
+                      <span className="font-mono">3034…,,DEADBEEF</span>
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            ) : (
+              <>
+                <TagPresetMenu
+                  ref={upcPresetRef}
+                  kind="upc"
+                  variant="compact"
+                  currentValue={slot.upcList}
+                  onLoad={(content, mode) =>
+                    onUpdate({
+                      upcList: mode === 'append' && slot.upcList ? slot.upcList + '\n' + content : content,
+                    })
+                  }
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      aria-label="UPC line format"
+                    >
+                      <Info className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="max-w-xs text-xs">
+                    <p className="font-mono text-[11px]">UPC,Count,TID[,userdata]</p>
+                    <p className="mt-1 text-muted-foreground">
+                      TID and userdata are optional hex. Example:{' '}
+                      <span className="font-mono">12345,5,,DEADBEEF</span>
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
+            {canRemove && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-md text-muted-foreground hover:text-destructive"
+                onClick={onRemove}
+                aria-label={`Remove port ${slot.port}`}
               >
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current shadow-[0_0_6px_hsl(var(--success)/0.85)]" />
-                Running
-              </Badge>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             )}
           </div>
-          {canRemove && (
-            <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0 rounded-lg" onClick={onRemove}>
-              <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-            </Button>
-          )}
         </div>
-        <CardDescription className="mt-1.5 text-xs leading-relaxed">
-          VSBL Debug → this machine on port <span className="font-mono text-foreground/90">{slot.port}</span>
-        </CardDescription>
-      </CardHeader>
 
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
-        {/* Port + Server row */}
-        <div className="flex shrink-0 gap-2">
-          <Input
-            type="number"
-            value={slot.port}
-            onChange={(e) => onUpdate({ port: parseInt(e.target.value) || DEFAULT_PORT })}
-            className="h-9 w-[6rem] rounded-lg border-border/50 font-mono text-sm shadow-none"
-            min={1024}
-            max={65535}
-          />
+        <div className="flex items-center gap-2 rounded-xl border border-border/50 bg-background/70 p-1.5 shadow-sm ring-1 ring-border/20">
+          <div className="flex min-w-0 flex-1 items-center gap-2 pl-1.5">
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Listen
+            </span>
+            <Input
+              type="number"
+              value={slot.port}
+              onChange={(e) => onUpdate({ port: parseInt(e.target.value) || DEFAULT_PORT })}
+              className="h-8 min-w-0 flex-1 rounded-md border-border/40 bg-muted/20 font-mono text-sm shadow-none"
+              min={1024}
+              max={65535}
+              aria-label="Handheld listen port"
+            />
+          </div>
           <Button
             onClick={isRunning ? onStop : onStart}
             size="sm"
             variant={isRunning ? 'outline' : 'default'}
-            className={cn('flex-1 gap-1.5 rounded-lg', !isRunning && 'shadow-sm shadow-primary/20')}
+            className={cn(
+              'h-8 shrink-0 gap-1.5 rounded-lg px-3',
+              !isRunning && 'shadow-sm shadow-primary/20',
+            )}
           >
             <Server className="h-3.5 w-3.5" />
-            {isRunning ? 'Stop server' : 'Start server'}
+            {isRunning ? 'Stop' : 'Start server'}
           </Button>
         </div>
+      </CardHeader>
 
-        {/* UPC / EPC tabs - full width textareas */}
-        <Tabs defaultValue="upc" className="w-full" data-tour="tour-handheld-input-modes">
-          <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg bg-muted/50 p-1 ring-1 ring-border/40">
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4 pt-3">
+        <Tabs
+          value={inputMode}
+          onValueChange={(v) => setInputMode(v === 'epc' ? 'epc' : 'upc')}
+          className="flex min-h-0 w-full flex-1 flex-col"
+          data-tour="tour-handheld-input-modes"
+        >
+          <TabsList className="grid h-auto w-full shrink-0 grid-cols-2 rounded-xl bg-muted/45 p-1 ring-1 ring-border/35">
             <TabsTrigger
               value="upc"
-              className="rounded-md text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow data-[state=active]:ring-1 data-[state=active]:ring-border/50"
+              className="rounded-lg text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-border/50"
             >
               UPC → EPC
             </TabsTrigger>
             <TabsTrigger
               value="epc"
-              className="rounded-md text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow data-[state=active]:ring-1 data-[state=active]:ring-border/50"
+              className="rounded-lg text-xs font-medium text-muted-foreground data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm data-[state=active]:ring-1 data-[state=active]:ring-border/50"
             >
               Direct EPC
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="upc" className="mt-3">
-            <div className="mb-2 flex items-center justify-end gap-1">
-              <TagListSummary value={slot.upcList} kind="upc" variant="compact" />
-              <TagPresetMenu
-                ref={upcPresetRef}
-                kind="upc"
-                variant="compact"
-                currentValue={slot.upcList}
-                onLoad={(content, mode) =>
-                  onUpdate({
-                    upcList: mode === 'append' && slot.upcList ? slot.upcList + '\n' + content : content,
-                  })
-                }
-              />
-              <input type="file" ref={fileInputUpcRef} onChange={handleImportUpc} className="hidden" accept=".txt,.csv" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 rounded-md text-xs"
-                onClick={() => fileInputUpcRef.current?.click()}
-              >
-                <Upload className="h-3 w-3" /> Import
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportUpc}>
-                <Download className="h-3 w-3" /> Export
-              </Button>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label="UPC line format"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs text-xs">
-                  <p className="font-mono text-[11px]">UPC,Count,TID[,userdata]</p>
-                  <p className="mt-1 text-muted-foreground">
-                    TID and userdata are optional hex. Example:{' '}
-                    <span className="font-mono">12345,5,,DEADBEEF</span>
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
+
+          <TabsContent value="upc" className="mt-3 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
             <ExpandableTagField
               dialogTitle={`UPC → EPC — port ${slot.port}`}
               dialogDescription="UPC,Count,TID[,userdata] (one per line) — CSV columns auto-detected on drop"
@@ -764,85 +786,34 @@ function HandheldSlotCard({
               kind="upc"
               onKeyDown={upcShortcuts}
               placeholder="00000000000000,5"
-              compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
-            />
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <label htmlFor={`start-serial-${slot.id}`} className="shrink-0 text-xs text-muted-foreground">
-                Start serial
-              </label>
-              <Input
-                id={`start-serial-${slot.id}`}
-                type="number"
-                min={1}
-                max={999999999}
-                value={slot.startSerial ?? '1'}
-                onChange={(e) => onUpdate({ startSerial: e.target.value })}
-                className="h-8 w-28 rounded-lg font-mono text-xs shadow-none"
-                title="Starting SGTIN-96 serial; combined with serial mode in the toolbar"
-              />
-            </div>
-          </TabsContent>
-          <TabsContent value="epc" className="mt-3">
-            <div className="mb-2 flex items-center justify-end gap-1">
-              <TagListSummary value={slot.epcList} kind="epc" variant="compact" />
-              <InditexTempeGenerator
-                variant="compact"
-                onGenerated={(epcs) =>
-                  onUpdate({
-                    epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
-                  })
-                }
-              />
-              <TagSchemeGenerator
-                variant="compact"
-                onGenerated={(epcs) =>
-                  onUpdate({
-                    epcList: slot.epcList ? slot.epcList + '\n' + epcs : epcs,
-                  })
-                }
-              />
-              <TagPresetMenu
-                ref={epcPresetRef}
-                kind="epc"
-                variant="compact"
-                currentValue={slot.epcList}
-                onLoad={(content, mode) =>
-                  onUpdate({
-                    epcList: mode === 'append' && slot.epcList ? slot.epcList + '\n' + content : content,
-                  })
-                }
-              />
-              <input type="file" ref={fileInputEpcRef} onChange={handleImportEpc} className="hidden" accept=".txt,.csv" />
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 rounded-md text-xs"
-                onClick={() => fileInputEpcRef.current?.click()}
-              >
-                <Upload className="h-3 w-3" /> Import
-              </Button>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-md text-xs" onClick={handleExportEpc}>
-                <Download className="h-3 w-3" /> Export
-              </Button>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    aria-label="EPC line format"
+              compactClassName="min-h-[110px] resize-y bg-muted/10 font-mono text-xs"
+              attachedFooter={
+                <div className="flex flex-wrap items-center gap-2">
+                  <label
+                    htmlFor={`start-serial-${slot.id}`}
+                    className="shrink-0 text-[11px] font-medium text-muted-foreground"
                   >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="max-w-xs text-xs">
-                  <p className="font-mono text-[11px]">EPC[,TID[,userdata]]</p>
-                  <p className="mt-1 text-muted-foreground">
-                    TID and userdata are optional hex. Example:{' '}
-                    <span className="font-mono">3034…,,DEADBEEF</span>
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </div>
+                    Start serial
+                  </label>
+                  <Input
+                    id={`start-serial-${slot.id}`}
+                    type="number"
+                    min={1}
+                    max={999999999}
+                    value={slot.startSerial ?? '1'}
+                    onChange={(e) => onUpdate({ startSerial: e.target.value })}
+                    className="h-7 w-24 rounded-md border-border/40 bg-background/90 font-mono text-xs shadow-none"
+                    title="Starting SGTIN-96 serial; combined with serial mode in the toolbar"
+                  />
+                  <span className="hidden text-[10px] text-muted-foreground/75 sm:inline">
+                    SGTIN start for UPC lines
+                  </span>
+                </div>
+              }
+            />
+          </TabsContent>
+
+          <TabsContent value="epc" className="mt-3 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
             <ExpandableTagField
               dialogTitle={`Direct EPC — port ${slot.port}`}
               dialogDescription="EPC[,TID[,userdata]] (one per line) — CSV columns auto-detected on drop"
@@ -854,13 +825,12 @@ function HandheldSlotCard({
               kind="epc"
               onKeyDown={epcShortcuts}
               placeholder={'3034...\n3035...,CustomTID'}
-              compactClassName="min-h-[110px] resize-y rounded-lg border-border/50 bg-muted/10 font-mono text-xs"
+              compactClassName="min-h-[110px] resize-y bg-muted/10 font-mono text-xs"
             />
           </TabsContent>
         </Tabs>
 
-        {/* Send row — standardized with the Fixed tab: Send + Loop Send / Stop */}
-        <div className="flex shrink-0 flex-col gap-2 pt-1 sm:flex-row sm:items-stretch">
+        <div className="flex shrink-0 flex-col gap-2 border-t border-border/40 pt-3 sm:flex-row sm:items-stretch">
           <SendButton
             ripple
             size="sm"

@@ -30,6 +30,11 @@ export interface ExpandableTagFieldProps {
   onKeyDown?: React.KeyboardEventHandler<HTMLTextAreaElement>
   /** Extra icon buttons stacked under the expand control (top-right of compact field). */
   cornerActions?: React.ReactNode
+  /**
+   * Flush footer under the shared field border (above UPC check-digit when present).
+   * Use for controls that should feel attached to the box above (e.g. Start serial).
+   */
+  attachedFooter?: React.ReactNode
   /** Grow the compact textarea to fill leftover card height. */
   fill?: boolean
 }
@@ -45,6 +50,7 @@ export function ExpandableTagField({
   kind,
   onKeyDown,
   cornerActions,
+  attachedFooter,
   fill = false,
 }: ExpandableTagFieldProps) {
   const [open, setOpen] = useState(false)
@@ -139,6 +145,9 @@ export function ExpandableTagField({
               </Tooltip>
             </div>
           </div>
+          {attachedFooter ? (
+            <div className="border-t border-border/50 bg-muted/20 px-3 py-1.5">{attachedFooter}</div>
+          ) : null}
           {showUpcCheckDigitHints && (
             <UpcCheckDigitHint value={value} activeLine={activeLine} variant="attached" />
           )}
