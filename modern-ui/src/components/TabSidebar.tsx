@@ -27,6 +27,8 @@ import { cn } from '@/lib/utils'
 import { IS_MOBILE } from '@/lib/platform'
 import { PopOutButton } from './PopOutButton'
 import { isPopoutableTab } from '@/lib/popout-tabs'
+import { GenModeHoverTarget } from './GenModeFlyout'
+import type { GenMode } from '@/lib/gen-modes'
 
 type TabItem = { value: string; label: string; icon: LucideIcon; badge?: string }
 type TabGroup = { id: string; label: string; items: TabItem[] }
@@ -74,34 +76,54 @@ const ADMIN_GROUP: TabGroup = {
   ],
 }
 
-const STORAGE_KEY = 'admin-sidebar-expanded'
+const STORAGE_KEY = 'tab-sidebar-expanded'
+const LEGACY_STORAGE_KEY = 'admin-sidebar-expanded'
 
 interface TabSidebarProps {
   value: string
   className?: string
   poppedOutTabs?: Set<string>
   onPopOut?: (tabId: string) => void
+  /** When true, include Admin tools and use the Admin brand. */
+  isAdmin?: boolean
+  /** Force collapsed icon-only rail (settings: icon-rail). */
+  forceCollapsed?: boolean
+  genMode?: GenMode
+  onGenModeChange?: (mode: GenMode) => void
 }
 
-export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSidebarProps) {
-  const [expanded, setExpanded] = useState(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      return raw == null ? true : raw !== 'false'
-    } catch {
-      return true
-    }
-  })
+function readExpandedPreference(): boolean {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
+    return raw == null ? true : raw !== 'false'
+  } catch {
+    return true
+  }
+}
+
+export function TabSidebar({
+  value,
+  className,
+  poppedOutTabs,
+  onPopOut,
+  isAdmin = false,
+  forceCollapsed = false,
+  genMode = 'barcode',
+  onGenModeChange,
+}: TabSidebarProps) {
+  const [expandedPref, setExpandedPref] = useState(readExpandedPreference)
+  const expanded = forceCollapsed ? false : expandedPref
 
   useEffect(() => {
+    if (forceCollapsed) return
     try {
-      localStorage.setItem(STORAGE_KEY, String(expanded))
+      localStorage.setItem(STORAGE_KEY, String(expandedPref))
     } catch {
       /* ignore */
     }
-  }, [expanded])
+  }, [expandedPref, forceCollapsed])
 
-  const groups = [...GROUPS, ADMIN_GROUP]
+  const groups = [...GROUPS, ...(isAdmin ? [ADMIN_GROUP] : [])]
     .map((g) => ({
       ...g,
       items: IS_MOBILE
@@ -110,10 +132,13 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
     }))
     .filter((g) => g.items.length > 0)
 
-  const ToggleButton = (
+  const brandLabel = isAdmin ? 'Admin' : 'Menu'
+  const BrandIcon = isAdmin ? Shield : Layers
+
+  const ToggleButton = forceCollapsed ? null : (
     <button
       type="button"
-      onClick={() => setExpanded((v) => !v)}
+      onClick={() => setExpandedPref((v) => !v)}
       title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
       aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
       className={cn(
@@ -135,16 +160,17 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
     <LayoutGroup id="tab-sidebar">
       <aside
         data-tour="tour-tab-nav"
-        aria-label="Admin navigation"
+        aria-label={isAdmin ? 'Admin navigation' : 'App navigation'}
         className={cn(
           'relative flex flex-col shrink-0 border-r border-border/50',
           'bg-gradient-to-b from-background/85 to-background/60 backdrop-blur-sm',
-          'transition-[width] duration-300 ease-out overflow-hidden',
-          expanded ? 'w-56' : 'w-[3.5rem]',
+          'transition-[width] duration-300 ease-out',
+          // Allow Gen hover flyout to escape sideways; list still scrolls vertically.
+          expanded ? 'w-56 overflow-visible' : 'w-[3.5rem] overflow-visible',
           className,
         )}
       >
-        {/* Header: Admin brand + expand/collapse toggle */}
+        {/* Header: brand + expand/collapse toggle */}
         <div
           className={cn(
             'flex items-center border-b border-border/40 shrink-0 h-12',
@@ -155,16 +181,20 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
             <>
               <div className="flex items-center gap-2 min-w-0">
                 <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 ring-1 ring-primary/20">
-                  <Shield className="w-4 h-4 text-primary" strokeWidth={2.5} />
+                  <BrandIcon className="w-4 h-4 text-primary" strokeWidth={2.5} />
                 </div>
                 <span className="text-[11px] font-bold tracking-[0.1em] uppercase text-foreground/80 truncate">
-                  Admin
+                  {brandLabel}
                 </span>
               </div>
               {ToggleButton}
             </>
           ) : (
-            ToggleButton
+            ToggleButton ?? (
+              <div className="w-7 h-7 rounded-lg bg-primary/15 flex items-center justify-center shrink-0 ring-1 ring-primary/20">
+                <BrandIcon className="w-4 h-4 text-primary" strokeWidth={2.5} />
+              </div>
+            )
           )}
         </div>
 
@@ -172,7 +202,7 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
         <TabsList
           className={cn(
             'flex-1 flex flex-col items-stretch gap-0 bg-transparent h-auto rounded-none',
-            'overflow-y-auto overflow-x-hidden py-2',
+            'overflow-y-auto overflow-x-visible py-2',
             expanded ? 'px-2' : 'px-2',
           )}
         >
@@ -199,11 +229,10 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                   const Icon = item.icon
                   const isActive = value === item.value
                   const canPopOut = Boolean(onPopOut && isPopoutableTab(item.value))
-                  return (
-                    <div
-                      key={item.value}
-                      className={cn('flex items-center gap-0.5', expanded && canPopOut ? 'w-full' : expanded ? 'w-full' : 'justify-center')}
-                    >
+                  const isGen = item.value === 'generator' && Boolean(onGenModeChange)
+
+                  const row = (
+                    <>
                     <TabsTrigger
                       value={item.value}
                       title={!expanded ? item.label : undefined}
@@ -223,11 +252,9 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                           'ring-1 ring-inset ring-primary/35 text-primary/80 hover:text-primary dark:ring-white/25',
                       )}
                     >
-                      {/* Hover wash (inactive only) */}
                       {!isActive && (
                         <span className="absolute inset-0 rounded-lg bg-foreground/0 group-hover:bg-foreground/5 transition-colors pointer-events-none" />
                       )}
-                      {/* Active indicator — soft tint + left accent bar */}
                       {isActive && (
                         <motion.div
                           layoutId="tab-sidebar-indicator"
@@ -283,6 +310,35 @@ export function TabSidebar({ value, className, poppedOutTabs, onPopOut }: TabSid
                         className="shrink-0 mr-0.5"
                       />
                     )}
+                    </>
+                  )
+
+                  if (isGen) {
+                    return (
+                      <GenModeHoverTarget
+                        key={item.value}
+                        mode={genMode}
+                        side="right"
+                        className={cn(
+                          'flex items-center gap-0.5',
+                          expanded && canPopOut ? 'w-full' : expanded ? 'w-full' : 'justify-center',
+                        )}
+                        onSelect={(mode) => onGenModeChange?.(mode)}
+                      >
+                        {row}
+                      </GenModeHoverTarget>
+                    )
+                  }
+
+                  return (
+                    <div
+                      key={item.value}
+                      className={cn(
+                        'flex items-center gap-0.5',
+                        expanded && canPopOut ? 'w-full' : expanded ? 'w-full' : 'justify-center',
+                      )}
+                    >
+                      {row}
                     </div>
                   )
                 })}

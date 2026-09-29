@@ -17,7 +17,8 @@ const BACKUP_KEYS = [
   'pinned-hosts',                 // ConnectionStatus pinned (★) hosts
   'db-query-history',             // DatabaseTab saved queries
   'db-read-only',                 // DatabaseTab toggle
-  'admin-sidebar-expanded',       // TabSidebar
+  'tab-sidebar-expanded',        // TabSidebar (narrow / admin)
+  'admin-sidebar-expanded',       // legacy TabSidebar key
   'rfid-emulator-last-seen-version',
 ] as const
 

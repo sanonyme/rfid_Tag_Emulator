@@ -336,7 +336,7 @@ function buildSteps(isAdmin: boolean): Step[] {
       target: '[data-tour="tour-gen-modes"]',
       placement: 'bottom',
       title: 'Generator — modes',
-      content: 'Barcodes, QR codes, or batch ZIP export from a value list.',
+      content: 'Hover Gen in the menu to pick Barcodes, QR codes, ZPL, or batch ZIP export.',
       data: { tab: 'generator' } satisfies TourStepData,
     },
     {
@@ -351,13 +351,6 @@ function buildSteps(isAdmin: boolean): Step[] {
       placement: 'left',
       title: 'Generator — preview',
       content: 'Live canvas with PNG download or copy-to-clipboard.',
-      data: { tab: 'generator' } satisfies TourStepData,
-    },
-    {
-      target: '[data-tour="tour-gen-batch-tab"]',
-      placement: 'bottom',
-      title: 'Generator — batch export',
-      content: 'Open this tab to upload many values and download a ZIP of rendered codes.',
       data: { tab: 'generator' } satisfies TourStepData,
     },
     {

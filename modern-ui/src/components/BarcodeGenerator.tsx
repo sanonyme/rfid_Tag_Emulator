@@ -12,10 +12,10 @@ import { Switch } from './ui/switch'
 import { Download, Copy, RefreshCw, Plus, Trash2, ArrowUp, ArrowDown, Upload, FileText, Loader2, Package, ScanLine, Layers, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tabs, TabsContent } from './ui/tabs'
-import { SegmentedTabs } from './SegmentedTabs'
 import { QrCodeGenerator } from './QrCodeGenerator'
 import { ZplViewerTab } from './ZplViewerTab'
 import JSZip from 'jszip'
+import type { GenMode } from '@/lib/gen-modes'
 
 const BATCH_FORMATS = ['CODE128', 'EAN13', 'EAN8', 'UPC', 'CODE39', 'ITF14', 'MSI', 'pharmacode', 'codabar'] as const
 type BarcodeFormat = (typeof BATCH_FORMATS)[number]
@@ -151,8 +151,16 @@ function generateRandomValue(format: BarcodeFormat) {
   }
 }
 
-export function BarcodeGenerator() {
-  const [genMode, setGenMode] = useState<'barcode' | 'qrcode' | 'zpl' | 'batch'>('barcode')
+export function BarcodeGenerator({
+  mode = 'barcode',
+  onModeChange,
+}: {
+  mode?: GenMode
+  onModeChange?: (mode: GenMode) => void
+} = {}) {
+  const [internalMode, setInternalMode] = useState<GenMode>('barcode')
+  const genMode = onModeChange ? mode : internalMode
+  const setGenMode = onModeChange ?? setInternalMode
   const [barcodes, setBarcodes] = useState<BarcodeConfig[]>([
     { id: '1', text: 'ZEUS-12345', format: 'CODE128', height: 100 }
   ])
@@ -319,23 +327,7 @@ export function BarcodeGenerator() {
 
   return (
     <div className="stagger-children h-full">
-      <Tabs value={genMode} onValueChange={(v) => setGenMode(v as typeof genMode)} className="h-full flex flex-col">
-        <div className="mb-4 px-2">
-          <SegmentedTabs
-            value={genMode}
-            layoutId="gen-mode-nav"
-            dataTour="tour-gen-modes"
-            className="mx-auto max-w-3xl grid-cols-2 sm:grid-cols-4"
-            triggerClassName="w-full px-2 sm:px-3"
-            items={[
-              { value: 'barcode', label: 'Barcodes' },
-              { value: 'qrcode', label: 'QR Codes' },
-              { value: 'zpl', label: 'ZPL' },
-              { value: 'batch', label: 'Batch Export', dataTour: 'tour-gen-batch-tab' },
-            ]}
-          />
-        </div>
-
+      <Tabs value={genMode} onValueChange={(v) => setGenMode(v as GenMode)} className="h-full flex flex-col">
         <TabsContent value="barcode" className="flex-1 mt-0">
           <div className="grid gap-6 md:grid-cols-2 h-full overflow-hidden">
             <div className="space-y-6 overflow-y-auto pr-2">

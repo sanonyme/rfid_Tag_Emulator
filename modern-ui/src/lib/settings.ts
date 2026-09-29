@@ -1,5 +1,7 @@
 /** App settings persisted to localStorage */
 
+import { isNavLayout, type NavLayout } from './nav-styles'
+
 const STORAGE_KEY = 'rfid-emulator-settings'
 
 export type FontSize = 'compact' | 'normal' | 'large'
@@ -17,6 +19,8 @@ export type DefaultTab =
   | 'sftp'
   | 'netscan'
 
+export type { NavLayout }
+
 export interface AppSettings {
   fontSize: FontSize
   defaultTab: DefaultTab
@@ -30,6 +34,8 @@ export interface AppSettings {
   handheldSerialContinuesAcrossUpcLines: boolean
   /** Fixed / Handheld UPC fields: live GTIN check-digit hints while typing. */
   upcCheckDigitHintsEnabled: boolean
+  /** Where the main app menu lives. */
+  navLayout: NavLayout
 }
 
 const DEFAULTS: AppSettings = {
@@ -42,6 +48,7 @@ const DEFAULTS: AppSettings = {
   fixedSerialContinuesAcrossUpcLines: false,
   handheldSerialContinuesAcrossUpcLines: false,
   upcCheckDigitHintsEnabled: true,
+  navLayout: 'auto',
 }
 
 const LEGACY_SERIAL_CONTINUES_KEY = 'rfid-emulator-serial-continues-across-upc'
@@ -66,11 +73,17 @@ function withSerialMigration(parsed: Partial<AppSettings>): Partial<AppSettings>
   }
 }
 
+function withNavMigration(parsed: Partial<AppSettings>): Partial<AppSettings> {
+  const next = { ...parsed }
+  if (!isNavLayout(next.navLayout)) next.navLayout = DEFAULTS.navLayout
+  return next
+}
+
 export function loadSettings(): AppSettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return { ...DEFAULTS }
-    const parsed = withSerialMigration(JSON.parse(raw) as Partial<AppSettings>)
+    const parsed = withNavMigration(withSerialMigration(JSON.parse(raw) as Partial<AppSettings>))
     const merged = { ...DEFAULTS, ...parsed }
     if ((parsed as { defaultTab?: string }).defaultTab === 'adam') {
       merged.defaultTab = 'fixed'

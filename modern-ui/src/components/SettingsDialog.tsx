@@ -1,4 +1,4 @@
-import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash, Package, FolderOpen } from 'lucide-react'
+import { Settings, RefreshCw, Download, CheckCircle, AlertCircle, Type, Layout, FileText, Timer, Sparkles, BookOpen, Map, Archive, Upload, Hash, Package, FolderOpen, PanelLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from './ui/button'
 import {
@@ -12,7 +12,8 @@ import {
 import { Label } from './ui/label'
 import { themes, applyTheme, saveTheme, getSavedTheme, getThemeSwatches, THEME_CHANGE_EVENT, type Theme } from '../lib/themes'
 import { useSettings } from '../lib/settings-context'
-import type { FontSize, DefaultTab } from '../lib/settings'
+import type { FontSize, DefaultTab, NavLayout } from '../lib/settings'
+import { NAV_LAYOUT_OPTIONS } from '../lib/nav-styles'
 import { IS_MOBILE } from '../lib/platform'
 import { useState, useEffect } from 'react'
 import {
@@ -285,6 +286,44 @@ export function SettingsDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <PanelLeft className="w-4 h-4 text-primary" />
+              Navigation
+            </h4>
+
+            <div className="space-y-2">
+              <Label>Menu layout</Label>
+              <p className="text-xs text-muted-foreground">
+                Choose where the main tab menu lives. Admin mode always uses the side menu.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {NAV_LAYOUT_OPTIONS.map((opt) => {
+                  const selected = (settings.navLayout ?? 'auto') === opt.value
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setSettings({ navLayout: opt.value as NavLayout })}
+                      className={cn(
+                        'rounded-lg border px-3 py-2.5 text-left transition-colors',
+                        selected
+                          ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/30'
+                          : 'border-border/50 bg-background/60 hover:bg-muted/40',
+                      )}
+                    >
+                      <div className="text-sm font-medium">{opt.label}</div>
+                      <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                        {opt.description}
+                      </div>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           </div>

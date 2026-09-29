@@ -35,6 +35,7 @@ import { PopoutTitleBar } from './components/PopoutTitleBar'
 import { PopOutPlaceholder } from './components/PopOutPlaceholder'
 import { getPopoutTabFromHash, getPopoutTabLabel, isPopoutableTab } from './lib/popout-tabs'
 import { applyPopoutInitState } from './lib/apply-popout-state'
+import type { GenMode } from './lib/gen-modes'
 
 const FixedTab = React.lazy(() => import('./components/FixedTab').then((m) => ({ default: m.FixedTab })))
 const HandheldTab = React.lazy(() => import('./components/HandheldTab').then((m) => ({ default: m.HandheldTab })))
@@ -240,6 +241,18 @@ function App() {
   const [base64Open, setBase64Open] = useState(false)
   const [isAdmin, setIsAdmin] = useState(false)
   const [tourRun, setTourRun] = useState(false)
+  /** Narrow windows use the admin-style side menu instead of the top tab pill. */
+  const [narrowNav, setNarrowNav] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 1100px)').matches : false,
+  )
+
+  React.useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1100px)')
+    const onChange = () => setNarrowNav(mq.matches)
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
 
   const handleAdminLogin = useCallback(() => {
     setIsAdmin(true)
@@ -259,9 +272,22 @@ function App() {
     })
   }, [])
 
+  // Generator Tab
+  const [genMode, setGenMode] = useState<GenMode>('barcode')
+  const handleGenModeChange = useCallback((mode: GenMode) => {
+    setGenMode(mode)
+    switchTab('generator')
+  }, [switchTab])
+
   const [popoutTabId] = useState<string | null>(() => getPopoutTabFromHash())
   const isPopoutWindow = Boolean(popoutTabId && window.electronAPI?.popoutGetWindowInfo)
   const [poppedOutTabs, setPoppedOutTabs] = useState<Set<string>>(() => new Set())
+  const navLayout = settings.navLayout ?? 'auto'
+  const preferSideNav =
+    isAdmin || navLayout === 'side' || navLayout === 'icon-rail' || (navLayout === 'auto' && narrowNav)
+  const showSideNav = !isPopoutWindow && preferSideNav
+  const showTopTabBar = !isPopoutWindow && !isAdmin && !preferSideNav
+  const forceIconRail = !isAdmin && navLayout === 'icon-rail'
 
   const [showCustomTitlebar, setShowCustomTitlebar] = React.useState(true)
   const [currentTheme, setCurrentTheme] = useState(getSavedTheme())
@@ -684,11 +710,15 @@ function App() {
           onValueChange={isPopoutWindow ? undefined : switchTab}
           className="flex flex-1 min-h-0 min-w-0 overflow-hidden"
         >
-          {isAdmin && !isPopoutWindow && (
+          {showSideNav && (
             <TabSidebar
               value={activeTab}
+              isAdmin={isAdmin}
+              forceCollapsed={forceIconRail}
               poppedOutTabs={poppedOutTabs}
               onPopOut={handlePopOut}
+              genMode={genMode}
+              onGenModeChange={handleGenModeChange}
             />
           )}
 
@@ -698,7 +728,7 @@ function App() {
               'flex-1 min-w-0 overflow-hidden min-h-0 flex flex-col',
               // Automation is a full-bleed workspace: skip the centered container cap.
               effectiveActiveTab === 'automation' ? 'w-full' : 'container',
-              isAdmin && !isPopoutWindow ? 'px-4 py-4' : 'px-6 py-6',
+              showSideNav ? 'px-4 py-4' : 'px-6 py-6',
               isPopoutWindow && 'px-4 py-4',
             )}
           >
@@ -706,40 +736,29 @@ function App() {
             <div
               className={cn(
                 'flex items-center gap-4',
-                isAdmin
+                showSideNav
                   ? 'flex-row justify-start mb-2'
                   : 'flex-col md:flex-row justify-center mb-4',
               )}
             >
-              {!isAdmin && (
-                <ConnectionStatus
-                  emulator={emulator}
-                  host={host}
-                  setHost={setHost}
-                  alePort={alePort}
-                  setAlePort={setAlePort}
-                  connected={connected}
-                  setConnected={setConnected}
-                />
-              )}
-              {!isAdmin && (
+              <ConnectionStatus
+                emulator={emulator}
+                host={host}
+                setHost={setHost}
+                alePort={alePort}
+                setAlePort={setAlePort}
+                connected={connected}
+                setConnected={setConnected}
+              />
+              {showTopTabBar && (
                 <TabNavBar
                   value={activeTab}
                   className="animate-scale-in"
                   isAdmin={isAdmin}
                   poppedOutTabs={poppedOutTabs}
                   onPopOut={handlePopOut}
-                />
-              )}
-              {isAdmin && (
-                <ConnectionStatus
-                  emulator={emulator}
-                  host={host}
-                  setHost={setHost}
-                  alePort={alePort}
-                  setAlePort={setAlePort}
-                  connected={connected}
-                  setConnected={setConnected}
+                  genMode={genMode}
+                  onGenModeChange={handleGenModeChange}
                 />
               )}
             </div>
@@ -868,7 +887,7 @@ function App() {
             </TabPanel>
 
             <TabPanel tabId="generator" visited={visitedTabs.has('generator')} isActive={effectiveActiveTab === 'generator'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-y-auto')}>
-              <BarcodeGenerator />
+              <BarcodeGenerator mode={genMode} onModeChange={setGenMode} />
             </TabPanel>
 
             <TabPanel tabId="jsonlint" visited={visitedTabs.has('jsonlint')} isActive={effectiveActiveTab === 'jsonlint'} className={cn(TAB_PANEL_CLASS, 'p-6 overflow-hidden')}>
