@@ -22,6 +22,36 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.3.0',
+    date: '2026-09',
+    highlights: [
+      {
+        title: 'Navigation: pick your menu layout',
+        detail: 'Adaptive, top bar, side menu, or icon rail in Settings. Admin mode still uses the side menu.',
+      },
+      {
+        title: 'Gen: mode flyout',
+        detail: 'Hover the Gen tab to jump between Barcodes, QR Codes, ZPL, and Batch Export.',
+      },
+      {
+        title: 'Handheld: cleaner tag UI',
+        detail: 'Tidier layout and expandable tag fields.',
+      },
+      {
+        title: 'OCR: decode barcodes from images',
+        detail: 'Drop or pick a photo; detected codes fill the OCR field.',
+      },
+      {
+        title: 'Automation: nextSerial',
+        detail: 'UPC→EPC runs seed and advance serials so cartons do not reuse them.',
+      },
+      {
+        title: 'Fixed: Pocket Remote hooks',
+        detail: 'Loop, Stop, and burst can be driven from outside the tab.',
+      },
+    ],
+  },
+  {
     version: '10.2.3',
     date: '2026-09',
     highlights: [
