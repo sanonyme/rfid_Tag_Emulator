@@ -1,4 +1,4 @@
-// TCP Handler for Electron Main Process
+﻿// TCP Handler for Electron Main Process
 // Handles real TCP connections to the tag emulator backend
 
 import { Socket, Server, createServer } from 'net'
@@ -298,7 +298,7 @@ export class HandheldServerHandler {
     return next
   }
 
-  /** Expand and send from slot text in main process — avoids shipping millions of tags over IPC. */
+  /** Expand and send from slot text in main process â€” avoids shipping millions of tags over IPC. */
   async sendFromRecipe(
     recipe: HandheldSendRecipe,
     delayMs: number,
@@ -610,3 +610,4 @@ export async function sendCustomMessage(host: string, port: number, message: str
     })
   })
 }
+

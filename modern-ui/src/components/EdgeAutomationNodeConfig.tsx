@@ -191,8 +191,11 @@ export function EdgeBlockNodeConfig({ step, onSaveParams }: EdgeAutomationNodeCo
                     commitParams()
                   }}
                   className="font-mono text-xs h-8"
-                  placeholder={p.defaultValue ?? ''}
+                  placeholder={p.defaultValue || '{{sscc}}'}
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  Supports {'{{variables}}'} e.g. {'{{sscc}}'}
+                </p>
               </div>
             ))}
           </div>

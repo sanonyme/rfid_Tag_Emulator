@@ -58,9 +58,17 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    // Prefer inlined WASM so barcode decode works offline (no CDN fetch of zbar.wasm).
+    conditions: ['zbar-inlined', 'import', 'module', 'browser', 'default'],
   },
   optimizeDeps: {
     entries: [path.join(__dirname, 'index.html')],
+    exclude: ['@undecaf/zbar-wasm'],
+  },
+  build: {
+    commonjsOptions: {
+      include: [/node_modules/],
+    },
   },
   server: {
     port: 5173,

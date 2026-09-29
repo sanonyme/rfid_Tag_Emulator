@@ -331,8 +331,9 @@ export interface AutomationStep {
     epc?: string
     upc?: string
     count?: number
-    startSerial?: number
-    /** When true, SGTIN serial continues across UPC lines in upcList. */
+    /** Number or template (e.g. `{{nextSerial}}`) — Auto advances nextSerial after UPC expands. */
+    startSerial?: number | string
+    /** When true, SGTIN serial continues across UPC lines in upcList. Default true for new Fixed/HH nodes. */
     serialContinuesAcrossUpcLines?: boolean
     tid?: string
     uid?: string
@@ -855,7 +856,12 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
     }
   }
   if (type === 'FIXED_TAG' || type === 'HANDHELD_TAG') {
-    return { ...base, tagDelay: '' }
+    return {
+      ...base,
+      tagDelay: '',
+      startSerial: '{{nextSerial}}',
+      serialContinuesAcrossUpcLines: true,
+    }
   }
   if (type === 'CONDITION') {
     return {

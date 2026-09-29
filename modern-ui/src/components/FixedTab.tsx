@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -57,6 +57,16 @@ import { Badge } from './ui/badge'
 import { useSettings } from '@/lib/settings-context'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
+/** Imperative API for Pocket Remote (and other callers) to drive Fixed send/loop. */
+export interface FixedTabHandle {
+  /** Start continuous Fixed loop send (same as the Loop button). */
+  startLoop: () => void
+  /** Stop loop / cancel in-flight send (same as Stop). */
+  stop: () => void
+  /** One-shot send of the current Fixed tag list (Trigger Burst). */
+  sendOnce: () => void
+}
+
 interface FixedTabProps {
   emulator: TCPEmulatorClient
   host: string
@@ -86,11 +96,15 @@ interface FixedTabProps {
   fixedTabActive?: boolean
   /** Pop-out window: stacked layout on narrow widths, no page-level log scroll. */
   isPopout?: boolean
+  /** Called when remote controls are ready / cleaned up (lazy mount safe). */
+  onRemoteControlsReady?: (controls: FixedTabHandle | null) => void
+  /** Reports whether Fixed is actively sending / looping (for Pocket Remote status). */
+  onEmulationActiveChange?: (active: boolean) => void
 }
 import { VENDOR_DRIVERS } from '@/lib/vendor-drivers'
 import { getBoolPref, setBoolPref } from '@/lib/bool-pref'
 
-export function FixedTab({ 
+export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function FixedTab({ 
   emulator, 
   host, 
   // setHost, 
@@ -113,11 +127,13 @@ export function FixedTab({
   setUpcList,
   epcList,
   setEpcList,
-  delay, 
+  delay,
   setDelay,
   fixedTabActive = false,
   isPopout = false,
-}: FixedTabProps) {
+  onRemoteControlsReady,
+  onEmulationActiveChange,
+}, ref) {
   const [log, setLog] = useState<string[]>([])
   const [lastSendSummary, setLastSendSummary] = useState<{
     tags: number
@@ -132,6 +148,7 @@ export function FixedTab({
   const logScrollRef = useRef<HTMLDivElement>(null)
   const sendTagsHotkeyRef = useRef<(isLooping?: boolean) => Promise<void>>(async () => {})
   const loopHotkeyRef = useRef<() => void>(() => {})
+  const stopHotkeyRef = useRef<() => void>(() => {})
   const upcPresetRef = useRef<TagPresetMenuHandle>(null)
   const epcPresetRef = useRef<TagPresetMenuHandle>(null)
   const rssiSliderWheelRef = useRef<HTMLDivElement>(null)
@@ -442,6 +459,35 @@ export function FixedTab({
 
   sendTagsHotkeyRef.current = handleSendTags
   loopHotkeyRef.current = handleToggleLoop
+  stopHotkeyRef.current = handleStop
+
+  const remoteControls = useCallback((): FixedTabHandle => ({
+    startLoop: () => {
+      if (loopingRef.current) return
+      setLooping(true)
+      loopingRef.current = true
+      addLog('Loop send started - will continuously send tags')
+      void sendTagsHotkeyRef.current(true)
+    },
+    stop: () => {
+      stopHotkeyRef.current()
+    },
+    sendOnce: () => {
+      void sendTagsHotkeyRef.current(false)
+    },
+  }), [])
+
+  useImperativeHandle(ref, remoteControls, [remoteControls])
+
+  useEffect(() => {
+    if (!onRemoteControlsReady) return
+    onRemoteControlsReady(remoteControls())
+    return () => onRemoteControlsReady(null)
+  }, [onRemoteControlsReady, remoteControls])
+
+  useEffect(() => {
+    onEmulationActiveChange?.(sending || looping)
+  }, [sending, looping, onEmulationActiveChange])
 
   useEffect(() => {
     if (!fixedTabActive) return
@@ -1179,4 +1225,6 @@ export function FixedTab({
       </div>
     </div>
   )
-}
+})
+
+FixedTab.displayName = 'FixedTab'

@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type DragEvent } from 'react'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { ScrollArea } from './ui/scroll-area'
-import { Send, ScanLine, Copy, Download, Activity } from 'lucide-react'
+import { Send, ScanLine, Copy, Download, Activity, ImagePlus, Loader2 } from 'lucide-react'
+import { decodeBarcodesFromImageFile, type DecodedBarcode } from '@/lib/decode-barcodes-from-image'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 import { toast } from 'sonner'
 import { OCRClient } from '@/lib/tcp-client'
@@ -24,7 +25,13 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   const [log, setLog] = useState<string[]>([])
   const [sending, setSending] = useState(false)
   const logEndRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
   const listenersSetUp = useRef(false)
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null)
+  const [imageScanning, setImageScanning] = useState(false)
+  const [imageDecoded, setImageDecoded] = useState<DecodedBarcode[]>([])
+  const [selectedDecodeIndex, setSelectedDecodeIndex] = useState(0)
+  const [imageDragOver, setImageDragOver] = useState(false)
   const currentCallbacks = useRef<{
     success: ((msg: string) => void) | null
     error: ((msg: string) => void) | null
@@ -37,6 +44,12 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [log])
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    }
+  }, [imagePreviewUrl])
 
   // Set up listeners once
   useEffect(() => {
@@ -119,6 +132,94 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
     }
   }
 
+  const selectedDecodedValue = imageDecoded[selectedDecodeIndex]?.value ?? ''
+
+  const handleImagePick = async (file: File | null) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Choose an image file')
+      return
+    }
+    if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl)
+    setImagePreviewUrl(URL.createObjectURL(file))
+    setImageDecoded([])
+    setSelectedDecodeIndex(0)
+    setImageScanning(true)
+    addLog(`Scanning image: ${file.name}`)
+    try {
+      const codes = await decodeBarcodesFromImageFile(file)
+      if (codes.length === 0) {
+        addLog('No barcode found in image')
+        toast.error('No barcode detected')
+        return
+      }
+      setImageDecoded(codes)
+      setSelectedDecodeIndex(0)
+      setMessage(codes[0].value)
+      addLog(`Decoded ${codes.length} code(s): ${codes[0].format} → ${codes[0].value}`)
+      toast.success(codes.length > 1 ? `${codes.length} barcodes found — first loaded` : 'Barcode read')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Scan failed'
+      addLog(`Image scan error: ${msg}`)
+      toast.error(msg)
+    } finally {
+      setImageScanning(false)
+      if (imageInputRef.current) imageInputRef.current.value = ''
+    }
+  }
+
+  const handleSendDecoded = () => {
+    if (!selectedDecodedValue.trim()) return
+    setMessage(selectedDecodedValue)
+    void sendOcrMessage(selectedDecodedValue, false)
+  }
+
+  const pickImageFromDataTransfer = (dt: DataTransfer | null): File | null => {
+    if (!dt) return null
+    const files = Array.from(dt.files || [])
+    const image = files.find((f) => f.type.startsWith('image/'))
+    if (image) return image
+    // Some desktops drop without a reliable MIME — fall back by extension.
+    const byExt = files.find((f) => /\.(png|jpe?g|gif|webp|bmp|tif?f)$/i.test(f.name))
+    return byExt ?? null
+  }
+
+  const onImageDragEnter = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (imageScanning || sending) return
+    setImageDragOver(true)
+  }
+
+  const onImageDragOver = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (imageScanning || sending) return
+    e.dataTransfer.dropEffect = 'copy'
+    setImageDragOver(true)
+  }
+
+  const onImageDragLeave = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Ignore leave events from children inside the drop zone.
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setImageDragOver(false)
+  }
+
+  const onImageDrop = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setImageDragOver(false)
+    if (imageScanning || sending) return
+    const file = pickImageFromDataTransfer(e.dataTransfer)
+    if (!file) {
+      toast.error('Drop an image file')
+      return
+    }
+    void handleImagePick(file)
+  }
+
   return (
     <div className="stagger-children mx-auto flex h-full max-w-4xl flex-col gap-4">
       {/* OCR Input Card */}
@@ -132,7 +233,7 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
               <div className="min-w-0 space-y-1">
                 <CardTitle className="text-base font-semibold tracking-tight">OCR message sender</CardTitle>
                 <CardDescription className="text-xs leading-relaxed">
-                  Delivers payloads to the Edge OCR channel on the fixed reader host.
+                  Delivers payloads to the Edge OCR channel on the fixed reader host. Upload a photo to read a barcode, then send.
                 </CardDescription>
               </div>
             </div>
@@ -145,6 +246,123 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
           </p>
         </CardHeader>
         <CardContent className="space-y-4 px-5 pb-5 pt-0">
+          <div
+            className={cn(
+              'flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed px-3 py-2.5 transition-colors',
+              imageDragOver
+                ? 'border-amber-500 bg-amber-500/15 ring-2 ring-amber-500/30'
+                : 'border-border/60 bg-muted/15',
+              (imageScanning || sending) && 'opacity-70',
+            )}
+            onDragEnter={onImageDragEnter}
+            onDragOver={onImageDragOver}
+            onDragLeave={onImageDragLeave}
+            onDrop={onImageDrop}
+            data-tour="tour-ocr-from-image-drop"
+          >
+            <div className="flex min-w-0 flex-col gap-0.5">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <ImagePlus className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                {imageDragOver ? 'Drop image to scan' : 'Read barcode from a photo'}
+              </div>
+              <p className="text-[10px] text-muted-foreground/80 pl-5">
+                Drag & drop an image here, or choose a file
+              </p>
+            </div>
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => void handleImagePick(e.target.files?.[0] ?? null)}
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="h-8 gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-xs text-amber-900 hover:bg-amber-500/20 dark:text-amber-100"
+              disabled={imageScanning || sending}
+              onClick={() => imageInputRef.current?.click()}
+              data-tour="tour-ocr-from-image"
+            >
+              {imageScanning ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ImagePlus className="h-3.5 w-3.5" />
+              )}
+              {imageScanning ? 'Scanning…' : 'Barcode from photo'}
+            </Button>
+          </div>
+
+          {(imagePreviewUrl || imageDecoded.length > 0 || imageScanning) && (
+          <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-3">
+            <p className="text-xs font-medium text-foreground">Photo scan result</p>
+            {imagePreviewUrl && (
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+                <img
+                  src={imagePreviewUrl}
+                  alt="Barcode source"
+                  className="max-h-24 max-w-[140px] rounded-lg border border-border/50 object-contain bg-background"
+                />
+                <div className="min-w-0 flex-1 space-y-2">
+                  {imageDecoded.length > 1 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {imageDecoded.map((code, i) => (
+                        <button
+                          key={`${code.format}-${i}`}
+                          type="button"
+                          onClick={() => {
+                            setSelectedDecodeIndex(i)
+                            setMessage(code.value)
+                          }}
+                          className={cn(
+                            'rounded-md border px-2 py-0.5 font-mono text-[10px] transition-colors',
+                            i === selectedDecodeIndex
+                              ? 'border-amber-500/50 bg-amber-500/15 text-foreground'
+                              : 'border-border/50 text-muted-foreground hover:bg-muted/40',
+                          )}
+                        >
+                          {code.format}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {selectedDecodedValue ? (
+                    <>
+                      <p className="font-mono text-sm break-all text-foreground">{selectedDecodedValue}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="h-8 rounded-lg text-xs"
+                          onClick={() => setMessage(selectedDecodedValue)}
+                        >
+                          Use in message
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 rounded-lg text-xs"
+                          disabled={sending || !host}
+                          onClick={handleSendDecoded}
+                        >
+                          <Send className="mr-1.5 h-3.5 w-3.5" />
+                          Send value
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    !imageScanning && (
+                      <p className="text-xs text-muted-foreground">No barcode detected — try another photo.</p>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="ocrMessage" className="text-sm font-medium">
               Message
@@ -154,11 +372,12 @@ export function OCRTab({ host, connected: _connected, ocrClient: _ocrClient, mes
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyPress={handleKeyPress}
-              placeholder="Enter message to send"
+              placeholder="Type manually or use Barcode from photo above"
               disabled={sending}
               className="h-10 rounded-lg border-border/50 text-base shadow-none"
             />
           </div>
+
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Button
               onClick={handleSend}

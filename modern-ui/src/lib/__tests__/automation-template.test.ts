@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest'
-import { applyTemplate, captureEpcsToVars, cellFromRows, evaluateCondition, coerceToType, stringifyVarValue, parseListItems, switchHandle, pickWeightedIndex } from '../automation-template'
+import {
+  applyTemplate,
+  captureEpcsToVars,
+  cellFromRows,
+  evaluateCondition,
+  coerceToType,
+  stringifyVarValue,
+  parseListItems,
+  switchHandle,
+  pickWeightedIndex,
+  resolveStartSerial,
+  advanceNextSerial,
+  parseInterTagDelayMs,
+  createRunContext,
+  STANDARD_AUTOMATION_VARS,
+} from '../automation-template'
 
 describe('automation-template', () => {
   it('applies {{vars}}', () => {
@@ -22,6 +37,34 @@ describe('automation-template', () => {
     expect(vars.epcs).toBe('AAA\nBBB\nCCC')
     expect(vars.epcsSql).toBe("'AAA','BBB','CCC'")
     expect(vars.tagCount).toBe('3')
+  })
+
+  it('lists nextSerial as a native standard var and seeds it in run context', () => {
+    expect(STANDARD_AUTOMATION_VARS.some((v) => v.name === 'nextSerial')).toBe(true)
+    const ctx = createRunContext({ host: '10.0.0.1', alePort: '9161', customPort: '10483' })
+    expect(ctx.nextSerial).toBe('1')
+    expect(ctx.host).toBe('10.0.0.1')
+  })
+
+  it('resolves and advances nextSerial across cartons', () => {
+    const vars: Record<string, string> = {}
+    expect(resolveStartSerial('{{nextSerial}}', vars)).toBe(1)
+    expect(vars.nextSerial).toBe('1')
+    advanceNextSerial(vars, 1, 5)
+    expect(vars.nextSerial).toBe('6')
+    expect(resolveStartSerial('{{nextSerial}}', vars)).toBe(6)
+    advanceNextSerial(vars, 6, 3)
+    expect(vars.nextSerial).toBe('9')
+  })
+
+  it('parses inter-tag delay without treating 0 as missing', () => {
+    expect(parseInterTagDelayMs('0', '20')).toBe(0)
+    expect(parseInterTagDelayMs(0, 20)).toBe(0)
+    expect(parseInterTagDelayMs('', '0')).toBe(0)
+    expect(parseInterTagDelayMs('', '20')).toBe(20)
+    expect(parseInterTagDelayMs('', '')).toBe(20)
+    expect(parseInterTagDelayMs('1', '20')).toBe(1)
+    expect(parseInterTagDelayMs('  50  ', '20')).toBe(50)
   })
 })
 

@@ -142,6 +142,10 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
+    conditions: ['zbar-inlined', 'import', 'module', 'browser', 'default'],
+  },
+  optimizeDeps: {
+    exclude: ['@undecaf/zbar-wasm'],
   },
   build: {
     outDir: 'dist',

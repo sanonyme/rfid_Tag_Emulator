@@ -66,6 +66,30 @@ export function getIpv4Interfaces(): NetInterfaceInfo[] {
       })
     }
   }
+
+  // Prioritize active Wi-Fi and real LAN interfaces over APIPA (169.254) and virtual adapters
+  out.sort((a, b) => {
+    const score = (name: string, addr: string): number => {
+      const lower = name.toLowerCase()
+      if (addr.startsWith('169.254.')) return -100 // APIPA link-local (unreachable by phones)
+      if (lower.includes('wsl') || lower.includes('virtual') || lower.includes('vethernet') || lower.includes('docker') || lower.includes('vmnet')) {
+        return -10
+      }
+      let s = 10
+      if (lower.includes('wi-fi') || lower.includes('wifi') || lower.includes('wlan')) s += 50
+      else if (lower.includes('ethernet') || lower.includes('eth') || lower.includes('lan')) s += 40
+
+      if (addr.startsWith('192.168.') || addr.startsWith('10.')) s += 30
+      const m172 = addr.match(/^172\.(\d+)\./)
+      if (m172) {
+        const sec = parseInt(m172[1], 10)
+        if (sec >= 16 && sec <= 31) s += 30
+      }
+      return s
+    }
+    return score(b.name, b.address) - score(a.name, a.address)
+  })
+
   return out
 }
 

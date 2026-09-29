@@ -152,18 +152,18 @@ export function AutomationTriggersDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden bg-background">
-        <DialogHeader className="p-4 border-b border-border/50 shrink-0">
+        <DialogHeader className="relative p-4 pr-14 border-b border-border/50 shrink-0">
           <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 items-center gap-2">
               <Zap className="w-5 h-5 text-amber-500 shrink-0" />
-              <div>
+              <div className="min-w-0">
                 <DialogTitle className="text-base font-semibold">Event Triggers</DialogTitle>
                 <DialogDescription className="text-xs mt-0.5">
                   Automatically start workflows via Inbound Webhooks, File Watchers, or Timer Intervals
                 </DialogDescription>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
               <Button
                 variant="outline"
                 size="sm"

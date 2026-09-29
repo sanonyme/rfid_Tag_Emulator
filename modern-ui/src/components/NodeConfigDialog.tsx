@@ -399,16 +399,18 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-2">
                   <Label className="text-xs">Start Serial</Label>
                   <Input
-                    type="number"
-                    min={1}
-                    value={step.params.startSerial}
-                    onChange={(e) => patchParams( { startSerial: parseInt(e.target.value) })}
-                    className="h-9"
+                    value={step.params.startSerial != null ? String(step.params.startSerial) : ''}
+                    onChange={(e) => patchParams({ startSerial: e.target.value })}
+                    className="h-9 font-mono text-sm"
+                    placeholder="{{nextSerial}}"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    Use {'{{nextSerial}}'} so each carton continues unique SGTIN serials (Auto advances it after this node).
+                  </p>
                 </div>
                 <UpcSerialModeToggle
                   idPrefix={`automation-${step.id}-serial`}
-                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
+                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines !== false}
                   onContinuesAcrossLinesChange={(v) =>
                     patchParams( { serialContinuesAcrossUpcLines: v })
                   }
@@ -515,7 +517,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     <Input
                       type="number"
                       min={0}
-                      step={50}
+                      step={1}
                       value={step.params.tagDelay ?? ''}
                       onChange={(e) => patchParams( { tagDelay: e.target.value })}
                       placeholder={fixedTabDelay?.trim() ? `Default: ${fixedTabDelay}` : '20'}
@@ -526,7 +528,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     </span>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Leave empty to use the Fixed tab inter-tag delay.
+                    Leave empty to use the Fixed tab inter-tag delay. Use 0 for no pause between tags.
                   </p>
                 </div>
                 <div className="space-y-2">
@@ -656,16 +658,18 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-2">
                   <Label className="text-xs">Start Serial</Label>
                   <Input
-                    type="number"
-                    min={1}
-                    value={step.params.startSerial ?? 1}
-                    onChange={(e) => patchParams( { startSerial: parseInt(e.target.value) })}
-                    className="h-9"
+                    value={step.params.startSerial != null ? String(step.params.startSerial) : ''}
+                    onChange={(e) => patchParams({ startSerial: e.target.value })}
+                    className="h-9 font-mono text-sm"
+                    placeholder="{{nextSerial}}"
                   />
+                  <p className="text-[10px] text-muted-foreground">
+                    Use {'{{nextSerial}}'} so serials stay unique across loop iterations.
+                  </p>
                 </div>
                 <UpcSerialModeToggle
                   idPrefix={`automation-hh-${step.id}-serial`}
-                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines === true}
+                  continuesAcrossLines={step.params.serialContinuesAcrossUpcLines !== false}
                   onContinuesAcrossLinesChange={(v) =>
                     patchParams( { serialContinuesAcrossUpcLines: v })
                   }
@@ -694,7 +698,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   <Input
                     type="number"
                     min={0}
-                    step={50}
+                    step={1}
                     value={step.params.tagDelay ?? ''}
                     onChange={(e) => patchParams( { tagDelay: e.target.value })}
                     placeholder={handheldTabDelay?.trim() ? `Default: ${handheldTabDelay}` : '20'}
@@ -705,7 +709,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   </span>
                 </div>
                 <p className="text-[11px] text-muted-foreground">
-                  Leave empty to use the Handheld tab inter-tag delay.
+                  Leave empty to use the Handheld tab inter-tag delay. Use 0 for no pause between tags.
                 </p>
               </div>
             </div>

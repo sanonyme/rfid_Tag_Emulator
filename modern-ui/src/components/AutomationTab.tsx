@@ -150,6 +150,9 @@ import {
   createRunContext,
   applyTemplate,
   captureEpcsToVars,
+  resolveStartSerial,
+  advanceNextSerial,
+  parseInterTagDelayMs,
   evaluateCondition,
   parseListItems,
   switchHandle,
@@ -1615,6 +1618,7 @@ export function AutomationTab({
   const runStepCountRef = useRef(0)
   const [executions, setExecutions] = useState<ExecutionRecord[]>(() => loadExecutions())
   const [executionsOpen, setExecutionsOpen] = useState<boolean>(() => localStorage.getItem('automation-executions-open') !== '0')
+  const [activityLogOpen, setActivityLogOpen] = useState<boolean>(() => localStorage.getItem('automation-activity-log-open') !== '0')
   const [viewedExecution, setViewedExecution] = useState<ExecutionRecord | null>(null)
   // Re-render every 30s so "x min ago" labels stay honest.
   const [, setHistoryTick] = useState(0)
@@ -1624,6 +1628,15 @@ export function AutomationTab({
   }, [])
   useEffect(() => { saveExecutions(executions) }, [executions])
   useEffect(() => { localStorage.setItem('automation-executions-open', executionsOpen ? '1' : '0') }, [executionsOpen])
+  useEffect(() => { localStorage.setItem('automation-activity-log-open', activityLogOpen ? '1' : '0') }, [activityLogOpen])
+  const prevExecutionsOpenRef = useRef(executionsOpen)
+  // Expanding Executions collapses the Activity log body so the log header stays
+  // visible instead of being flex-squashed off the panel.
+  useEffect(() => {
+    const wasOpen = prevExecutionsOpenRef.current
+    prevExecutionsOpenRef.current = executionsOpen
+    if (executionsOpen && !wasOpen) setActivityLogOpen(false)
+  }, [executionsOpen])
   const runVarsRef = useRef<AutomationVars>({})
   // Live snapshot of run variables for the inspector (updated after each node).
   const [runVars, setRunVars] = useState<AutomationVars>({})
@@ -1631,10 +1644,20 @@ export function AutomationTab({
   const importInputRef = useRef<HTMLInputElement>(null)
 
   // Keep connection variables fresh in the inspector while idle, without wiping the
-  // values captured by the last run (merge rather than replace).
+  // values captured by the last run (merge rather than replace). Never clobber nextSerial.
   useEffect(() => {
     if (isRunning) return
-    setRunVars(prev => ({ ...prev, ...createRunContext({ host, alePort, customPort, port: '' }) }))
+    setRunVars((prev) => {
+      const conn = createRunContext({ host, alePort, customPort, port: '' })
+      return {
+        ...prev,
+        host: conn.host,
+        alePort: conn.alePort,
+        customPort: conn.customPort,
+        port: conn.port,
+        nextSerial: prev.nextSerial?.trim() ? prev.nextSerial : conn.nextSerial,
+      }
+    })
   }, [host, alePort, customPort, isRunning])
 
   const handleResetVars = useCallback(() => {
@@ -2912,14 +2935,19 @@ export function AutomationTab({
         const epcList = applyTemplate(step.params.epcList || '', vars)
         const singleUpc = applyTemplate(step.params.upc || '', vars)
         const singleEpc = applyTemplate(step.params.epc || '', vars)
+        const startSerial = resolveStartSerial(step.params.startSerial, vars)
+        // Default ON so same UPCs on different lines/cartons never reuse serials.
+        const continuesAcrossLines = step.params.serialContinuesAcrossUpcLines !== false
+        let upcEpcCount = 0
 
         const getTagRssi = makeRssiPicker(step.params)
         if (upcList) {
             const expanded = expandUpcListToEpcs(
               upcList,
-              step.params.startSerial ?? 1,
-              step.params.serialContinuesAcrossUpcLines === true,
+              startSerial,
+              continuesAcrossLines,
             )
+            upcEpcCount = expanded.length
             for (const { epc, customTid, userdata } of expanded) {
               for (const targetUid of targetUids) {
                 for (const ant of stepAntennas) {
@@ -2963,8 +2991,9 @@ export function AutomationTab({
                 const epcs = EPCGenerator.generateFromUpc(
                     singleUpc, 
                     step.params.count || 1, 
-                    step.params.startSerial || 1
+                    startSerial
                 )
+                upcEpcCount = epcs.length
                 for (const targetUid of targetUids) {
                   for (const epc of epcs) {
                     for (const ant of stepAntennas) {
@@ -2995,10 +3024,15 @@ export function AutomationTab({
         
         if (fixedTags.length === 0) throw new Error('No valid EPCs or UPCs specified')
 
-        captureEpcsToVars(runVarsRef.current, fixedTags.map((t) => t.epc))
-        addLog(`Captured ${runVarsRef.current.tagCount} EPC(s) → {{epcs}}`)
+        if (upcEpcCount > 0) {
+          advanceNextSerial(vars, startSerial, upcEpcCount, addLog)
+        }
 
-        const tagDelayMs = parseInt(step.params.tagDelay?.trim() || delay, 10) || 20
+        captureEpcsToVars(runVarsRef.current, fixedTags.map((t) => t.epc))
+        addLog(`Captured ${runVarsRef.current.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
+
+        const tagDelayMs = parseInterTagDelayMs(step.params.tagDelay, delay)
+        addLog(`Inter-tag delay ${tagDelayMs} ms`)
         await emulator.sendTags(fixedTags, step.params.driver || 'llrp', tagDelayMs, 
           (msg) => addLog(`Fixed: ${msg}`),
           (msg) => addLog(`Fixed Complete: ${msg}`)
@@ -3013,14 +3047,18 @@ export function AutomationTab({
         const vars = runVarsRef.current
         const upcList = applyTemplate(step.params.upcList || '', vars)
         const epcList = applyTemplate(step.params.epcList || '', vars)
+        const startSerial = resolveStartSerial(step.params.startSerial, vars)
+        const continuesAcrossLines = step.params.serialContinuesAcrossUpcLines !== false
+        let upcEpcCount = 0
 
         // Parse UPC List
         if (upcList) {
             const expanded = expandUpcListToEpcs(
               upcList,
-              step.params.startSerial ?? 1,
-              step.params.serialContinuesAcrossUpcLines === true,
+              startSerial,
+              continuesAcrossLines,
             )
+            upcEpcCount = expanded.length
             allHhTags.push(
               ...expanded.map(({ epc, customTid, userdata }) => ({
                 epc,
@@ -3048,8 +3086,12 @@ export function AutomationTab({
         
         if (allHhTags.length === 0) throw new Error('No EPCs specified')
 
+        if (upcEpcCount > 0) {
+          advanceNextSerial(vars, startSerial, upcEpcCount, addLog)
+        }
+
         captureEpcsToVars(runVarsRef.current, allHhTags.map((t) => t.epc))
-        addLog(`Captured ${runVarsRef.current.tagCount} EPC(s) → {{epcs}}`)
+        addLog(`Captured ${runVarsRef.current.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
         
         const isRunning = await handheldServer.isRunning()
         if (!isRunning) {
@@ -3060,7 +3102,8 @@ export function AutomationTab({
         }
 
         const hhVerbose = getHandheldFullActivityLog()
-        const hhDelayMs = parseInt(step.params.tagDelay?.trim() || handheldDelay, 10) || 20
+        const hhDelayMs = parseInterTagDelayMs(step.params.tagDelay, handheldDelay)
+        addLog(`Inter-tag delay ${hhDelayMs} ms`)
         await handheldServer.sendEpcs(
           allHhTags,
           hhDelayMs,
@@ -3077,20 +3120,32 @@ export function AutomationTab({
         if (!edgeSession.edgeReady) {
           throw new Error('Edge API not ready — connect to Edge IP first')
         }
-        const blockName = step.params.edgeBlockName?.trim()
+        const blockName = applyTemplate(
+          step.params.edgeBlockName || '',
+          runVarsRef.current,
+        ).trim()
         if (!blockName) throw new Error('Edge block not configured')
         const raw = step.params.edgeParams ?? {}
         const order =
           step.params.edgeParamOrder?.filter((k) => k in raw) ??
           Object.keys(raw)
         const invokeParams: Record<string, unknown> = {}
-        for (const k of order) invokeParams[k] = raw[k] ?? ''
+        for (const k of order) {
+          const v = raw[k] ?? ''
+          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, runVarsRef.current) : v
+        }
         for (const [k, v] of Object.entries(raw)) {
-          if (!(k in invokeParams)) invokeParams[k] = v
+          if (k in invokeParams) continue
+          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, runVarsRef.current) : v
         }
         const paramOrder =
           order.length > 0 ? order : Object.keys(invokeParams)
-        addLog(`Edge invoke → ${blockName}`)
+        const paramPreview = Object.entries(invokeParams)
+          .map(([k, v]) => `${k}=${String(v ?? '')}`)
+          .join(', ')
+        addLog(
+          `Edge invoke → ${blockName}${paramPreview ? ` (${paramPreview})` : ''}`,
+        )
         const { status, response } = await edgeSession.invokeBlock(
           blockName,
           invokeParams,
@@ -4807,28 +4862,49 @@ export function AutomationTab({
               {/* Executions — n8n-style run history. Collapsible so it never steals
                   space from the live log unless the user wants it. */}
               <div className="shrink-0 rounded-xl border border-border/50 bg-muted/10 overflow-hidden">
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors"
-                  onClick={() => setExecutionsOpen((o) => !o)}
-                  aria-expanded={executionsOpen}
-                >
-                  <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Executions</span>
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                    {executions.length}
-                  </span>
-                  {executions[0] && executions[0].status !== 'running' && (
-                    <ExecutionStatusIcon status={executions[0].status} className="ml-1 h-3 w-3" />
+                <div className="flex w-full items-center gap-1 px-3 py-2">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left hover:bg-muted/30 rounded -mx-1 px-1 py-0.5 transition-colors"
+                    onClick={() => setExecutionsOpen((o) => !o)}
+                    aria-expanded={executionsOpen}
+                  >
+                    <History className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Executions</span>
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                      {executions.length}
+                    </span>
+                    {executions[0] && executions[0].status !== 'running' && (
+                      <ExecutionStatusIcon status={executions[0].status} className="ml-1 h-3 w-3" />
+                    )}
+                    <ChevronDown className={cn('ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform', executionsOpen && 'rotate-180')} />
+                  </button>
+                  {executions.length > 0 && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:pointer-events-none disabled:opacity-40 focus:outline-none"
+                          disabled={isRunning}
+                          aria-label="Clear all executions"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setExecutions([])
+                          }}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" className="text-xs">Clear all executions</TooltipContent>
+                    </Tooltip>
                   )}
-                  <ChevronDown className={cn('ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform', executionsOpen && 'rotate-180')} />
-                </button>
+                </div>
                 {executionsOpen && (
                   <div className="border-t border-border/50">
                     {executions.length === 0 ? (
                       <div className="px-3 py-3 text-center text-[11px] text-muted-foreground">No runs yet</div>
                     ) : (
-                      <div className="max-h-40 overflow-y-auto overscroll-contain">
+                      <div className="max-h-32 overflow-y-auto overscroll-contain">
                         <ul className="divide-y divide-border/40">
                           {executions.slice(0, 8).map((ex) => {
                             const duration = ex.finishedAt ? ex.finishedAt - ex.startedAt : Date.now() - ex.startedAt
@@ -4851,46 +4927,47 @@ export function AutomationTab({
                         </ul>
                       </div>
                     )}
-                    {executions.length > 0 && (
-                      <div className="flex items-center justify-between border-t border-border/40 px-3 py-1">
+                    {executions.length > 8 && (
+                      <div className="border-t border-border/40 px-3 py-1">
                         <span className="text-[10px] text-muted-foreground">
-                          {executions.length > 8 ? `Showing 8 of ${executions.length}` : `${executions.length} run${executions.length === 1 ? '' : 's'}`}
+                          Showing 8 of {executions.length}
                         </span>
-                        <button
-                          type="button"
-                          className="text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-40"
-                          disabled={isRunning}
-                          onClick={() => setExecutions([])}
-                        >
-                          Clear history
-                        </button>
                       </div>
                     )}
                   </div>
                 )}
               </div>
-              {/* Activity log — one self-contained card: a fixed header of controls
-                  over a scrollable body that fills the remaining panel height. Uses
-                  flex-1 + min-h-0 so it can never overflow/clip into its neighbours. */}
+              {/* Activity log — header always reserved (min-h) so it never vanishes when
+                  Executions/Variables expand; body collapses so the bar stays visible. */}
               <div
                 className={cn(
-                  'flex flex-1 min-h-0 flex-col overflow-hidden rounded-xl border border-border/50 bg-muted/10',
+                  'flex min-h-10 flex-col overflow-hidden rounded-xl border border-border/50 bg-muted/10',
+                  activityLogOpen ? 'flex-1 min-h-10' : 'shrink-0',
                   !fullActivityLog && 'opacity-90',
                 )}
               >
-                <div className="flex shrink-0 items-center gap-2 border-b border-border/50 bg-muted/20 px-3 py-2">
-                  <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Activity log</span>
-                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
-                    {log.length}
-                  </span>
-                  {isRunning && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" title="Recording live" />}
-                  <div className="ml-auto flex items-center gap-1">
+                <div className="flex shrink-0 items-center gap-1 border-b border-border/50 bg-muted/20 px-3 py-2">
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left rounded -mx-1 px-1 py-0.5 hover:bg-muted/30 transition-colors"
+                    onClick={() => setActivityLogOpen((o) => !o)}
+                    aria-expanded={activityLogOpen}
+                  >
+                    <Terminal className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Activity log</span>
+                    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground">
+                      {log.length}
+                    </span>
+                    {isRunning && <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" title="Recording live" />}
+                    <ChevronDown className={cn('ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform', activityLogOpen && 'rotate-180')} />
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1">
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <label
                           htmlFor="automation-detail-logs"
                           className="flex cursor-pointer items-center gap-1.5 rounded-md border border-border/50 bg-background/60 px-2 py-1"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <Switch
                             id="automation-detail-logs"
@@ -4933,24 +5010,26 @@ export function AutomationTab({
                     </Tooltip>
                   </div>
                 </div>
-                <ScrollArea className="min-h-0 flex-1">
-                  <div className="space-y-0 p-3 font-mono text-xs">
-                    {log.length === 0 && (
-                      <div className="py-6 text-center text-muted-foreground">
-                        {fullActivityLog ? 'Ready to run…' : 'Detail logging off — enable it to record runs'}
-                      </div>
-                    )}
-                    {log.map((l, i) => (
-                      <div
-                        key={i}
-                        className={`rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground ${i === log.length - 1 ? 'animate-log-new' : ''}`}
-                      >
-                        {l}
-                      </div>
-                    ))}
-                    <div ref={logEndRef} />
-                  </div>
-                </ScrollArea>
+                {activityLogOpen && (
+                  <ScrollArea className="min-h-0 flex-1">
+                    <div className="space-y-0 p-3 font-mono text-xs">
+                      {log.length === 0 && (
+                        <div className="py-6 text-center text-muted-foreground">
+                          {fullActivityLog ? 'Ready to run…' : 'Detail logging off — enable it to record runs'}
+                        </div>
+                      )}
+                      {log.map((l, i) => (
+                        <div
+                          key={i}
+                          className={`rounded px-2 py-0.5 text-muted-foreground transition-colors hover:bg-accent/30 hover:text-foreground ${i === log.length - 1 ? 'animate-log-new' : ''}`}
+                        >
+                          {l}
+                        </div>
+                      ))}
+                      <div ref={logEndRef} />
+                    </div>
+                  </ScrollArea>
+                )}
               </div>
             </CardContent>
           </Card>

@@ -251,6 +251,15 @@ export const STANDARD_AUTOMATION_VARS: StandardAutomationVar[] = [
     setBy: 'After Fixed or Handheld tag step',
   },
   {
+    name: 'nextSerial',
+    label: 'Next serial',
+    description:
+      'SGTIN start serial for Fixed/Handheld UPC→EPC. Auto seeds to 1 and advances after each emulate — only this name increments',
+    group: 'tags',
+    envName: 'ZEUS_NEXTSERIAL',
+    setBy: 'Seeded at run start; advanced after Fixed/Handheld UPC expand',
+  },
+  {
     name: 'lastOcrResponse',
     label: 'Last OCR response',
     description: 'Success message returned by the last OCR step',
@@ -283,6 +292,7 @@ export function createRunContext(seed: {
     port: seed.port ?? '',
     alePort: seed.alePort ?? '',
     customPort: seed.customPort ?? '',
+    nextSerial: '1',
   }
 }
 
@@ -422,3 +432,53 @@ export function captureEpcsToVars(vars: AutomationVars, epcs: string[]): void {
   vars.epcsSql = unique.map((e) => `'${e.replace(/'/g, "''")}'`).join(',')
   vars.tagCount = String(unique.length)
 }
+
+/**
+ * Parse Fixed/Handheld inter-tag delay for automation.
+ * Treats `0` as a real value (unlike `x || 20`, which wrongly maps 0 → 20).
+ * Empty step delay falls back to the Fixed/Handheld tab value, then `defaultMs`.
+ */
+export function parseInterTagDelayMs(
+  stepDelay: string | number | undefined | null,
+  fallbackDelay: string | number | undefined | null,
+  defaultMs = 20,
+): number {
+  const step = String(stepDelay ?? '').trim()
+  const raw = step !== '' ? step : String(fallbackDelay ?? '').trim()
+  if (raw === '') return Math.max(0, defaultMs)
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n < 0) return Math.max(0, defaultMs)
+  return Math.floor(n)
+}
+
+/**
+ * Resolve Fixed/Handheld start serial for a run.
+ * Prefers an explicit `startSerial` template (e.g. `{{nextSerial}}`), else `{{nextSerial}}`,
+ * else `1`. Ensures `vars.nextSerial` is seeded so later cartons can continue.
+ */
+export function resolveStartSerial(
+  startSerialParam: string | number | undefined,
+  vars: AutomationVars,
+): number {
+  if (!vars.nextSerial?.trim()) vars.nextSerial = '1'
+  const raw = String(startSerialParam ?? '').trim()
+  const templated = applyTemplate(raw || '{{nextSerial}}', vars)
+  const n = parseInt(templated, 10)
+  return Math.max(1, Number.isFinite(n) ? n : 1)
+}
+
+/**
+ * After emitting `epcCount` unique SGTINs starting at `startSerial`, advance
+ * `{{nextSerial}}` so the next carton/For-Each iteration never reuses serials.
+ */
+export function advanceNextSerial(
+  vars: AutomationVars,
+  startSerial: number,
+  epcCount: number,
+  log?: (msg: string) => void,
+): void {
+  const next = Math.max(1, startSerial + Math.max(0, epcCount))
+  vars.nextSerial = String(next)
+  log?.(`Advanced {{nextSerial}} → ${next} (was start ${startSerial}, +${epcCount} tag(s))`)
+}
+
