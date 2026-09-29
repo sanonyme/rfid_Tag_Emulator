@@ -71,72 +71,78 @@ export function ExpandableTagField({
 
   return (
     <>
-      <div className={cn('space-y-2', fill && 'flex min-h-0 flex-1 flex-col')}>
+      <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
         <div
           className={cn(
-            'group/expand relative rounded-md transition-shadow',
-            'ring-1 ring-transparent hover:ring-border/80 focus-within:ring-primary/25',
-            'hover:shadow-sm focus-within:shadow-sm',
+            'group/expand relative overflow-hidden rounded-lg border border-border/60 bg-background',
+            'shadow-sm transition-[border-color,box-shadow] duration-200',
+            'hover:border-border focus-within:border-primary/40 focus-within:shadow-md focus-within:ring-1 focus-within:ring-primary/20',
             fill && 'flex min-h-0 flex-1 flex-col',
           )}
         >
-          <DropTextarea
-            value={value}
-            onFileImport={onFileImport}
-            kind={kind}
-            fill={fill}
-            placeholder={placeholder}
-            onKeyDown={onKeyDown}
-            {...textareaHandlers}
-            className={cn(
-              compactClassName,
-              cornerActions ? 'pr-[4.75rem]' : 'pr-11',
-              'transition-[background-color] duration-200 group-hover/expand:bg-muted/20',
-            )}
-          />
+          <div className={cn('relative', fill && 'flex min-h-0 flex-1 flex-col')}>
+            <DropTextarea
+              value={value}
+              onFileImport={onFileImport}
+              kind={kind}
+              fill={fill}
+              placeholder={placeholder}
+              onKeyDown={onKeyDown}
+              {...textareaHandlers}
+              className={cn(
+                compactClassName,
+                cornerActions ? 'pr-[4.75rem]' : 'pr-11',
+                'rounded-none border-0 shadow-none',
+                'hover:border-transparent focus:border-transparent focus:ring-0 focus-visible:border-transparent focus-visible:ring-0',
+                'transition-[background-color] duration-200 group-hover/expand:bg-muted/15',
+              )}
+            />
 
-        {/* Touch: subtle always-on affordance; mouse: show on hover / keyboard focus inside field */}
-        <div
-          className={cn(
-            'pointer-events-none absolute right-1.5 top-1.5 z-10 flex flex-row items-start gap-1',
-            'opacity-60 sm:opacity-0 sm:scale-95',
-            'sm:group-hover/expand:opacity-100 sm:group-hover/expand:scale-100',
-            'sm:group-focus-within/expand:opacity-100 sm:group-focus-within/expand:scale-100',
-            'transition-all duration-200 ease-out',
+            {/* Touch: subtle always-on affordance; mouse: show on hover / keyboard focus inside field */}
+            <div
+              className={cn(
+                'pointer-events-none absolute right-1.5 top-1.5 z-10 flex flex-row items-start gap-1',
+                'opacity-60 sm:opacity-0 sm:scale-95',
+                'sm:group-hover/expand:opacity-100 sm:group-hover/expand:scale-100',
+                'sm:group-focus-within/expand:opacity-100 sm:group-focus-within/expand:scale-100',
+                'transition-all duration-200 ease-out',
+              )}
+            >
+              {cornerActions ? (
+                <div className="pointer-events-auto shrink-0">{cornerActions}</div>
+              ) : null}
+              <Tooltip delayDuration={400}>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="icon"
+                    className={cn(
+                      'pointer-events-auto h-8 w-8 shrink-0 rounded-md',
+                      'border border-border/60 bg-background/90 shadow-sm backdrop-blur-sm',
+                      'hover:bg-accent hover:text-accent-foreground',
+                      'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    )}
+                    aria-label="Open full editor"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setOpen(true)
+                    }}
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left" className="max-w-[14rem] text-xs">
+                  Expand to full editor
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+          {showUpcCheckDigitHints && (
+            <UpcCheckDigitHint value={value} activeLine={activeLine} variant="attached" />
           )}
-        >
-          {cornerActions ? (
-            <div className="pointer-events-auto shrink-0">{cornerActions}</div>
-          ) : null}
-          <Tooltip delayDuration={400}>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="secondary"
-                size="icon"
-                className={cn(
-                  'pointer-events-auto h-8 w-8 shrink-0 rounded-md',
-                  'border border-border/60 bg-background/90 shadow-sm backdrop-blur-sm',
-                  'hover:bg-accent hover:text-accent-foreground',
-                  'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                )}
-                aria-label="Open full editor"
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  setOpen(true)
-                }}
-              >
-                <Maximize2 className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left" className="max-w-[14rem] text-xs">
-              Expand to full editor
-            </TooltipContent>
-          </Tooltip>
         </div>
-        </div>
-        {showUpcCheckDigitHints && <UpcCheckDigitHint value={value} activeLine={activeLine} />}
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
@@ -158,7 +164,7 @@ export function ExpandableTagField({
             ) : null}
           </DialogHeader>
           <div className="min-h-0 flex-1 overflow-auto p-4 sm:p-6">
-            <div className="space-y-2">
+            <div className="overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
               <DropTextarea
                 value={value}
                 onFileImport={onFileImport}
@@ -168,12 +174,15 @@ export function ExpandableTagField({
                 {...textareaHandlers}
                 className={cn(
                   'font-mono [font-family:var(--font-mono)] text-sm',
-                  'min-h-[min(58vh,560px)] w-full resize-y rounded-lg',
-                  'border border-border bg-background shadow-inner',
+                  'min-h-[min(58vh,560px)] w-full resize-y',
+                  'rounded-none border-0 bg-background shadow-none',
+                  'hover:border-transparent focus:border-transparent focus:ring-0 focus-visible:border-transparent focus-visible:ring-0',
                 )}
                 autoFocus
               />
-              {showUpcCheckDigitHints && <UpcCheckDigitHint value={value} activeLine={activeLine} />}
+              {showUpcCheckDigitHints && (
+                <UpcCheckDigitHint value={value} activeLine={activeLine} variant="attached" />
+              )}
             </div>
             <p className="mt-3 text-[11px] text-muted-foreground sm:text-xs">
               Drop a .txt or .csv file to append lines. Escape or the close control returns to the compact view.
