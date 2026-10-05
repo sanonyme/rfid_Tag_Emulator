@@ -159,11 +159,11 @@ function protocolHint(p: ExplorerProtocol): string {
   return 'SSH file transfer to Edge hosts and Linux servers.'
 }
 
-const PROTOCOL_CHOICES: { id: ExplorerProtocol; label: string; hint: string; icon: LucideIcon }[] = [
-  { id: 'sftp', label: 'SFTP', hint: 'SSH to Edge hosts and Linux servers', icon: FolderInput },
-  { id: 'ftp', label: 'FTP', hint: 'Classic FTP or FTPS file drops', icon: Server },
-  { id: 's3', label: 'Amazon S3', hint: 'IAM keys, optional Assume Role', icon: Cloud },
-  { id: 's3compat', label: 'S3-compatible', hint: 'MinIO, R2, Wasabi, LocalStack', icon: HardDrive },
+const PROTOCOL_CHOICES: { id: ExplorerProtocol; label: string; hint: string; icon: LucideIcon; colorClass: string; bgClass: string }[] = [
+  { id: 'sftp', label: 'SFTP', hint: 'SSH to Edge hosts and Linux servers', icon: FolderInput, colorClass: 'text-indigo-500', bgClass: 'bg-indigo-500/10' },
+  { id: 'ftp', label: 'FTP', hint: 'Classic FTP or FTPS file drops', icon: Server, colorClass: 'text-emerald-500', bgClass: 'bg-emerald-500/10' },
+  { id: 's3', label: 'Amazon S3', hint: 'IAM keys, optional Assume Role', icon: Cloud, colorClass: 'text-amber-500', bgClass: 'bg-amber-500/10' },
+  { id: 's3compat', label: 'S3-compatible', hint: 'MinIO, R2, Wasabi, LocalStack', icon: HardDrive, colorClass: 'text-fuchsia-500', bgClass: 'bg-fuchsia-500/10' },
 ]
 
 function connectedToast(p: ExplorerProtocol): string {
@@ -2481,7 +2481,7 @@ export function SftpSessionPanel({
                         onClick={() => selectProtocol(opt.id)}
                         className="group flex flex-col items-start gap-2 rounded-xl border border-border/50 bg-card/80 px-4 py-4 text-left shadow-sm ring-1 ring-border/20 transition-colors hover:border-primary/40 hover:bg-accent/30 hover:ring-primary/15"
                       >
-                        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", opt.bgClass, opt.colorClass)}>
                           <opt.icon className="h-4 w-4" />
                         </div>
                         <div className="text-sm font-semibold text-foreground">{opt.label}</div>
@@ -2505,7 +2505,7 @@ export function SftpSessionPanel({
             <ChevronLeft className="h-3.5 w-3.5" />
             Change protocol
           </button>
-          <div className="flex items-center gap-3 text-primary">
+          <div className={cn("flex items-center gap-3", PROTOCOL_CHOICES.find(p => p.id === protocol)?.colorClass || "text-primary")}>
             <ProtocolGlyph protocol={protocol} className="h-8 w-8" />
             <div>
               <h2 className="text-lg font-semibold text-foreground">{protocolTitle(protocol)}</h2>

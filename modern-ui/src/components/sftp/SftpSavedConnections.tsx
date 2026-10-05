@@ -30,6 +30,13 @@ function protocolIcon(protocol: SavedExplorerConnection['protocol']) {
   return FolderInput
 }
 
+function protocolColorClass(protocol: SavedExplorerConnection['protocol']) {
+  if (protocol === 's3') return 'text-amber-500'
+  if (protocol === 's3compat') return 'text-fuchsia-500'
+  if (protocol === 'ftp') return 'text-emerald-500'
+  return 'text-indigo-500'
+}
+
 function ConnectionRow({
   connection: c,
   connecting,
@@ -62,7 +69,7 @@ function ConnectionRow({
         title={resolvedConnectionName(c)}
         onClick={() => onConnect(c)}
       >
-        <Icon className="h-3.5 w-3.5" />
+        <Icon className={cn("h-3.5 w-3.5", protocolColorClass(c.protocol))} />
       </button>
     )
   }
@@ -73,7 +80,7 @@ function ConnectionRow({
         active && 'border-primary/40 bg-primary/5',
       )}
     >
-      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <Icon className={cn("h-3.5 w-3.5 shrink-0", protocolColorClass(c.protocol))} />
       <button
         type="button"
         className="min-w-0 flex-1 text-left"
