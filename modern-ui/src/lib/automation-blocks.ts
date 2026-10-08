@@ -563,6 +563,26 @@ export function applyTransform(
     }
     case 'toFixed':
       return num(input).toFixed(Math.max(0, Math.min(20, Math.trunc(num(arg)))))
+    case 'toProperties': {
+      let items: string[] = []
+      const trimmed = input.trim()
+      if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (Array.isArray(parsed)) {
+            items = parsed.map(String)
+          } else {
+            items = [trimmed]
+          }
+        } catch {
+          items = trimmed.split(/[\r\n,]+/)
+        }
+      } else {
+        items = trimmed.split(/[\r\n,]+/)
+      }
+      const unique = Array.from(new Set(items.map(s => s.trim()).filter(Boolean)))
+      return unique.map((e) => `${e}={}`).join(', ')
+    }
     default:
       return input
   }

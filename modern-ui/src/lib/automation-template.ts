@@ -243,6 +243,22 @@ export const STANDARD_AUTOMATION_VARS: StandardAutomationVar[] = [
     setBy: 'After Fixed or Handheld tag step',
   },
   {
+    name: 'epcsProperties',
+    label: 'EPCs Properties Map',
+    description: "Map of EPCs in Java Properties format e.g. {EPC1={}, EPC2={}}",
+    group: 'tags',
+    envName: 'ZEUS_EPCSPROPERTIES',
+    setBy: 'After Fixed or Handheld tag step',
+  },
+  {
+    name: 'epcsJsonMap',
+    label: 'EPCs JSON Map',
+    description: 'JSON object with EPCs as keys e.g. {"EPC1":{}, "EPC2":{}}',
+    group: 'tags',
+    envName: 'ZEUS_EPCSJSONMAP',
+    setBy: 'After Fixed or Handheld tag step',
+  },
+  {
     name: 'tagCount',
     label: 'Tag count',
     description: 'Number of unique EPCs from the last Fixed / Handheld send',
@@ -431,6 +447,11 @@ export function captureEpcsToVars(vars: AutomationVars, epcs: string[]): void {
   vars.epcs = unique.join('\n')
   vars.epcsSql = unique.map((e) => `'${e.replace(/'/g, "''")}'`).join(',')
   vars.tagCount = String(unique.length)
+  vars.epcsProperties = unique.map((e) => `${e}={}`).join(', ')
+  
+  const jsonMap: Record<string, any> = {}
+  unique.forEach((e) => { jsonMap[e] = {} })
+  vars.epcsJsonMap = JSON.stringify(jsonMap)
 }
 
 /**

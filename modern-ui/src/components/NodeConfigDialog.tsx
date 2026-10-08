@@ -1731,7 +1731,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   <Select value={op} onValueChange={(v) => patchParams( { transformOp: v as TransformOp })}>
                     <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(['text', 'number', 'json'] as const).map((cat) => (
+                      {(['text', 'number', 'json', 'array'] as const).map((cat) => (
                         <div key={cat}>
                           <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>
                           {TRANSFORM_OPS.filter((o) => o.category === cat).map((o) => (

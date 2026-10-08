@@ -150,8 +150,9 @@ export type TransformOp =
   | 'divide'
   | 'modulo'
   | 'toFixed'
+  | 'toProperties'
 
-export type TransformCategory = 'text' | 'number' | 'json'
+export type TransformCategory = 'text' | 'number' | 'json' | 'array'
 
 /**
  * UI metadata for the TRANSFORM op picker. `arg`/`arg2` name the extra inputs a
@@ -186,6 +187,7 @@ export const TRANSFORM_OPS: {
   { value: 'divide', label: 'Divide (÷)', category: 'number', arg: 'Divisor', hint: 'Divide by a number' },
   { value: 'modulo', label: 'Modulo (%)', category: 'number', arg: 'Divisor', hint: 'Remainder after division' },
   { value: 'toFixed', label: 'Fixed decimals', category: 'number', arg: 'Decimal places', hint: 'Format with N decimal places' },
+  { value: 'toProperties', label: 'Array to Properties Map', category: 'array', hint: 'Converts array or comma/newline list into {Item1={}, Item2={}}' },
 ]
 
 /** Severity levels for the NOTIFY (toast) node. */

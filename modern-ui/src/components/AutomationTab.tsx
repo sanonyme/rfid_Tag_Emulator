@@ -472,7 +472,6 @@ const FRAME_COLOR_KEYS: FrameColor[] = ['slate', 'blue', 'emerald', 'amber', 'pu
 interface WorkflowFrameProps {
   frame: AutomationFrame
   canvasZoom: number
-  isRunning: boolean
   frameDragPreview?: { frameId: string; dx: number; dy: number } | null
   frameResizePreview?: { frameId: string; width: number; height: number } | null
   onUpdate: (id: string, updates: Partial<AutomationFrame>) => void
@@ -483,7 +482,6 @@ interface WorkflowFrameProps {
 
 const WorkflowFrame = memo(function WorkflowFrame({
   frame,
-  isRunning,
   frameDragPreview,
   frameResizePreview,
   onUpdate,
@@ -559,10 +557,8 @@ const WorkflowFrame = memo(function WorkflowFrame({
           ) : (
             <span
               onDoubleClick={() => {
-                if (!isRunning) {
-                  setDraftTitle(frame.name)
-                  setEditingTitle(true)
-                }
+                setDraftTitle(frame.name)
+                setEditingTitle(true)
               }}
               className={cn('text-xs font-semibold tracking-wide truncate max-w-[240px]', c.text)}
               title="Double-click to rename"
@@ -610,31 +606,27 @@ const WorkflowFrame = memo(function WorkflowFrame({
             )}
           </div>
 
-          {!isRunning && (
-            <button
-              type="button"
-              className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/15 transition-colors pointer-events-auto"
-              onClick={() => onDelete(frame.id)}
-              title="Delete frame (keeps enclosed nodes)"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          )}
+          <button
+            type="button"
+            className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/15 transition-colors pointer-events-auto"
+            onClick={() => onDelete(frame.id)}
+            title="Delete frame (keeps enclosed nodes)"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
         </div>
       </div>
 
       {/* Frame Resize Handle (bottom-right corner) */}
-      {!isRunning && (
-        <div
-          className="absolute bottom-1 right-1 h-5 w-5 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity pointer-events-auto"
-          onPointerDown={(e) => onFrameResizeStart(frame, e)}
-          title="Drag to resize frame"
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-muted-foreground">
-            <path d="M7 2L2 7M9 5L5 9M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </div>
-      )}
+      <div
+        className="absolute bottom-1 right-1 h-5 w-5 cursor-se-resize flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity pointer-events-auto"
+        onPointerDown={(e) => onFrameResizeStart(frame, e)}
+        title="Drag to resize frame"
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="text-muted-foreground">
+          <path d="M7 2L2 7M9 5L5 9M9 8L8 9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </div>
     </div>
   )
 })
@@ -647,7 +639,6 @@ const WorkflowNode = memo(function WorkflowNode({
   isDragging,
   isActive,
   isSelected,
-  isRunning,
   isLinkTarget,
   groupDelta,
   frameDelta,
@@ -666,7 +657,6 @@ const WorkflowNode = memo(function WorkflowNode({
   isDragging: boolean
   isActive: boolean
   isSelected: boolean
-  isRunning: boolean
   /** True while a link is being dragged and this node can receive it (input port pulses) */
   isLinkTarget: boolean
   /** Live offset applied while this node is part of a group being dragged by another node */
@@ -913,26 +903,24 @@ const WorkflowNode = memo(function WorkflowNode({
               </span>
             )}
             {/* Actions reveal on hover so they never crowd the name */}
-            {!isRunning && (
-              <div className="flex items-center gap-0.5 shrink-0 opacity-0 transition-opacity group-hover/node:opacity-100 focus-within:opacity-100">
-                <button
-                  type="button"
-                  className="p-1.5 rounded hover:bg-primary/20 text-primary shrink-0 focus:outline-none select-none"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onConfigure(step.id) }}
-                  title="Configure"
-                >
-                  <Settings2 className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  type="button"
-                  className="p-1 rounded hover:bg-destructive/20 text-destructive shrink-0 focus:outline-none select-none"
-                  onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(step.id) }}
-                  title="Remove"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-0.5 shrink-0 opacity-0 transition-opacity group-hover/node:opacity-100 focus-within:opacity-100">
+              <button
+                type="button"
+                className="p-1.5 rounded hover:bg-primary/20 text-primary shrink-0 focus:outline-none select-none"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onConfigure(step.id) }}
+                title="Configure"
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="p-1 rounded hover:bg-destructive/20 text-destructive shrink-0 focus:outline-none select-none"
+                onPointerDown={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(step.id) }}
+                title="Remove"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </div>
           </div>
           {/* Full-width name — its own row so long names are never squeezed against the icons */}
           <h3
@@ -957,7 +945,6 @@ const WorkflowEdge = memo(function WorkflowEdge({
   steps,
   dragPreview,
   frameDragPreview,
-  isRunning,
   edgeStyle,
   isLinking,
   isActive,
@@ -967,7 +954,6 @@ const WorkflowEdge = memo(function WorkflowEdge({
   steps: AutomationStep[]
   dragPreview: { nodeId: string; x: number; y: number } | null
   frameDragPreview?: { frameId: string; dx: number; dy: number; enclosedNodeIds: string[] } | null
-  isRunning: boolean
   /** How connections are drawn (curved / step / straight). */
   edgeStyle: EdgeStyle
   /** True while a link is being dragged — edges become drop targets. */
@@ -1069,43 +1055,41 @@ const WorkflowEdge = memo(function WorkflowEdge({
       {/* Wide invisible hit area. While idle it reveals the delete affordance on
           hover; while linking it's a drop target that routes a new connection to
           this edge's own target node ("arrow → arrow → same node"). */}
-      {!isRunning && (
-        <>
-          <path
-            d={path}
-            fill="none"
-            stroke="transparent"
-            strokeWidth={20}
-            strokeLinecap="round"
-            data-edge-hit="true"
-            data-edge-to={edge.to}
-            className={cn('pointer-events-auto', isLinking ? 'cursor-copy' : 'cursor-default')}
+      <>
+        <path
+          d={path}
+          fill="none"
+          stroke="transparent"
+          strokeWidth={20}
+          strokeLinecap="round"
+          data-edge-hit="true"
+          data-edge-to={edge.to}
+          className={cn('pointer-events-auto', isLinking ? 'cursor-copy' : 'cursor-default')}
+        >
+          <title>
+            {isLinking
+              ? 'Drop here to connect to the same node this arrow leads to'
+              : 'Hover, then click ✕ to remove this link'}
+          </title>
+        </path>
+        {/* Explicit delete button — only this removes the link (a stray click on
+            the line no longer deletes it). Hidden while linking. */}
+        {!isLinking && (
+          <g
+            className="pointer-events-auto cursor-pointer opacity-0 transition-opacity group-hover/edge:opacity-100"
+            onClick={(e) => { e.stopPropagation(); onDelete(edge.id) }}
           >
-            <title>
-              {isLinking
-                ? 'Drop here to connect to the same node this arrow leads to'
-                : 'Hover, then click ✕ to remove this link'}
-            </title>
-          </path>
-          {/* Explicit delete button — only this removes the link (a stray click on
-              the line no longer deletes it). Hidden while linking. */}
-          {!isLinking && (
-            <g
-              className="pointer-events-auto cursor-pointer opacity-0 transition-opacity group-hover/edge:opacity-100"
-              onClick={(e) => { e.stopPropagation(); onDelete(edge.id) }}
-            >
-              <circle cx={midX} cy={midY} r={9} className="fill-red-500" />
-              <path
-                d={`M${midX - 3},${midY - 3} L${midX + 3},${midY + 3} M${midX + 3},${midY - 3} L${midX - 3},${midY + 3}`}
-                stroke="white"
-                strokeWidth={1.6}
-                strokeLinecap="round"
-              />
-              <title>Remove link</title>
-            </g>
-          )}
-        </>
-      )}
+            <circle cx={midX} cy={midY} r={9} className="fill-red-500" />
+            <path
+              d={`M${midX - 3},${midY - 3} L${midX + 3},${midY + 3} M${midX + 3},${midY - 3} L${midX - 3},${midY + 3}`}
+              stroke="white"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+            />
+            <title>Remove link</title>
+          </g>
+        )}
+      </>
     </g>
   )
 })
@@ -1418,6 +1402,8 @@ export function AutomationTab({
 }: AutomationTabProps) {
   const customClient = useMemo(() => new CustomClient(), [])
   const edgeSession = useEdgeSession()
+  const sequencesRef = useRef(sequences)
+  sequencesRef.current = sequences
   const sortedSeqs = useMemo(() => [...sequences].sort((a, b) => a.order - b.order), [sequences])
   const [selectedSequenceId, setSelectedSequenceId] = useState<string | null>(sortedSeqs[0]?.id ?? null)
   const selectedSequence = sortedSeqs.find(s => s.id === selectedSequenceId)
@@ -1468,7 +1454,12 @@ export function AutomationTab({
     localStorage.setItem(TRIGGERS_STORAGE_KEY, JSON.stringify(triggers))
   }, [triggers])
 
+  /** True when at least one sequence is running (serial or parallel). */
   const [isRunning, setIsRunning] = useState(false)
+  /** Per-sequence AbortControllers for parallel independent loops. */
+  const parallelRunnersRef = useRef<Map<string, AbortController>>(new Map())
+  /** Running sequence IDs (used for per-row indicator in parallel mode). */
+  const [runningSeqIds, setRunningSeqIds] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     if (isRunning) {
@@ -1487,12 +1478,12 @@ export function AutomationTab({
   const [currentRunningStepId, setCurrentRunningStepId] = useState<string | null>(null)
   const [loopCount, setLoopCount] = useState<string>('1')
   const [customLoopCount, setCustomLoopCount] = useState<string>('3')
-  const [runMode, setRunMode] = useState<'loops' | 'duration'>('loops')
+  const [runMode, setRunMode] = useState<'loops' | 'duration' | 'parallel'>('loops')
   /** Which sequences Start will run: all top-level, the editor's current one, or checked ones. */
   const [sequenceRunScope, setSequenceRunScope] = useState<'all' | 'current' | 'selected'>('all')
   const [checkedSequenceIds, setCheckedSequenceIds] = useState<Set<string>>(() => new Set())
   const [runDurationSeconds, setRunDurationSeconds] = useState<string>('300')
-  /** Top-level sequence currently executing (highlights its row in the list). */
+  /** Top-level sequence currently executing in serial mode (highlights its row). */
   const [runningSeqId, setRunningSeqId] = useState<string | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
@@ -1608,6 +1599,7 @@ export function AutomationTab({
   const logQueueRef = useRef<string[]>([])
   const logFlushTimerRef = useRef<ReturnType<typeof setTimeout>>()
   const runVarsTimerRef = useRef<ReturnType<typeof setTimeout>>()
+  /** AbortController for the serial (non-parallel) run. */
   const abortControllerRef = useRef<AbortController | null>(null)
   /** Promise of the run in flight — awaited when a new run needs to take over. */
   const runPromiseRef = useRef<Promise<void> | null>(null)
@@ -1818,7 +1810,7 @@ export function AutomationTab({
   } | null>(null)
 
   const handleFrameDragStart = useCallback((frame: AutomationFrame, e: React.PointerEvent) => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     e.stopPropagation()
 
     const enclosed: string[] = []
@@ -1908,7 +1900,7 @@ export function AutomationTab({
 
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
-  }, [isRunning, selectedSequenceId, steps, setSequences])
+  }, [selectedSequenceId, steps, setSequences])
 
   // Frame resize handling
   const frameResizeRef = useRef<{
@@ -1920,7 +1912,7 @@ export function AutomationTab({
   } | null>(null)
 
   const handleFrameResizeStart = useCallback((frame: AutomationFrame, e: React.PointerEvent) => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     e.stopPropagation()
 
     frameResizeRef.current = {
@@ -1980,7 +1972,7 @@ export function AutomationTab({
 
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
-  }, [isRunning, selectedSequenceId, updateFramesForSequence])
+  }, [selectedSequenceId, updateFramesForSequence])
 
   // One-time migration: give any legacy sequence (no `edges`) an explicit linear
   // chain so it keeps its original run order under the new graph engine.
@@ -2179,7 +2171,7 @@ export function AutomationTab({
 
   // Nudge the current selection by (dx, dy) content px (arrow keys).
   const nudgeSelected = useCallback((dx: number, dy: number) => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     const ids = selectedIdsRef.current
     if (ids.size === 0) return
     updateStepsForSequence(selectedSequenceId, (prev) =>
@@ -2189,17 +2181,17 @@ export function AutomationTab({
         return { ...s, position: { x: base.x + dx, y: base.y + dy } }
       }),
     )
-  }, [isRunning, selectedSequenceId, updateStepsForSequence])
+  }, [selectedSequenceId, updateStepsForSequence])
 
   // Mute / un-mute the current selection (disabled nodes are skipped at run time).
   const setDisabledForSelected = useCallback((disabled: boolean) => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     const ids = selectedIdsRef.current
     if (ids.size === 0) return
     updateStepsForSequence(selectedSequenceId, (prev) =>
       prev.map((s) => (ids.has(s.id) ? { ...s, params: { ...s.params, disabled } } : s)),
     )
-  }, [isRunning, selectedSequenceId, updateStepsForSequence])
+  }, [selectedSequenceId, updateStepsForSequence])
 
   // --- Undo / redo (observes the selected sequence's steps + edges + frames) ------
   type SeqSnapshot = { steps: AutomationStep[]; edges: AutomationEdge[]; frames?: AutomationFrame[] }
@@ -2252,7 +2244,6 @@ export function AutomationTab({
   }, [selectedSequenceId, setSequences])
 
   const handleUndo = useCallback(() => {
-    if (isRunning) return
     const h = historyRef.current
     if (h.past.length === 0) return
     const prev = h.past.pop()!
@@ -2260,10 +2251,9 @@ export function AutomationTab({
     applySnapshot(prev)
     setCanUndo(h.past.length > 0)
     setCanRedo(true)
-  }, [isRunning, applySnapshot])
+  }, [applySnapshot])
 
   const handleRedo = useCallback(() => {
-    if (isRunning) return
     const h = historyRef.current
     if (h.future.length === 0) return
     const next = h.future.pop()!
@@ -2271,11 +2261,11 @@ export function AutomationTab({
     applySnapshot(next)
     setCanUndo(true)
     setCanRedo(h.future.length > 0)
-  }, [isRunning, applySnapshot])
+  }, [applySnapshot])
 
   // --- Delete / duplicate / copy / paste ---------------------------------
   const handleDeleteSelected = useCallback(() => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     const ids = selectedIdsRef.current
     if (ids.size === 0) return
     setSequences((prev) => prev.map((seq) => {
@@ -2292,7 +2282,7 @@ export function AutomationTab({
       setConfigDialogOpen(false)
     }
     setSelectedIds(new Set())
-  }, [isRunning, selectedSequenceId, setSequences, selectedStepId])
+  }, [selectedSequenceId, setSequences, selectedStepId])
 
   const insertClones = useCallback((srcSteps: AutomationStep[], srcEdges: AutomationEdge[], dx: number, dy: number) => {
     if (!selectedSequenceId || srcSteps.length === 0) return
@@ -2322,7 +2312,6 @@ export function AutomationTab({
   }, [selectedSequenceId, setSequences])
 
   const handleDuplicateSelected = useCallback(() => {
-    if (isRunning) return
     const ids = selectedIdsRef.current
     if (ids.size === 0) return
     insertClones(
@@ -2331,7 +2320,7 @@ export function AutomationTab({
       PASTE_OFFSET,
       PASTE_OFFSET,
     )
-  }, [isRunning, steps, edges, insertClones])
+  }, [steps, edges, insertClones])
 
   const handleCopyNodes = useCallback(() => {
     const ids = selectedIdsRef.current
@@ -2344,7 +2333,6 @@ export function AutomationTab({
   }, [steps, edges])
 
   const handlePasteNodes = useCallback((at?: { x: number; y: number }) => {
-    if (isRunning) return
     const clip = clipboardRef.current
     if (!clip || clip.steps.length === 0) return
     if (at) {
@@ -2355,11 +2343,11 @@ export function AutomationTab({
     } else {
       insertClones(clip.steps, clip.edges, PASTE_OFFSET, PASTE_OFFSET)
     }
-  }, [isRunning, insertClones])
+  }, [insertClones])
 
   // --- Alignment ----------------------------------------------------------
   const alignSelected = useCallback((mode: 'left' | 'right' | 'hcenter' | 'top' | 'bottom' | 'vcenter') => {
-    if (isRunning || !selectedSequenceId) return
+    if (!selectedSequenceId) return
     const ids = selectedIdsRef.current
     if (ids.size < 2) return
     const sel = steps.filter((s) => ids.has(s.id))
@@ -2380,7 +2368,7 @@ export function AutomationTab({
         : { x: p.x, y: cY }
       return { ...s, position: np }
     }))
-  }, [isRunning, selectedSequenceId, steps, updateStepsForSequence])
+  }, [selectedSequenceId, steps, updateStepsForSequence])
 
   // --- Fit to view --------------------------------------------------------
   /** Pan/zoom so the given nodes fill the viewport (empty list = reset to 100%). */
@@ -3511,6 +3499,22 @@ export function AutomationTab({
    * sequence (or "Run from here") always works instead of being silently ignored.
    */
   const handleRun = async (onlyIds?: string[], options: Omit<RunOptions, 'onlyIds'> = {}) => {
+    // If parallel mode and no explicit ids given, launch each sequence independently.
+    if (runMode === 'parallel' && !onlyIds && !options.startStepId) {
+      let seqs: AutomationSequence[]
+      if (sequenceRunScope === 'current') {
+        seqs = selectedSequenceId ? [sortedSeqs.find(s => s.id === selectedSequenceId)!].filter(Boolean) : []
+      } else if (sequenceRunScope === 'selected') {
+        seqs = sortedSeqs.filter(s => checkedSequenceIds.has(s.id))
+      } else {
+        seqs = resolveTopLevelSequences(sortedSeqs)
+      }
+      if (seqs.length === 0) { toast.error('No sequences to run'); return }
+      for (const seq of seqs) {
+        void handleRunParallel(seq.id)
+      }
+      return
+    }
     const previous = runPromiseRef.current
     if (previous) {
       handleStop()
@@ -3522,6 +3526,215 @@ export function AutomationTab({
       await run
     } finally {
       if (runPromiseRef.current === run) runPromiseRef.current = null
+    }
+  }
+
+  /**
+   * Start an independent looping run for a single sequence.
+   * Each call gets its own AbortController so sequences can be stopped individually
+   * without affecting each other. The loop count comes from the global loopCount / customLoopCount
+   * settings (same as serial mode), defaulting to ∞ in parallel mode.
+   */
+  const handleRunParallel = async (seqId: string) => {
+    // Stop the existing runner for this sequence if there is one.
+    const existing = parallelRunnersRef.current.get(seqId)
+    if (existing) {
+      existing.abort()
+      parallelRunnersRef.current.delete(seqId)
+      setRunningSeqIds(prev => { const n = new Set(prev); n.delete(seqId); return n })
+    }
+
+    const seq = sortedSeqs.find(s => s.id === seqId)
+    if (!seq || seq.steps.length === 0) {
+      toast.error(`"${seq?.name ?? seqId}" has no nodes to run`)
+      return
+    }
+
+    const controller = new AbortController()
+    const signal = controller.signal
+    parallelRunnersRef.current.set(seqId, controller)
+    setRunningSeqIds(prev => new Set([...prev, seqId]))
+    setIsRunning(true)
+
+    // In parallel mode default to ∞ loops; otherwise respect the configured loop count.
+    const loops = runMode === 'parallel'
+      ? Infinity
+      : loopCount === 'Inf'
+        ? Infinity
+        : loopCount === 'custom'
+          ? Math.max(1, parseInt(customLoopCount) || 1)
+          : parseInt(loopCount) || 1
+
+    const seqVarsRef = { current: {
+      ...createRunContext({ host, alePort, customPort, port: '' }),
+    } as AutomationVars }
+
+    // Prefix log lines with the sequence name when multiple runners are active.
+    const prefixedLog = (msg: string) => {
+      const prefix = parallelRunnersRef.current.size > 1 ? `[${seq.name}] ` : ''
+      addLog(`${prefix}${msg}`)
+    }
+
+    const scopeLabel = `sequence "${seq.name}" (parallel)`
+    const execution: ExecutionRecord = {
+      id: crypto.randomUUID(),
+      startedAt: Date.now(),
+      status: 'running',
+      scope: scopeLabel,
+      stepsRun: 0,
+      log: [],
+      logTruncated: false,
+    }
+    setExecutions(prev => pushExecution(prev, execution))
+    prefixedLog(`Starting parallel loop for "${seq.name}" (${loops === Infinity ? '∞' : loops} iteration${loops === 1 ? '' : 's'})…`)
+
+    let loopNum = 0
+    let status: ExecutionStatus = 'success'
+    let errorMessage: string | undefined
+    let stepsRun = 0
+
+    // Build a minimal per-sequence graph runner that uses its own var context.
+    const runSeqGraphIsolated = async (s: AutomationSequence, sig: AbortSignal, callStack: Set<string> = new Set()): Promise<void> => {
+      const sSteps = s.steps
+      if (sSteps.length === 0) return
+      if (callStack.has(s.id)) { prefixedLog(`Skipped recursive call to "${s.name}"`); return }
+      const stack = new Set(callStack).add(s.id)
+      if (stack.size > MAX_CALL_DEPTH) { prefixedLog(`Stopped: call nesting exceeded ${MAX_CALL_DEPTH}`); return }
+      const seqEdges = s.edges ?? deriveLinearEdges(sSteps)
+      const byId = new Map(sSteps.map(st => [st.id, st]))
+      const hasIncoming = new Set(seqEdges.filter(e => e.from !== e.to).map(e => e.to))
+      const roots = sSteps.filter(st => !hasIncoming.has(st.id)).sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
+      const startNodes = roots.length > 0 ? roots : [sSteps[0]]
+      for (const root of startNodes) {
+        if (sig.aborted) break
+        let current: AutomationStep | null = root
+        let guard = 0
+        while (current && !sig.aborted) {
+          if (++guard > MAX_GRAPH_STEPS) { prefixedLog(`Stopped: exceeded ${MAX_GRAPH_STEPS} steps`); break }
+          stepsRun++
+          setCurrentRunningStepId(current.id)
+          if (current.params.disabled) {
+            prefixedLog(`⃠ Skipped disabled node "${current.name}"`)
+            const passEdge = seqEdges.find(e => e.from === current!.id && e.to !== current!.id)
+            current = passEdge ? byId.get(passEdge.to) ?? null : null
+            continue
+          }
+          let handle = 'out'
+          const node = current
+          if (node.type === 'CONDITION') {
+            const pass = evaluateCondition(node.params, seqVarsRef.current)
+            prefixedLog(`◇ ${node.name}: ${pass ? 'TRUE' : 'FALSE'}`)
+            handle = pass ? 'true' : 'false'
+          } else if (node.type === 'SWITCH') {
+            handle = switchHandle(node.params, seqVarsRef.current)
+          } else if (node.type === 'RANDOM') {
+            const branches = node.params.randomBranches ?? []
+            const idx = branches.length > 0 ? pickWeightedIndex(branches.map(b => b.weight ?? 1), Math.random()) : 0
+            handle = `branch-${idx}`
+          } else {
+            // Save and restore the global runVarsRef so executeStep works correctly.
+            const savedVarsRef = runVarsRef.current
+            runVarsRef.current = seqVarsRef.current
+            let action: () => Promise<void>
+            if (node.type === 'CALL_SEQUENCE') {
+              action = async () => {
+                const target = sequencesRef.current.find(st => st.id === node.params.callSequenceId) ?? sortedSeqs.find(st => st.id === node.params.callSequenceId)
+                if (!target) throw new Error('Call Sequence: no target selected')
+                await runSeqGraphIsolated(target, sig, stack)
+              }
+            } else if (node.type === 'FOR_EACH') {
+              action = async () => {
+                const source = applyTemplate(node.params.forEachSource || '', seqVarsRef.current)
+                const items = parseListItems(source)
+                const itemAs = (node.params.forEachItemAs || 'item').trim() || 'item'
+                const indexAs = (node.params.forEachIndexAs || 'index').trim() || 'index'
+                const max = Math.max(1, node.params.forEachMax ?? 500)
+                const target = sequencesRef.current.find(st => st.id === node.params.forEachSequenceId) ?? sortedSeqs.find(st => st.id === node.params.forEachSequenceId)
+                if (!target) throw new Error('For Each: no target sequence selected')
+                const slice = items.slice(0, max)
+                for (let i = 0; i < slice.length; i++) {
+                  if (sig.aborted) return
+                  seqVarsRef.current[itemAs] = slice[i]!
+                  seqVarsRef.current[indexAs] = String(i)
+                  await runSeqGraphIsolated(target, sig, stack)
+                }
+              }
+            } else if (node.type === 'LOOP_N') {
+              action = async () => {
+                const rawCount = applyTemplate(node.params.loopCount || '', seqVarsRef.current).trim()
+                const count = Math.min(Math.max(0, Math.floor(Number(rawCount)) || 0), Math.max(1, node.params.loopMax ?? 1000))
+                const indexAs = (node.params.loopIndexAs || 'i').trim() || 'i'
+                const target = sequencesRef.current.find(st => st.id === node.params.loopSequenceId) ?? sortedSeqs.find(st => st.id === node.params.loopSequenceId)
+                if (!target) throw new Error('Loop N: no target sequence selected')
+                for (let i = 0; i < count; i++) {
+                  if (sig.aborted) return
+                  seqVarsRef.current[indexAs] = String(i + 1)
+                  await runSeqGraphIsolated(target, sig, stack)
+                }
+              }
+            } else {
+              action = () => executeStep(node, sig)
+            }
+            try {
+              handle = await runNodeWithPolicy(node, sig, action)
+            } catch (err: any) {
+              runVarsRef.current = savedVarsRef
+              if (err instanceof AutomationStopSignal) {
+                if (err.scope === 'run') throw err
+                break
+              }
+              if (err.message === 'Aborted') { runVarsRef.current = savedVarsRef; return }
+              throw err
+            }
+            seqVarsRef.current = runVarsRef.current
+            runVarsRef.current = savedVarsRef
+          }
+          const nextEdge = seqEdges.find(e => e.from === current!.id && (e.sourceHandle ?? 'out') === handle)
+          current = nextEdge ? byId.get(nextEdge.to) ?? null : null
+        }
+      }
+    }
+
+    try {
+      for (let i = 0; i < loops; i++) {
+        if (signal.aborted) break
+        loopNum++
+        if (loops > 1 || loops === Infinity) prefixedLog(`--- Loop ${loopNum}${loops === Infinity ? '/∞' : `/${loops}`} ---`)
+        // Pick up the latest steps/edges for this sequence so live additions/edits execute on next iteration!
+        const latestSeq = sequencesRef.current.find(st => st.id === seqId) ?? seq
+        await runSeqGraphIsolated(latestSeq, signal)
+      }
+      if (signal.aborted) {
+        status = 'stopped'
+        prefixedLog(`"${seq.name}" stopped`)
+      } else {
+        prefixedLog(`"${seq.name}" completed`)
+      }
+    } catch (err: any) {
+      if (err instanceof AutomationStopSignal) {
+        prefixedLog(`"${seq.name}" stopped by Stop node`)
+      } else if (err.message !== 'Aborted') {
+        status = 'error'
+        errorMessage = String(err.message ?? err)
+        prefixedLog(`"${seq.name}" failed: ${err.message}`)
+        toast.error(`Parallel run failed: ${seq.name}`)
+      } else {
+        status = 'stopped'
+        prefixedLog(`"${seq.name}" stopped`)
+      }
+    } finally {
+      flushLogQueue()
+      const snap = snapshotLog(runLogRef.current)
+      setExecutions(prev => updateExecution(prev, execution.id, {
+        status, finishedAt: Date.now(), stepsRun, error: errorMessage, ...snap,
+      }))
+      parallelRunnersRef.current.delete(seqId)
+      setRunningSeqIds(prev => { const n = new Set(prev); n.delete(seqId); return n })
+      if (parallelRunnersRef.current.size === 0) {
+        setIsRunning(false)
+        setCurrentRunningStepId(null)
+        setRunningSeqId(null)
+      }
     }
   }
 
@@ -3710,10 +3923,32 @@ export function AutomationTab({
   }
 
   const handleStop = () => {
+    // Stop serial runner.
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
+    }
+    // Stop all parallel runners.
+    for (const ctrl of parallelRunnersRef.current.values()) {
+      ctrl.abort()
+    }
+    emulator.cancelSend()
+    handheldServer.cancelSend()
+  }
+
+  /** Stop only one specific parallel sequence runner. */
+  const handleStopSequence = (seqId: string) => {
+    const ctrl = parallelRunnersRef.current.get(seqId)
+    if (ctrl) {
+      ctrl.abort()
       emulator.cancelSend()
       handheldServer.cancelSend()
+    } else {
+      // Fallback: stop the serial runner if this seq is the current running one.
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+        emulator.cancelSend()
+        handheldServer.cancelSend()
+      }
     }
   }
 
@@ -4070,7 +4305,7 @@ export function AutomationTab({
                         ) : (
                           <span className="flex-1 min-w-0 truncate text-sm font-medium">{seq.name}</span>
                         )}
-                        {runningSeqId === seq.id ? (
+                        {(runningSeqId === seq.id || runningSeqIds.has(seq.id)) ? (
                           <span className="relative flex h-2 w-2 shrink-0" title="Running">
                             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
                             <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
@@ -4081,11 +4316,11 @@ export function AutomationTab({
                         <div className={`flex gap-0.5 shrink-0 transition-opacity ${selectedSequenceId === seq.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              {runningSeqId === seq.id ? (
+                              {(runningSeqId === seq.id || runningSeqIds.has(seq.id)) ? (
                                 <button
                                   type="button"
                                   className="p-0.5 rounded text-destructive hover:bg-destructive/15 focus:outline-none select-none"
-                                  onClick={(e) => { e.stopPropagation(); handleStop() }}
+                                  onClick={(e) => { e.stopPropagation(); handleStopSequence(seq.id) }}
                                 >
                                   <Square className="h-3 w-3" />
                                 </button>
@@ -4094,18 +4329,28 @@ export function AutomationTab({
                                   type="button"
                                   className="p-0.5 rounded hover:bg-muted focus:outline-none select-none disabled:opacity-40"
                                   disabled={seq.steps.length === 0}
-                                  onClick={(e) => { e.stopPropagation(); void handleRun([seq.id]) }}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    // In parallel mode, launch as independent loop; otherwise serial.
+                                    if (runMode === 'parallel') {
+                                      void handleRunParallel(seq.id)
+                                    } else {
+                                      void handleRun([seq.id])
+                                    }
+                                  }}
                                 >
                                   <Play className="h-3 w-3" />
                                 </button>
                               )}
                             </TooltipTrigger>
                             <TooltipContent side="right">
-                              {runningSeqId === seq.id
-                                ? 'Stop this run'
-                                : isRunning
-                                  ? 'Stop the current run and run this sequence'
-                                  : 'Run this sequence only'}
+                              {(runningSeqId === seq.id || runningSeqIds.has(seq.id))
+                                ? 'Stop this sequence'
+                                : runMode === 'parallel'
+                                  ? 'Start as independent parallel loop'
+                                  : isRunning
+                                    ? 'Stop the current run and run this sequence'
+                                    : 'Run this sequence only'}
                             </TooltipContent>
                           </Tooltip>
                           <Tooltip>
@@ -4228,7 +4473,7 @@ export function AutomationTab({
             <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleUndo} disabled={isRunning || !canUndo}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleUndo} disabled={!canUndo}>
                     <Undo2 className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -4236,7 +4481,7 @@ export function AutomationTab({
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleRedo} disabled={isRunning || !canRedo}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleRedo} disabled={!canRedo}>
                     <Redo2 className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -4246,7 +4491,7 @@ export function AutomationTab({
             <div className="flex items-center gap-0.5 rounded-lg border border-border/50 bg-card/90 px-1 py-1 shadow-sm">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleAutoLink} disabled={isRunning || steps.length < 2}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleAutoLink} disabled={steps.length < 2}>
                     <Spline className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -4254,7 +4499,7 @@ export function AutomationTab({
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleClearLinks} disabled={isRunning || edges.length === 0}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleClearLinks} disabled={edges.length === 0}>
                     <Link2Off className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -4308,7 +4553,7 @@ export function AutomationTab({
                     size="sm"
                     className="h-7 gap-1.5 px-2"
                     onClick={handleAddFrame}
-                    disabled={isRunning || !selectedSequenceId}
+                    disabled={!selectedSequenceId}
                   >
                     <Frame className="h-3.5 w-3.5" />
                     <span className="text-xs font-medium">Add Frame</span>
@@ -4337,7 +4582,7 @@ export function AutomationTab({
               </Tooltip>
             </div>
             {/* Alignment — only while a multi-selection is active */}
-            {selectedIds.size >= 2 && !isRunning && (
+            {selectedIds.size >= 2 && (
               <div className="flex items-center gap-0.5 rounded-lg border border-primary/40 bg-card/90 px-1 py-1 shadow-sm">
                 <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-primary">{selectedIds.size}</span>
                 <Tooltip>
@@ -4423,7 +4668,28 @@ export function AutomationTab({
                   transition={{ type: 'spring', stiffness: 400, damping: 28 }}
                   className="pointer-events-auto flex items-center gap-2 rounded-full border border-border/60 bg-card/95 py-1.5 pl-1.5 pr-4 shadow-lg backdrop-blur"
                 >
-                  {!isRunning ? (
+                  {runMode === 'parallel' ? (
+                    <>
+                      <Button
+                        size="sm"
+                        className="h-8 rounded-full"
+                        onClick={() => void handleRun()}
+                        disabled={sequenceRunScope === 'selected' && checkedSequenceIds.size === 0}
+                      >
+                        <Play className="mr-1.5 h-3.5 w-3.5" />
+                        {sequenceRunScope === 'current'
+                          ? 'Start'
+                          : sequenceRunScope === 'selected'
+                            ? `Start selected${checkedSequenceIds.size > 0 ? ` (${checkedSequenceIds.size})` : ''}`
+                            : 'Start All ∥'}
+                      </Button>
+                      {runningSeqIds.size > 0 && (
+                        <Button size="sm" variant="destructive" className="h-8 rounded-full" onClick={handleStop}>
+                          <Square className="mr-1.5 h-3.5 w-3.5" /> Stop All
+                        </Button>
+                      )}
+                    </>
+                  ) : !isRunning ? (
                     <Button
                       size="sm"
                       className="h-8 rounded-full"
@@ -4444,14 +4710,18 @@ export function AutomationTab({
                   )}
                   <span className="text-[11px] text-muted-foreground">
                     {isRunning
-                      ? runningSeqId
-                        ? `Running: ${sortedSeqs.find(s => s.id === runningSeqId)?.name ?? ''}`
-                        : 'Running…'
-                      : runMode === 'duration'
-                        ? `${runDurationSeconds || '300'}s`
-                        : loopCount === 'Inf'
-                          ? 'Loop ∞'
-                          : `×${loopCount === 'custom' ? customLoopCount || '1' : loopCount}`}
+                      ? runMode === 'parallel'
+                        ? `${runningSeqIds.size} running`
+                        : runningSeqId
+                          ? `Running: ${sortedSeqs.find(s => s.id === runningSeqId)?.name ?? ''}`
+                          : 'Running…'
+                      : runMode === 'parallel'
+                        ? 'Parallel ∞'
+                        : runMode === 'duration'
+                          ? `${runDurationSeconds || '300'}s`
+                          : loopCount === 'Inf'
+                            ? 'Loop ∞'
+                            : `×${loopCount === 'custom' ? customLoopCount || '1' : loopCount}`}
                   </span>
                 </motion.div>
               </div>
@@ -4586,7 +4856,6 @@ export function AutomationTab({
                   key={frame.id}
                   frame={frame}
                   canvasZoom={canvasZoom}
-                  isRunning={isRunning}
                   frameDragPreview={frameDragPreview}
                   frameResizePreview={frameResizePreview}
                   onUpdate={handleUpdateFrame}
@@ -4636,7 +4905,6 @@ export function AutomationTab({
                     steps={steps}
                     dragPreview={dragPreview}
                     frameDragPreview={frameDragPreview}
-                    isRunning={isRunning}
                     edgeStyle={edgeStyle}
                     isLinking={!!linking}
                     isActive={isRunning && currentRunningStepId === edge.from}
@@ -4677,7 +4945,6 @@ export function AutomationTab({
                   isDragging={draggingNodeId === step.id}
                   isActive={currentRunningStepId === step.id}
                   isSelected={selectedIds.has(step.id)}
-                  isRunning={isRunning}
                   groupDelta={groupDrag && groupDrag.anchor !== step.id ? { x: groupDrag.dx, y: groupDrag.dy } : null}
                   frameDelta={
                     frameDragPreview && frameDragPreview.enclosedNodeIds.includes(step.id)
@@ -4742,7 +5009,7 @@ export function AutomationTab({
                 <Select
                   value={sequenceRunScope}
                   onValueChange={(v) => setSequenceRunScope(v as 'all' | 'current' | 'selected')}
-                  disabled={isRunning}
+                  disabled={runMode !== 'parallel' && isRunning}
                 >
                   <SelectTrigger className="flex-1">
                     <SelectValue />
@@ -4768,16 +5035,22 @@ export function AutomationTab({
               )}
               <div className="flex items-center gap-2">
                 <Label className="w-24 shrink-0">Run:</Label>
-                <Select value={runMode} onValueChange={(v) => setRunMode(v as 'loops' | 'duration')}>
+                <Select value={runMode} onValueChange={(v) => setRunMode(v as 'loops' | 'duration' | 'parallel')}>
                   <SelectTrigger className="flex-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="loops">By loop count</SelectItem>
                     <SelectItem value="duration">For duration</SelectItem>
+                    <SelectItem value="parallel">Parallel (independent ∞)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+              {runMode === 'parallel' && (
+                <p className="text-[11px] text-muted-foreground pl-[6.5rem] leading-snug">
+                  Each sequence loops forever independently. Use ▶ per-row to start/stop individually, or Start All to launch them together.
+                </p>
+              )}
               {runMode === 'loops' ? (
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
@@ -4810,6 +5083,32 @@ export function AutomationTab({
                     </div>
                   )}
                 </div>
+              ) : runMode === 'parallel' ? (
+                <div className="flex flex-col gap-1.5">
+                  <p className="text-[11px] text-muted-foreground">Each selected sequence runs in its own independent infinite loop. Click ▶ next to a sequence to start it alone, or use Start All below.</p>
+                  {runningSeqIds.size > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {[...runningSeqIds].map(id => {
+                        const s = sortedSeqs.find(sq => sq.id === id)
+                        if (!s) return null
+                        return (
+                          <span key={id} className="flex items-center gap-1 rounded-full bg-primary/15 border border-primary/30 px-2 py-0.5 text-[10px] font-medium text-primary">
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                            {s.name}
+                            <button
+                              type="button"
+                              className="ml-0.5 hover:text-destructive"
+                              onClick={() => handleStopSequence(id)}
+                              title={`Stop "${s.name}"`}
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="flex items-center gap-2">
                   <Label className="w-24 shrink-0">Duration:</Label>
@@ -4829,7 +5128,28 @@ export function AutomationTab({
               )}
             </div>
               <div className="flex gap-2">
-                {!isRunning ? (
+                {runMode === 'parallel' ? (
+                  // In parallel mode: show Start All (launches all at once) + Stop All
+                  <>
+                    <Button
+                      onClick={() => void handleRun()}
+                      className="flex-1"
+                      disabled={sequenceRunScope === 'selected' && checkedSequenceIds.size === 0}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      {sequenceRunScope === 'current'
+                        ? 'Start'
+                        : sequenceRunScope === 'selected'
+                          ? `Start (${checkedSequenceIds.size})`
+                          : 'Start All'}
+                    </Button>
+                    {runningSeqIds.size > 0 && (
+                      <Button onClick={handleStop} variant="destructive">
+                        <Square className="w-4 h-4 mr-2" /> Stop All
+                      </Button>
+                    )}
+                  </>
+                ) : !isRunning ? (
                 <Button
                   onClick={() => void handleRun()}
                   className="flex-1"
@@ -5231,7 +5551,6 @@ export function AutomationTab({
                       icon: <Settings2 className="h-3.5 w-3.5" />,
                       shortcut: '⏎⏎',
                       onClick: () => handleConfigureNode(ctxMenu.nodeId!),
-                      disabled: isRunning,
                     },
                     {
                       label: isRunning ? 'Stop & run from here' : 'Run from here',
@@ -5251,7 +5570,6 @@ export function AutomationTab({
                       icon: <Copy className="h-3.5 w-3.5" />,
                       shortcut: 'Ctrl+D',
                       onClick: handleDuplicateSelected,
-                      disabled: isRunning,
                     },
                     {
                       label: n > 1 ? `Copy ${n} nodes` : 'Copy',
@@ -5263,7 +5581,6 @@ export function AutomationTab({
                       label: anyEnabled ? (n > 1 ? `Disable ${n} nodes` : 'Disable') : (n > 1 ? `Enable ${n} nodes` : 'Enable'),
                       icon: anyEnabled ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />,
                       onClick: () => setDisabledForSelected(anyEnabled),
-                      disabled: isRunning,
                     },
                     ...(n >= 2
                       ? ([
@@ -5272,13 +5589,11 @@ export function AutomationTab({
                             label: 'Align horizontal centers',
                             icon: <AlignHorizontalJustifyCenter className="h-3.5 w-3.5" />,
                             onClick: () => alignSelected('hcenter'),
-                            disabled: isRunning,
                           },
                           {
                             label: 'Align vertical centers',
                             icon: <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />,
                             onClick: () => alignSelected('vcenter'),
-                            disabled: isRunning,
                           },
                         ] as CtxItem[])
                       : []),
@@ -5293,7 +5608,6 @@ export function AutomationTab({
                       label: n > 1 ? `Group ${n} nodes into frame` : 'Wrap in frame',
                       icon: <Frame className="h-3.5 w-3.5" />,
                       onClick: handleCreateFrameFromSelected,
-                      disabled: isRunning,
                     },
                     { separator: true },
                     {
@@ -5301,7 +5615,6 @@ export function AutomationTab({
                       icon: <Trash2 className="h-3.5 w-3.5" />,
                       shortcut: 'Del',
                       onClick: handleDeleteSelected,
-                      disabled: isRunning,
                       danger: true,
                     },
                   ] as CtxItem[]
@@ -5315,20 +5628,20 @@ export function AutomationTab({
                       paletteAddPosRef.current = clientToContent(ctxMenu.x, ctxMenu.y)
                       setPaletteOpen(true)
                     },
-                    disabled: isRunning || !selectedSequenceId,
+                    disabled: !selectedSequenceId,
                   },
                   {
                     label: 'Add visual frame here',
                     icon: <Frame className="h-3.5 w-3.5" />,
                     onClick: handleAddFrame,
-                    disabled: isRunning || !selectedSequenceId,
+                    disabled: !selectedSequenceId,
                   },
                   {
                     label: 'Paste here',
                     icon: <Copy className="h-3.5 w-3.5" />,
                     shortcut: 'Ctrl+V',
                     onClick: () => handlePasteNodes(clientToContent(ctxMenu.x, ctxMenu.y)),
-                    disabled: isRunning || !clipboardRef.current,
+                    disabled: !clipboardRef.current,
                   },
                   { separator: true },
                   {
