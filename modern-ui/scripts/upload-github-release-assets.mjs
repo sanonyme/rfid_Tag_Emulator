@@ -114,7 +114,7 @@ async function deleteAsset({ owner, repo, assetId, token }) {
 }
 
 async function uploadAsset({ owner, repo, releaseId, filePath, uploadName, token }) {
-  const size = statSync(filePath).size
+  const buf = readFileSync(filePath)
   const url = `https://uploads.github.com/repos/${owner}/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(uploadName)}`
 
   const res = await fetch(url, {
@@ -122,10 +122,9 @@ async function uploadAsset({ owner, repo, releaseId, filePath, uploadName, token
     headers: {
       ...githubHeaders(token),
       'Content-Type': 'application/octet-stream',
-      'Content-Length': String(size),
+      'Content-Length': String(buf.length),
     },
-    body: createReadStream(filePath),
-    duplex: 'half',
+    body: buf,
   })
 
   if (!res.ok) {
