@@ -22,6 +22,24 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.3.1',
+    date: '2026-10',
+    highlights: [
+      {
+        title: 'Automation: independent concurrent looping',
+        detail: 'Run multiple sequences in parallel without execution locks or blocking editing.',
+      },
+      {
+        title: 'Automation: epcsProperties & toProperties',
+        detail: 'Access {{epcsProperties}} directly in variables or use the Transform node to map EPCs into properties format.',
+      },
+      {
+        title: 'Performance & stability',
+        detail: 'Under-the-hood optimizations and package updates.',
+      },
+    ],
+  },
+  {
     version: '10.3.0',
     date: '2026-09',
     highlights: [
