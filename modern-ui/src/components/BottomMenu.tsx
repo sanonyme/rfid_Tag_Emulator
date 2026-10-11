@@ -21,7 +21,7 @@ import {
   HelpCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { applyTheme, getSavedTheme } from '@/lib/themes'
+import { applyTheme, getSavedTheme, themeForcesDark, THEME_CHANGE_EVENT } from '@/lib/themes'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
@@ -87,6 +87,14 @@ export function BottomMenu({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  useEffect(() => {
+    const sync = () => {
+      if (themeForcesDark(getSavedTheme())) setTheme('dark')
+    }
+    window.addEventListener(THEME_CHANGE_EVENT, sync)
+    return () => window.removeEventListener(THEME_CHANGE_EVENT, sync)
+  }, [])
+
   const handleAdminLogin = async () => {
     setAdminError('')
     if (!window.electronAPI?.adminLogin) {
@@ -105,15 +113,18 @@ export function BottomMenu({
   }
 
   const applyThemeOption = (key: 'light' | 'dark' | 'system') => {
-    setTheme(key)
-    localStorage.setItem('theme', key)
-    if (key === 'system') {
+    const palette = getSavedTheme()
+    // Dark-only palettes (Christmas) ignore light / system-light.
+    const next = themeForcesDark(palette) ? 'dark' : key
+    setTheme(next)
+    localStorage.setItem('theme', next)
+    if (next === 'system') {
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
       document.documentElement.classList.toggle('dark', prefersDark)
-      applyTheme(getSavedTheme(), prefersDark)
+      applyTheme(palette, prefersDark)
     } else {
-      document.documentElement.classList.toggle('dark', key === 'dark')
-      applyTheme(getSavedTheme(), key === 'dark')
+      document.documentElement.classList.toggle('dark', next === 'dark')
+      applyTheme(palette, next === 'dark')
     }
   }
 
@@ -155,22 +166,34 @@ export function BottomMenu({
         ))}
       </div>
     ) : view === 'theme' ? (
-      <div className="flex items-center gap-1.5 min-w-[240px] p-1.5">
-        {THEME_OPTIONS.map(({ key, icon: Icon, text }) => (
-          <button
-            key={key}
-            onClick={() => applyThemeOption(key as 'light' | 'dark' | 'system')}
-            className={cn(
-              'flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-150 flex-1',
-              theme === key
-                ? 'bg-primary/20 text-primary border border-primary/30 dark:bg-white/15 dark:text-white dark:border-white/25'
-                : 'text-muted-foreground hover:bg-muted'
-            )}
-          >
-            <Icon size={18} className="shrink-0" />
-            <span className="text-sm font-medium">{text}</span>
-          </button>
-        ))}
+      <div className="flex min-w-[240px] flex-col gap-1.5 p-1.5">
+        {themeForcesDark(getSavedTheme()) && (
+          <p className="px-1 text-[11px] text-muted-foreground">Christmas Special is dark only.</p>
+        )}
+        <div className="flex items-center gap-1.5">
+          {THEME_OPTIONS.map(({ key, icon: Icon, text }) => {
+            const locked = themeForcesDark(getSavedTheme()) && key !== 'dark'
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={locked}
+                title={locked ? 'Not available for Christmas Special' : undefined}
+                onClick={() => applyThemeOption(key)}
+                className={cn(
+                  'flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 transition-all duration-150',
+                  theme === key
+                    ? 'bg-primary/20 text-primary border border-primary/30 dark:bg-white/15 dark:text-white dark:border-white/25'
+                    : 'text-muted-foreground hover:bg-muted',
+                  locked && 'cursor-not-allowed opacity-40 hover:bg-transparent',
+                )}
+              >
+                <Icon size={18} className="shrink-0" />
+                <span className="text-sm font-medium">{text}</span>
+              </button>
+            )
+          })}
+        </div>
       </div>
     ) : view === 'admin' ? (
       <div className="w-[270px] p-4" onClick={(e) => e.stopPropagation()}>

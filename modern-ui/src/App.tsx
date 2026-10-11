@@ -7,7 +7,7 @@ import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
 import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient, HandheldServerClient, OCRClient } from './lib/tcp-client'
-import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
+import { applyTheme, getSavedTheme, themeForcesDark, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
 import { useSettings } from './lib/settings-context'
 import {
@@ -320,10 +320,18 @@ function App() {
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 
   const toggleTheme = useCallback(() => {
+    const palette = getSavedTheme()
+    // Christmas (and any darkOnly theme) has no light mode.
+    if (themeForcesDark(palette)) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+      applyTheme(palette, true)
+      return
+    }
     const newMode = document.documentElement.classList.contains('dark') ? 'light' : 'dark'
     localStorage.setItem('theme', newMode)
     document.documentElement.classList.toggle('dark', newMode === 'dark')
-    applyTheme(getSavedTheme(), newMode === 'dark')
+    applyTheme(palette, newMode === 'dark')
   }, [])
 
   const handlePaletteConnect = useCallback(() => {
@@ -555,11 +563,15 @@ function App() {
     const savedTheme = getSavedTheme()
     setCurrentTheme(savedTheme)
     const savedMode = localStorage.getItem('theme')
-    const isDark = savedMode === 'dark'
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+    const isDark = themeForcesDark(savedTheme)
       ? true
-      : savedMode === 'light'
-        ? false
-        : window.matchMedia('(prefers-color-scheme: dark)').matches
+      : savedMode === 'dark'
+        ? true
+        : savedMode === 'light'
+          ? false
+          : prefersDark
+    if (themeForcesDark(savedTheme) && savedMode !== 'dark') localStorage.setItem('theme', 'dark')
     document.documentElement.classList.toggle('dark', isDark)
     applyTheme(savedTheme, isDark)
 
@@ -660,7 +672,7 @@ function App() {
   const effectiveActiveTab = isPopoutWindow && popoutTabId ? popoutTabId : activeTab
   const tabContentHidden = !isPopoutWindow && poppedOutTabs.has(activeTab)
   const workshopFloor = (anchor: 'titlebar' | 'row' = 'titlebar') =>
-    !isPopoutWindow && currentTheme === 'christmas' ? (
+    !isPopoutWindow ? (
       <Suspense fallback={<div className="h-10 w-40 shrink-0 rounded-xl border border-border/50 bg-card" />}>
         <WorkshopFloor room={host} connected={connected} anchor={anchor} />
       </Suspense>

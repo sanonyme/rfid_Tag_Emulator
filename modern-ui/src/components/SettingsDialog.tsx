@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from './ui/dialog'
 import { Label } from './ui/label'
-import { themes, applyTheme, saveTheme, getSavedTheme, getThemeSwatches, THEME_CHANGE_EVENT, type Theme } from '../lib/themes'
+import { themes, applyTheme, saveTheme, getSavedTheme, getThemeSwatches, themeForcesDark, THEME_CHANGE_EVENT, type Theme } from '../lib/themes'
 import { useSettings } from '../lib/settings-context'
 import type { FontSize, DefaultTab, NavLayout } from '../lib/settings'
 import { NAV_LAYOUT_OPTIONS } from '../lib/nav-styles'
@@ -158,7 +158,12 @@ export function SettingsDialog({
   const handleThemeChange = (value: string) => {
     setCurrentTheme(value)
     saveTheme(value)
-    const isDark = document.documentElement.classList.contains('dark')
+    const isDark = themeForcesDark(value) || document.documentElement.classList.contains('dark')
+    if (themeForcesDark(value)) {
+      localStorage.setItem('theme', 'dark')
+      document.documentElement.classList.add('dark')
+      setIsDarkMode(true)
+    }
     applyTheme(value, isDark)
   }
 

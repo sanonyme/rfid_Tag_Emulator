@@ -61,6 +61,10 @@ export type WorkshopPayload =
       ti?: string
       /** Rarest rarity index the device has discovered, for nameplate trim. */
       pf?: number
+      /** Equipped shirt item id; '' for none. Older builds ignore this. */
+      sh?: string
+      /** Equipped wings item id; '' for none. Older builds ignore this. */
+      wg?: string
     }
   /** `r` is the present's rarity index; `epc` the last four hex digits of the tag that dropped it. */
   | { t: 'drop'; pid: string; x: number; c: number; r?: number; epc?: string }
@@ -242,6 +246,14 @@ export function parseWorkshopMessage(value: unknown): WorkshopMessage | null {
         const pf = intIn(value.pf, 0, WORKSHOP_RARITY_COUNT - 1)
         if (pf === null) return null
         msg.pf = pf
+      }
+      if (value.sh !== undefined) {
+        if (value.sh !== '' && !isWorkshopItemId(value.sh)) return null
+        msg.sh = value.sh
+      }
+      if (value.wg !== undefined) {
+        if (value.wg !== '' && !isWorkshopItemId(value.wg)) return null
+        msg.wg = value.wg
       }
       return msg
     }

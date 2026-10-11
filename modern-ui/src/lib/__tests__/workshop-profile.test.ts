@@ -92,8 +92,8 @@ describe('workshop profile', () => {
 
   it('round-trips through storage and returns floor items to the bag', () => {
     const p = newProfile()
-    const kept = addToBag(p, 'penguin', 'present')!
-    equipItem(p, 'pet', 'penguin')
+    const kept = addToBag(p, 'snowman', 'present')!
+    equipItem(p, 'pet', 'snowman')
     const dropped = addToBag(p, 'cocoa-mug', 'present')!
     takeFromBag(p, dropped.uid)
     p.escrow.push({ did: 'drop0001', entry: dropped, at: 1 })
@@ -106,7 +106,7 @@ describe('workshop profile', () => {
     expect(loaded.device).toBe(p.device)
     expect(loaded.bag.map((e) => e.uid).sort()).toEqual([kept.uid, dropped.uid].sort())
     expect(loaded.escrow).toEqual([])
-    expect(loaded.equipped.pet).toBe('penguin')
+    expect(loaded.equipped.pet).toBe('snowman')
     expect(loaded.title).toBe('first-find')
     expect(loaded.stats.opened).toBe(2)
   })
@@ -119,7 +119,7 @@ describe('workshop profile', () => {
       JSON.stringify({
         device: 'lowercase',
         bag: [{ uid: 'abc123', item: 'plain-tag' }, { uid: 'abc123', item: 'plain-tag' }, { uid: 'x', item: 'plain-tag' }, { uid: 'def456', item: 'nope' }],
-        equipped: { hat: 'penguin', pet: 'golden-epc', trail: 'hex-rain' },
+        equipped: { hat: 'snowman', pet: 'golden-epc', trail: 'hex-rain' },
         title: 'legend',
         achievements: ['made-up'],
         stats: { opened: -4, found: { rare: 'lots' } },
@@ -129,7 +129,7 @@ describe('workshop profile', () => {
     const p = loadProfile()
     expect(p.device).toMatch(/^[A-Z0-9]{8}$/)
     expect(p.bag.map((e) => e.uid)).toEqual(['abc123'])
-    expect(p.equipped).toEqual({ hat: null, pet: null, trail: null })
+    expect(p.equipped).toEqual({ hat: null, pet: null, trail: null, shirt: null, mount: null, title: null })
     expect(p.title).toBeNull()
     expect(p.achievements).toEqual([])
     expect(p.stats.opened).toBe(0)

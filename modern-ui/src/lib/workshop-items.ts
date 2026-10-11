@@ -9,7 +9,9 @@ export const RARITY_INFO: Record<Rarity, { label: string; color: string; weight:
   legendary: { label: 'Legendary', color: '#fbbf24', weight: 5, boost: 8 },
 }
 
-export type ItemKind = 'collectible' | 'hat' | 'pet' | 'trail'
+// 'shirt' is drawn over the elf's body, 'mount' is drawn under the elf
+// (the elf sits on top of it), 'title' is a text label shown next to the name.
+export type ItemKind = 'collectible' | 'hat' | 'pet' | 'trail' | 'shirt' | 'mount' | 'title'
 export type WearableKind = Exclude<ItemKind, 'collectible'>
 
 export type ItemDef = {
@@ -23,6 +25,12 @@ export type ItemDef = {
   palette: Readonly<Record<string, string>>
   /** A pixel that alternates between two colours, like a reader LED. */
   blink?: { char: string; on: string; off: string }
+  /** Text shown next to the elf's name when a 'title' item is equipped. */
+  titleText?: string
+  /** Only drops when the send had at least this many tags. */
+  minTags?: number
+  /** Weight inside its rarity pool (default 1). 0.2 = five times rarer than a normal item of that tier. */
+  dropWeight?: number
 }
 
 const TAG = [
@@ -166,15 +174,6 @@ export const ITEMS: readonly ItemDef[] = [
     palette: { W: '#ffffff', r: '#d42530' },
   },
   {
-    id: 'penguin',
-    name: 'Penguin',
-    rarity: 'uncommon',
-    kind: 'pet',
-    description: 'Waddles behind you. Not a fan of warm heat sinks.',
-    sprite: ['..kkkk..', '.kkkkkk.', '.kkwwek.', '.kwwwwo.', '.kwwwwk.', 'kkwwwwkk', '.kwwwwk.', '.oo..oo.'],
-    palette: { k: '#1f2937', w: '#f8fafc', e: '#000000', o: '#f59e0b' },
-  },
-  {
     id: 'frost-steps',
     name: 'Frost Steps',
     rarity: 'uncommon',
@@ -280,15 +279,6 @@ export const ITEMS: readonly ItemDef[] = [
     palette: { Y: '#fff1a8', y: '#f5c542', h: '#b45309' },
   },
   {
-    id: 'reindeer',
-    name: 'Little Reindeer',
-    rarity: 'epic',
-    kind: 'pet',
-    description: 'Its nose glows red. You know the one.',
-    sprite: ['......a.a.', '.......aa.', '......bbbb', '......bebr', 'bb...bbbb.', '.bbbbbbbb.', '.bbbbbbbb.', '.b.b..b.b.', '.b.b..b.b.'],
-    palette: { a: '#d6a76c', b: '#8b5a2b', e: '#111827', r: '#ef4444' },
-  },
-  {
     id: 'rf-waves',
     name: 'RF Waves',
     rarity: 'epic',
@@ -336,6 +326,485 @@ export const ITEMS: readonly ItemDef[] = [
     sprite: ['kkkkkkkkk', 'kgggkgggk', 'kgkkkkkgk', 'kggkkgggk', 'kgkkkgkkk', 'kgggkgggk', 'kkkkkkkkk'],
     palette: { k: '#052e16', g: '#4ade80' },
   },
+
+  // Warehouse & everyday — not just the holidays
+  {
+    id: 'barcode-sticker',
+    name: 'Barcode Sticker',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Black bars, white quiet zone. The chip is the interesting part.',
+    sprite: ['wwwwwwww', 'wbwbwbww', 'wwbwbwbw', 'wbwwbwbw', 'wwwwwwww', 'wggggggw'],
+    palette: { w: '#f8fafc', b: '#111827', g: '#94a3b8' },
+  },
+  {
+    id: 'cardboard-box',
+    name: 'Carton',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'SSCC on the side, tape on the top, mystery in the middle.',
+    sprite: ['..oooo..', '.oCCCCo.', 'oCCttCCo', 'oCCooCCo', 'oCCCCCCo', '.oooooo.'],
+    palette: { o: '#92400e', C: '#d97706', t: '#fde68a' },
+  },
+  {
+    id: 'zip-tie',
+    name: 'Zip Tie',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Holds the antenna cable. Forever.',
+    sprite: ['yyyyyyyy', 'y......y', 'y.kkkk.y', 'y.k..k.y', 'yyyyyyyy'],
+    palette: { y: '#111827', k: '#e5e7eb' },
+  },
+  {
+    id: 'usb-dongle',
+    name: 'USB Dongle',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'The one that walks off the dock every Friday.',
+    sprite: ['..ssss..', '.sbbbbb.', '.sbwwbb.', '.sbbbbb.', '..bbbb..', '..bbbb..'],
+    palette: { s: '#e5e7eb', b: '#2563eb', w: '#ffffff' },
+  },
+  {
+    id: 'coffee-cup',
+    name: 'Shift Coffee',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Fuel for a 4 a.m. cycle count.',
+    sprite: ['..s.s...', 'WWWWWW..', 'WccccWWW', 'WccccW.W', 'WccccWWW', '.WWWW...'],
+    palette: { s: '#e5e7eb', W: '#f8fafc', c: '#6b3e26' },
+  },
+  {
+    id: 'tape-roll',
+    name: 'Packing Tape',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Clear, loud, and always almost empty.',
+    sprite: ['..oooo..', '.oYYYYo.', 'oYYccYYo', 'oYYccYYo', '.oYYYYo.', '..oooo..'],
+    palette: { o: '#a16207', Y: '#facc15', c: '#fef9c3' },
+  },
+  {
+    id: 'aa-battery',
+    name: 'Spare Battery',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'For the handheld that dies mid-aisle.',
+    sprite: ['...kk...', '..kkkk..', '.gggggg.', '.gggggg.', '.oooooo.', '.oooooo.', '..oooo..'],
+    palette: { k: '#9ca3af', g: '#111827', o: '#f97316' },
+  },
+  {
+    id: 'sticky-note',
+    name: 'Sticky Note',
+    rarity: 'common',
+    kind: 'collectible',
+    description: '"Recount bay 4" in handwriting nobody claims.',
+    sprite: ['yyyyyyyy', 'ybbbbbby', 'ybbybbby', 'ybbbbbby', 'ybbbybby', 'yyyyyyyy'],
+    palette: { y: '#fde047', b: '#854d0e' },
+  },
+  {
+    id: 'wrench',
+    name: 'Antenna Wrench',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Tightens the mount. Loosens the argument about whose job it was.',
+    sprite: ['ss....ss', 'ss....ss', '.ssssss.', '..ssss..', '..ssss..', '..ssss..', '..s..s..'],
+    palette: { s: '#94a3b8' },
+  },
+  {
+    id: 'pallet',
+    name: 'Wooden Pallet',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Four-way entry. Zero-way patience when it is broken.',
+    sprite: ['oooooooooo', 'o..o..o..o', 'oooooooooo', 'o..o..o..o', 'oooooooooo'],
+    palette: { o: '#b45309' },
+  },
+  {
+    id: 'dock-light',
+    name: 'Dock Light',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Green means the trailer is locked. Red means run.',
+    sprite: ['..oooo..', '.oLLLLo.', '.oLLLLo.', '..oooo..', '...aa...', '...aa...'],
+    palette: { o: '#1f2937', L: '#22c55e', a: '#4b5563' },
+    blink: { char: 'L', on: '#22c55e', off: '#14532d' },
+  },
+  {
+    id: 'scanner-sled',
+    name: 'Scanner Sled',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Clips onto a phone and pretends it was always a handheld.',
+    sprite: ['..aaaa..', '.agggga.', '.agssga.', '.agggga.', 'oooooooo', 'o......o'],
+    palette: { a: '#111827', g: '#374151', s: '#67e8f9', o: '#9ca3af' },
+  },
+  {
+    id: 'wifi-brick',
+    name: 'Wi-Fi Brick',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'The access point taped above the dock door.',
+    sprite: ['.ww...ww.', 'w..w.w..w', 'w...w...w', '.ooooooo.', '.oLLoLLo.', '.ooooooo.'],
+    palette: { w: '#38bdf8', o: '#e5e7eb', L: '#22c55e' },
+    blink: { char: 'L', on: '#22c55e', off: '#166534' },
+  },
+  {
+    id: 'hard-hat',
+    name: 'Hard Hat',
+    rarity: 'uncommon',
+    kind: 'hat',
+    description: 'Required on the floor. Optional in the break room.',
+    sprite: ['...yyyy...', '..yyyyyy..', '.yyyyyyyy.', 'yyyyyyyyyy', '.yyyyyyyy.', '..........'],
+    palette: { y: '#facc15' },
+  },
+  {
+    id: 'dust-trail',
+    name: 'Aisle Dust',
+    rarity: 'uncommon',
+    kind: 'trail',
+    description: 'Proof you actually walked the pick path.',
+    sprite: ['..c.c...', '.c...c..', '..c.c.c.', '...c....', '..c..c..', '.c....c.'],
+    palette: { c: '#d6d3d1' },
+  },
+  {
+    id: 'fixed-reader',
+    name: 'Fixed Reader',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'Four ports, one heartbeat LED, zero patience for bad cables.',
+    sprite: ['oooooooooo', 'oiiiiiiiio', 'oiggggggio', 'oigLgLgLio', 'oiggggggio', 'oooooooooo'],
+    palette: { o: '#1f2937', i: '#111827', g: '#4b5563', L: '#22c55e' },
+    blink: { char: 'L', on: '#4ade80', off: '#14532d' },
+  },
+  {
+    id: 'portal-frame',
+    name: 'Portal Frame',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'Walk through it and every tag on you confesses.',
+    sprite: ['oo......oo', 'op......po', 'op.cccc.po', 'op.c..c.po', 'op.cccc.po', 'oooooooooo'],
+    palette: { o: '#334155', p: '#64748b', c: '#38bdf8' },
+  },
+  {
+    id: 'forklift',
+    name: 'Forklift Charm',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'Beeps in reverse. Even as a charm.',
+    sprite: ['..yy....', '..yyoooo', '..yyyyyo', 'yyyyyyyo', '.kk..kko', '.kk..kk.'],
+    palette: { y: '#eab308', o: '#1f2937', k: '#111827' },
+  },
+  {
+    id: 'safety-vest',
+    name: 'Hi-Vis Cap',
+    rarity: 'rare',
+    kind: 'hat',
+    description: 'So the forklift sees you before the reader does.',
+    sprite: ['...oooo...', '..oooooo..', '.oYoYoYoY.', 'oooooooooo', '.oooooooo.', '..........'],
+    palette: { o: '#f97316', Y: '#fef08a' },
+  },
+  {
+    id: 'barcode-trail',
+    name: 'Barcode Steps',
+    rarity: 'rare',
+    kind: 'trail',
+    description: 'You leave a scannable path. Please do not.',
+    sprite: ['b.b.bb.b', 'b.b.bb.b', 'wwwwwwww', 'b.bb.b.b', 'b.bb.b.b'],
+    palette: { b: '#111827', w: '#f8fafc' },
+  },
+  {
+    id: 'gold-antenna',
+    name: 'Gold Antenna',
+    rarity: 'epic',
+    kind: 'collectible',
+    description: 'Reads further than it has any right to. Do not ask how.',
+    sprite: ['....yy....', '...yyyy...', '..yyyyyy..', '.yy.yy.yy.', 'yy..yy..yy', '....yy....', '....aa....'],
+    palette: { y: '#fbbf24', a: '#92400e' },
+  },
+  {
+    id: 'server-rack',
+    name: 'Edge Rack',
+    rarity: 'epic',
+    kind: 'collectible',
+    description: 'A slice of the room where the processes actually live.',
+    sprite: ['oooooooo', 'oLLoLLoo', 'oooooooo', 'oLLoLLoo', 'oooooooo', 'oLLoLLoo', 'oooooooo'],
+    palette: { o: '#0f172a', L: '#38bdf8' },
+    blink: { char: 'L', on: '#38bdf8', off: '#1e3a8a' },
+  },
+  {
+    id: 'signal-crown',
+    name: 'Signal Crown',
+    rarity: 'epic',
+    kind: 'hat',
+    description: 'Three bars of coverage, worn like royalty.',
+    sprite: ['.c..c..c..', '.c..c..c..', 'cc.cc.cc.c', '.yyyyyyyy.', '.yyyyyyyy.', '.oooooooo.'],
+    palette: { c: '#38bdf8', y: '#fbbf24', o: '#92400e' },
+  },
+  {
+    id: 'mini-drone',
+    name: 'Count Drone',
+    rarity: 'epic',
+    kind: 'pet',
+    description: 'Hovers the high bays so you do not have to.',
+    sprite: ['s......s', '.s....s.', '..oooo..', '..oLLo..', '..oooo..', '...aa...'],
+    palette: { s: '#94a3b8', o: '#1e293b', L: '#22d3ee', a: '#64748b' },
+    blink: { char: 'L', on: '#22d3ee', off: '#0e7490' },
+  },
+  {
+    id: 'neon-trail',
+    name: 'Neon Trail',
+    rarity: 'epic',
+    kind: 'trail',
+    description: 'Night-shift glow. Visible from the mezzanine.',
+    sprite: ['...m...', '..mcm..', '.mcccm.', 'mcccccm', '.mcccm.', '..mcm..'],
+    palette: { m: '#f472b6', c: '#22d3ee' },
+  },
+  {
+    id: 'null-tag',
+    name: 'Null Tag',
+    rarity: 'legendary',
+    kind: 'collectible',
+    description: 'EPC all zeroes. It should not encode. It did anyway.',
+    sprite: ['oooooooooo', 'o00000000o', 'o0kk00kk0o', 'o0k0cc0k0o', 'o0kk00kk0o', 'o00000000o', 'oooooooooo'],
+    palette: { o: '#020617', '0': '#0f172a', k: '#e2e8f0', c: '#f8fafc' },
+  },
+  {
+    id: 'master-key',
+    name: 'Master Key',
+    rarity: 'legendary',
+    kind: 'collectible',
+    description: 'Opens the cage, the office, and somehow the reader config.',
+    sprite: ['..oooo..', '..o..o..', '..oooo..', '....oo..', '....oooo', '....oo..', '....oooo'],
+    palette: { o: '#fbbf24' },
+  },
+  {
+    id: 'halo-antenna',
+    name: 'Halo Antenna',
+    rarity: 'legendary',
+    kind: 'hat',
+    description: 'A ring of RF floating just above your head. Reads everything.',
+    sprite: ['..cccccc..', '.c......c.', 'c...yy...c', '.c......c.', '..cccccc..', '..........'],
+    palette: { c: '#fde68a', y: '#ffffff' },
+  },
+  {
+    id: 'satellite',
+    name: 'Pocket Satellite',
+    rarity: 'legendary',
+    kind: 'pet',
+    description: 'Tiny dish, huge range. Follows you between sites.',
+    sprite: ['...ss...', '..s..s..', '.s....s.', 'ssssssss', '...oo...', '...oo...', '..oooo..'],
+    palette: { s: '#e2e8f0', o: '#334155' },
+  },
+  {
+    id: 'comet-trail',
+    name: 'Comet Trail',
+    rarity: 'legendary',
+    kind: 'trail',
+    description: 'A streak of gold and white. You were here, briefly, brightly.',
+    sprite: ['......W.', '....WWW.', '..YYYYW.', 'YYYYYY..', '..YYYY..', '....Y...'],
+    palette: { W: '#ffffff', Y: '#fbbf24' },
+  },
+
+  // ── Desk gear everyone owns ──
+  {
+    id: 'monitor',
+    name: 'Monitor',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Shows the log. Mostly the same error, scrolling.',
+    sprite: ['oooooooooo', 'osssssssso', 'osgggsssso', 'osssssssso', 'osggssssso', 'oooooooooo', '....oo....', '..oooooo..'],
+    palette: { o: '#1f2937', s: '#0f172a', g: '#4ade80' },
+  },
+  {
+    id: 'mouse',
+    name: 'Mouse',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Click, double-click, wonder why nothing happened.',
+    sprite: ['.oooooo.', 'owwkkwwo', 'owwkkwwo', 'owwwwwwo', 'owwwwwwo', 'owwwwwwo', '.owwwwo.', '..oooo..'],
+    palette: { o: '#475569', w: '#f1f5f9', k: '#94a3b8' },
+  },
+  {
+    id: 'keyboard',
+    name: 'Keyboard',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'Half the keys are worn blank. You know where they are.',
+    sprite: ['oooooooooooo', 'okgkgkgkgkgo', 'ogkgkgkgkgko', 'ogkkkkkkkkgo', 'oooooooooooo'],
+    palette: { o: '#334155', k: '#e2e8f0', g: '#64748b' },
+  },
+
+  // ── Standard industry hardware ──
+  {
+    id: 'zebra-handheld',
+    name: 'Zebra Handheld',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'The warehouse standard. Stripes on top, a dead battery on the floor.',
+    sprite: ['.zozozo.', 'oggggggo', 'ogssssgo', 'ogssssgo', 'ogssssgo', 'oggggggo', 'ogkkkkgo', 'ogkkkkgo', '.oooooo.'],
+    palette: { o: '#111827', z: '#f8fafc', g: '#374151', s: '#38bdf8', k: '#6b7280' },
+  },
+  {
+    id: 'seuic-handheld',
+    name: 'Seuic Handheld',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Scan window lit, keys worn smooth. Gets the job done.',
+    sprite: ['..oooo..', '.oLLLLo.', 'oggggggo', 'ogssssgo', 'ogssssgo', 'oggggggo', 'ogkgkgko', 'ogkgkgko', '.oooooo.'],
+    palette: { o: '#1e3a8a', g: '#2563eb', s: '#e0f2fe', k: '#93c5fd', L: '#ef4444' },
+    blink: { char: 'L', on: '#ef4444', off: '#7f1d1d' },
+  },
+  {
+    id: 'chainway-handheld',
+    name: 'Chainway Handheld',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Pistol grip, long read range. Looks like it came to arrest the tags.',
+    sprite: ['oooooooo', 'ogssssgo', 'ogssssgo', 'oggggggo', '.oggggo.', '..ogko..', '..ogko..', '..ogko..', '..oooo..'],
+    palette: { o: '#7c2d12', g: '#ea580c', s: '#fed7aa', k: '#431407' },
+  },
+  {
+    id: 'rfid-tabletop',
+    name: 'RFID Tabletop',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Encode here, ship there. Keep coffee away from the panel.',
+    sprite: ['oooooooooo', 'oiiiiiiiio', 'oiiicciiio', 'oiiiiiiiLo', 'oooooooooo', '.o......o.'],
+    palette: { o: '#334155', i: '#94a3b8', c: '#111827', L: '#22c55e' },
+    blink: { char: 'L', on: '#22c55e', off: '#14532d' },
+  },
+  {
+    id: 'java-king-coffee',
+    name: 'Java King Coffee',
+    rarity: 'uncommon',
+    kind: 'collectible',
+    description: 'Brewed strong, crowned in semicolons. Long live the build.',
+    sprite: ['y.yyyy.y', 'yyyyyyyy', 'WWWWWW..', 'WccccWWW', 'WccccW.W', 'WccccWWW', '.WWWW...'],
+    palette: { y: '#fbbf24', W: '#f8fafc', c: '#6b3e26' },
+  },
+  {
+    id: 'title-support',
+    name: 'Support Title',
+    rarity: 'uncommon',
+    kind: 'title',
+    titleText: 'Support',
+    description: 'Picks up on the first ring. Knows which cable it is.',
+    sprite: ['oooooooooo', 'oTTcccccTo', 'oTcTTTTTco', 'oTcTTTTTco', 'oTTTTTcTTo', 'oooooooooo'],
+    palette: { o: '#166534', T: '#bbf7d0', c: '#14532d' },
+  },
+
+  // ── Specialised kit and engineering titles ──
+  {
+    id: 'c66-handheld',
+    name: 'C66 Handheld',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'Rugged, physical keys, antenna stub. Survives drops the pallet did not.',
+    sprite: ['.....a..', '.oooooo.', 'oggggggo', 'ogssssgo', 'ogssssgo', 'oggggggo', 'okkkkkko', 'okwkkwko', 'okkkkkko', '.oooooo.'],
+    palette: { a: '#9ca3af', o: '#111827', g: '#374151', s: '#a7f3d0', k: '#4b5563', w: '#e5e7eb' },
+  },
+  {
+    id: 'utouch2-handheld',
+    name: 'UTouch2 Handheld',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'All screen, barely any buttons. Please keep your gloves on.',
+    sprite: ['.oooooo.', 'oswsssso', 'osssssso', 'osssssso', 'osssssso', 'osssssso', 'oggggggo', 'ogkggkgo', '.oooooo.'],
+    palette: { o: '#134e4a', s: '#5eead4', w: '#ccfbf1', g: '#0f766e', k: '#99f6e4' },
+  },
+  {
+    id: 'edge-ubuntu',
+    name: 'Edge Ubuntu Device',
+    rarity: 'rare',
+    kind: 'collectible',
+    description: 'A small box running a big job. Uptime: suspiciously long.',
+    sprite: ['oooooooooo', 'oggggggggo', 'ogLgguuugo', 'ogLgguwugo', 'ogLgguuugo', 'oggggggggo', 'oooooooooo'],
+    palette: { o: '#1f2937', g: '#374151', L: '#22c55e', u: '#e95420', w: '#ffffff' },
+    blink: { char: 'L', on: '#22c55e', off: '#14532d' },
+  },
+  {
+    id: 'title-mobile',
+    name: 'Mobile Engineer Title',
+    rarity: 'rare',
+    kind: 'title',
+    titleText: 'Mobile Engineer',
+    description: 'Ships to two stores and one very old tablet.',
+    sprite: ['oooooooooo', 'oTTppppTTo', 'oTTpsspTTo', 'oTTpsspTTo', 'oTTppppTTo', 'oooooooooo'],
+    palette: { o: '#1e3a8a', T: '#bfdbfe', p: '#1e293b', s: '#38bdf8' },
+  },
+  {
+    id: 'title-java',
+    name: 'Java Engineer Title',
+    rarity: 'rare',
+    kind: 'title',
+    titleText: 'Java Engineer',
+    description: 'Fluent in verbose. Has opinions about the garbage collector.',
+    sprite: ['oooooooooo', 'oTTTsTsTTo', 'oTTcccccTo', 'oTTcccccco', 'oTTTcccTTo', 'oooooooooo'],
+    palette: { o: '#9a3412', T: '#fed7aa', s: '#e5e7eb', c: '#7c2d12' },
+  },
+
+  // ── Big hardware, big hauls, and the ride ──
+  {
+    id: 'rfid-tunnel',
+    name: 'RFID Tunnel',
+    rarity: 'epic',
+    kind: 'collectible',
+    description: 'Cartons go in, a full inventory comes out. Do not stand inside.',
+    sprite: ['oooooooooooo', 'opppppLLpppo', 'opoooooooopo', 'op..CCCC..po', 'op..CttC..po', 'op..CCCC..po', 'cccccccccccc', '.oo.oo.oo.oo'],
+    palette: { o: '#0f172a', p: '#475569', C: '#d97706', t: '#fde68a', c: '#64748b', L: '#22c55e' },
+    blink: { char: 'L', on: '#22c55e', off: '#14532d' },
+  },
+  {
+    id: 'title-qa',
+    name: 'QA Engineer Title',
+    rarity: 'epic',
+    kind: 'title',
+    titleText: 'QA Engineer',
+    minTags: 500,
+    description: 'Earned by sending a big batch. Found the bug before you did.',
+    sprite: ['oooooooooo', 'oTTTTTTcTo', 'oTcTTTcTTo', 'oTTcTcTTTo', 'oTTTcTTTTo', 'oooooooooo'],
+    palette: { o: '#6b21a8', T: '#f3e8ff', c: '#16a34a' },
+  },
+  {
+    id: 'john-deer-tractor',
+    name: 'John Deer Tractor',
+    rarity: 'epic',
+    kind: 'mount',
+    description: 'Ride it to the dock door. Slow, steady, unstoppable.',
+    sprite: [
+      '..k...gggg....',
+      '..k...gssg....',
+      'ggggggggsg....',
+      'ggggggggggggg.',
+      '.kkk..kkkkkk..',
+      '.kyk.kkyyykk..',
+      '.kkk.kyyyyyyk.',
+      '.....kkyyyykk.',
+      '......kkkkkk..',
+    ],
+    palette: { g: '#367c2b', y: '#facc15', k: '#111827', s: '#bae6fd' },
+  },
+
+  // ── Super rare ──
+  {
+    id: 'hail-king-julien-shirt',
+    name: 'Hail King Julien Shirt',
+    rarity: 'legendary',
+    kind: 'shirt',
+    dropWeight: 0.2,
+    description: 'A big gold J on the chest. Hail to the king, baby.',
+    sprite: [
+      '.pp.nn.pp.',
+      'pppppppppp',
+      'pppjjjjppp',
+      '.pppppjpp.',
+      '.pppppjpp.',
+      '.ppjppjpp.',
+      '.pppjjjpp.',
+      '.pppppppp.',
+      '.dddddddd.',
+    ],
+    palette: { p: '#7e22ce', j: '#fbbf24', n: '#fde68a', d: '#581c87' },
+  },
 ]
 
 export const ITEM_BY_ID: ReadonlyMap<string, ItemDef> = new Map(ITEMS.map((item) => [item.id, item]))
@@ -378,7 +847,18 @@ export function rollRarity(rand: () => number, luck = 0, min: Rarity = 'common')
   return RARITIES[RARITIES.length - 1]
 }
 
-export function rollItem(rand: () => number, rarity: Rarity): ItemDef {
-  const pool = ITEMS.filter((item) => item.rarity === rarity)
-  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))]
+/**
+ * Picks an item of the given rarity. Items with `minTags` only drop when the
+ * send was at least that big, and `dropWeight` makes an item rarer (or more
+ * common) inside its tier. Pass the send's tag count as the third argument.
+ */
+export function rollItem(rand: () => number, rarity: Rarity, tagCount = 0): ItemDef {
+  const pool = ITEMS.filter((item) => item.rarity === rarity && (item.minTags ?? 0) <= tagCount)
+  const total = pool.reduce((sum, item) => sum + (item.dropWeight ?? 1), 0)
+  let pick = rand() * total
+  for (const item of pool) {
+    pick -= item.dropWeight ?? 1
+    if (pick < 0) return item
+  }
+  return pool[pool.length - 1]
 }

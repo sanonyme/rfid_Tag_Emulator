@@ -7,6 +7,7 @@ import {
   Pencil,
   Pin,
   PinOff,
+  Home,
   Smile,
   Snowflake,
   TreePine,
@@ -19,7 +20,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 import { subscribeWorkshopActivity } from '@/lib/workshop-activity'
 import { ITEM_BY_ID, RARITY_INFO, rarityAt } from '@/lib/workshop-items'
-import { ACHIEVEMENT_BY_ID, loadProfile, returnEscrow, saveProfile } from '@/lib/workshop-profile'
+import { ACHIEVEMENT_BY_ID, loadProfile, personalWorldRoom, returnEscrow, saveProfile } from '@/lib/workshop-profile'
 import {
   WORKSHOP_CHAT_MAX,
   WORKSHOP_HAT_COUNT,
@@ -60,6 +61,7 @@ import {
   layoutFor,
   lockedUids,
   netTick,
+  placeableAt,
   receive,
   renderMini,
   renderPanel,
@@ -68,6 +70,7 @@ import {
   sendEmote,
   step,
   throwSnowball,
+  takePlaceable,
   tradeAccept,
   tradeCancel,
   tradeDismiss,
@@ -87,6 +90,9 @@ const HAT_KEY = 'workshop-hat'
 const MUTED_KEY = 'workshop-muted'
 const HINT_KEY = 'workshop-hint-v2'
 const PIN_KEY = 'workshop-pinned'
+const WORLD_KEY = 'workshop-world'
+
+type World = 'shared' | 'home'
 
 const UNLOCK_NAMES: Record<number, string> = {
   [TREE_MILESTONES[0]]: 'the star',
@@ -145,8 +151,9 @@ function fit(canvas: HTMLCanvasElement, width: number, height: number, dpr: numb
 }
 
 /**
- * Christmas-only workshop: a snow-globe chip (title bar, next to What's New) that opens into
- * a shared floor for everyone connected to the same reader host on the LAN.
+ * Workshop floor: a snow-globe chip (title bar, next to What's New) that opens into a shared
+ * floor for everyone connected to the same reader host on the LAN. Available on every theme;
+ * Christmas décor (snow/garland) stays theme-gated in App.
  */
 export function WorkshopFloor({
   room,
@@ -160,9 +167,41 @@ export function WorkshopFloor({
   /** Title-bar chips drop a wide panel anchored to the chip; row chips stretch full-width. */
   anchor?: 'titlebar' | 'row'
 }) {
-  const roomKey = connected ? normalizeWorkshopRoom(room) : null
-  if (!roomKey) return <IdleChip className={className} />
-  return <Floor key={roomKey} room={roomKey} className={className} anchor={anchor} />
+  const [world, setWorld] = useState<World>(() => (readStored(WORLD_KEY) === 'home' ? 'home' : 'shared'))
+  const [device] = useState(() => loadProfile().device)
+  const choose = (next: World) => {
+    setWorld(next)
+    writeStored(WORLD_KEY, next)
+  }
+  const sharedRoom = connected ? normalizeWorkshopRoom(room) : null
+  if (world === 'shared' && !sharedRoom) {
+    return (
+      <div className={cn('flex items-center gap-1', className)}>
+        <IdleChip />
+        <button
+          type="button"
+          onClick={() => choose('home')}
+          className={cn(CHIP_FRAME, 'cursor-pointer px-2 text-[10px] font-medium')}
+          title="Open your personal world"
+        >
+          <Home className="h-3.5 w-3.5 text-amber-500" />
+          Home
+        </button>
+      </div>
+    )
+  }
+  const activeRoom = world === 'home' ? personalWorldRoom(device) : sharedRoom!
+  return (
+    <Floor
+      key={activeRoom}
+      room={activeRoom}
+      className={className}
+      anchor={anchor}
+      online={world === 'shared'}
+      world={world}
+      onWorld={choose}
+    />
+  )
 }
 
 function IdleChip({ className }: { className?: string }) {
@@ -185,13 +224,27 @@ function IdleChip({ className }: { className?: string }) {
   )
 }
 
-function Floor({ room, className, anchor }: { room: string; className?: string; anchor: 'titlebar' | 'row' }) {
+function Floor({
+  room,
+  className,
+  anchor,
+  online,
+  world,
+  onWorld,
+}: {
+  room: string
+  className?: string
+  anchor: 'titlebar' | 'row'
+  online: boolean
+  world: World
+  onWorld: (next: World) => void
+}) {
   const panelRef = useRef<HTMLCanvasElement>(null)
   const miniRef = useRef<HTMLCanvasElement>(null)
   const [name, setName] = useState(() => sanitizeWorkshopName(readStored(NAME_KEY) ?? 'Elf'))
   const [hat, setHat] = useState(initialHat)
   const [muted, setMuted] = useState(() => readStored(MUTED_KEY) === '1')
-  const [link, setLink] = useState<'joining' | 'live' | 'offline'>('joining')
+  const [link, setLink] = useState<'joining' | 'live' | 'offline' | 'solo'>(online ? 'joining' : 'solo')
   const [hovered, setHovered] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
   const [pinned, setPinned] = useState(() => readStored(PIN_KEY) === '1')
@@ -249,6 +302,10 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
   useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
   useEffect(() => {
+    if (!online) {
+      setLink('solo')
+      return
+    }
     const api = window.electronAPI
     if (!api?.workshopJoin || !api.workshopSend) {
       setLink('offline')
@@ -288,7 +345,7 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
       void api.workshopLeave?.()
       game.peers.clear()
     }
-  }, [game, room])
+  }, [game, room, online])
 
   // Floor drops vanish for everyone once we leave, so they come straight back to the bag.
   useEffect(
@@ -561,12 +618,16 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
     const y = e.clientY - rect.top
     const s = game.self
     const hit = elfAt(game, x, y)
+    const decor = placeableAt(game, x, y)
+    const ownedDecor = decor !== null && game.floorItems.get(decor)?.owner === s.id
     setEmotesOpen(false)
-    if (hit === s) {
+    if (hit && hit !== s) {
+      setCard((prev) => (prev?.id === hit.id ? null : { id: hit.id, x }))
+    } else if (ownedDecor && decor && takePlaceable(game, decor, net(), performance.now())) {
+      setCard(null)
+    } else if (hit === s) {
       game.jumpQueued = true
       setCard(null)
-    } else if (hit) {
-      setCard((prev) => (prev?.id === hit.id ? null : { id: hit.id, x }))
     } else {
       s.walkTo = clamp(x / rect.width, 0.02, 0.98)
       setCard(null)
@@ -656,13 +717,21 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
   const profile = game.profile
   const others = Math.max(0, snapshot.roster.length - 1)
   const presence =
-    link === 'offline' ? 'Offline' : link === 'joining' ? 'Joining…' : others === 0 ? 'Just you' : `${others + 1} here`
+    link === 'solo'
+      ? 'Your world'
+      : link === 'offline'
+        ? 'Offline'
+        : link === 'joining'
+          ? 'Joining…'
+          : others === 0
+            ? 'Just you'
+            : `${others + 1} here`
   const nextUnlock = nextTreeMilestone(snapshot.total)
   const recentChat = game.chatLog.slice(-4)
   const cardInfo = cardPeer ? snapshot.roster.find((r) => r.id === cardPeer.id) : undefined
   const cardTitle = cardPeer ? ACHIEVEMENT_BY_ID.get(cardPeer.title)?.title : undefined
   const cardGear = cardPeer
-    ? [cardPeer.equip.hat, cardPeer.equip.pet, cardPeer.equip.trail].flatMap((id) => {
+    ? [cardPeer.equip.hat, cardPeer.equip.shirt, cardPeer.equip.pet, cardPeer.equip.trail].flatMap((id) => {
         const def = id ? ITEM_BY_ID.get(id) : undefined
         return def ? [def] : []
       })
@@ -725,7 +794,7 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
       >
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-sky-100/70 via-sky-50/30 to-transparent dark:from-[#0b1d33]/90 dark:via-[#0b1d33]/40"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-b from-sky-100/25 via-transparent to-transparent dark:from-[#061018]/35 dark:via-transparent"
         />
         <canvas
           ref={panelRef}
@@ -802,12 +871,35 @@ function Floor({ room, className, anchor }: { room: string; className?: string; 
           <button type="button" className={TOOL} onClick={() => snowball()} title="Throw a snowball (F)" aria-label="Throw a snowball">
             <Snowflake className="h-3 w-3 text-sky-500" />
           </button>
+          <span className="inline-flex overflow-hidden rounded-md border border-border/50 bg-background/80 text-[11px] font-medium shadow-sm">
+            <button
+              type="button"
+              className={cn('h-6 px-1.5 outline-none', world === 'shared' ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:bg-background')}
+              aria-pressed={world === 'shared'}
+              title="Shared floor for everyone on this reader host"
+              onClick={() => onWorld('shared')}
+            >
+              Floor
+            </button>
+            <button
+              type="button"
+              className={cn('inline-flex h-6 items-center gap-1 px-1.5 outline-none', world === 'home' ? 'bg-amber-400/20 text-amber-700 dark:text-amber-200' : 'text-muted-foreground hover:bg-background')}
+              aria-pressed={world === 'home'}
+              title="Personal world stored on this device only"
+              onClick={() => onWorld('home')}
+            >
+              <Home className="h-3 w-3" />
+              Home
+            </button>
+          </span>
           <span
             className={cn(TOOL, 'cursor-default hover:bg-background/80')}
             title={
-              link === 'offline'
-                ? 'LAN presence is unavailable, so the floor is local only.'
-                : 'Everyone connected to this reader host on your network shares this floor.'
+              link === 'solo'
+                ? 'Only this Zeus install is here. Your tree and presents stay on this device.'
+                : link === 'offline'
+                  ? 'LAN presence is unavailable, so the floor is local only.'
+                  : 'Everyone connected to this reader host on your network shares this floor.'
             }
           >
             <Users className="h-3 w-3 opacity-70" />

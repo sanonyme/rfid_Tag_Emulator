@@ -29,6 +29,8 @@ export interface Theme {
     light: ThemeColors
     dark: ThemeColors
   }
+  /** When true, light mode is ignored — the theme always uses its dark palette. */
+  darkOnly?: boolean
   /** Hex swatches shown in the settings picker (full palette, both modes). */
   swatches?: string[]
   /** Optional elevation / auxiliary CSS variables beyond the core palette. */
@@ -38,12 +40,17 @@ export interface Theme {
   }
 }
 
+/** Themes that never ship a light mode (e.g. Christmas Special). */
+export function themeForcesDark(themeName: string): boolean {
+  return themes.find((t) => t.name === themeName)?.darkOnly === true
+}
+
 /** CSS colors for the settings theme picker strip. */
 export function getThemeSwatches(theme: Theme, isDark: boolean): string[] {
   if (theme.swatches?.length) {
     return theme.swatches.map((c) => (c.startsWith('#') ? c : c.startsWith('hsl') ? c : `hsl(${c})`))
   }
-  const c = isDark ? theme.colors.dark : theme.colors.light
+  const c = theme.darkOnly || isDark ? theme.colors.dark : theme.colors.light
   return [c.background, c.primary, c.secondary, c.accent, c.foreground].map((hsl) => `hsl(${hsl})`)
 }
 
@@ -144,28 +151,31 @@ export const themes: Theme[] = [
   {
     name: 'christmas',
     label: 'Christmas Special',
-    swatches: ['#c12732', '#1e6b43', '#e0b04a', '#f4f8fb', '#071610'],
+    /** Night workshop only — light mode is not offered for this theme. */
+    darkOnly: true,
+    swatches: ['#c12732', '#1e6b43', '#e0b04a', '#1a3a2a', '#071610'],
     colors: {
+      // Kept in sync with dark so any stray light lookup still looks correct.
       light: {
-        primary: '355 68% 42%',
+        primary: '356 70% 52%',
         primaryForeground: '40 40% 98%',
-        background: '206 42% 97%',
-        foreground: '160 28% 12%',
-        card: '206 40% 99%',
-        cardForeground: '160 28% 12%',
-        popover: '200 35% 99%',
-        popoverForeground: '160 28% 12%',
-        secondary: '150 24% 92%',
-        secondaryForeground: '158 42% 18%',
-        muted: '204 22% 94%',
-        mutedForeground: '164 10% 34%',
-        accent: '42 48% 92%',
-        accentForeground: '160 28% 14%',
-        destructive: '0 72% 46%',
-        destructiveForeground: '0 0% 98%',
-        border: '204 16% 84%',
-        input: '204 16% 84%',
-        ring: '42 72% 42%',
+        background: '162 42% 6%',
+        foreground: '40 32% 96%',
+        card: '162 32% 10%',
+        cardForeground: '40 32% 96%',
+        popover: '162 28% 12%',
+        popoverForeground: '40 32% 96%',
+        secondary: '158 24% 16%',
+        secondaryForeground: '40 30% 94%',
+        muted: '160 20% 14%',
+        mutedForeground: '150 12% 70%',
+        accent: '42 26% 16%',
+        accentForeground: '42 70% 82%',
+        destructive: '0 62% 42%',
+        destructiveForeground: '40 40% 98%',
+        border: '158 16% 18%',
+        input: '158 16% 18%',
+        ring: '42 78% 56%',
       },
       dark: {
         primary: '356 70% 52%',
@@ -191,13 +201,13 @@ export const themes: Theme[] = [
     },
     extras: {
       light: {
-        '--shadow-color': '206 35% 28%',
-        '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.08)',
-        '--shadow-md': '0 8px 22px hsl(206 40% 30% / 0.10)',
-        '--shadow-lg': '0 18px 40px hsl(206 40% 24% / 0.14)',
-        '--file-tree-bg': '204 32% 95%',
-        '--file-tree-hover': '204 24% 91%',
-        '--folder-icon': '152 42% 32%',
+        '--shadow-color': '160 50% 2%',
+        '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.45)',
+        '--shadow-md': '0 8px 22px hsl(160 50% 2% / 0.5)',
+        '--shadow-lg': '0 18px 42px hsl(160 50% 2% / 0.6)',
+        '--file-tree-bg': '162 34% 8%',
+        '--file-tree-hover': '162 24% 13%',
+        '--folder-icon': '42 72% 58%',
       },
       dark: {
         '--shadow-color': '160 50% 2%',
@@ -856,12 +866,14 @@ export const THEME_CHANGE_EVENT = 'theme-change'
 
 export function applyTheme(themeName: string, isDark: boolean) {
   const theme = themes.find((t) => t.name === themeName) || themes[0]
-  const colors = isDark ? theme.colors.dark : theme.colors.light
-  const defaultExtras = isDark ? DEFAULT_DARK_EXTRAS : DEFAULT_LIGHT_EXTRAS
-  const themeExtras = isDark ? theme.extras?.dark : theme.extras?.light
+  const useDark = theme.darkOnly || isDark
+  const colors = useDark ? theme.colors.dark : theme.colors.light
+  const defaultExtras = useDark ? DEFAULT_DARK_EXTRAS : DEFAULT_LIGHT_EXTRAS
+  const themeExtras = useDark ? theme.extras?.dark : theme.extras?.light
 
   const root = document.documentElement
   root.dataset.theme = theme.name
+  if (theme.darkOnly) root.classList.add('dark')
 
   Object.entries(colors).forEach(([key, value]) => {
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`
@@ -872,7 +884,7 @@ export function applyTheme(themeName: string, isDark: boolean) {
     root.style.setProperty(key, themeExtras?.[key] ?? defaultExtras[key])
   }
 
-  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: themeName, isDark } }))
+  window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: themeName, isDark: useDark } }))
 }
 
 export function getSavedTheme(): string {

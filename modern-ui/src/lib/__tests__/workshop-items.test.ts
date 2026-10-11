@@ -36,7 +36,7 @@ describe('workshop item catalog', () => {
 
   it('has loot at every rarity and every wearable kind', () => {
     for (const r of RARITIES) expect(ITEMS.some((i) => i.rarity === r), r).toBe(true)
-    for (const kind of ['hat', 'pet', 'trail'] as const) expect(ITEMS.some((i) => i.kind === kind), kind).toBe(true)
+    for (const kind of ['hat', 'pet', 'trail', 'shirt', 'mount', 'title'] as const) expect(ITEMS.some((i) => i.kind === kind), kind).toBe(true)
     expect(ITEMS.every((i) => isWearable(i) === (i.kind !== 'collectible'))).toBe(true)
   })
 

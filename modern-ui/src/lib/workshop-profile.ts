@@ -16,7 +16,7 @@ import { localDate, randomWorkshopToken } from './workshop-state'
 
 export const PROFILE_KEY = 'workshop-profile-v1'
 export const BAG_CAPACITY = 240
-export const WEARABLE_SLOTS: readonly WearableKind[] = ['hat', 'pet', 'trail']
+export const WEARABLE_SLOTS: readonly WearableKind[] = ['hat', 'pet', 'trail', 'shirt', 'mount', 'title']
 
 const UID_RE = /^[a-z0-9]{6,20}$/
 const DEVICE_RE = /^[A-Z0-9]{8}$/
@@ -38,6 +38,8 @@ export type WorkshopStats = {
   trades: number
   chats: number
   hits: number
+  /** Tag-send batches that came from the Handheld tab. */
+  handheld: number
   found: Record<Rarity, number>
 }
 
@@ -74,6 +76,10 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'secret-santa', name: 'Secret Santa', description: 'Give away 3 items by trade or floor drop.', title: 'Secret Santa', progress: (p) => [p.stats.given, 3] },
   { id: 'tag-trader', name: 'Tag Trader', description: 'Complete 3 trades.', title: 'Tag Trader', progress: (p) => [p.stats.trades, 3] },
   { id: 'emulation-elf', name: 'Emulation Elf', description: 'Complete 100 tag sends.', title: 'Emulation Elf', progress: (p) => [p.stats.sends, 100] },
+  { id: 'qa-engineer', name: 'QA Engineer', description: 'Complete 250 tag sends. The suite never really ends.', title: 'QA Engineer', progress: (p) => [p.stats.sends, 250] },
+  { id: 'mobile-engineer', name: 'Mobile Engineer', description: 'Complete 40 sends from the Handheld tab.', title: 'Mobile Engineer', progress: (p) => [p.stats.handheld, 40] },
+  { id: 'java-engineer', name: 'Java Engineer', description: 'Find a Java King coffee.', title: 'Java Engineer', progress: (p) => [p.discovered.includes('java-king') ? 1 : 0, 1] },
+  { id: 'support', name: 'Support', description: 'Start or stop Edge processes 25 times.', title: 'Support', progress: (p) => [p.stats.bells, 25] },
   { id: 'bell-ringer', name: 'Bell Ringer', description: 'Start or stop Edge processes 10 times.', title: 'Bell Ringer', progress: (p) => [p.stats.bells, 10] },
   { id: 'regular', name: 'Workshop Regular', description: 'Claim the daily gift 3 days in a row.', title: 'Workshop Regular', progress: (p) => [p.daily.streak, 3] },
   { id: 'chatterbox', name: 'Chatterbox', description: 'Send 25 chat messages.', title: 'Chatterbox', progress: (p) => [p.stats.chats, 25] },
@@ -91,10 +97,10 @@ export function newProfile(): WorkshopProfile {
     device: randomWorkshopToken(8).toUpperCase(),
     bag: [],
     discovered: [],
-    equipped: { hat: null, pet: null, trail: null },
+    equipped: { hat: null, pet: null, trail: null, shirt: null, mount: null, title: null },
     title: null,
     achievements: [],
-    stats: { opened: 0, sends: 0, bells: 0, given: 0, received: 0, trades: 0, chats: 0, hits: 0, found: emptyFound() },
+    stats: { opened: 0, sends: 0, bells: 0, given: 0, received: 0, trades: 0, chats: 0, hits: 0, handheld: 0, found: emptyFound() },
     daily: { last: null, streak: 0 },
     escrow: [],
   }
@@ -102,6 +108,11 @@ export function newProfile(): WorkshopProfile {
 
 export function deviceLabel(p: WorkshopProfile): string {
   return `${p.device.slice(0, 4)}-${p.device.slice(4)}`
+}
+
+/** LAN-private room for this install. Nobody else can join it; the shared floor stays keyed by reader host. */
+export function personalWorldRoom(device: string): string {
+  return `home.${device.toLowerCase()}`
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -171,6 +182,7 @@ export function loadProfile(storage: Storage = localStorage): WorkshopProfile {
     trades: count(stats.trades),
     chats: count(stats.chats),
     hits: count(stats.hits),
+    handheld: count(stats.handheld),
     found: { common: count(found.common), uncommon: count(found.uncommon), rare: count(found.rare), epic: count(found.epic), legendary: count(found.legendary) },
   }
 

@@ -57,7 +57,7 @@ describe('workshop protocol', () => {
   })
 
   it('round-trips equipment, title, and prestige on state messages', () => {
-    const msg = { ...state, eq: ['santa-hat', '', 'hex-rain'], ti: 'rare-hunter', pf: 3 }
+    const msg = { ...state, eq: ['santa-hat', '', 'hex-rain'], ti: 'rare-hunter', pf: 3, sh: 'julien-shirt', wg: 'angel-wings' }
     expect(decodeWorkshopPacket(encodeWorkshopPacket(ROOM, msg)!, ROOM)).toEqual(msg)
     expect(parseWorkshopMessage({ ...state, eq: ['santa-hat', ''] })).toBeNull()
     expect(parseWorkshopMessage({ ...state, eq: ['Santa Hat', '', ''] })).toBeNull()

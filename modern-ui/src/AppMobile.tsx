@@ -11,7 +11,7 @@ import { ProfileManager, type Profile } from './components/ProfileManager'
 import type { AutomationSequence } from './lib/automation-types'
 import { migrateStepsToSequences } from './lib/automation-types'
 import { TCPEmulatorClient } from './lib/tcp-client'
-import { applyTheme, getSavedTheme, THEME_CHANGE_EVENT } from './lib/themes'
+import { applyTheme, getSavedTheme, themeForcesDark, THEME_CHANGE_EVENT } from './lib/themes'
 import { loadSettings } from './lib/settings'
 import { useSettings } from './lib/settings-context'
 import {
@@ -74,10 +74,17 @@ function AppMobile() {
   const isDark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
 
   const toggleTheme = useCallback(() => {
+    const palette = getSavedTheme()
+    if (themeForcesDark(palette)) {
+      document.documentElement.classList.add('dark')
+      localStorage.setItem('theme', 'dark')
+      applyTheme(palette, true)
+      return
+    }
     const newMode = document.documentElement.classList.contains('dark') ? 'light' : 'dark'
     localStorage.setItem('theme', newMode)
     document.documentElement.classList.toggle('dark', newMode === 'dark')
-    applyTheme(getSavedTheme(), newMode === 'dark')
+    applyTheme(palette, newMode === 'dark')
   }, [])
 
   const handleOpenSettings = useCallback((highlight?: SettingsHighlightTarget) => {
@@ -171,12 +178,14 @@ function AppMobile() {
   useEffect(() => {
     const savedTheme = getSavedTheme()
     const savedMode = localStorage.getItem('theme')
-    const dark =
-      savedMode === 'dark'
+    const dark = themeForcesDark(savedTheme)
+      ? true
+      : savedMode === 'dark'
         ? true
         : savedMode === 'light'
           ? false
           : window.matchMedia('(prefers-color-scheme: dark)').matches
+    if (themeForcesDark(savedTheme) && savedMode !== 'dark') localStorage.setItem('theme', 'dark')
     document.documentElement.classList.toggle('dark', dark)
     applyTheme(savedTheme, dark)
 

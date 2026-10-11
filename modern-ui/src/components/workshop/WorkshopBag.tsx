@@ -16,7 +16,15 @@ import { GAME_DIALOG, ItemIcon, ItemSlot, PIXEL_CLIP, PixelButton, RarityTag } f
 
 type Tab = 'bag' | 'collection' | 'achievements'
 
-const KIND_LABEL = { collectible: 'Collectible', hat: 'Hat · wearable', pet: 'Pet · follows you', trail: 'Trail · wearable' } as const
+const KIND_LABEL = {
+  collectible: 'Collectible',
+  hat: 'Hat · wearable',
+  pet: 'Pet · follows you',
+  trail: 'Trail · wearable',
+  shirt: 'Shirt · wearable',
+  mount: 'Mount · ride',
+  title: 'Title',
+} as const
 
 const ORIGIN_TEXT: Record<ItemOrigin, string> = {
   present: 'from a present',
@@ -295,7 +303,9 @@ function ItemDetails({
         <div className="text-sm font-black text-white">{item.name}</div>
         <div className="mt-1 flex items-center justify-center gap-2">
           <RarityTag rarity={item.rarity} />
-          <span className="text-[10px] text-slate-400">{KIND_LABEL[item.kind]}</span>
+          <span className="text-[10px] text-slate-400">
+            {item.placeable ? 'Decor · placeable' : KIND_LABEL[item.kind]}
+          </span>
         </div>
       </div>
       <p className="mt-3 text-center text-xs leading-5 text-slate-300">{item.description}</p>
@@ -313,20 +323,26 @@ function ItemDetails({
             onClick={() => onEquip(item.kind, wearing ? null : item.id)}
           >
             <Shirt className="h-3.5 w-3.5" />
-            {wearing ? 'Take off' : item.kind === 'pet' ? 'Bring along' : 'Wear'}
+            {wearing ? 'Take off' : item.kind === 'pet' ? 'Bring along' : item.kind === 'mount' ? 'Ride' : 'Wear'}
           </PixelButton>
         )}
         <PixelButton
           className="w-full"
           disabled={free.length === 0}
-          title={free.length === 0 ? 'Offered in a trade' : 'Anyone on the floor can pick it up; walk back over it to take it back'}
+          title={
+            free.length === 0
+              ? 'Offered in a trade'
+              : item.placeable
+                ? 'Plant it on the floor. Click the banner to take it back.'
+                : 'Anyone on the floor can pick it up; walk back over it to take it back'
+          }
           onClick={() => {
             const last = free[free.length - 1]
             if (last) onDrop(last.uid)
           }}
         >
           <Gift className="h-3.5 w-3.5" />
-          Drop one on the floor
+          {item.placeable ? 'Place in the world' : 'Drop one on the floor'}
         </PixelButton>
       </div>
     </div>

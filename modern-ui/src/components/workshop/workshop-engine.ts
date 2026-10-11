@@ -82,6 +82,7 @@ import {
   drawSnowball,
   drawTrain,
   drawTree,
+  itemHeight,
   itemWidth,
   type ElfPose,
   type Floater,
@@ -101,8 +102,8 @@ const GROUND_INSET = 7
 const WALK_PX_PER_S = 125
 const GRAVITY = 1400
 const PRESENT_GRAVITY = 900
-const HEARTBEAT_MS = 1000
-const MOVE_SEND_MS = 90
+const HEARTBEAT_MS = 900
+const MOVE_SEND_MS = 60
 const PRESENT_COOLDOWN_MS = 4000
 const PRESENT_TTL_MS = 10 * 60_000
 const MAX_PRESENTS = 12
@@ -324,7 +325,7 @@ function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, 
     walk: 0,
     score,
     bellUntil: 0,
-    equip: { hat: null, pet: null, trail: null },
+    equip: { hat: null, pet: null, trail: null, shirt: null, mount: null, title: null },
     title: '',
     prestige: 0,
     chat: null,
@@ -687,8 +688,12 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
           hat: wearableOrNull(msg.eq[0], 'hat'),
           pet: wearableOrNull(msg.eq[1], 'pet'),
           trail: wearableOrNull(msg.eq[2], 'trail'),
+          shirt: peer.equip.shirt,
+          mount: peer.equip.mount,
+          title: peer.equip.title,
         }
       }
+      if (msg.sh !== undefined) peer.equip.shirt = wearableOrNull(msg.sh, 'shirt')
       if (msg.ti !== undefined) peer.title = ACHIEVEMENT_BY_ID.has(msg.ti) ? msg.ti : ''
       if (msg.pf !== undefined) peer.prestige = msg.pf
       if (msg.tree && mergeTreeCounts(game.tree, msg.tree)) treeChanged(game, net)
@@ -751,7 +756,10 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
     }
     case 'claim': {
       if (msg.owner !== game.self.id) return
-      if (game.profile.escrow.some((e) => e.did === msg.did)) grant(game, msg.did, msg.id, net, now)
+      const held = game.profile.escrow.find((e) => e.did === msg.did)
+      // Placeable décor is owner-only — peers never receive a grant for it.
+      if (held && ITEM_BY_ID.get(held.entry.item)?.placeable) return
+      if (held) grant(game, msg.did, msg.id, net, now)
       else {
         // Already handed out: repeat the answer so a claimer that missed it stops asking.
         const to = game.granted.get(msg.did)
@@ -846,8 +854,10 @@ function updateCosmetics(game: Game, e: ElfBase, moved: number, dt: number) {
   const L = game.layout
   const pet = e.equip.pet ? ITEM_BY_ID.get(e.equip.pet) : undefined
   if (pet) {
-    const target = e.x * game.width - e.dir * (L.px * 6 + itemWidth(pet, L.px) / 2)
-    e.petX = e.petX === null ? target : e.petX + (target - e.petX) * Math.min(1, dt * 5)
+    const beside = e.x * game.width - e.dir * (L.px * 6 + itemWidth(pet, L.px) / 2)
+    const target = pet.mount ? e.x * game.width : beside
+    const follow = pet.mount ? 14 : 5
+    e.petX = e.petX === null ? target : e.petX + (target - e.petX) * Math.min(1, dt * follow)
   } else {
     e.petX = null
   }
@@ -950,6 +960,8 @@ export function step(game: Game, dt: number, now: number, focused: boolean, net:
     }
     for (const item of game.floorItems.values()) {
       if (item.landedAt === null || Math.abs(item.x - s.x) * width > L.px * 6 || s.lift > L.elfH * 0.6) continue
+      // Planted décor stays put. The owner clicks it to take it back; peers cannot claim it.
+      if (ITEM_BY_ID.get(item.item)?.placeable) continue
       if (item.owner === s.id) {
         if (now - item.born > OWN_DROP_GRACE_MS) grant(game, item.did, s.id, net, now)
       } else if (now - item.claimAt > CLAIM_RETRY_MS) {
@@ -1066,6 +1078,7 @@ export function netTick(game: Game, now: number, send: Net['send']) {
     payload.eq = [s.equip.hat ?? '', s.equip.pet ?? '', s.equip.trail ?? '']
     payload.ti = s.title
     payload.pf = s.prestige
+    payload.sh = s.equip.shirt ?? ''
   }
   send(payload)
 }
@@ -1082,6 +1095,7 @@ export function handleActivity(game: Game, activity: WorkshopActivity, net: Net,
   if (activity.kind === 'tags-sent') {
     s.score[0] += 1
     p.stats.sends += 1
+    if (activity.source === 'handheld') p.stats.handheld += 1
     let shared = 0
     for (const present of game.presents.values()) if (!present.origin) shared++
     if (now - game.lastDrop >= PRESENT_COOLDOWN_MS && shared < MAX_PRESENTS) {
@@ -1244,6 +1258,33 @@ export function tradeDismiss(game: Game) {
   }
 }
 
+/** Landed placeable under a point, or null. Used so a planted banner is clicked, not walked through. */
+export function placeableAt(game: Game, x: number, y: number): string | null {
+  const L = game.layout
+  let hit: string | null = null
+  for (const item of game.floorItems.values()) {
+    if (item.landedAt === null) continue
+    const def = ITEM_BY_ID.get(item.item)
+    if (!def?.placeable) continue
+    const scale = 3
+    const w = def.sprite[0].length * scale
+    const h = def.sprite.length * scale
+    const bottom = L.groundY - item.height
+    const cx = item.x * game.width
+    if (Math.abs(x - cx) <= w / 2 + 6 && y >= bottom - h - 8 && y <= bottom + 8) hit = item.did
+  }
+  return hit
+}
+
+/** Owner clicks a planted item to put it back in the bag. */
+export function takePlaceable(game: Game, did: string, net: Net, now: number): boolean {
+  const item = game.floorItems.get(did)
+  if (!item || item.landedAt === null || item.owner !== game.self.id) return false
+  if (!ITEM_BY_ID.get(item.item)?.placeable) return false
+  grant(game, did, game.self.id, net, now)
+  return !game.floorItems.has(did)
+}
+
 /** Topmost elf under a point in panel pixels; our own elf wins ties so clicking it always jumps. */
 export function elfAt(game: Game, x: number, y: number): Elf | null {
   const L = game.layout
@@ -1286,10 +1327,15 @@ function drawEpcLabel(ctx: CanvasRenderingContext2D, epc: string, cx: number, bo
   drawHexText(ctx, epc, x + 2, y + 2, 1)
 }
 
+function mountRide(e: ElfBase, px: number): number {
+  const pet = e.equip.pet ? ITEM_BY_ID.get(e.equip.pet) : undefined
+  return pet?.mount ? Math.round(itemHeight(pet, px) * 0.42) : 0
+}
+
 function drawPet(ctx: CanvasRenderingContext2D, e: ElfBase, px: number, groundY: number, t: number, scaleX: (petX: number) => number) {
   const pet = e.equip.pet ? ITEM_BY_ID.get(e.equip.pet) : undefined
   if (!pet || e.petX === null) return
-  const hop = e.moving ? Math.round(Math.abs(Math.sin(t * 11 + e.x * 40)) * px * 1.5) : 0
+  const hop = !pet.mount && e.moving ? Math.round(Math.abs(Math.sin(t * 11 + e.x * 40)) * px * 1.5) : 0
   drawItem(ctx, pet, scaleX(e.petX), groundY - hop, px, e.dir === -1, t)
 }
 
@@ -1317,6 +1363,7 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
   drawGround(ctx, width, height, L.groundY, dark)
   if (game.stage >= 3) drawTrain(ctx, L.treeCx, L.groundY, Math.max(70, L.treeH * 1.5), t)
 
+  const signs: { x: number; top: number; text: string }[] = []
   for (const item of game.floorItems.values()) {
     const def = ITEM_BY_ID.get(item.item)
     if (!def) continue
@@ -1324,10 +1371,21 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
     const tier = rarityIndex(def.rarity)
     const color = RARITY_INFO[def.rarity].color
     const landed = item.landedAt !== null
-    drawGlow(ctx, x, L.groundY, 12 + tier * 3, color, 0.55 + 0.25 * Math.sin(t * 3 + item.phase))
-    if (tier >= 3 && landed) drawBeam(ctx, x, L.groundY, 10, L.groundY - 8, color, t + item.phase)
-    const bob = landed ? 3 + Math.round(Math.sin(t * 3 + item.phase) * 1.5) : 0
-    drawItem(ctx, def, x, L.groundY - item.height - bob, 2, false, t)
+    const planted = def.placeable === true
+    if (!planted) {
+      drawGlow(ctx, x, L.groundY, 12 + tier * 3, color, 0.55 + 0.25 * Math.sin(t * 3 + item.phase))
+      if (tier >= 3 && landed) drawBeam(ctx, x, L.groundY, 10, L.groundY - 8, color, t + item.phase)
+    } else if (landed) {
+      drawGlow(ctx, x, L.groundY, 16, color, 0.35 + 0.15 * Math.sin(t * 1.8 + item.phase))
+    }
+    const bob = planted ? (landed ? Math.round(Math.sin(t * 1.2 + item.phase) * 0.5) : 0) : landed ? 3 + Math.round(Math.sin(t * 3 + item.phase) * 1.5) : 0
+    const scale = planted ? 3 : 2
+    drawItem(ctx, def, x, L.groundY - item.height - bob, scale, false, t)
+    if (planted && landed && def.sign) {
+      const reach = (def.sprite[0].length * scale) / 2 + L.px * 8
+      const near = [game.self, ...game.peers.values()].some((e) => Math.abs(e.x * width - x) < reach && e.lift < L.elfH)
+      if (near) signs.push({ x, top: L.groundY - item.height - bob - def.sprite.length * scale, text: def.sign })
+    }
   }
 
   for (const p of game.presents.values()) {
@@ -1361,6 +1419,8 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
         pose: poseFor(e),
         bigHat: game.leader === e.id,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
+        shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,
+        ride: mountRide(e, L.px),
         label: e.name,
         trim: e.prestige >= 1 ? rarityColor(e.prestige) : null,
         self,
@@ -1401,6 +1461,14 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
   drawParticles(ctx, game.particles)
   drawFloaters(ctx, game.floaters, dark)
   overlays.forEach((draw) => draw())
+  for (const sign of signs) {
+    const bubble = chatBubble(sign.text, false)
+    if (!bubble) continue
+    const w = bubble.w * art
+    const h = bubble.h * art
+    const cx = clamp(sign.x, w / 2 + 2, width - w / 2 - 2)
+    drawPixelSprite(ctx, bubble, cx, Math.max(sign.top - 2, h + 2), art, dpr, 1)
+  }
 
   let y = 36
   for (const b of game.banners) {
@@ -1457,6 +1525,8 @@ export function renderMini(ctx: CanvasRenderingContext2D, game: Game, now: numbe
         pose: poseFor(e),
         bigHat: game.leader === e.id,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
+        shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,
+        ride: mountRide(e, 1),
         label: null,
         trim: null,
         self: e === game.self,

@@ -81,6 +81,10 @@ export type ElfSpec = {
   bigHat: boolean
   /** Equipped hat item, replacing the outfit's stocking cap. */
   hatItem: ItemDef | null
+  /** Jersey drawn over the coat. */
+  shirtItem?: ItemDef | null
+  /** Extra pixels to stand the elf up, used when riding a mount. */
+  ride?: number
   label: string | null
   /** Nameplate outline for players who have found rare loot. */
   trim: string | null
@@ -238,7 +242,8 @@ export function drawElf(ctx: CanvasRenderingContext2D, e: ElfSpec, t: number, da
     W: '#f7f3ee',
   }
   const left = Math.round(e.x - (ELF_COLS * px) / 2)
-  const bodyTop = Math.round(e.groundY - (ELF_BODY.length + ELF_LEGS.idle.length) * px - e.lift)
+  const ride = e.ride ?? 0
+  const bodyTop = Math.round(e.groundY - (ELF_BODY.length + ELF_LEGS.idle.length) * px - e.lift - ride)
   const flip = e.dir === -1
 
   const shadowHalf = Math.max(px * 1.5, px * 4 - e.lift * 0.12)
@@ -248,7 +253,11 @@ export function drawElf(ctx: CanvasRenderingContext2D, e: ElfSpec, t: number, da
   ctx.fill()
 
   drawSprite(ctx, ELF_BODY, palette, left, bodyTop, px, flip)
-  drawSprite(ctx, ELF_LEGS[e.pose], palette, left, bodyTop + ELF_BODY.length * px, px, flip)
+  // A mount covers the boots. Skip the walk cycle so the legs don't step through the vehicle.
+  if (!ride) drawSprite(ctx, ELF_LEGS[e.pose], palette, left, bodyTop + ELF_BODY.length * px, px, flip)
+  if (e.shirtItem) {
+    drawItem(ctx, e.shirtItem, e.x, bodyTop + ELF_BODY.length * px, px, flip, t)
+  }
 
   const hatPx = e.bigHat ? px + 1 : px
   let hatTop: number
@@ -554,7 +563,17 @@ export function drawGround(ctx: CanvasRenderingContext2D, width: number, height:
       ctx.quadraticCurveTo(x + 9, groundY - bump, x + 18, groundY + 1)
     }
   }
-  ctx.fillStyle = dark ? 'rgba(214, 228, 240, 0.9)' : '#ffffff'
+  const bank = ctx.createLinearGradient(0, groundY - 4, 0, height)
+  if (dark) {
+    bank.addColorStop(0, 'rgba(232, 242, 252, 0.96)')
+    bank.addColorStop(0.55, 'rgba(196, 214, 232, 0.95)')
+    bank.addColorStop(1, 'rgba(148, 174, 198, 0.98)')
+  } else {
+    bank.addColorStop(0, '#ffffff')
+    bank.addColorStop(0.55, '#eef6fc')
+    bank.addColorStop(1, '#d7e7f4')
+  }
+  ctx.fillStyle = bank
   ctx.beginPath()
   traceTop()
   ctx.lineTo(width, height)
@@ -562,27 +581,176 @@ export function drawGround(ctx: CanvasRenderingContext2D, width: number, height:
   ctx.closePath()
   ctx.fill()
 
-  ctx.strokeStyle = dark ? 'rgba(255, 255, 255, 0.7)' : 'rgba(140, 170, 198, 0.6)'
+  ctx.strokeStyle = dark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(140, 170, 198, 0.55)'
   ctx.lineWidth = 1
   ctx.beginPath()
   traceTop()
   ctx.stroke()
+
+  // Soft sparkle on the snow bank
+  ctx.fillStyle = dark ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.85)'
+  for (let i = 0; i < 18; i++) {
+    const x = ((i * 97) % Math.max(8, width - 8)) + 4
+    const y = groundY + 4 + ((i * 13) % Math.max(4, height - groundY - 6))
+    ctx.fillRect(x, y, i % 5 === 0 ? 2 : 1, 1)
+  }
 }
 
-const SKY_STARS = Array.from({ length: 26 }, (_, i) => {
+const SKY_STARS = Array.from({ length: 34 }, (_, i) => {
   const a = Math.sin(i * 12.9898) * 43758.5453
   const b = Math.sin(i * 78.233) * 12345.6789
   return { x: a - Math.floor(a), y: b - Math.floor(b), phase: i * 0.9 }
 })
 
+const SKY_FLAKES = Array.from({ length: 48 }, (_, i) => {
+  const a = Math.sin(i * 4.11 + 2.1) * 9973.1
+  const b = Math.sin(i * 9.73 + 0.7) * 43758.5
+  return {
+    x: a - Math.floor(a),
+    y: b - Math.floor(b),
+    speed: 0.35 + (i % 5) * 0.12,
+    size: 1 + (i % 3 === 0 ? 1 : 0),
+    drift: ((i % 7) - 3) * 0.08,
+  }
+})
+
+const HILL_TREES = Array.from({ length: 14 }, (_, i) => ({
+  x: 0.04 + (i / 13) * 0.78 + (i % 2 === 0 ? 0.01 : -0.01),
+  h: 10 + (i % 5) * 3,
+  w: 5 + (i % 3),
+}))
+
+/** Fills the floor canvas with a winter workshop sky so the world never feels blank. */
 export function drawSky(ctx: CanvasRenderingContext2D, width: number, groundY: number, t: number, dark: boolean) {
-  if (!dark) return
-  for (const s of SKY_STARS) {
-    const y = s.y * (groundY - 12)
-    if (y < 3) continue
-    ctx.globalAlpha = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(t * 1.6 + s.phase))
-    ctx.fillStyle = '#e9f2ff'
-    ctx.fillRect(Math.round(s.x * width), Math.round(y), 1, 1)
+  const sky = ctx.createLinearGradient(0, 0, 0, groundY)
+  if (dark) {
+    sky.addColorStop(0, '#050d18')
+    sky.addColorStop(0.4, '#0a1f35')
+    sky.addColorStop(0.78, '#12324f')
+    sky.addColorStop(1, '#1a4660')
+  } else {
+    sky.addColorStop(0, '#7eb6e8')
+    sky.addColorStop(0.35, '#b7d8f5')
+    sky.addColorStop(0.72, '#e4f1fb')
+    sky.addColorStop(1, '#f7fbfe')
+  }
+  ctx.fillStyle = sky
+  ctx.fillRect(0, 0, width, groundY)
+
+  if (dark) {
+    // Soft aurora ribbons
+    for (let band = 0; band < 3; band++) {
+      const y0 = 18 + band * 16
+      const g = ctx.createLinearGradient(0, y0, width, y0 + 28)
+      g.addColorStop(0, 'rgba(34, 197, 94, 0)')
+      g.addColorStop(0.35, `rgba(${band === 1 ? '56, 189, 248' : '52, 211, 153'}, ${0.08 + band * 0.03})`)
+      g.addColorStop(0.7, `rgba(${band === 2 ? '167, 139, 250' : '74, 222, 128'}, ${0.06 + band * 0.02})`)
+      g.addColorStop(1, 'rgba(34, 197, 94, 0)')
+      ctx.fillStyle = g
+      ctx.beginPath()
+      ctx.moveTo(0, y0 + 10)
+      for (let x = 0; x <= width; x += 24) {
+        const wave = Math.sin(t * 0.4 + x * 0.02 + band) * 7 + Math.sin(t * 0.7 + x * 0.05) * 3
+        ctx.lineTo(x, y0 + wave)
+      }
+      ctx.lineTo(width, y0 + 34)
+      ctx.lineTo(0, y0 + 34)
+      ctx.closePath()
+      ctx.fill()
+    }
+    // Moon
+    const mx = width * 0.82
+    const my = groundY * 0.22
+    const moon = ctx.createRadialGradient(mx, my, 2, mx, my, 18)
+    moon.addColorStop(0, 'rgba(248, 250, 252, 0.95)')
+    moon.addColorStop(0.45, 'rgba(226, 232, 240, 0.55)')
+    moon.addColorStop(1, 'rgba(226, 232, 240, 0)')
+    ctx.fillStyle = moon
+    ctx.beginPath()
+    ctx.arc(mx, my, 18, 0, Math.PI * 2)
+    ctx.fill()
+    for (const s of SKY_STARS) {
+      const y = 4 + s.y * (groundY * 0.62)
+      ctx.globalAlpha = 0.28 + 0.4 * (0.5 + 0.5 * Math.sin(t * 1.5 + s.phase))
+      ctx.fillStyle = '#e9f2ff'
+      ctx.fillRect(Math.round(s.x * width), Math.round(y), s.phase % 3 === 0 ? 2 : 1, 1)
+    }
+    ctx.globalAlpha = 1
+  } else {
+    // Soft winter sun
+    const sx = width * 0.78
+    const sy = groundY * 0.28
+    const sun = ctx.createRadialGradient(sx, sy, 2, sx, sy, 36)
+    sun.addColorStop(0, 'rgba(255, 248, 220, 0.95)')
+    sun.addColorStop(0.35, 'rgba(255, 214, 153, 0.45)')
+    sun.addColorStop(1, 'rgba(255, 214, 153, 0)')
+    ctx.fillStyle = sun
+    ctx.beginPath()
+    ctx.arc(sx, sy, 36, 0, Math.PI * 2)
+    ctx.fill()
+    // Cloud puffs
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+    for (let i = 0; i < 5; i++) {
+      const cx = ((t * 8 + i * 140) % (width + 120)) - 40
+      const cy = 18 + (i % 3) * 14
+      ctx.beginPath()
+      ctx.ellipse(cx, cy, 28, 9, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx + 16, cy + 2, 18, 7, 0, 0, Math.PI * 2)
+      ctx.ellipse(cx - 14, cy + 3, 16, 6, 0, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+
+  // Distant snow hills
+  ctx.fillStyle = dark ? 'rgba(120, 150, 175, 0.35)' : 'rgba(210, 228, 242, 0.85)'
+  ctx.beginPath()
+  ctx.moveTo(0, groundY)
+  for (let x = 0; x <= width; x += 20) {
+    const h = 16 + Math.sin(x * 0.02) * 8 + Math.sin(x * 0.05 + 1) * 5
+    ctx.lineTo(x, groundY - h)
+  }
+  ctx.lineTo(width, groundY)
+  ctx.closePath()
+  ctx.fill()
+  ctx.fillStyle = dark ? 'rgba(160, 185, 205, 0.4)' : 'rgba(232, 243, 250, 0.95)'
+  ctx.beginPath()
+  ctx.moveTo(0, groundY)
+  for (let x = 0; x <= width; x += 16) {
+    const h = 8 + Math.sin(x * 0.03 + 2) * 5
+    ctx.lineTo(x, groundY - h)
+  }
+  ctx.lineTo(width, groundY)
+  ctx.closePath()
+  ctx.fill()
+
+  // Tiny fir silhouettes on the ridge
+  for (const tree of HILL_TREES) {
+    const tx = tree.x * width
+    if (tx < 8 || tx > width - 70) continue
+    const base = groundY - 10 - Math.sin(tree.x * 20) * 4
+    ctx.fillStyle = dark ? 'rgba(30, 58, 48, 0.75)' : 'rgba(47, 99, 72, 0.55)'
+    ctx.beginPath()
+    ctx.moveTo(tx, base - tree.h)
+    ctx.lineTo(tx + tree.w, base)
+    ctx.lineTo(tx - tree.w, base)
+    ctx.closePath()
+    ctx.fill()
+    if (!dark) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
+      ctx.fillRect(Math.round(tx) - 1, Math.round(base - tree.h), 2, 2)
+    } else if (Math.floor(t * 2 + tree.x * 40) % 5 === 0) {
+      ctx.fillStyle = 'rgba(250, 204, 21, 0.7)'
+      ctx.fillRect(Math.round(tx), Math.round(base - tree.h * 0.45), 1, 1)
+    }
+  }
+
+  // Falling snow
+  for (const f of SKY_FLAKES) {
+    const x = ((f.x * width + t * f.drift * 40) % width + width) % width
+    const y = ((f.y * groundY + t * f.speed * 28) % groundY + groundY) % groundY
+    ctx.globalAlpha = dark ? 0.35 + f.size * 0.1 : 0.55 + f.size * 0.15
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(Math.round(x), Math.round(y), f.size, f.size)
   }
   ctx.globalAlpha = 1
 }
