@@ -24,6 +24,7 @@ import { MobileBottomNav } from './components/mobile/MobileBottomNav'
 import { MobileMoreMenu } from './components/mobile/MobileMoreMenu'
 import { MobileConnectionSheet } from './components/mobile/MobileConnectionSheet'
 import { SettingsDialog } from './components/SettingsDialog'
+import { SnowOverlay } from './components/SnowOverlay'
 import { TooltipProvider } from './components/ui/tooltip'
 import { Toaster } from 'sonner'
 
@@ -311,6 +312,7 @@ function AppMobile() {
   return (
     <TooltipProvider delayDuration={300}>
       <div className="min-h-screen min-h-[100dvh] bg-background flex flex-col safe-area-padding">
+        <SnowOverlay />
         <MobileHeader
           connected={connected}
           onConnectionPress={() => setConnectionSheetOpen(true)}

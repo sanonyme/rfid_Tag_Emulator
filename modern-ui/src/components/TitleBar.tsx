@@ -15,6 +15,8 @@ interface TitleBarProps {
   onSettingsHighlightClear?: () => void
   onStartInteractiveTour?: () => void
   actionsMenu?: React.ReactNode
+  /** Shown next to What's New (e.g. Christmas workshop snow globe). */
+  leadingAction?: React.ReactNode
 }
 
 export function TitleBar({
@@ -24,6 +26,7 @@ export function TitleBar({
   onSettingsHighlightClear,
   onStartInteractiveTour,
   actionsMenu,
+  leadingAction,
 }: TitleBarProps) {
   const handleMinimize = () => {
     console.log('Minimize clicked')
@@ -53,10 +56,10 @@ export function TitleBar({
   }
 
   return (
-    <div className="h-14 bg-background/80 backdrop-blur-md border-b border-border/50 flex items-center justify-between px-4 select-none titlebar draggable animate-slide-in-down relative z-30">
+    <div className="relative z-30 flex h-14 items-center justify-between overflow-visible bg-background/80 px-4 backdrop-blur-md border-b border-border/50 select-none titlebar draggable animate-slide-in-down">
       {/* Left - Logo & Title */}
-      <div className="flex items-center gap-3 flex-1 animate-fade-in">
-        <div className="relative group">
+      <div className="flex min-w-0 items-center gap-3 animate-fade-in">
+        <div className="brand-logo relative group">
           <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl group-hover:bg-primary/40 transition-all duration-500"></div>
           <img
             src={logoImage}
@@ -80,7 +83,8 @@ export function TitleBar({
       <div className="flex-1" />
 
       {/* Right - Actions menu & Window Controls */}
-      <div className="flex items-center gap-2 animate-fade-in">
+      <div className="flex shrink-0 items-center gap-2 animate-fade-in">
+        {leadingAction && <div className="no-drag">{leadingAction}</div>}
         <div className="no-drag">
           <WhatsNewTitleBarControl />
         </div>

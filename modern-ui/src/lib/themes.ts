@@ -144,49 +144,69 @@ export const themes: Theme[] = [
   {
     name: 'christmas',
     label: 'Christmas Special',
-    swatches: ['#D42426', '#146B3A', '#F8B229', '#FAFAFA', '#0a2416'],
+    swatches: ['#c12732', '#1e6b43', '#e0b04a', '#f4f8fb', '#071610'],
     colors: {
       light: {
-        primary: '358 70% 49%', // #D42426 Red
-        primaryForeground: '0 0% 98%',
-        background: '0 0% 98%', // Snow white
-        foreground: '146 69% 25%', // #146B3A Dark Green
-        card: '0 0% 100%',
-        cardForeground: '146 69% 25%',
-        popover: '0 0% 100%',
-        popoverForeground: '146 69% 25%',
-        secondary: '146 69% 25%', // Green
-        secondaryForeground: '0 0% 98%',
-        muted: '146 30% 90%',
-        mutedForeground: '146 40% 40%',
-        accent: '40 92% 57%', // #F8B229 Gold
-        accentForeground: '0 0% 98%',
-        destructive: '0 84.2% 60.2%',
+        primary: '355 68% 42%',
+        primaryForeground: '40 40% 98%',
+        background: '206 42% 97%',
+        foreground: '160 28% 12%',
+        card: '206 40% 99%',
+        cardForeground: '160 28% 12%',
+        popover: '200 35% 99%',
+        popoverForeground: '160 28% 12%',
+        secondary: '150 24% 92%',
+        secondaryForeground: '158 42% 18%',
+        muted: '204 22% 94%',
+        mutedForeground: '164 10% 34%',
+        accent: '42 48% 92%',
+        accentForeground: '160 28% 14%',
+        destructive: '0 72% 46%',
         destructiveForeground: '0 0% 98%',
-        border: '146 30% 85%',
-        input: '146 30% 85%',
-        ring: '358 70% 49%',
+        border: '204 16% 84%',
+        input: '204 16% 84%',
+        ring: '42 72% 42%',
       },
       dark: {
-        primary: '358 70% 60%', // Red
-        primaryForeground: '0 0% 98%',
-        background: '146 69% 10%', // Dark Green bg
-        foreground: '0 0% 98%',
-        card: '146 69% 15%',
-        cardForeground: '0 0% 98%',
-        popover: '146 69% 15%',
-        popoverForeground: '0 0% 98%',
-        secondary: '358 70% 49%', // Red
-        secondaryForeground: '0 0% 98%',
-        muted: '146 40% 20%',
-        mutedForeground: '146 30% 70%',
-        accent: '40 92% 57%', // Gold
-        accentForeground: '0 0% 98%',
-        destructive: '0 62.8% 30.6%',
-        destructiveForeground: '0 0% 98%',
-        border: '146 40% 25%',
-        input: '146 40% 25%',
-        ring: '358 70% 60%',
+        primary: '356 70% 52%',
+        primaryForeground: '40 40% 98%',
+        background: '162 42% 6%',
+        foreground: '40 32% 96%',
+        card: '162 32% 10%',
+        cardForeground: '40 32% 96%',
+        popover: '162 28% 12%',
+        popoverForeground: '40 32% 96%',
+        secondary: '158 24% 16%',
+        secondaryForeground: '40 30% 94%',
+        muted: '160 20% 14%',
+        mutedForeground: '150 12% 70%',
+        accent: '42 26% 16%',
+        accentForeground: '42 70% 82%',
+        destructive: '0 62% 42%',
+        destructiveForeground: '40 40% 98%',
+        border: '158 16% 18%',
+        input: '158 16% 18%',
+        ring: '42 78% 56%',
+      },
+    },
+    extras: {
+      light: {
+        '--shadow-color': '206 35% 28%',
+        '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.08)',
+        '--shadow-md': '0 8px 22px hsl(206 40% 30% / 0.10)',
+        '--shadow-lg': '0 18px 40px hsl(206 40% 24% / 0.14)',
+        '--file-tree-bg': '204 32% 95%',
+        '--file-tree-hover': '204 24% 91%',
+        '--folder-icon': '152 42% 32%',
+      },
+      dark: {
+        '--shadow-color': '160 50% 2%',
+        '--shadow-sm': '0 1px 2px hsl(var(--shadow-color) / 0.45)',
+        '--shadow-md': '0 8px 22px hsl(160 50% 2% / 0.5)',
+        '--shadow-lg': '0 18px 42px hsl(160 50% 2% / 0.6)',
+        '--file-tree-bg': '162 34% 8%',
+        '--file-tree-hover': '162 24% 13%',
+        '--folder-icon': '42 72% 58%',
       },
     },
   },
@@ -841,6 +861,7 @@ export function applyTheme(themeName: string, isDark: boolean) {
   const themeExtras = isDark ? theme.extras?.dark : theme.extras?.light
 
   const root = document.documentElement
+  root.dataset.theme = theme.name
 
   Object.entries(colors).forEach(([key, value]) => {
     const cssVar = `--${key.replace(/([A-Z])/g, '-$1').toLowerCase()}`

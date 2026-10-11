@@ -2464,9 +2464,17 @@ export function SftpSessionPanel({
             onPin={(c) => void pinSaved(c)}
           />
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain">
-            {!protocolChosen ? (
-              <div className="flex min-h-full flex-col items-center justify-center px-6 py-8">
-                <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-5">
+            <AnimatePresence mode="wait">
+              {!protocolChosen ? (
+                <motion.div
+                  key="protocol-choices"
+                  initial={{ opacity: 0, x: -15 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -15 }}
+                  transition={{ duration: 0.2, ease: 'easeInOut' }}
+                  className="flex min-h-full flex-col items-center justify-center px-6 py-8"
+                >
+                  <div className="mx-auto flex w-full max-w-lg flex-col items-center gap-5">
                   <div className="text-center">
                     <h2 className="text-xl font-semibold text-foreground">Connect to files</h2>
                     <p className="mt-1.5 text-sm text-muted-foreground">
@@ -2490,9 +2498,16 @@ export function SftpSessionPanel({
                     ))}
                   </div>
                 </div>
-              </div>
-            ) : (
-            <div className="mx-auto flex w-full max-w-md flex-col gap-4 px-6 py-6">
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="protocol-form"
+                  initial={{ opacity: 0, x: 15 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 15 }}
+                  transition={{ duration: 0.2, ease: 'easeInOut' }}
+                  className="mx-auto flex w-full max-w-md flex-col gap-4 px-6 py-6"
+                >
         <div className="flex flex-col items-start gap-3">
           <button
             type="button"
@@ -2856,8 +2871,9 @@ export function SftpSessionPanel({
           {connecting ? <Loader2 className="w-4 h-4 animate-spin" /> : <PlugZap className="w-4 h-4" />}
           {connecting ? 'Connecting…' : 'Connect'}
         </Button>
-            </div>
-            )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

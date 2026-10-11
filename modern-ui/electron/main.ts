@@ -133,6 +133,7 @@ import {
   sendUdpProbe,
   isUdpDiscoveryRunning,
 } from './udp-discovery-handler.js'
+import { joinWorkshop, leaveWorkshop, sendWorkshop } from './workshop-presence.js'
 import {
   startReaderDiscovery,
   cancelReaderDiscovery,
@@ -1344,6 +1345,12 @@ app.whenReady().then(() => {
       sendUdpProbe(targetIp, targetPort, message),
   )
   ipcMain.handle('udp-discovery-is-running', () => isUdpDiscoveryRunning())
+  ipcMain.handle('workshop-join', (event, room: unknown) => joinWorkshop(event.sender, room))
+  ipcMain.handle('workshop-leave', (event) => {
+    leaveWorkshop(event.sender)
+    return { ok: true as const }
+  })
+  ipcMain.on('workshop-send', (event, message: unknown) => sendWorkshop(event.sender, message))
   ipcMain.handle('reader-discovery-start', async (event, payload: ReaderDiscoveryPayload) =>
     startReaderDiscovery(event.sender, payload),
   )
@@ -1853,6 +1860,7 @@ app.on('window-all-closed', () => {
   shellProcesses.clear()
   closeAllPopoutWindows()
   stopUdpDiscovery()
+  leaveWorkshop()
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()
@@ -1889,6 +1897,7 @@ app.on('before-quit', () => {
   shellProcesses.clear()
   closeAllPopoutWindows()
   stopUdpDiscovery()
+  leaveWorkshop()
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()

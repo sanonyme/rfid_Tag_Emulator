@@ -4,7 +4,7 @@ import { Input } from '../ui/input'
 import { ExpandableTagField } from '../ExpandableTagField'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp, Activity } from 'lucide-react'
+import { Smartphone, Zap, StopCircle, Server, ChevronDown, ChevronUp, Activity, Settings2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
@@ -12,6 +12,10 @@ import { formatTime, cn } from '@/lib/utils'
 import type { HandheldSlot } from '../HandheldTab'
 import { Switch } from '../ui/switch'
 import { Label } from '../ui/label'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
+import { getLogColorClass } from '@/lib/log-colors'
+import { LogThemeSelector } from '../LogThemeSelector'
 import {
   getHandheldFullActivityLog,
   setHandheldFullActivityLog,
@@ -360,38 +364,65 @@ export function MobileHandheldTab({
       </Card>
 
       <Card className="border-border/50">
-        <button
-          type="button"
-          className="w-full flex items-center justify-between p-4"
+        <div
+          role="button"
+          tabIndex={0}
+          className="w-full flex items-center justify-between p-4 cursor-pointer outline-none focus-visible:bg-accent/50"
           onClick={() => setLogExpanded(!logExpanded)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              setLogExpanded(!logExpanded)
+            }
+          }}
         >
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-medium">Log</span>
             <div
-              className="flex items-center gap-2 rounded-md border border-border/50 bg-muted/25 px-2 py-1"
+              className="flex items-center gap-2 rounded-md bg-muted/25 px-2 py-1"
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => e.stopPropagation()}
               role="presentation"
             >
-              <Switch
-                id="m-log-detail"
-                checked={fullActivityLog}
-                onCheckedChange={(v) => {
-                  setFullActivityLog(v)
-                  setHandheldFullActivityLog(v)
-                }}
-              />
-              <Label
-                htmlFor="m-log-detail"
-                className="cursor-pointer text-xs text-muted-foreground"
-                title="Off: connections & errors only. On: full send activity."
-              >
-                Full activity log
-              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-8 rounded-md p-0"
+                    title="Log Settings"
+                  >
+                    <Settings2 className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-3" align="end" sideOffset={8}>
+                  <div className="space-y-4">
+                    <h4 className="text-sm font-medium leading-none">Log Settings</h4>
+                    <div className="flex items-center justify-between gap-2">
+                      <Label
+                        htmlFor="m-log-detail"
+                        className="cursor-pointer text-xs font-medium text-muted-foreground"
+                        title="Off: connections & errors only. On: full send activity."
+                      >
+                        Full activity log
+                      </Label>
+                      <Switch
+                        id="m-log-detail"
+                        checked={fullActivityLog}
+                        onCheckedChange={(v) => {
+                          setFullActivityLog(v)
+                          setHandheldFullActivityLog(v)
+                        }}
+                      />
+                    </div>
+                    <LogThemeSelector />
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
           {logExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-        </button>
+        </div>
         {logExpanded && (
           <CardContent className="pt-0">
             <div className="flex gap-2 mb-2">
@@ -400,9 +431,10 @@ export function MobileHandheldTab({
               </Button>
             </div>
             <div className="font-mono text-xs space-y-1 max-h-32 overflow-y-auto bg-muted/30 rounded-lg p-2">
-              {log.map((line, i) => (
-                <div key={i} className="text-muted-foreground">{line}</div>
-              ))}
+              {log.map((line, i) => {
+                const colorClass = getLogColorClass(line, settings.logColorsEnabled, settings.logTheme)
+                return <div key={i} className={colorClass}>{line}</div>
+              })}
               <div ref={logEndRef} />
             </div>
           </CardContent>

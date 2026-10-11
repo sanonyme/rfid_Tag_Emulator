@@ -20,6 +20,7 @@ import {
   Hash,
   FileCode2,
   Info,
+  Settings2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -36,6 +37,7 @@ import { DefinedItemsPicker } from './DefinedItemsPicker'
 import { CartonUpcFill } from './CartonUpcFill'
 import { EpcListPeek } from './EpcListPeek'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
+import { emitWorkshopActivity } from '@/lib/workshop-activity'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
   Dialog,
@@ -56,6 +58,9 @@ import { Switch } from './ui/switch'
 import { Badge } from './ui/badge'
 import { useSettings } from '@/lib/settings-context'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from './ui/popover'
+import { getLogColorClass } from '@/lib/log-colors'
+import { LogThemeSelector } from './LogThemeSelector'
 
 /** Imperative API for Pocket Remote (and other callers) to drive Fixed send/loop. */
 export interface FixedTabHandle {
@@ -216,6 +221,29 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
     if (log.length === 0) return
     navigator.clipboard.writeText(log.join('\n'))
     toast.success('Log copied to clipboard')
+  }
+
+  const handleCopySerials = () => {
+    if (log.length === 0) return
+    const serials = log
+      .map((line) => {
+        const match = line.match(/Sent \(\d+\/\d+\):\s+([0-9A-Fa-f]+)\s+@rssi/)
+        if (match) return match[1]
+        
+        const mockMatch = line.match(/Sent tag \d+\/\d+:\s+([0-9A-Fa-f]+)/)
+        if (mockMatch) return mockMatch[1]
+
+        return null
+      })
+      .filter(Boolean)
+
+    if (serials.length === 0) {
+      toast.error('No serials found in log')
+      return
+    }
+    
+    navigator.clipboard.writeText(serials.join('\n'))
+    toast.success(`${serials.length} serial(s) copied to clipboard`)
   }
 
   const handleExportLog = () => {
@@ -425,6 +453,14 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
       },
       (complete) => {
         addLog(complete)
+        if (complete.startsWith('Successfully sent')) {
+          emitWorkshopActivity({
+            kind: 'tags-sent',
+            count: tags.length,
+            source: 'fixed',
+            epc: tags[Math.floor(Math.random() * tags.length)]?.epc,
+          })
+        }
         if (isLooping && loopingRef.current) {
           handleSendTags(true)
         } else {
@@ -551,7 +587,8 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
           isPopout && 'max-h-[42vh] shrink-0 lg:max-h-none lg:shrink',
         )}
       >
-        {/* Tag Defaults */}
+        {/* Tag Defaults — host keeps Christmas hat inside scroll bounds */}
+        <div data-tour="tour-fixed-tag-defaults-host" className="relative">
         <Card className={sectionCard} data-tour="tour-fixed-tag-defaults">
           <CardHeader className="pb-3 pt-5 px-5">
             <div className="flex items-start gap-3">
@@ -713,6 +750,7 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
             </div>
           </CardContent>
         </Card>
+        </div>
 
         {/* Driver Settings */}
         <Card className={sectionCard} data-tour="tour-fixed-driver">
@@ -1121,24 +1159,42 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
                 )}
               </CardTitle>
               <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-                <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2 py-1 sm:px-2.5">
-                  <Switch
-                    id="fixed-detail-logs"
-                    checked={fullActivityLog}
-                    onCheckedChange={(v) => {
-                      setFullActivityLog(v)
-                      setBoolPref('rfid-emulator-fixed-detail-logs', v)
-                    }}
-                  />
-                  <Label
-                    htmlFor="fixed-detail-logs"
-                    className="cursor-pointer whitespace-nowrap text-xs font-medium text-muted-foreground"
-                    title="Off: summary lines only. On: include every per-tag send line."
-                  >
-                    Full activity log
-                  </Label>
-                </div>
                 <div className={actionGroup}>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(actionBtnMuted, 'h-8 px-2')}
+                        title="Log Settings"
+                      >
+                        <Settings2 className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-56 p-3" align="end" sideOffset={8}>
+                      <div className="space-y-4">
+                        <h4 className="text-sm font-medium leading-none">Log Settings</h4>
+                        <div className="flex items-center justify-between gap-2">
+                          <Label
+                            htmlFor="fixed-detail-logs"
+                            className="cursor-pointer text-xs font-medium text-muted-foreground"
+                            title="Off: summary lines only. On: include every per-tag send line."
+                          >
+                            Full activity log
+                          </Label>
+                          <Switch
+                            id="fixed-detail-logs"
+                            checked={fullActivityLog}
+                            onCheckedChange={(v) => {
+                              setFullActivityLog(v)
+                              setBoolPref('rfid-emulator-fixed-detail-logs', v)
+                            }}
+                          />
+                        </div>
+                        <LogThemeSelector />
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 {log.length > 0 && (
                   <>
                     <Button
@@ -1149,7 +1205,17 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
                       title="Copy log"
                     >
                       <Copy className="h-3.5 w-3.5" />
-                      <span className="hidden sm:inline">Copy</span>
+                      <span className="hidden sm:inline">Copy Log</span>
+                    </Button>
+                    <Button
+                      onClick={handleCopySerials}
+                      variant="ghost"
+                      size="sm"
+                      className={cn(actionBtnMuted, 'h-8 gap-1.5 px-2.5 text-xs')}
+                      title="Copy serials"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span className="hidden sm:inline">Copy Serials</span>
                     </Button>
                     <Button
                       onClick={handleExportLog}
@@ -1205,17 +1271,21 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
             ) : (
               <ScrollArea ref={logScrollRef} className="h-full min-h-[140px]">
                 <div className="space-y-0.5 p-3 font-mono text-xs sm:text-sm">
-                  {log.map((line, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        'rounded-md px-2 py-1.5 text-muted-foreground transition-colors duration-150 hover:bg-accent/35 hover:text-foreground',
-                        i === log.length - 1 && 'animate-log-new',
-                      )}
-                    >
-                      {line}
-                    </div>
-                  ))}
+                  {log.map((line, i) => {
+                    const colorClass = getLogColorClass(line, settings.logColorsEnabled, settings.logTheme)
+                    return (
+                      <div
+                        key={i}
+                        className={cn(
+                          'rounded-md px-2 py-1.5 transition-colors duration-150 hover:bg-accent/35',
+                          colorClass,
+                          i === log.length - 1 && 'animate-log-new',
+                        )}
+                      >
+                        {line}
+                      </div>
+                    )
+                  })}
                   <div ref={logEndRef} />
                 </div>
               </ScrollArea>

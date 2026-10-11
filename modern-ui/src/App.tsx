@@ -56,6 +56,9 @@ const SystemLogAnalyzerTab = React.lazy(() =>
   import('./components/SystemLogAnalyzerTab').then((m) => ({ default: m.SystemLogAnalyzerTab })),
 )
 const LogAggregatorTab = React.lazy(() => import('./components/LogAggregatorTab').then((m) => ({ default: m.LogAggregatorTab })))
+const WorkshopFloor = React.lazy(() =>
+  import('./components/workshop/WorkshopFloor').then((m) => ({ default: m.WorkshopFloor })),
+)
 
 /** Warm tab JS chunks in the background so first click rarely hits Suspense. */
 const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
@@ -232,6 +235,28 @@ function App() {
   React.useEffect(() => {
     preloadTabModules()
   }, [])
+
+  // Restore React state if a full profile was loaded via globalSnapshot (which triggers a reload)
+  React.useEffect(() => {
+    const loadId = localStorage.getItem('rfid-emulator-load-profile')
+    if (loadId) {
+      localStorage.removeItem('rfid-emulator-load-profile')
+      const profilesStr = localStorage.getItem('rfid-emulator-profiles')
+      if (profilesStr) {
+        try {
+          const profiles: Profile[] = JSON.parse(profilesStr)
+          const p = profiles.find((profile) => profile.id === loadId)
+          if (p) {
+            handleLoadProfile(p)
+          }
+        } catch (e) {
+          console.error('Failed to load profile after reload', e)
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -634,6 +659,12 @@ function App() {
 
   const effectiveActiveTab = isPopoutWindow && popoutTabId ? popoutTabId : activeTab
   const tabContentHidden = !isPopoutWindow && poppedOutTabs.has(activeTab)
+  const workshopFloor = (anchor: 'titlebar' | 'row' = 'titlebar') =>
+    !isPopoutWindow && currentTheme === 'christmas' ? (
+      <Suspense fallback={<div className="h-10 w-40 shrink-0 rounded-xl border border-border/50 bg-card" />}>
+        <WorkshopFloor room={host} connected={connected} anchor={anchor} />
+      </Suspense>
+    ) : null
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -689,6 +720,7 @@ function App() {
               onAdminLogout={handleAdminLogout}
             />
           }
+          leadingAction={showCustomTitlebar ? workshopFloor('titlebar') : undefined}
         />
       )}
       {/* Profile dialogs (triggered by BottomMenu) */}
@@ -735,12 +767,13 @@ function App() {
             {!isPopoutWindow && (
             <div
               className={cn(
-                'flex items-center gap-4',
+                'relative flex items-center gap-4',
                 showSideNav
                   ? 'flex-row justify-start mb-2'
                   : 'flex-col md:flex-row justify-center mb-4',
               )}
             >
+              {!showCustomTitlebar && workshopFloor('row')}
               <ConnectionStatus
                 emulator={emulator}
                 host={host}

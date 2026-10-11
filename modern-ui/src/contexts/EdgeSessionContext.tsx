@@ -19,6 +19,7 @@ import {
 import { aleResponseIsInvokeSuccess, formatEdgeApiError } from '@/lib/edge-api-errors'
 import { ALE_ENV_MISSING_MSG, getAleEnvCredentials } from '@/lib/edge-env-credentials'
 import { publishStatus, clearStatus } from '@/lib/workspace-status'
+import { emitWorkshopActivity } from '@/lib/workshop-activity'
 
 type EdgeSessionContextValue = {
   tcpConnected: boolean
@@ -344,6 +345,7 @@ export function EdgeSessionProvider({
         patchProcess(name, { started: false })
         throw new Error(res.data?.trim() || `Start failed (${res.status})`)
       }
+      emitWorkshopActivity({ kind: 'process', started: true })
       await syncProcessStatus(name, true)
     },
     [host, port, patchProcess, syncProcessStatus],
@@ -358,6 +360,7 @@ export function EdgeSessionProvider({
         patchProcess(name, { started: true })
         throw new Error(res.data?.trim() || `Stop failed (${res.status})`)
       }
+      emitWorkshopActivity({ kind: 'process', started: false })
       await syncProcessStatus(name, false)
     },
     [host, port, patchProcess, syncProcessStatus],

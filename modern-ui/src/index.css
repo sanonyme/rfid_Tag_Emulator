@@ -213,6 +213,7 @@
 
 .no-drag,
 .titlebar button,
+.titlebar canvas,
 .titlebar .no-drag * {
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -458,38 +459,183 @@ button, a, input, select, textarea {
   animation: float-reverse 25s ease-in-out infinite;
 }
 
-/* Snow Effect */
-@keyframes snow {
-  0% {
-    transform: translateY(-10vh) translateX(0);
-    opacity: 1;
-  }
-  100% {
-    transform: translateY(100vh) translateX(20px);
-    opacity: 0.3;
-  }
+/* Christmas frame: light-string garland, snow ridges on cards, snowbank, Santa hat */
+html[data-theme="christmas"] {
+  --xmas-snow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='18' viewBox='0 0 400 18'><path fill='%23c5d0dc' d='M0 0h400v8c-12 0-24 8-40 7s-32-8-50-7-36 9-54 8-34-9-52-8-36 9-54 8-32-9-50-8-36 10-54 8-28-8-46-6c-12 1-18-1 0-2V0z'/><path fill='%23ffffff' d='M0 0h400v5c-14 0-26 7-44 6s-30-7-48-6-34 8-52 7-32-8-50-7-34 8-52 7-30-7-48-6-34 8-52 6-26-6-40-5C8 7 4 6 0 5V0z'/></svg>");
+  --xmas-wire: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='44' viewBox='0 0 240 44'><path d='M0 6Q120 34 240 6' fill='none' stroke='%23101c16' stroke-width='1.6'/><path d='M0 7Q120 36 240 7' fill='none' stroke='%23395544' stroke-width='0.8'/><g fill='%232c3a32'><rect x='37.4' y='13.3' width='5.2' height='4.5' rx='1'/><rect x='77.4' y='17.9' width='5.2' height='4.5' rx='1'/><rect x='117.4' y='19.5' width='5.2' height='4.5' rx='1'/><rect x='157.4' y='17.9' width='5.2' height='4.5' rx='1'/><rect x='197.4' y='13.3' width='5.2' height='4.5' rx='1'/></g><g fill='%231f7a48'><ellipse cx='10' cy='5' rx='10' ry='3.8' transform='rotate(18 10 5)'/><ellipse cx='230' cy='5' rx='10' ry='3.8' transform='rotate(-18 230 5)'/></g><g fill='%23135532'><ellipse cx='7' cy='11' rx='8' ry='3' transform='rotate(52 7 11)'/><ellipse cx='233' cy='11' rx='8' ry='3' transform='rotate(-52 233 11)'/></g><g fill='%23d42530'><circle cx='0' cy='6' r='3.4'/><circle cx='240' cy='6' r='3.4'/><circle cx='4' cy='9.6' r='2.8'/><circle cx='236' cy='9.6' r='2.8'/></g><g fill='%23ffffff' opacity='0.6'><circle cx='3' cy='8.6' r='0.8'/><circle cx='238.9' cy='4.9' r='0.9'/></g></svg>");
+  --xmas-bulbs-a: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='44' viewBox='0 0 240 44'><g transform='rotate(-10 40 13.8)'><circle cx='40' cy='24.8' r='12' fill='%23ff4b55' opacity='0.32'/><ellipse cx='40' cy='24.3' rx='4.2' ry='6.8' fill='%23ff4b55'/><ellipse cx='38.6' cy='21.8' rx='1.2' ry='2.4' fill='%23ffffff' opacity='0.7'/></g><g transform='rotate(6 120 20)'><circle cx='120' cy='31' r='12' fill='%23ffc93c' opacity='0.32'/><ellipse cx='120' cy='30.5' rx='4.2' ry='6.8' fill='%23ffc93c'/><ellipse cx='118.6' cy='28' rx='1.2' ry='2.4' fill='%23ffffff' opacity='0.7'/></g><g transform='rotate(10 200 13.8)'><circle cx='200' cy='24.8' r='12' fill='%234fb3ff' opacity='0.32'/><ellipse cx='200' cy='24.3' rx='4.2' ry='6.8' fill='%234fb3ff'/><ellipse cx='198.6' cy='21.8' rx='1.2' ry='2.4' fill='%23ffffff' opacity='0.7'/></g></svg>");
+  --xmas-bulbs-b: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='44' viewBox='0 0 240 44'><g transform='rotate(9 80 18.4)'><circle cx='80' cy='29.4' r='12' fill='%235be08f' opacity='0.32'/><ellipse cx='80' cy='28.9' rx='4.2' ry='6.8' fill='%235be08f'/><ellipse cx='78.6' cy='26.4' rx='1.2' ry='2.4' fill='%23ffffff' opacity='0.7'/></g><g transform='rotate(-8 160 18.4)'><circle cx='160' cy='29.4' r='12' fill='%23fff1c2' opacity='0.36'/><ellipse cx='160' cy='28.9' rx='4.2' ry='6.8' fill='%23fff1c2'/><ellipse cx='158.6' cy='26.4' rx='1.2' ry='2.4' fill='%23ffffff' opacity='0.8'/></g></svg>");
+  --xmas-hat: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='40' height='34' viewBox='0 0 40 34'><path fill='%23c4232e' d='M4 26C6 14 14 5 26 4c7-.5 11 4 9 11-4-3-8-1-9 3l1 8z'/><path fill='%239e1520' d='M26 18c1-4 5-6 9-3-1 3-4 4-6 4z'/><rect x='1' y='23' width='29' height='8' rx='4' fill='%23f7f3ee'/><circle cx='35' cy='16' r='4.6' fill='%23f7f3ee'/></svg>");
+  --xmas-drift: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='360' height='28' viewBox='0 0 360 28'><path fill='%23d6e3ee' d='M0 28V12C36 6 70 9 104 14s66 3 102-5 74-6 110 0 32 6 44 3V28z'/><path fill='%23f8fbfe' d='M0 28V19c30-5 64-5 96 0s62 5 96 0 62-8 98-3 54 7 70 3V28z'/></svg>");
 }
 
-.snowflake {
+.xmas-garland {
   position: fixed;
-  top: -10vh;
-  color: hsl(var(--foreground));
-  font-size: 1.5em;
-  font-family: Arial, sans-serif;
-  z-index: 9999;
+  z-index: 4;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 44px;
   pointer-events: none;
-  animation: snow 10s linear infinite;
-  opacity: 0.6;
+  background: var(--xmas-wire) center top / 240px 44px repeat-x;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.3));
 }
 
-.snowflake:nth-child(2n) {
-  animation-duration: 7s;
-  font-size: 1em;
+html:has(.titlebar) .xmas-garland {
+  top: 52px;
 }
 
-.snowflake:nth-child(3n) {
-  animation-duration: 12s;
-  font-size: 2em;
+.xmas-lights,
+.xmas-lights::after {
+  position: absolute;
+  inset: 0;
+  background: var(--xmas-bulbs-a) center top / 240px 44px repeat-x;
+  animation: xmas-twinkle 2.6s ease-in-out infinite;
+}
+
+.xmas-lights::after {
+  content: "";
+  background-image: var(--xmas-bulbs-b);
+  animation-delay: -1.3s;
+}
+
+.xmas-drift {
+  position: fixed;
+  z-index: 11;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 28px;
+  pointer-events: none;
+  background: var(--xmas-drift) left bottom / 360px 28px repeat-x;
+  filter: drop-shadow(0 -2px 4px rgba(120, 150, 180, 0.25));
+}
+
+html.dark .xmas-drift {
+  opacity: 0.92;
+  filter: drop-shadow(0 -2px 6px rgba(0, 0, 0, 0.5));
+}
+
+@media (max-width: 800px) {
+  .xmas-garland { top: 68px; }
+}
+
+html[data-theme="christmas"] .brand-logo::after {
+  content: "";
+  position: absolute;
+  z-index: 2;
+  left: -7px;
+  top: -11px;
+  width: 34px;
+  height: 29px;
+  pointer-events: none;
+  background: var(--xmas-hat) center / contain no-repeat;
+  transform: rotate(-16deg);
+  filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.35));
+}
+
+html[data-theme="christmas"] ::-webkit-scrollbar-thumb {
+  background-image: repeating-linear-gradient(45deg, #c8323c 0 4px, #f4ece4 4px 8px);
+}
+
+html[data-theme="christmas"] ::selection {
+  background: hsl(356 70% 48% / 0.85);
+  color: #fff;
+}
+
+html[data-theme="christmas"] body {
+  background-image:
+    radial-gradient(1100px 460px at 50% -12%, hsl(356 72% 46% / 0.08), transparent 58%),
+    radial-gradient(680px 380px at 100% 0%, hsl(152 42% 32% / 0.07), transparent 52%),
+    radial-gradient(560px 340px at 0% 100%, hsl(42 80% 52% / 0.07), transparent 48%);
+  background-attachment: fixed;
+}
+
+html.dark[data-theme="christmas"] body {
+  background-image:
+    radial-gradient(980px 440px at 50% -10%, hsl(356 78% 48% / 0.18), transparent 56%),
+    radial-gradient(640px 360px at 100% 0%, hsl(152 48% 28% / 0.2), transparent 50%),
+    radial-gradient(520px 300px at 0% 108%, hsl(42 90% 54% / 0.1), transparent 46%);
+}
+
+html[data-theme="christmas"] :is(
+  .card-surface,
+  .rounded-xl,
+  .rounded-2xl
+):is(
+  [class~="bg-card"],
+  [class~="bg-card/30"],
+  [class~="bg-card/40"],
+  [class~="bg-card/50"],
+  [class~="bg-card/60"],
+  [class~="bg-card/70"],
+  [class~="bg-card/80"],
+  [class~="bg-card/90"],
+  [class~="bg-card/95"]
+):not(.absolute):not(.fixed):not(.sticky) {
+  position: relative;
+}
+
+html[data-theme="christmas"] :is(
+  .card-surface,
+  .rounded-xl,
+  .rounded-2xl
+):is(
+  [class~="bg-card"],
+  [class~="bg-card/30"],
+  [class~="bg-card/40"],
+  [class~="bg-card/50"],
+  [class~="bg-card/60"],
+  [class~="bg-card/70"],
+  [class~="bg-card/80"],
+  [class~="bg-card/90"],
+  [class~="bg-card/95"]
+)::after {
+  content: "";
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 18px;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+  background-image: var(--xmas-snow);
+  background-repeat: repeat-x;
+  background-size: 400px 18px;
+  background-position: left top;
+  filter: drop-shadow(0 1px 1px rgba(86, 112, 138, 0.42));
+}
+
+html[data-theme="christmas"] :is(.card-surface, .rounded-xl, .rounded-2xl):nth-child(2n)::after {
+  background-position: -70px top;
+}
+
+html[data-theme="christmas"] :is(.card-surface, .rounded-xl, .rounded-2xl):nth-child(3n)::after {
+  background-position: -160px top;
+}
+
+html.dark[data-theme="christmas"] :is(.card-surface, .rounded-xl, .rounded-2xl)::after {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7)) drop-shadow(0 0 8px rgba(255, 255, 255, 0.14));
+}
+
+html[data-theme="christmas"] button.bg-primary {
+  background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.18), transparent 46%);
+}
+
+@keyframes xmas-twinkle {
+  0%, 100% { opacity: 0.55; }
+  45% { opacity: 1; }
+  72% { opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xmas-lights,
+  .xmas-lights::after {
+    animation: none;
+    opacity: 0.9;
+  }
 }
 
 /* Main navbar tabs — no focus ring flash on click (Electron / Windows) */

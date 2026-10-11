@@ -52,6 +52,8 @@ export interface Profile {
   /** @deprecated Use automationSequences. Migrated on load. */
   automationSteps?: any[]
   automationSequences?: AutomationSequence[]
+  // Master Snapshot of all app data (localStorage)
+  globalSnapshot?: Record<string, string>
 }
 
 interface ProfileManagerProps {
@@ -98,9 +100,18 @@ export function ProfileManager({ currentState, onLoadProfile, externalOpen, onEx
       return
     }
 
+    const globalSnapshot: Record<string, string> = {}
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key !== 'rfid-emulator-profiles' && key !== 'rfid-emulator-load-profile') {
+        globalSnapshot[key] = localStorage.getItem(key) || ''
+      }
+    }
+
     const newProfile: Profile = {
       id: crypto.randomUUID(),
       name: newProfileName,
+      globalSnapshot,
       ...currentState
     }
 
@@ -118,9 +129,22 @@ export function ProfileManager({ currentState, onLoadProfile, externalOpen, onEx
   }
 
   const handleLoad = (profile: Profile) => {
-    onLoadProfile(profile)
-    setIsOpen(false)
-    toast.success(`Loaded profile: ${profile.name}`)
+    if (profile.globalSnapshot) {
+      // 1. Overwrite localStorage (except for profiles)
+      Object.entries(profile.globalSnapshot).forEach(([k, v]) => {
+        localStorage.setItem(k, v)
+      })
+      // 2. Set the "load on next boot" flag so App.tsx can restore React states
+      localStorage.setItem('rfid-emulator-load-profile', profile.id)
+      
+      toast.success(`Applying full app state: ${profile.name}...`)
+      setTimeout(() => window.location.reload(), 400)
+    } else {
+      // Legacy load for old profiles
+      onLoadProfile(profile)
+      setIsOpen(false)
+      toast.success(`Loaded profile: ${profile.name}`)
+    }
   }
 
   const handleExport = () => {

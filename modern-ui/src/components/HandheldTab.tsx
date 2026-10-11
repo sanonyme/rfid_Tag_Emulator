@@ -15,6 +15,7 @@ import {
   Plus,
   Trash2,
   Info,
+  Settings2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { HandheldServerClient } from '@/lib/tcp-client'
@@ -28,7 +29,12 @@ import { sectionCard } from '@/lib/ui-tokens'
 import { handheldAccent } from '@/lib/handheld-colors'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
+import { emitWorkshopActivity } from '@/lib/workshop-activity'
 import { Switch } from '@/components/ui/switch'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { getLogColorClass } from '@/lib/log-colors'
+import { LogThemeSelector } from './LogThemeSelector'
 import {
   getHandheldFullActivityLog,
   setHandheldFullActivityLog,
@@ -38,6 +44,7 @@ import { countHandheldSlotTags } from '@/lib/tag-list-count'
 import {
   countHandheldRecipeTags,
   handheldRecipeFromSlot,
+  iterateHandheldTags,
 } from '@/lib/handheld-tag-iterate'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 
@@ -309,6 +316,14 @@ export function HandheldTab({
       })
 
       if (fatalFinish(completeMsg)) break
+      if (completeMsg.startsWith('Broadcasted')) {
+        emitWorkshopActivity({
+          kind: 'tags-sent',
+          count: roundTagCount,
+          source: 'handheld',
+          epc: iterateHandheldTags(roundRecipe).next().value?.epc,
+        })
+      }
       if (!startedRepeat) break
     }
 
@@ -488,22 +503,42 @@ export function HandheldTab({
               )}
             </CardTitle>
             <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-              <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-muted/20 px-2 py-1 sm:px-2.5">
-                <Switch
-                  id="handheld-detail-logs"
-                  checked={fullActivityLog}
-                  onCheckedChange={(v) => {
-                    setFullActivityLog(v)
-                    setHandheldFullActivityLog(v)
-                  }}
-                />
-                <Label
-                  htmlFor="handheld-detail-logs"
-                  className="cursor-pointer whitespace-nowrap text-xs font-medium text-muted-foreground"
-                  title="Off: only VSBL client connect/disconnect counts and errors. On: all send activity."
-                >
-                  Full activity log
-                </Label>
+              <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 rounded-md p-0"
+                      title="Log Settings"
+                    >
+                      <Settings2 className="h-4 w-4 text-muted-foreground" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-56 p-3" align="end" sideOffset={8}>
+                    <div className="space-y-4">
+                      <h4 className="text-sm font-medium leading-none">Log Settings</h4>
+                      <div className="flex items-center justify-between gap-2">
+                        <Label
+                          htmlFor="handheld-detail-logs"
+                          className="cursor-pointer text-xs font-medium text-muted-foreground"
+                          title="Off: only VSBL client connect/disconnect counts and errors. On: all send activity."
+                        >
+                          Full activity log
+                        </Label>
+                        <Switch
+                          id="handheld-detail-logs"
+                          checked={fullActivityLog}
+                          onCheckedChange={(v) => {
+                            setFullActivityLog(v)
+                            setHandheldFullActivityLog(v)
+                          }}
+                        />
+                      </div>
+                        <LogThemeSelector />
+                    </div>
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5 ring-1 ring-border/30">
                 <Button variant="ghost" size="sm" className="h-8 rounded-md px-2.5 text-xs" onClick={() => setLog([])}>
@@ -516,14 +551,21 @@ export function HandheldTab({
         <CardContent className="bg-muted/15 p-2">
           <ScrollArea ref={logScrollRef} className="h-[120px]">
             <div className="space-y-0.5 px-1 py-0.5 font-mono text-xs">
-              {log.map((line, i) => (
-                <div
-                  key={i}
-                  className="rounded-md px-2 py-1 text-muted-foreground transition-colors hover:bg-accent/35 hover:text-foreground"
-                >
-                  {line}
-                </div>
-              ))}
+              {log.map((line, i) => {
+                const colorClass = getLogColorClass(line, settings.logColorsEnabled, settings.logTheme)
+                return (
+                  <div
+                    key={i}
+                    className={cn(
+                      'rounded-md px-2 py-1 transition-colors hover:bg-accent/35',
+                      colorClass,
+                      i === log.length - 1 && 'animate-log-new',
+                    )}
+                  >
+                    {line}
+                  </div>
+                )
+              })}
               <div ref={logEndRef} />
             </div>
           </ScrollArea>

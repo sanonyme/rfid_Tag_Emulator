@@ -21,6 +21,8 @@ export type DefaultTab =
 
 export type { NavLayout }
 
+export type LogTheme = 'default' | 'neon' | 'hacker' | 'ocean'
+
 export interface AppSettings {
   fontSize: FontSize
   defaultTab: DefaultTab
@@ -28,6 +30,8 @@ export interface AppSettings {
   connectionTimeoutMs: number
   soundEnabled: boolean
   card3dEnabled: boolean
+  logColorsEnabled: boolean
+  logTheme: LogTheme
   /** Fixed tab: when true, SGTIN serial continues across UPC lines; when false, each line resets to starting serial. */
   fixedSerialContinuesAcrossUpcLines: boolean
   /** Handheld tab: same as fixed, independent setting. */
@@ -45,6 +49,8 @@ const DEFAULTS: AppSettings = {
   connectionTimeoutMs: 10000,
   soundEnabled: false,
   card3dEnabled: false,
+  logColorsEnabled: true,
+  logTheme: 'default',
   fixedSerialContinuesAcrossUpcLines: false,
   handheldSerialContinuesAcrossUpcLines: false,
   upcCheckDigitHintsEnabled: true,

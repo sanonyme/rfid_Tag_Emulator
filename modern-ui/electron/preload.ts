@@ -364,6 +364,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('udp-discovery-error', handler)
     return () => ipcRenderer.removeListener('udp-discovery-error', handler)
   },
+  workshopJoin: (room: string) => ipcRenderer.invoke('workshop-join', room),
+  workshopLeave: () => ipcRenderer.invoke('workshop-leave'),
+  workshopSend: (message: unknown) => ipcRenderer.send('workshop-send', message),
+  onWorkshopMessage: (callback: (message: unknown) => void) => {
+    const handler = (_e: unknown, message: unknown) => callback(message)
+    ipcRenderer.on('workshop-message', handler)
+    return () => ipcRenderer.removeListener('workshop-message', handler)
+  },
   readerDiscoveryStart: (payload: ReaderDiscoveryPayload) =>
     ipcRenderer.invoke('reader-discovery-start', payload),
   readerDiscoveryCancel: () => ipcRenderer.invoke('reader-discovery-cancel'),

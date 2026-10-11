@@ -1,3 +1,5 @@
+import type { WorkshopMessage } from '../lib/workshop-protocol'
+
 export type NetScanStartPayload =
   | { mode: 'cidr'; cidr: string; concurrency?: number }
   | { mode: 'range'; start: string; end: string; concurrency?: number }
@@ -550,6 +552,13 @@ export interface ElectronAPI {
   onUdpDiscoveryStarted: (callback: (payload: { port: number }) => void) => () => void
   onUdpDiscoveryStopped: (callback: (payload: { reason: string }) => void) => () => void
   onUdpDiscoveryError: (callback: (payload: { message: string }) => void) => () => void
+  /** Christmas workshop floor: LAN multicast presence between players on the same reader host. */
+  workshopJoin?: (
+    room: string,
+  ) => Promise<{ ok: true; name: string } | { ok: false; error: string; name: string }>
+  workshopLeave?: () => Promise<{ ok: true }>
+  workshopSend?: (message: WorkshopMessage) => void
+  onWorkshopMessage?: (callback: (message: WorkshopMessage) => void) => () => void
   readerDiscoveryStart: (
     payload: ReaderDiscoveryPayload,
   ) => Promise<{ ok: true; total: number } | { ok: false; error: string }>
