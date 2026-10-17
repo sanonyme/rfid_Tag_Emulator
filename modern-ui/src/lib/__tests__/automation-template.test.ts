@@ -12,6 +12,7 @@ import {
   resolveStartSerial,
   advanceNextSerial,
   parseInterTagDelayMs,
+  sanitizeInterTagDelayInput,
   createRunContext,
   STANDARD_AUTOMATION_VARS,
 } from '../automation-template'
@@ -65,6 +66,14 @@ describe('automation-template', () => {
     expect(parseInterTagDelayMs('', '')).toBe(20)
     expect(parseInterTagDelayMs('1', '20')).toBe(1)
     expect(parseInterTagDelayMs('  50  ', '20')).toBe(50)
+    expect(parseInterTagDelayMs('-5', '20')).toBe(20)
+  })
+
+  it('strips non-digits from delay inputs', () => {
+    expect(sanitizeInterTagDelayInput('')).toBe('')
+    expect(sanitizeInterTagDelayInput('120')).toBe('120')
+    expect(sanitizeInterTagDelayInput('-10')).toBe('10')
+    expect(sanitizeInterTagDelayInput('12ms')).toBe('12')
   })
 })
 

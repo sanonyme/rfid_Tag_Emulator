@@ -83,6 +83,7 @@ export type ElfSpec = {
   hatItem: ItemDef | null
   /** Jersey drawn over the coat. */
   shirtItem?: ItemDef | null
+  wingsItem?: ItemDef | null
   /** Extra pixels to stand the elf up, used when riding a mount. */
   ride?: number
   label: string | null
@@ -101,6 +102,9 @@ export type Particle = {
   age: number
   ttl: number
   size: number
+  /** Drawn size. Defaults to a square of `size`. */
+  w?: number
+  h?: number
   color: string
   gravity: number
   /** Expanding arc (RF waves) or a hex digit (hex rain) instead of a square. */
@@ -119,6 +123,8 @@ export const EMOTES = [
   { name: 'Gift', rows: ['..w.w..', '...w...', 'ggwwwgg', 'gggwggg', 'wwwwwww', 'gggwggg', 'gggwggg'], palette: { w: '#fde68a', g: '#16a34a' } },
 ] as const
 
+const spriteCache = new WeakMap<readonly string[], Map<string, HTMLCanvasElement>>()
+
 export function drawSprite(
   ctx: CanvasRenderingContext2D,
   rows: readonly string[],
@@ -129,6 +135,31 @@ export function drawSprite(
   flip: boolean,
 ) {
   const width = rows[0].length
+  if (typeof document !== 'undefined') {
+    let variants = spriteCache.get(rows)
+    if (!variants) { variants = new Map(); spriteCache.set(rows, variants) }
+    const key = `${flip}:${Object.entries(palette).map(([k,v]) => k + v).join('|')}`
+    let cached = variants.get(key)
+    if (!cached) {
+      const canvas = document.createElement('canvas')
+      canvas.width = width; canvas.height = rows.length
+      const target = canvas.getContext('2d')
+      if (target) {
+        for (let r = 0; r < rows.length; r++) for (let c = 0; c < rows[r].length; c++) {
+          const color = palette[rows[r][c]]
+          if (!color) continue
+          target.fillStyle = color; target.fillRect(flip ? width - 1 - c : c, r, 1, 1)
+        }
+        if (variants.size >= 64) variants.clear()
+        variants.set(key, canvas); cached = canvas
+      }
+    }
+    if (cached) {
+      ctx.imageSmoothingEnabled = false
+      ctx.drawImage(cached, left, top, width * px, rows.length * px)
+      return
+    }
+  }
   for (let r = 0; r < rows.length; r++) {
     const row = rows[r]
     for (let c = 0; c < row.length; c++) {
@@ -186,6 +217,25 @@ function itemPalette(item: ItemDef, t: number): Readonly<Record<string, string>>
   if (!item.blink) return item.palette
   const on = Math.floor(t * 2.2) % 2 === 0
   return { ...item.palette, [item.blink.char]: on ? item.blink.on : item.blink.off }
+}
+
+/** Last sprite row that actually paints a pixel. Empty trailing rows are padding. */
+function lastOpaqueRow(rows: readonly string[]): number {
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (/[^.]/.test(rows[i])) return i
+  }
+  return rows.length - 1
+}
+
+/**
+ * Canvas y of the hat sprite's bottom so its brim (last opaque row) overlaps
+ * the elf forehead. `hatSit` is in elf-head rows: 2 = snug, 0 = on the crown, negative = float.
+ */
+function hatSpriteBottom(item: ItemDef, bodyTop: number, px: number, hatPx: number): number {
+  const sit = item.hatSit ?? 2
+  const brim = lastOpaqueRow(item.sprite)
+  const trailing = item.sprite.length - 1 - brim
+  return bodyTop + sit * px + trailing * hatPx
 }
 
 /** Draws an item sprite with its bottom-centre at (cx, bottom). */
@@ -252,6 +302,14 @@ export function drawElf(ctx: CanvasRenderingContext2D, e: ElfSpec, t: number, da
   ctx.ellipse(e.x, e.groundY + 1, shadowHalf, px, 0, 0, Math.PI * 2)
   ctx.fill()
 
+  if (e.wingsItem) {
+    const wing = e.wingsItem
+    const spread = e.lift > 0 ? 1.05 + Math.sin(t * 13) * 0.12 : 0.8 + Math.sin(t * 4) * 0.12
+    const wingPx = px * spread
+    const center = e.x, top = bodyTop + 3 * px
+    drawSprite(ctx, wing.sprite, itemPalette(wing,t), center - wing.sprite[0].length * wingPx - px, top, wingPx, false)
+    drawSprite(ctx, wing.sprite, itemPalette(wing,t), center + px, top, wingPx, true)
+  }
   drawSprite(ctx, ELF_BODY, palette, left, bodyTop, px, flip)
   // A mount covers the boots. Skip the walk cycle so the legs don't step through the vehicle.
   if (!ride) drawSprite(ctx, ELF_LEGS[e.pose], palette, left, bodyTop + ELF_BODY.length * px, px, flip)
@@ -262,12 +320,13 @@ export function drawElf(ctx: CanvasRenderingContext2D, e: ElfSpec, t: number, da
   const hatPx = e.bigHat ? px + 1 : px
   let hatTop: number
   if (e.hatItem) {
-    const rows = e.hatItem.sprite.length
-    hatTop = bodyTop + px - rows * hatPx
-    drawItem(ctx, e.hatItem, e.x, bodyTop + px, hatPx, flip, t)
+    const sit = hatSpriteBottom(e.hatItem, bodyTop, px, hatPx)
+    hatTop = sit - e.hatItem.sprite.length * hatPx
+    drawItem(ctx, e.hatItem, e.x, sit, hatPx, flip, t)
   } else {
+    const sit = bodyTop + 2 * px
     const hatLeft = Math.round(e.x - (ELF_COLS * hatPx) / 2)
-    hatTop = bodyTop + px - ELF_HAT.length * hatPx
+    hatTop = sit - ELF_HAT.length * hatPx
     drawSprite(ctx, ELF_HAT, palette, hatLeft, hatTop, hatPx, flip)
   }
 
@@ -769,7 +828,7 @@ export function drawParticles(ctx: CanvasRenderingContext2D, particles: readonly
     }
     ctx.fillStyle = p.color
     if (p.shape === 'glyph' && p.glyph) drawHexGlyph(ctx, p.glyph, Math.round(p.x), Math.round(p.y), p.size)
-    else ctx.fillRect(Math.round(p.x), Math.round(p.y), p.size, p.size)
+    else ctx.fillRect(Math.round(p.x), Math.round(p.y), p.w ?? p.size, p.h ?? p.size)
   }
   ctx.globalAlpha = 1
 }

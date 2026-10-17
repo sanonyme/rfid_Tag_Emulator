@@ -505,6 +505,18 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
       if (result.columns.length > 0) {
         setAutocompleteColumns((prev) => ({ ...prev, [tableName]: result.columns }))
       }
+      // Sidebar uses planner estimates; sync from the exact total once we load the table.
+      if (!search) {
+        setDatabases((prev) =>
+          prev.map((d) => {
+            if (d.name !== dbName || !d.tables) return d
+            return {
+              ...d,
+              tables: d.tables.map((t) => (t.name === tableName ? { ...t, rows: result.total } : t)),
+            }
+          }),
+        )
+      }
     } else {
       setTableColumns([])
       setTableRows([])

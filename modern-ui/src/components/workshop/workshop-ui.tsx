@@ -8,7 +8,7 @@ export const PIXEL_CLIP =
   'polygon(0 4px, 2px 4px, 2px 2px, 4px 2px, 4px 0, calc(100% - 4px) 0, calc(100% - 4px) 2px, calc(100% - 2px) 2px, calc(100% - 2px) 4px, 100% 4px, 100% calc(100% - 4px), calc(100% - 2px) calc(100% - 4px), calc(100% - 2px) calc(100% - 2px), calc(100% - 4px) calc(100% - 2px), calc(100% - 4px) 100%, 4px 100%, 4px calc(100% - 2px), 2px calc(100% - 2px), 2px calc(100% - 4px), 0 calc(100% - 4px))'
 
 export const GAME_DIALOG =
-  'gap-0 overflow-hidden border-[#2a3b5c] bg-[#0b1220] p-0 text-slate-100 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.75)] sm:rounded-xl [&>button:last-child]:text-slate-400 [&>button:last-child:hover]:bg-white/10 [&>button:last-child:hover]:text-white'
+  'max-h-[85dvh] gap-0 overflow-y-auto border-[#2a3b5c] bg-[#0b1220] p-0 text-slate-100 shadow-[0_24px_80px_-20px_rgba(0,0,0,0.75)] sm:rounded-xl [&>button:last-child]:text-slate-400 [&>button:last-child:hover]:bg-white/10 [&>button:last-child:hover]:text-white'
 
 type PixelArtProps = {
   rows: readonly string[]

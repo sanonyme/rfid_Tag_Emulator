@@ -674,7 +674,7 @@ function App() {
   const workshopFloor = (anchor: 'titlebar' | 'row' = 'titlebar') =>
     !isPopoutWindow ? (
       <Suspense fallback={<div className="h-10 w-40 shrink-0 rounded-xl border border-border/50 bg-card" />}>
-        <WorkshopFloor room={host} connected={connected} anchor={anchor} />
+        <WorkshopFloor anchor={anchor} />
       </Suspense>
     ) : null
 

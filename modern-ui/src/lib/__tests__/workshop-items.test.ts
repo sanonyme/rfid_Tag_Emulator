@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ITEMS,
   RARITIES,
+  isConsumable,
   isWearable,
   luckForTagCount,
   rarityAt,
@@ -36,8 +37,11 @@ describe('workshop item catalog', () => {
 
   it('has loot at every rarity and every wearable kind', () => {
     for (const r of RARITIES) expect(ITEMS.some((i) => i.rarity === r), r).toBe(true)
-    for (const kind of ['hat', 'pet', 'trail', 'shirt', 'mount', 'title'] as const) expect(ITEMS.some((i) => i.kind === kind), kind).toBe(true)
-    expect(ITEMS.every((i) => isWearable(i) === (i.kind !== 'collectible'))).toBe(true)
+    for (const kind of ['hat', 'pet', 'trail', 'shirt', 'wings', 'mount', 'title', 'consumable'] as const) {
+      expect(ITEMS.some((i) => i.kind === kind), kind).toBe(true)
+    }
+    expect(ITEMS.every((i) => isWearable(i) === (i.kind !== 'collectible' && i.kind !== 'consumable'))).toBe(true)
+    expect(ITEMS.filter((i) => i.kind === 'consumable').every((i) => isConsumable(i))).toBe(true)
   })
 
   it('maps rarity indexes both ways and clamps', () => {

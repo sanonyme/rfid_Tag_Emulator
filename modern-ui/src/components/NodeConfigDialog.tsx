@@ -30,6 +30,7 @@ import { StandardVariablesReference, VariablePresetPicker } from './VariablePres
 import { VariableAutocompleteInput } from './automation/VariableAutocompleteInput'
 import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError } from '@/lib/automation-types'
 import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
 
@@ -514,14 +515,11 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-2">
                   <Label className="text-xs">Inter-tag delay</Label>
                   <div className="relative">
-                    <Input
-                      type="number"
-                      min={0}
-                      step={1}
+                    <InterTagDelayInput
                       value={step.params.tagDelay ?? ''}
-                      onChange={(e) => patchParams( { tagDelay: e.target.value })}
+                      onValueChange={(tagDelay) => patchParams({ tagDelay })}
                       placeholder={fixedTabDelay?.trim() ? `Default: ${fixedTabDelay}` : '20'}
-                      className="h-9 pe-12 font-mono text-sm"
+                      className="h-9 pe-12 text-sm"
                     />
                     <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
                       ms
@@ -695,14 +693,11 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label className="text-xs">Inter-tag delay</Label>
                 <div className="relative">
-                  <Input
-                    type="number"
-                    min={0}
-                    step={1}
+                  <InterTagDelayInput
                     value={step.params.tagDelay ?? ''}
-                    onChange={(e) => patchParams( { tagDelay: e.target.value })}
+                    onValueChange={(tagDelay) => patchParams({ tagDelay })}
                     placeholder={handheldTabDelay?.trim() ? `Default: ${handheldTabDelay}` : '20'}
-                    className="h-9 pe-12 font-mono text-sm"
+                    className="h-9 pe-12 text-sm"
                   />
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
                     ms

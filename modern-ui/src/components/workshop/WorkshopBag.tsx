@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { Backpack, Flame, Gift, Shirt, Sparkles, Trophy } from 'lucide-react'
+import { Backpack, Coffee, Flame, Gift, Shirt, Sparkles, Trophy } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
-import { ITEMS, RARITIES, RARITY_INFO, isWearable, type WearableKind } from '@/lib/workshop-items'
+import { ITEMS, RARITIES, RARITY_INFO, isConsumable, isWearable, type WearableKind } from '@/lib/workshop-items'
 import {
   ACHIEVEMENTS,
   BAG_CAPACITY,
@@ -22,8 +22,10 @@ const KIND_LABEL = {
   pet: 'Pet · follows you',
   trail: 'Trail · wearable',
   shirt: 'Shirt · wearable',
+  wings: 'Wings · double jump',
   mount: 'Mount · ride',
   title: 'Title',
+  consumable: 'Consumable · use once',
 } as const
 
 const ORIGIN_TEXT: Record<ItemOrigin, string> = {
@@ -33,6 +35,7 @@ const ORIGIN_TEXT: Record<ItemOrigin, string> = {
   jingle: 'from a jingle gift',
   trade: 'by trade',
   floor: 'picked up on the floor',
+  admin: 'granted by an administrator',
 }
 
 function originText(entry: BagEntry): string {
@@ -52,11 +55,12 @@ type Props = {
   profile: WorkshopProfile
   locked: ReadonlySet<string>
   onEquip: (slot: WearableKind, itemId: string | null) => void
+  onConsume: (uid: string) => void
   onDrop: (uid: string) => void
   onTitle: (achievementId: string | null) => void
 }
 
-export function WorkshopBag({ open, onOpenChange, profile, locked, onEquip, onDrop, onTitle }: Props) {
+export function WorkshopBag({ open, onOpenChange, profile, locked, onEquip, onConsume, onDrop, onTitle }: Props) {
   const [tab, setTab] = useState<Tab>('bag')
   const [selected, setSelected] = useState<string | null>(null)
   const stacks = bagStacks(profile)
@@ -81,7 +85,7 @@ export function WorkshopBag({ open, onOpenChange, profile, locked, onEquip, onDr
                 Workshop Bag
               </DialogTitle>
               <DialogDescription className="mt-0.5 text-xs text-slate-400">
-                Everything this Zeus install has collected. Items stay on this device until you trade or drop them.
+                Your collection and equipped gear. Signed-in collections sync across devices.
               </DialogDescription>
             </div>
             <div className="shrink-0 text-right text-[11px] leading-5 text-slate-400">
@@ -118,7 +122,7 @@ export function WorkshopBag({ open, onOpenChange, profile, locked, onEquip, onDr
         </div>
 
         {tab === 'bag' && (
-          <div className="grid min-h-[360px] grid-cols-[1fr_250px]">
+          <div className="grid min-h-[360px] sm:grid-cols-[1fr_250px]">
             <div className="max-h-[420px] overflow-y-auto p-4">
               {stacks.length === 0 ? (
                 <div className="grid h-full place-items-center px-6 text-center text-sm text-slate-400">
@@ -154,6 +158,7 @@ export function WorkshopBag({ open, onOpenChange, profile, locked, onEquip, onDr
                   profile={profile}
                   locked={locked}
                   onEquip={onEquip}
+                  onConsume={onConsume}
                   onDrop={onDrop}
                 />
               ) : (
@@ -276,12 +281,14 @@ function ItemDetails({
   profile,
   locked,
   onEquip,
+  onConsume,
   onDrop,
 }: {
   stack: ReturnType<typeof bagStacks>[number]
   profile: WorkshopProfile
   locked: ReadonlySet<string>
   onEquip: Props['onEquip']
+  onConsume: Props['onConsume']
   onDrop: Props['onDrop']
 }) {
   const { item, entries } = stack
@@ -324,6 +331,21 @@ function ItemDetails({
           >
             <Shirt className="h-3.5 w-3.5" />
             {wearing ? 'Take off' : item.kind === 'pet' ? 'Bring along' : item.kind === 'mount' ? 'Ride' : 'Wear'}
+          </PixelButton>
+        )}
+        {isConsumable(item) && (
+          <PixelButton
+            tone="go"
+            className="w-full"
+            disabled={free.length === 0}
+            title={free.length === 0 ? 'Offered in a trade' : `${item.consume.verb} one copy. It's gone after.`}
+            onClick={() => {
+              const last = free[free.length - 1]
+              if (last) onConsume(last.uid)
+            }}
+          >
+            <Coffee className="h-3.5 w-3.5" />
+            {item.consume.verb} one
           </PixelButton>
         )}
         <PixelButton

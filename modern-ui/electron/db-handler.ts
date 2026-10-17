@@ -148,7 +148,11 @@ async function fetchTableMeta(safeDb: string, safeTable: string): Promise<TableM
         [safeDb, safeTable],
       ),
       execQuery(
-        `SELECT COALESCE(c.reltuples, 0)::bigint AS estimate
+        // Planner estimate: -1 until ANALYZE; 0 pages ⇒ empty; otherwise round (can lag deletes).
+        `SELECT CASE
+           WHEN COALESCE(c.relpages, 0) = 0 THEN 0
+           ELSE ROUND(GREATEST(COALESCE(c.reltuples, 0), 0))::bigint
+         END AS estimate
          FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
          WHERE n.nspname = ? AND c.relname = ? AND c.relkind = 'r'`,
@@ -162,7 +166,7 @@ async function fetchTableMeta(safeDb: string, safeTable: string): Promise<TableM
       columnTypes[String(r.column_name)] = udt || dt
     }
     const primaryKeys = keyResult.rows.map((r) => String(r.column_name))
-    const rowEstimate = parseInt(String(estResult.rows[0]?.estimate ?? 0), 10) || 0
+    const rowEstimate = Math.max(0, parseInt(String(estResult.rows[0]?.estimate ?? 0), 10) || 0)
     return { columnTypes, primaryKeys, rowEstimate }
   }
 
@@ -326,7 +330,10 @@ export async function dbGetTables(database: string): Promise<{ ok: true; tables:
       const { rows } = await execQuery(
         `SELECT t.table_name AS name,
                 COALESCE((
-                  SELECT c.reltuples::bigint
+                  SELECT CASE
+                    WHEN c.relpages = 0 THEN 0
+                    ELSE ROUND(GREATEST(c.reltuples, 0))::bigint
+                  END
                   FROM pg_class c
                   JOIN pg_namespace n ON n.oid = c.relnamespace
                   WHERE n.nspname = t.table_schema
@@ -341,7 +348,8 @@ export async function dbGetTables(database: string): Promise<{ ok: true; tables:
       )
       const tables = rows.map((r) => ({
         name: String(r.name),
-        rows: parseInt(String(r.row_estimate), 10) || 0,
+        // Planner estimate only — can lag DELETE/TRUNCATE until ANALYZE/VACUUM
+        rows: Math.max(0, parseInt(String(r.row_estimate), 10) || 0),
       }))
       return { ok: true, tables }
     }

@@ -11,8 +11,23 @@ export const RARITY_INFO: Record<Rarity, { label: string; color: string; weight:
 
 // 'shirt' is drawn over the elf's body, 'mount' is drawn under the elf
 // (the elf sits on top of it), 'title' is a text label shown next to the name.
-export type ItemKind = 'collectible' | 'hat' | 'pet' | 'trail' | 'shirt' | 'mount' | 'title'
-export type WearableKind = Exclude<ItemKind, 'collectible'>
+// 'consumable' is used once from the bag (drink, eat) and then gone.
+export type ItemKind = 'collectible' | 'hat' | 'pet' | 'trail' | 'shirt' | 'wings' | 'mount' | 'title' | 'consumable'
+export type WearableKind = Exclude<ItemKind, 'collectible' | 'consumable'>
+
+export type ConsumeEffect = {
+  verb: 'Drink' | 'Eat'
+  /** Bubble shown above the elf when used. */
+  chat: string
+  /** Walk-speed multiplier while the buff lasts. */
+  speed?: number
+  /** Jump-height multiplier while the buff lasts. */
+  jump?: number
+  /** Clears a snowball bonk. */
+  sober?: boolean
+  durationMs?: number
+  colors?: readonly string[]
+}
 
 export type ItemDef = {
   id: string
@@ -20,17 +35,28 @@ export type ItemDef = {
   rarity: Rarity
   kind: ItemKind
   description: string
-  /** Pixel rows; hats are drawn with their last row over the elf's forehead. */
+  /** Pixel rows; hats sit by their last opaque row on the forehead. */
   sprite: readonly string[]
   palette: Readonly<Record<string, string>>
   /** A pixel that alternates between two colours, like a reader LED. */
   blink?: { char: string; on: string; off: string }
+  /**
+   * How many elf-head rows the hat brim overlaps. Default 2 tucks it onto the
+   * forehead; 0 sits on the crown; negative floats above (halo).
+   */
+  hatSit?: number
   /** Text shown next to the elf's name when a 'title' item is equipped. */
   titleText?: string
   /** Only drops when the send had at least this many tags. */
   minTags?: number
   /** Weight inside its rarity pool (default 1). 0.2 = five times rarer than a normal item of that tier. */
   dropWeight?: number
+  /** Required on kind 'consumable': what happens when the player uses it. */
+  consume?: ConsumeEffect
+  /** Optional décor and pet behavior used by the Workshop engine. */
+  placeable?: boolean
+  sign?: string
+  mount?: boolean
 }
 
 const TAG = [
@@ -44,6 +70,31 @@ const TAG = [
 ]
 
 export const ITEMS: readonly ItemDef[] = [
+  {
+    id: 'leaf-wings', name: 'Sprout Wings', rarity: 'common', kind: 'wings',
+    description: 'Your first pair of wings. Press jump again in the air for a second jump.',
+    sprite: ['.....gg', '...ggGg', '..ggGGg', '.ggGGGg', 'ggGGGgg', 'gGGGgg.', 'ggGgg..', '.ggg...', '..gg...', '...g...'],
+    palette: { g: '#1f7057', G: '#86efac' },
+  },
+  {
+    id: 'angel-wings', name: 'Cloud Wings', rarity: 'rare', kind: 'wings',
+    description: 'Soft ivory feathers and a second jump. A little piece of the sky.',
+    sprite: ['.....ww', '...wwWw', '..wwWWw', '.wwWWWw', 'wwWWWww', 'wWWWww.', 'wwWww..', '.www...', '..ww...', '...w...'],
+    palette: { w: '#93c5fd', W: '#f0f9ff' },
+  },
+  {
+    id: 'dragon-wings', name: 'Ember Wings', rarity: 'epic', kind: 'wings',
+    description: 'Glowing dragon membranes. Equip for a fiery silhouette and a second jump.',
+    sprite: ['r......', 'rr.....', 'rRr....', 'rRRr..r', 'rRRRrrr', 'rRRRRrr', 'rrRRrr.', '.rRrr..', '..rr...', '...r...'],
+    palette: { r: '#7f1d44', R: '#fb7185' },
+  },
+  {
+    id: 'prism-wings', name: 'Prism Wings', rarity: 'legendary', kind: 'wings',
+    description: 'A pair of luminous crystal fans. Flap once more while airborne.',
+    sprite: ['.....cc', '...ccCc', '..ccCCc', '.ccCCCc', 'ccCCCcc', 'cCCCcc.', 'ccCcc..', '.ccc...', '..cc...', '...c...'],
+    palette: { c: '#7c3aed', C: '#67e8f9' },
+    blink: { char: 'C', on: '#67e8f9', off: '#f0abfc' },
+  },
   // Common
   {
     id: 'plain-tag',
@@ -76,8 +127,16 @@ export const ITEMS: readonly ItemDef[] = [
     id: 'cocoa-mug',
     name: 'Cocoa Mug',
     rarity: 'common',
-    kind: 'collectible',
-    description: 'Hot cocoa for long inventory runs.',
+    kind: 'consumable',
+    description: 'Hot cocoa for long inventory runs. Drink it to shake off a snowball.',
+    consume: {
+      verb: 'Drink',
+      chat: 'Ahh...',
+      sober: true,
+      speed: 1.15,
+      durationMs: 10_000,
+      colors: ['#6b3e26', '#f8fafc', '#d42530'],
+    },
     sprite: ['..s.s...', '...s.s..', 'RRRRRR..', 'RccccRRR', 'RrrrrR.R', 'RrrrrRRR', 'RrrrrR..', '.RRRR...'],
     palette: { s: '#e5e7eb', R: '#8f1d24', r: '#d42530', c: '#6b3e26' },
   },
@@ -94,8 +153,15 @@ export const ITEMS: readonly ItemDef[] = [
     id: 'candy-cane',
     name: 'Candy Cane',
     rarity: 'common',
-    kind: 'collectible',
-    description: 'Peppermint flavoured. Do not insert into the reader.',
+    kind: 'consumable',
+    description: 'Peppermint flavoured. Eat it for a peppermint bounce. Do not insert into the reader.',
+    consume: {
+      verb: 'Eat',
+      chat: 'Nom!',
+      jump: 1.35,
+      durationMs: 8_000,
+      colors: ['#e11d48', '#ffffff'],
+    },
     sprite: ['..wrrw..', '.rw..rw.', '.wr..wr.', '.....rw.', '.....wr.', '.....rw.', '.....wr.', '.....rw.'],
     palette: { r: '#e11d48', w: '#ffffff' },
   },
@@ -220,6 +286,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'Practically guarantees a spot on the sleigh team.',
     sprite: ['b........b', 'bb.b..b.bb', '.bbb..bbb.', '..bb..bb..', '...b..b...', '.hhhhhhhh.'],
     palette: { b: '#a0662f', h: '#7a4b1c' },
+    // Halfway: default 2 sat on the eyes; 0 floated above the crown.
+    hatSit: 1,
   },
   {
     id: 'antenna-cap',
@@ -368,8 +436,16 @@ export const ITEMS: readonly ItemDef[] = [
     id: 'coffee-cup',
     name: 'Shift Coffee',
     rarity: 'common',
-    kind: 'collectible',
-    description: 'Fuel for a 4 a.m. cycle count.',
+    kind: 'consumable',
+    description: 'Fuel for a 4 a.m. cycle count. Drink it and the aisle gets shorter.',
+    consume: {
+      verb: 'Drink',
+      chat: 'Eyes open.',
+      sober: true,
+      speed: 1.4,
+      durationMs: 12_000,
+      colors: ['#6b3e26', '#f8fafc', '#e5e7eb'],
+    },
     sprite: ['..s.s...', 'WWWWWW..', 'WccccWWW', 'WccccW.W', 'WccccWWW', '.WWWW...'],
     palette: { s: '#e5e7eb', W: '#f8fafc', c: '#6b3e26' },
   },
@@ -453,7 +529,7 @@ export const ITEMS: readonly ItemDef[] = [
     rarity: 'uncommon',
     kind: 'hat',
     description: 'Required on the floor. Optional in the break room.',
-    sprite: ['...yyyy...', '..yyyyyy..', '.yyyyyyyy.', 'yyyyyyyyyy', '.yyyyyyyy.', '..........'],
+    sprite: ['..yyyyyy..', '.yyyyyyyy.', '.yyyyyyyy.', '.yyyyyyyy.', 'yyyyyyyyyy'],
     palette: { y: '#facc15' },
   },
   {
@@ -499,7 +575,7 @@ export const ITEMS: readonly ItemDef[] = [
     rarity: 'rare',
     kind: 'hat',
     description: 'So the forklift sees you before the reader does.',
-    sprite: ['...oooo...', '..oooooo..', '.oYoYoYoY.', 'oooooooooo', '.oooooooo.', '..........'],
+    sprite: ['..oooooo..', '.oooooooo.', '.oYoYoYoY.', '.oooooooo.', 'oooooooooo'],
     palette: { o: '#f97316', Y: '#fef08a' },
   },
   {
@@ -568,6 +644,23 @@ export const ITEMS: readonly ItemDef[] = [
     palette: { o: '#020617', '0': '#0f172a', k: '#e2e8f0', c: '#f8fafc' },
   },
   {
+    id: 'just-coffee',
+    name: 'Just Coffee',
+    rarity: 'common',
+    kind: 'consumable',
+    description: 'Just a cup of coffee. Drink it. That is all.',
+    consume: {
+      verb: 'Drink',
+      chat: 'Just coffee.',
+      sober: true,
+      speed: 1.3,
+      durationMs: 10_000,
+      colors: ['#503219', '#eee9df', '#d3bfba'],
+    },
+    sprite: ['...s..s...', '....s..s..', 'kkkkkkkk..', 'kccccddk..', 'kwwwwwwkkk', 'kwwwwwwk.k', '.kwwwwwkkk', '.kkkkkkk..', 'kssssssssk'],
+    palette: { k: '#010101', w: '#eee9df', c: '#503219', d: '#392213', s: '#d3bfba' },
+  },
+  {
     id: 'master-key',
     name: 'Master Key',
     rarity: 'legendary',
@@ -584,6 +677,7 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'A ring of RF floating just above your head. Reads everything.',
     sprite: ['..cccccc..', '.c......c.', 'c...yy...c', '.c......c.', '..cccccc..', '..........'],
     palette: { c: '#fde68a', y: '#ffffff' },
+    hatSit: -1,
   },
   {
     id: 'satellite',
@@ -676,8 +770,17 @@ export const ITEMS: readonly ItemDef[] = [
     id: 'java-king-coffee',
     name: 'Java King Coffee',
     rarity: 'uncommon',
-    kind: 'collectible',
-    description: 'Brewed strong, crowned in semicolons. Long live the build.',
+    kind: 'consumable',
+    description: 'Brewed strong, crowned in semicolons. Drink it. Long live the build.',
+    consume: {
+      verb: 'Drink',
+      chat: 'Long live the build!',
+      sober: true,
+      speed: 1.55,
+      jump: 1.2,
+      durationMs: 16_000,
+      colors: ['#6b3e26', '#fbbf24', '#f8fafc'],
+    },
     sprite: ['y.yyyy.y', 'yyyyyyyy', 'WWWWWW..', 'WccccWWW', 'WccccW.W', 'WccccWWW', '.WWWW...'],
     palette: { y: '#fbbf24', W: '#f8fafc', c: '#6b3e26' },
   },
@@ -818,7 +921,11 @@ export function rarityAt(index: number): Rarity {
 }
 
 export function isWearable(item: ItemDef): item is ItemDef & { kind: WearableKind } {
-  return item.kind !== 'collectible'
+  return item.kind !== 'collectible' && item.kind !== 'consumable'
+}
+
+export function isConsumable(item: ItemDef): item is ItemDef & { kind: 'consumable'; consume: ConsumeEffect } {
+  return item.kind === 'consumable' && item.consume !== undefined
 }
 
 /** Known item of the given wearable kind, or null for anything unknown (e.g. from a newer build). */

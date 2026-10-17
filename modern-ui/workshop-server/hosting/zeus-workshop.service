@@ -1,0 +1,28 @@
+[Unit]
+Description=Zeus Workshop multiplayer server
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=workshop
+Group=workshop
+WorkingDirectory=/opt/zeus-workshop
+EnvironmentFile=/etc/zeus-workshop.env
+EnvironmentFile=-/etc/zeus-workshop-brevo.env
+ExecStart=/usr/local/bin/node /opt/zeus-workshop/server.mjs
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/zeus-workshop
+StateDirectory=zeus-workshop
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

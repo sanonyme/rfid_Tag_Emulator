@@ -27,6 +27,7 @@ export default defineConfig({
         entry: 'electron/main.ts',
         vite: {
           define: {
+            __ZEUS_EMBED_WORKSHOP_URL__: JSON.stringify(process.env.WORKSHOP_URL ?? 'https://proxmox.stalk-great.ts.net:8443'),
             __ZEUS_EMBED_RELEASE_OWNER__: JSON.stringify(embedReleaseOwner),
             __ZEUS_EMBED_RELEASE_REPO__: JSON.stringify(embedReleaseRepo),
             __ZEUS_EMBED_SECOND_RELEASE_OWNER__: JSON.stringify(embedSecondReleaseOwner),
@@ -71,9 +72,10 @@ export default defineConfig({
     },
   },
   server: {
+    // Prefer 5173; if taken (second Zeus instance), try 5174, 5175, …
     port: 5173,
     host: true,
-    strictPort: true,
+    strictPort: false,
     proxy: {
       '/labelary': {
         target: 'http://api.labelary.com',

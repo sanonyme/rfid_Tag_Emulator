@@ -1,0 +1,4 @@
+# Replace this with a domain whose DNS points to your server.
+workshop.yourcompany.com {
+    reverse_proxy 127.0.0.1:8787
+}

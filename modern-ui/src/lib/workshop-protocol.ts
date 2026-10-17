@@ -1,7 +1,6 @@
 /**
- * Wire format for the Christmas workshop floor: small JSON datagrams multicast on the LAN
- * between app instances connected to the same reader host. Shared by the Electron main
- * process (which validates every packet before forwarding it) and the renderer.
+ * Validated gameplay wire format, retained by the cloud Workshop transport.
+ * Shared by the backend and renderer. Legacy packet encoding remains compatible.
  * Keep this module dependency-free: it is compiled for both targets.
  */
 
@@ -105,12 +104,6 @@ export function isWorkshopId(v: unknown): v is string {
 
 export function isWorkshopPresentId(v: unknown): v is string {
   return typeof v === 'string' && PID_RE.test(v)
-}
-
-/** Room key for a reader host, or null when the host can't be used as one. */
-export function normalizeWorkshopRoom(host: string): string | null {
-  const room = host.trim().toLowerCase()
-  return ROOM_RE.test(room) ? room : null
 }
 
 /** Display names arrive from other machines: strip control/format characters and cap the length. */

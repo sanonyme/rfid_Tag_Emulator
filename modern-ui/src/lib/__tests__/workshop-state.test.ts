@@ -62,6 +62,9 @@ describe('pickLeader', () => {
 })
 
 describe('workshop day storage', () => {
+  it('uses the same UTC day for named rooms across offices', () => {
+    expect(workshopDayKey('vsbl', new Date('2026-12-24T00:30:00+03:00'))).toBe('workshop-day:vsbl:2026-12-23')
+  })
   it('round-trips and tolerates corrupt data', () => {
     const key = workshopDayKey('192.168.10.36', new Date(2026, 11, 24))
     expect(key).toBe('workshop-day:192.168.10.36:2026-12-24')

@@ -80,7 +80,8 @@ export function localDate(date: Date): string {
 }
 
 export function workshopDayKey(room: string, date = new Date()): string {
-  return `${DAY_KEY_PREFIX}${room}:${localDate(date)}`
+  const shared = ['anexya-general','vsbl','edge','support','cnct','qa','ui'].includes(room)
+  return `${DAY_KEY_PREFIX}${room}:${shared ? date.toISOString().slice(0,10) : localDate(date)}`
 }
 
 function isCount(v: unknown): v is number {
@@ -115,11 +116,13 @@ export function saveWorkshopDay(key: string, day: WorkshopDay): void {
 /** Drops saved trees from previous days so old rooms don't pile up in storage. */
 export function pruneWorkshopDays(date = new Date()): void {
   try {
-    const today = localDate(date)
     const stale: string[] = []
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key?.startsWith(DAY_KEY_PREFIX) && !key.endsWith(`:${today}`)) stale.push(key)
+      if (key?.startsWith(DAY_KEY_PREFIX)) {
+        const room = key.slice(DAY_KEY_PREFIX.length, -11)
+        if (key !== workshopDayKey(room, date)) stale.push(key)
+      }
     }
     stale.forEach((key) => localStorage.removeItem(key))
   } catch {

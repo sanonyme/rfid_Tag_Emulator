@@ -21,6 +21,7 @@ import {
   ACHIEVEMENT_BY_ID,
   addToBag,
   claimDaily,
+  consumeFromBag,
   dailyMinRarity,
   equipItem,
   prestige,
@@ -144,6 +145,10 @@ const MILESTONES: Record<TreeStage, { text: string; gift: Rarity }> = {
 export type Equip = Record<WearableKind, string | null>
 
 type ElfBase = {
+  /** Supplied by the authenticated cloud directory, never by gameplay packets. */
+  cloudKing?: boolean
+  cloudTitle?: string
+  signedIn?: boolean
   id: string
   name: string
   hat: number
@@ -168,12 +173,17 @@ type ElfBase = {
 
 export type SelfElf = ElfBase & {
   jumpV: number
+  wingJumped: boolean
   walkTo: number | null
   manual: boolean
   nextWander: number
   chatTimes: number[]
   lastEmote: number
   lastSnow: number
+  /** Until this time, walk/jump multipliers from a drink or snack apply. */
+  buffUntil: number
+  buffSpeed: number
+  buffJump: number
 }
 
 export type PeerElf = ElfBase & { targetX: number; targetLift: number; mv: boolean; seen: number }
@@ -325,7 +335,7 @@ function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, 
     walk: 0,
     score,
     bellUntil: 0,
-    equip: { hat: null, pet: null, trail: null, shirt: null, mount: null, title: null },
+    equip: { hat: null, pet: null, trail: null, shirt: null, wings: null, mount: null, title: null },
     title: '',
     prestige: 0,
     chat: null,
@@ -337,6 +347,11 @@ function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, 
 }
 
 export function createGame(room: string, name: string, hat: number, profile: WorkshopProfile): Game {
+  if (!profile.discovered.includes('leaf-wings')) {
+    addToBag(profile, 'leaf-wings', 'milestone', { force: true })
+    if (!profile.equipped.wings) equipItem(profile, 'wings', 'leaf-wings')
+    saveProfile(profile)
+  }
   const dayKey = workshopDayKey(room)
   const day = loadWorkshopDay(dayKey)
   const now = performance.now()
@@ -345,12 +360,16 @@ export function createGame(room: string, name: string, hat: number, profile: Wor
     self: {
       ...elfBase(randomWorkshopToken(12), name, hat, 0.1 + Math.random() * 0.4, 1, day.me),
       jumpV: 0,
+      wingJumped: false,
       walkTo: null,
       manual: false,
       nextWander: now + 6000 + Math.random() * 6000,
       chatTimes: [],
       lastEmote: -Infinity,
       lastSnow: -Infinity,
+      buffUntil: 0,
+      buffSpeed: 1,
+      buffJump: 1,
     },
     peers: new Map(),
     seqs: new Map(),
@@ -689,11 +708,13 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
           pet: wearableOrNull(msg.eq[1], 'pet'),
           trail: wearableOrNull(msg.eq[2], 'trail'),
           shirt: peer.equip.shirt,
+          wings: peer.equip.wings,
           mount: peer.equip.mount,
           title: peer.equip.title,
         }
       }
       if (msg.sh !== undefined) peer.equip.shirt = wearableOrNull(msg.sh, 'shirt')
+      if (msg.wg !== undefined) peer.equip.wings = wearableOrNull(msg.wg, 'wings')
       if (msg.ti !== undefined) peer.title = ACHIEVEMENT_BY_ID.has(msg.ti) ? msg.ti : ''
       if (msg.pf !== undefined) peer.prestige = msg.pf
       if (msg.tree && mergeTreeCounts(game.tree, msg.tree)) treeChanged(game, net)
@@ -848,6 +869,68 @@ const TRAILS: Record<string, { spacing: number; emit: (game: Game, x: number, y:
       })
     },
   },
+  'barcode-trail': {
+    spacing: 18,
+    emit: (game, x, y) => {
+      const bars = [1, 2, 1, 1, 3, 1, 2, 1]
+      let cursor = x - 8
+      const top = y - 8
+      for (const width of bars) {
+        game.particles.push({ x: cursor, y: top, vx: 0, vy: 0, age: 0, ttl: 2.4, size: 1, w: width, h: 8, color: '#111827', gravity: 0 })
+        cursor += width + 1
+      }
+    },
+  },
+  'dust-trail': {
+    spacing: 10,
+    emit: (game, x, y) => {
+      for (let i = 0; i < 3; i++) {
+        game.particles.push({
+          x: x + (Math.random() - 0.5) * 8,
+          y: y - 1 - Math.random() * 4,
+          vx: (Math.random() - 0.5) * 8,
+          vy: -6 - Math.random() * 8,
+          age: 0,
+          ttl: 0.8,
+          size: 2,
+          color: '#d6d3d1',
+          gravity: 12,
+        })
+      }
+    },
+  },
+  'neon-trail': {
+    spacing: 8,
+    emit: (game, x, y) => {
+      game.particles.push({
+        x,
+        y: y - 2,
+        vx: 0,
+        vy: 0,
+        age: 0,
+        ttl: 1.4,
+        size: 3,
+        color: Math.random() < 0.5 ? '#f472b6' : '#22d3ee',
+        gravity: 0,
+      })
+    },
+  },
+  'comet-trail': {
+    spacing: 6,
+    emit: (game, x, y) => {
+      game.particles.push({
+        x,
+        y: y - 4 - Math.random() * 8,
+        vx: (Math.random() - 0.5) * 10,
+        vy: -10 - Math.random() * 16,
+        age: 0,
+        ttl: 0.6,
+        size: Math.random() < 0.4 ? 2 : 1,
+        color: Math.random() < 0.5 ? '#ffffff' : '#fbbf24',
+        gravity: 20,
+      })
+    },
+  },
 }
 
 function updateCosmetics(game: Game, e: ElfBase, moved: number, dt: number) {
@@ -890,9 +973,12 @@ export function step(game: Game, dt: number, now: number, focused: boolean, net:
     else dir = Math.sign(dx)
   }
   const dizzy = now < s.dizzyUntil
+  const buffed = now < s.buffUntil
+  const speedMul = (dizzy ? 0.35 : 1) * (buffed ? s.buffSpeed : 1)
+  const jumpMul = buffed ? s.buffJump : 1
   let selfMoved = 0
   if (dir !== 0) {
-    const nx = clamp(s.x + (dir * WALK_PX_PER_S * (dizzy ? 0.35 : 1) * dt) / width, 0.02, 0.98)
+    const nx = clamp(s.x + (dir * WALK_PX_PER_S * speedMul * dt) / width, 0.02, 0.98)
     selfMoved = Math.abs(nx - s.x) * width
     s.walk += selfMoved
     s.x = nx
@@ -902,7 +988,15 @@ export function step(game: Game, dt: number, now: number, focused: boolean, net:
     s.moving = false
   }
 
-  if (game.jumpQueued && s.lift === 0 && !dizzy) s.jumpV = Math.sqrt(2 * GRAVITY * L.maxJump)
+  if (s.lift === 0) s.wingJumped = false
+  if (game.jumpQueued && !dizzy) {
+    if (s.lift === 0) s.jumpV = Math.sqrt(2 * GRAVITY * L.maxJump * jumpMul)
+    else if (s.equip.wings && !s.wingJumped) {
+      s.jumpV = Math.sqrt(2 * GRAVITY * L.maxJump * 0.75 * jumpMul)
+      s.wingJumped = true
+      burst(game, s.x * width, L.groundY - s.lift - L.elfH * 0.4, 'gold')
+    }
+  }
   game.jumpQueued = false
   if (s.lift > 0 || s.jumpV > 0) {
     s.lift = Math.max(0, s.lift + s.jumpV * dt)
@@ -1079,6 +1173,7 @@ export function netTick(game: Game, now: number, send: Net['send']) {
     payload.ti = s.title
     payload.pf = s.prestige
     payload.sh = s.equip.shirt ?? ''
+    payload.wg = s.equip.wings ?? ''
   }
   send(payload)
 }
@@ -1206,6 +1301,34 @@ export function dropFromBag(game: Game, uid: string, net: Net, now: number): boo
   return true
 }
 
+export function useFromBag(game: Game, uid: string, net: Net, now: number): boolean {
+  if (lockedUids(game).has(uid)) return false
+  const entry = consumeFromBag(game.profile, uid)
+  if (!entry) return false
+  const def = ITEM_BY_ID.get(entry.item)
+  const fx = def?.consume
+  if (!fx) return false
+  const s = game.self
+  if (fx.sober) s.dizzyUntil = 0
+  if (fx.durationMs && (fx.speed || fx.jump)) {
+    s.buffUntil = now + fx.durationMs
+    s.buffSpeed = fx.speed ?? 1
+    s.buffJump = fx.jump ?? 1
+  }
+  const x = s.x * game.width
+  const y = headY(game, s)
+  float(game, fx.verb === 'Eat' ? 'Nom!' : 'Ahh!', x, y, def?.rarity ? RARITY_INFO[def.rarity].color : '#f8fafc')
+  sprinkle(game, x, game.layout.groundY - s.lift - 8, fx.colors ?? ['#f8fafc'], 14, 40, 80)
+  const text = sanitizeWorkshopChat(fx.chat)
+  if (text) {
+    showChat(game, s, text, now, true)
+    net.send({ t: 'chat', text })
+  }
+  if (net.sound) playBlip()
+  markProfile(game, true)
+  return true
+}
+
 export function equipFromBag(game: Game, slot: WearableKind, itemId: string | null) {
   if (!equipItem(game.profile, slot, itemId)) return
   syncSelf(game)
@@ -1305,8 +1428,8 @@ export function roster(game: Game): RosterEntry[] {
       name: p.name,
       score: [p.score[0], p.score[1], p.score[2]] as WorkshopScore,
       self: p === game.self,
-      leader: p.id === game.leader,
-      title: ACHIEVEMENT_BY_ID.get(p.title)?.title ?? null,
+      leader: p.cloudKing === true,
+      title: p.cloudTitle || ACHIEVEMENT_BY_ID.get(p.title)?.title || null,
       prestige: p.prestige,
       equip: { ...p.equip },
     }))
@@ -1417,11 +1540,12 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
         dir: e.dir,
         outfit: e.hat,
         pose: poseFor(e),
-        bigHat: game.leader === e.id,
+        bigHat: e.cloudKing === true,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
         shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,
+        wingsItem: e.equip.wings ? ITEM_BY_ID.get(e.equip.wings) ?? null : null,
         ride: mountRide(e, L.px),
-        label: e.name,
+        label: `${e.name}${e.signedIn ? ' ✓' : ''}${e.cloudTitle ? ' · ' + e.cloudTitle : ''}`,
         trim: e.prestige >= 1 ? rarityColor(e.prestige) : null,
         self,
         bell: Math.max(0, (e.bellUntil - now) / BELL_MS),
@@ -1523,9 +1647,10 @@ export function renderMini(ctx: CanvasRenderingContext2D, game: Game, now: numbe
         dir: e.dir,
         outfit: e.hat,
         pose: poseFor(e),
-        bigHat: game.leader === e.id,
+        bigHat: e.cloudKing === true,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
         shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,
+        wingsItem: e.equip.wings ? ITEM_BY_ID.get(e.equip.wings) ?? null : null,
         ride: mountRide(e, 1),
         label: null,
         trim: null,

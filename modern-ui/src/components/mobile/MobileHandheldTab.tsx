@@ -13,7 +13,6 @@ import type { HandheldSlot } from '../HandheldTab'
 import { Switch } from '../ui/switch'
 import { Label } from '../ui/label'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
 import { getLogColorClass } from '@/lib/log-colors'
 import { LogThemeSelector } from '../LogThemeSelector'
 import {
@@ -25,7 +24,11 @@ import { countHandheldSlotTags } from '@/lib/tag-list-count'
 import {
   countHandheldRecipeTags,
   handheldRecipeFromSlot,
+  iterateHandheldTags,
 } from '@/lib/handheld-tag-iterate'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
+import { parseInterTagDelayMs } from '@/lib/automation-template'
+import { emitWorkshopActivity } from '@/lib/workshop-activity'
 import { useDebouncedValue } from '@/lib/use-debounced-value'
 
 const DEFAULT_PORT = 10472
@@ -186,7 +189,7 @@ export function MobileHandheldTab({
         }
         client.sendRecipe(
           roundRecipe,
-          parseInt(handheldDelayRef.current, 10) || 0,
+          parseInterTagDelayMs(handheldDelayRef.current, handheldDelayRef.current, 0),
           (p) => {
             if (fullActivityLogRef.current) addLog(p)
           },
@@ -200,6 +203,14 @@ export function MobileHandheldTab({
       })
 
       if (fatalFinish(completeMsg)) break
+      if (completeMsg.startsWith('Broadcasted')) {
+        emitWorkshopActivity({
+          kind: 'tags-sent',
+          count: roundTagCount,
+          source: 'handheld',
+          epc: iterateHandheldTags(roundRecipe).next().value?.epc,
+        })
+      }
       if (!startedRepeat) break
     }
 
@@ -247,13 +258,11 @@ export function MobileHandheldTab({
         <label htmlFor="m-handheld-delay" className="text-xs text-muted-foreground shrink-0">
           Inter-tag delay (ms)
         </label>
-        <Input
+        <InterTagDelayInput
           id="m-handheld-delay"
-          type="number"
-          min={0}
-          className="h-10 w-28 font-mono text-sm"
+          className="h-10 w-28 text-sm"
           value={handheldDelay}
-          onChange={(e) => setHandheldDelay(e.target.value)}
+          onValueChange={setHandheldDelay}
         />
       </div>
 

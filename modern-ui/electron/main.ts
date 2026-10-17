@@ -1,9 +1,15 @@
+declare const __ZEUS_EMBED_WORKSHOP_URL__: string
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import * as pty from 'node-pty'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
+
+// The local Release Console starts isolated staging players with this override.
+// It must happen before Electron becomes ready so each player receives its own
+// localStorage, preferences, and Workshop guest identity.
+if (process.env.ZEUS_USER_DATA_DIR) app.setPath('userData', process.env.ZEUS_USER_DATA_DIR)
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 import type { HandheldSendRecipe } from '../src/lib/handheld-tag-iterate.js'
 import {
@@ -133,7 +139,6 @@ import {
   sendUdpProbe,
   isUdpDiscoveryRunning,
 } from './udp-discovery-handler.js'
-import { joinWorkshop, leaveWorkshop, sendWorkshop } from './workshop-presence.js'
 import {
   startReaderDiscovery,
   cancelReaderDiscovery,
@@ -1345,12 +1350,7 @@ app.whenReady().then(() => {
       sendUdpProbe(targetIp, targetPort, message),
   )
   ipcMain.handle('udp-discovery-is-running', () => isUdpDiscoveryRunning())
-  ipcMain.handle('workshop-join', (event, room: unknown) => joinWorkshop(event.sender, room))
-  ipcMain.handle('workshop-leave', (event) => {
-    leaveWorkshop(event.sender)
-    return { ok: true as const }
-  })
-  ipcMain.on('workshop-send', (event, message: unknown) => sendWorkshop(event.sender, message))
+  ipcMain.handle('workshop-config', () => ({ url: process.env.WORKSHOP_URL || __ZEUS_EMBED_WORKSHOP_URL__ || '' }))
   ipcMain.handle('reader-discovery-start', async (event, payload: ReaderDiscoveryPayload) =>
     startReaderDiscovery(event.sender, payload),
   )
@@ -1860,7 +1860,6 @@ app.on('window-all-closed', () => {
   shellProcesses.clear()
   closeAllPopoutWindows()
   stopUdpDiscovery()
-  leaveWorkshop()
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()
@@ -1897,7 +1896,6 @@ app.on('before-quit', () => {
   shellProcesses.clear()
   closeAllPopoutWindows()
   stopUdpDiscovery()
-  leaveWorkshop()
   cancelReaderDiscovery()
   dbDisconnect()
   void sftpDisconnectAll()

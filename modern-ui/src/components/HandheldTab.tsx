@@ -29,10 +29,11 @@ import { sectionCard } from '@/lib/ui-tokens'
 import { handheldAccent } from '@/lib/handheld-colors'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { publishStatus, clearStatus, handheldKey } from '@/lib/workspace-status'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
+import { parseInterTagDelayMs } from '@/lib/automation-template'
 import { emitWorkshopActivity } from '@/lib/workshop-activity'
 import { Switch } from '@/components/ui/switch'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getLogColorClass } from '@/lib/log-colors'
 import { LogThemeSelector } from './LogThemeSelector'
 import {
@@ -302,7 +303,7 @@ export function HandheldTab({
         }
         client.sendRecipe(
           roundRecipe,
-          parseInt(handheldDelayRef.current, 10) || 0,
+          parseInterTagDelayMs(handheldDelayRef.current, handheldDelayRef.current, 0),
           (progress) => {
             if (fullActivityLogRef.current) addLog(progress, port)
           },
@@ -409,13 +410,11 @@ export function HandheldTab({
                 Inter-tag delay
               </Label>
               <div className="flex items-center gap-1.5">
-                <Input
+                <InterTagDelayInput
                   id="handheld-inter-tag-delay"
-                  type="number"
-                  min={0}
                   value={handheldDelay}
-                  onChange={(e) => setHandheldDelay(e.target.value)}
-                  className="h-9 w-[4.35rem] shrink-0 rounded-md border-border/50 bg-background/90 px-2.5 font-mono text-sm shadow-none tabular-nums sm:w-[4.75rem]"
+                  onValueChange={setHandheldDelay}
+                  className="h-9 w-[4.35rem] shrink-0 rounded-md border-border/50 bg-background/90 px-2.5 text-sm shadow-none sm:w-[4.75rem]"
                 />
                 <span className="shrink-0 select-none text-xs tabular-nums text-muted-foreground">ms</span>
               </div>

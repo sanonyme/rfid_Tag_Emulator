@@ -4,7 +4,6 @@ import {
   WORKSHOP_MAX_TREE_ENTRIES,
   decodeWorkshopPacket,
   encodeWorkshopPacket,
-  normalizeWorkshopRoom,
   parseWorkshopMessage,
   sanitizeWorkshopName,
 } from '../workshop-protocol'
@@ -126,10 +125,4 @@ describe('workshop protocol', () => {
     expect(sanitizeWorkshopName(42)).toBe('Elf')
   })
 
-  it('normalizes reader hosts into room keys', () => {
-    expect(normalizeWorkshopRoom(' 192.168.10.36 ')).toBe('192.168.10.36')
-    expect(normalizeWorkshopRoom('Reader-01.local')).toBe('reader-01.local')
-    expect(normalizeWorkshopRoom('has space')).toBeNull()
-    expect(normalizeWorkshopRoom('')).toBeNull()
-  })
 })

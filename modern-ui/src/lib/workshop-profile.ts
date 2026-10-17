@@ -1,6 +1,6 @@
 /**
- * Zeus has no user accounts, so workshop progress belongs to the install: one profile per
- * device, kept in localStorage. Items move between devices only through floor drops and trades.
+ * Guest progress and the active account's offline cache use the same validated profile
+ * format. The cloud identity service keeps guest and account caches separate.
  */
 import {
   ITEM_BY_ID,
@@ -16,12 +16,12 @@ import { localDate, randomWorkshopToken } from './workshop-state'
 
 export const PROFILE_KEY = 'workshop-profile-v1'
 export const BAG_CAPACITY = 240
-export const WEARABLE_SLOTS: readonly WearableKind[] = ['hat', 'pet', 'trail', 'shirt', 'mount', 'title']
+export const WEARABLE_SLOTS: readonly WearableKind[] = ['hat', 'pet', 'trail', 'shirt', 'wings', 'mount', 'title']
 
 const UID_RE = /^[a-z0-9]{6,20}$/
 const DEVICE_RE = /^[A-Z0-9]{8}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const ORIGINS = ['present', 'daily', 'milestone', 'jingle', 'trade', 'floor'] as const
+const ORIGINS = ['present', 'daily', 'milestone', 'jingle', 'trade', 'floor', 'admin'] as const
 const LOOT_ORIGINS: ReadonlySet<ItemOrigin> = new Set(['present', 'daily', 'milestone', 'jingle'])
 
 export type ItemOrigin = (typeof ORIGINS)[number]
@@ -97,7 +97,7 @@ export function newProfile(): WorkshopProfile {
     device: randomWorkshopToken(8).toUpperCase(),
     bag: [],
     discovered: [],
-    equipped: { hat: null, pet: null, trail: null, shirt: null, mount: null, title: null },
+    equipped: { hat: null, pet: null, trail: null, shirt: null, wings: null, mount: null, title: null },
     title: null,
     achievements: [],
     stats: { opened: 0, sends: 0, bells: 0, given: 0, received: 0, trades: 0, chats: 0, hits: 0, handheld: 0, found: emptyFound() },
@@ -106,11 +106,36 @@ export function newProfile(): WorkshopProfile {
   }
 }
 
+/**
+ * After first-login imports guest bag UIDs into an account, drop those UIDs from the
+ * guest snapshot so logging out (or creating another account) cannot re-gift them.
+ * Pass `sent` (the bag offered on first login) so signup still clears the guest even
+ * when the account response omits those UIDs.
+ */
+export function guestAfterAccountImport(guest: WorkshopProfile, account: WorkshopProfile, sent?: WorkshopProfile): WorkshopProfile {
+  const taken = new Set([
+    ...account.bag.map((e) => e.uid),
+    ...(sent?.bag.map((e) => e.uid) ?? []),
+  ])
+  if (taken.size === 0) return guest
+  const next: WorkshopProfile = {
+    ...guest,
+    bag: guest.bag.filter((e) => !taken.has(e.uid)),
+    escrow: guest.escrow.filter((e) => !taken.has(e.entry.uid)),
+    equipped: { ...guest.equipped },
+  }
+  for (const slot of WEARABLE_SLOTS) {
+    const id = next.equipped[slot]
+    if (id && !next.bag.some((e) => e.item === id)) next.equipped[slot] = null
+  }
+  return next
+}
+
 export function deviceLabel(p: WorkshopProfile): string {
   return `${p.device.slice(0, 4)}-${p.device.slice(4)}`
 }
 
-/** LAN-private room for this install. Nobody else can join it; the shared floor stays keyed by reader host. */
+/** Local world for this install; it never opens a network connection. */
 export function personalWorldRoom(device: string): string {
   return `home.${device.toLowerCase()}`
 }
@@ -138,7 +163,7 @@ function parseEntry(v: unknown): BagEntry | null {
   return entry
 }
 
-export function loadProfile(storage: Storage = localStorage): WorkshopProfile {
+export function loadProfile(storage: Pick<Storage, 'getItem'> = localStorage): WorkshopProfile {
   const p = newProfile()
   let raw: unknown = null
   try {
@@ -200,9 +225,16 @@ export function loadProfile(storage: Storage = localStorage): WorkshopProfile {
   return p
 }
 
+const GUEST_PROFILE_KEY = 'workshop-guest-profile-v1'
+
 export function saveProfile(p: WorkshopProfile, storage: Storage = localStorage): void {
   try {
     storage.setItem(PROFILE_KEY, JSON.stringify(p))
+    // Keep the guest snapshot current while not signed in, so first-login import
+    // cannot accidentally use a leftover account bag from PROFILE_KEY.
+    if (!storage.getItem('workshop-active-account')) {
+      storage.setItem(GUEST_PROFILE_KEY, JSON.stringify(p))
+    }
   } catch {
     // storage full or unavailable; progress lasts for this session
   }
@@ -237,6 +269,18 @@ export function takeFromBag(p: WorkshopProfile, uid: string): BagEntry | null {
   const [entry] = p.bag.splice(index, 1)
   for (const slot of WEARABLE_SLOTS) {
     if (p.equipped[slot] === entry.item && !p.bag.some((e) => e.item === entry.item)) p.equipped[slot] = null
+  }
+  return entry
+}
+
+/** Removes one copy of a consumable. Puts anything else back and returns null. */
+export function consumeFromBag(p: WorkshopProfile, uid: string): BagEntry | null {
+  const entry = takeFromBag(p, uid)
+  if (!entry) return null
+  const def = ITEM_BY_ID.get(entry.item)
+  if (def?.kind !== 'consumable' || !def.consume) {
+    returnToBag(p, entry)
+    return null
   }
   return entry
 }

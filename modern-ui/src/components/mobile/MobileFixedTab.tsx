@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { Slider } from '../ui/slider'
 import { Zap, StopCircle, Activity, Radio, Copy, Download, ChevronDown, ChevronUp, RefreshCw, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
+import { parseInterTagDelayMs } from '@/lib/automation-template'
 import { TCPEmulatorClient, expandUpcListToEpcs, parseEpcListLine, type TagData } from '@/lib/tcp-client'
 import { useSettings } from '@/lib/settings-context'
 import { formatTime } from '@/lib/utils'
@@ -284,7 +286,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
     await emulator.sendTags(
       tags,
       driver,
-      parseInt(delay),
+      parseInterTagDelayMs(delay, delay, 0),
       (p) => addLog(p),
       (complete) => {
         addLog(complete)
@@ -523,7 +525,7 @@ export function MobileFixedTab(props: MobileFixedTabProps) {
           </div>
           <div className="space-y-2">
             <Label htmlFor="delay">Delay (ms)</Label>
-            <Input id="delay" type="number" min="0" value={delay} onChange={(e) => setDelay(e.target.value)} className="h-12" />
+            <InterTagDelayInput id="delay" value={delay} onValueChange={setDelay} className="h-12" />
           </div>
         </CardContent>
       </Card>

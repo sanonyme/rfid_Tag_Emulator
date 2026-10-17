@@ -15,6 +15,8 @@ import {
   DialogDescription,
 } from './ui/dialog'
 import { Send, Globe, Clock, CheckCircle, XCircle, Loader2, Copy, Check, Save, Braces, ArrowDown, ArrowUp, Table2, FileSpreadsheet, Eye, PlayCircle, Square, Trash2, Download, ChevronDown, ChevronRight, Package, Activity } from 'lucide-react'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
+import { parseInterTagDelayMs } from '@/lib/automation-template'
 import { cn } from '@/lib/utils'
 import { sectionCard as SECTION_CARD } from '@/lib/ui-tokens'
 
@@ -1336,15 +1338,12 @@ export function ApiTab({ base64Open, onBase64OpenChange }: ApiTabProps = {}) {
                     Delay
                   </Label>
                   <div className="relative">
-                    <Input
+                    <InterTagDelayInput
                       id="bulk-delay"
-                      type="number"
-                      min={0}
-                      step={50}
-                      value={bulkDelayMs}
-                      onChange={(e) => setBulkDelayMs(Math.max(0, Number(e.target.value) || 0))}
+                      value={String(bulkDelayMs)}
+                      onValueChange={(v) => setBulkDelayMs(parseInterTagDelayMs(v, v, 0))}
                       disabled={bulkSendingAll}
-                      className="h-8 w-[4.25rem] rounded-md border-border/50 pe-7 text-center text-xs font-mono shadow-none"
+                      className="h-8 w-[4.25rem] rounded-md border-border/50 pe-7 text-center text-xs shadow-none"
                     />
                     <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground">
                       ms

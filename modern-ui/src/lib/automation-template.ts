@@ -454,6 +454,13 @@ export function captureEpcsToVars(vars: AutomationVars, epcs: string[]): void {
   vars.epcsJsonMap = JSON.stringify(jsonMap)
 }
 
+/** Non-negative digits only; empty string allowed while editing. */
+export function sanitizeInterTagDelayInput(raw: string): string {
+  if (raw === '') return ''
+  const digits = raw.replace(/\D/g, '')
+  return digits
+}
+
 /**
  * Parse Fixed/Handheld inter-tag delay for automation.
  * Treats `0` as a real value (unlike `x || 20`, which wrongly maps 0 → 20).

@@ -37,6 +37,8 @@ import { DefinedItemsPicker } from './DefinedItemsPicker'
 import { CartonUpcFill } from './CartonUpcFill'
 import { EpcListPeek } from './EpcListPeek'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
+import { InterTagDelayInput } from '@/components/InterTagDelayInput'
+import { parseInterTagDelayMs } from '@/lib/automation-template'
 import { emitWorkshopActivity } from '@/lib/workshop-activity'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import {
@@ -437,7 +439,7 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
     setLastSendSummary({
       tags: payloadCount,
       antennas: selectedAntennas.length,
-      delayMs: Number.parseInt(delay, 10) || 0,
+      delayMs: parseInterTagDelayMs(delay, delay, 0),
     })
     addLog(`Sending ${tagCount} tag(s) with driver: ${driver} on antenna(s): ${selectedAntennas.join(', ')}`)
     if (!isLooping) {
@@ -447,7 +449,7 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
     await emulator.sendTags(
       tags,
       driver,
-      parseInt(delay),
+      parseInterTagDelayMs(delay, delay, 0),
       (progress) => {
         if (fullActivityLogRef.current) addLog(progress)
       },
@@ -893,14 +895,11 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
                   Inter-tag delay
                 </Label>
                 <div className="relative">
-                  <Input
+                  <InterTagDelayInput
                     id="delay"
-                    type="number"
-                    min="0"
-                    step="50"
                     value={delay}
-                    onChange={(e) => setDelay(e.target.value)}
-                    className="h-10 rounded-lg border-border/60 bg-background/80 pe-12 font-mono text-sm shadow-none"
+                    onValueChange={setDelay}
+                    className="h-10 rounded-lg border-border/60 bg-background/80 pe-12 text-sm shadow-none"
                   />
                   <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
                     ms

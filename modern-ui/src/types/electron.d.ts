@@ -552,13 +552,8 @@ export interface ElectronAPI {
   onUdpDiscoveryStarted: (callback: (payload: { port: number }) => void) => () => void
   onUdpDiscoveryStopped: (callback: (payload: { reason: string }) => void) => () => void
   onUdpDiscoveryError: (callback: (payload: { message: string }) => void) => () => void
-  /** Christmas workshop floor: LAN multicast presence between players on the same reader host. */
-  workshopJoin?: (
-    room: string,
-  ) => Promise<{ ok: true; name: string } | { ok: false; error: string; name: string }>
-  workshopLeave?: () => Promise<{ ok: true }>
-  workshopSend?: (message: WorkshopMessage) => void
-  onWorkshopMessage?: (callback: (message: WorkshopMessage) => void) => () => void
+  /** Public cloud endpoint only. Server database credentials never enter the renderer. */
+  workshopConfig?: () => Promise<{ url: string }>
   readerDiscoveryStart: (
     payload: ReaderDiscoveryPayload,
   ) => Promise<{ ok: true; total: number } | { ok: false; error: string }>

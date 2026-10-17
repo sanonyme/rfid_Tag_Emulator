@@ -1,0 +1,3 @@
+{$WORKSHOP_DOMAIN} {
+    reverse_proxy workshop:8787
+}
