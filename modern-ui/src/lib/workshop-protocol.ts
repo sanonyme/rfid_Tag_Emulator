@@ -1,8 +1,9 @@
 /**
  * Validated gameplay wire format, retained by the cloud Workshop transport.
  * Shared by the backend and renderer. Legacy packet encoding remains compatible.
- * Keep this module dependency-free: it is compiled for both targets.
+ * Keep this module runtime-neutral: it is compiled for both targets.
  */
+import { isElfAppearance, parseElfAppearance, type ElfAppearance } from './workshop-appearance'
 
 export const WORKSHOP_GROUP = '239.255.77.88'
 export const WORKSHOP_PORT = 47823
@@ -12,6 +13,7 @@ export const WORKSHOP_PRESENT_COLORS = 4
 export const WORKSHOP_MAX_TREE_ENTRIES = 16
 export const WORKSHOP_NAME_MAX = 16
 export const WORKSHOP_CHAT_MAX = 80
+export const WORKSHOP_LETTER_MAX = 280
 export const WORKSHOP_EMOTE_COUNT = 5
 export const WORKSHOP_RARITY_COUNT = 5
 export const WORKSHOP_TRADE_MAX_ITEMS = 4
@@ -64,6 +66,8 @@ export type WorkshopPayload =
       sh?: string
       /** Equipped wings item id; '' for none. Older builds ignore this. */
       wg?: string
+      /** Optional cosmetic identity; legacy peers continue using the outfit index. */
+      av?: ElfAppearance
     }
   /** `r` is the present's rarity index; `epc` the last four hex digits of the tag that dropped it. */
   | { t: 'drop'; pid: string; x: number; c: number; r?: number; epc?: string }
@@ -75,7 +79,7 @@ export type WorkshopPayload =
   | { t: 'snow'; x: number; dir: 1 | -1 }
   | { t: 'found'; item: string; r: number }
   /** An inventory item put on the floor; only `owner` can grant it, to the first claimer. */
-  | { t: 'idrop'; did: string; item: string; x: number }
+  | { t: 'idrop'; did: string; item: string; x: number; note?: string }
   | { t: 'claim'; did: string; owner: string }
   | { t: 'grant'; did: string; to: string }
   | WorkshopTradePayload
@@ -127,6 +131,26 @@ export function sanitizeWorkshopChat(raw: unknown): string | null {
     .replace(/\s+/g, ' ')
     .trim()
   const clipped = Array.from(cleaned).slice(0, WORKSHOP_CHAT_MAX).join('').trim()
+  return clipped || null
+}
+
+/** Account DMs may carry E2E ciphertext (longer than room chat). Guests still use short plaintext. */
+export function sanitizeWorkshopDm(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.length < 1 || raw.length > 4000) return null
+  if (/^zeus1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(raw)) return raw
+  return sanitizeWorkshopChat(raw)
+}
+
+/** Longer note text for gifted letters; keeps newlines, strips other controls. */
+export function sanitizeWorkshopLetter(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const cleaned = raw
+    .normalize('NFC')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/[\p{Cc}\p{Cf}\p{Co}\p{Cs}]/gu, (ch) => (ch === '\n' ? '\n' : ''))
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+  const clipped = Array.from(cleaned).slice(0, WORKSHOP_LETTER_MAX).join('').trim()
   return clipped || null
 }
 
@@ -248,6 +272,10 @@ export function parseWorkshopMessage(value: unknown): WorkshopMessage | null {
         if (value.wg !== '' && !isWorkshopItemId(value.wg)) return null
         msg.wg = value.wg
       }
+      if (value.av !== undefined) {
+        if (!isElfAppearance(value.av)) return null
+        msg.av = parseElfAppearance(value.av)
+      }
       return msg
     }
     case 'drop': {
@@ -292,7 +320,10 @@ export function parseWorkshopMessage(value: unknown): WorkshopMessage | null {
     case 'idrop': {
       const x = unit(value.x)
       if (!isWorkshopPresentId(value.did) || !isWorkshopItemId(value.item) || x === null) return null
-      return { id, seq, t: 'idrop', did: value.did, item: value.item, x }
+      const note = sanitizeWorkshopLetter(value.note)
+      return note
+        ? { id, seq, t: 'idrop', did: value.did, item: value.item, x, note }
+        : { id, seq, t: 'idrop', did: value.did, item: value.item, x }
     }
     case 'claim':
       return isWorkshopPresentId(value.did) && isWorkshopId(value.owner)

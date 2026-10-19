@@ -8,7 +8,7 @@ The desktop build uses this address by default. `WORKSHOP_URL` and an address sa
 
 - Proxmox host: `192.168.10.200`, node `proxmox`.
 - Dedicated unprivileged Debian guest: **CT 250**, `zeus-workshop`, `192.168.10.250`.
-- Resources: 1 CPU, 1 GB RAM, 512 MB swap, 12 GB disk. Start at boot enabled.
+- Resources (prod CT 250, sized for a busy General party): 4 CPU, 4 GB RAM, 2 GB swap, 20 GB disk. Staging CT 251: 2 CPU, 2 GB RAM, 1 GB swap, 16 GB disk. Start at boot enabled.
 - Guest server: `/opt/zeus-workshop`, `zeus-workshop.service`, port 8787.
 - Guest database: local PostgreSQL, database and role `workshop`. The private connection string is in `/etc/zeus-workshop.env` (root only).
 - Host loopback proxy: `zeus-workshop-proxy.socket` and `.service`, `127.0.0.1:18787` → `192.168.10.250:8787`.

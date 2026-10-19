@@ -1,6 +1,6 @@
 import { ACHIEVEMENTS, loadProfile, type BagEntry, type WorkshopProfile } from './workshop-profile'
 import { ITEMS, ITEM_BY_ID } from './workshop-items'
-import { isWorkshopId, parseWorkshopMessage, sanitizeWorkshopChat, sanitizeWorkshopName, type WorkshopMessage } from './workshop-protocol'
+import { isWorkshopId, parseWorkshopMessage, sanitizeWorkshopDm, sanitizeWorkshopName, type WorkshopMessage } from './workshop-protocol'
 
 export const CREWS = ['VSBL', 'EDGE', 'QA', 'UI', 'SUPPORT', 'CNCT', 'ANEXYA_LOVER'] as const
 export type Crew = typeof CREWS[number]
@@ -39,7 +39,7 @@ export type LiveEvent = {
   id: string; title: string; body: string; startAt: string; endAt: string; enabled: boolean
   kind: 'challenge' | 'opt-in' | 'announcement'; metric: Metric; target: number
   reward: { item?: string; title?: string } | null; crews: Crew[] | null; optIn: boolean
-  /** Existing runner supports crew-local Secret Santa without executable event code. */
+  /** Parked. Saves clear this, and joins no longer assign a partner. */
   pairing?: 'same-crew'
 }
 export type EventView = LiveEvent & { value: number; optedIn: boolean; recipient: string | null; pairingStatus?: string }
@@ -97,7 +97,7 @@ export function parseClientCommand(v: unknown): ClientCommand | null {
       && ['allow', 'deny', 'kick'].includes(String(v.action)) ? { op: 'moderate', subject: v.subject, action: v.action as 'allow' | 'deny' | 'kick' } : null
     case 'packet': { const message = parseWorkshopMessage(v.message); return message ? { op: 'packet', message } : null }
     case 'dm': case 'history': {
-      const text = v.op === 'history' ? '' : sanitizeWorkshopChat(v.text)
+      const text = v.op === 'history' ? '' : sanitizeWorkshopDm(v.text)
       return isWorkshopId(v.to) && text !== null ? { op: v.op, to: v.to, text } : null
     }
     default: return null
@@ -107,7 +107,7 @@ export type DirectoryPlayer = Identity & { id: string; room: RoomId; subject: st
 export type Dm = { from: string; to: string; name: string; text: string; at: number }
 export type ServerNotice =
   | { op: 'joined'; room: RoomId; identity: Identity; tree: Record<string, number> }
-  | { op: 'waiting'; room: RoomId; status: 'knock' | 'pending' | 'denied' }
+  | { op: 'waiting'; room: RoomId; status: 'knock' | 'pending' | 'denied' | 'full' }
   | { op: 'packet'; message: WorkshopMessage }
   | { op: 'snapshot'; messages: WorkshopMessage[] }
   | { op: 'knocks'; entries: { subject: string; name: string }[] }
@@ -137,8 +137,8 @@ export function parseServerNotice(v: unknown): ServerNotice | null {
       const state = parseWorkshopMessage({ id: 'cloudtree', seq: 0, t: 'state', name: 'Cloud', hat: 0, x: 0, y: 0, dir: 1, mv: false, tree: v.tree ?? {} })
       return isRoom(v.room) && identity && state?.t === 'state' ? { op: 'joined', room: v.room, identity, tree: state.tree ?? {} } : null
     }
-    case 'waiting': return isRoom(v.room) && ['knock', 'pending', 'denied'].includes(String(v.status))
-      ? { op: 'waiting', room: v.room, status: v.status as 'knock' | 'pending' | 'denied' } : null
+    case 'waiting': return isRoom(v.room) && ['knock', 'pending', 'denied', 'full'].includes(String(v.status))
+      ? { op: 'waiting', room: v.room, status: v.status as 'knock' | 'pending' | 'denied' | 'full' } : null
     case 'packet': { const message = parseWorkshopMessage(v.message); return message ? { op: 'packet', message } : null }
     case 'notice': return typeof v.text === 'string' ? { op: 'notice', text: v.text.slice(0, 200) } : null
     case 'knocks': return Array.isArray(v.entries) && v.entries.length <= 256 && v.entries.every(e => record(e) && typeof e.subject === 'string')
@@ -161,7 +161,7 @@ export function parseServerNotice(v: unknown): ServerNotice | null {
       const out: Dm[] = []
       for (const m of messages) {
         if (!record(m) || !isWorkshopId(m.from) || !isWorkshopId(m.to) || typeof m.at !== 'number' || !Number.isFinite(m.at)) return null
-        const text = sanitizeWorkshopChat(m.text); if (!text) return null
+        const text = sanitizeWorkshopDm(m.text); if (!text) return null
         out.push({ from: m.from, to: m.to, name: sanitizeWorkshopName(m.name), text, at: m.at })
       }
       return v.op === 'dm' ? { op: 'dm', message: out[0] } : { op: 'history', messages: out }

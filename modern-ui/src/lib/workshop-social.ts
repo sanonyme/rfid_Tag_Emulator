@@ -17,6 +17,12 @@ export function privateText(v:unknown):string|null {
   const clean=v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g,'').trim()
   return clean || null
 }
+/** Wire format after optional E2E encryption (ciphertext is longer than the plaintext). */
+export function storedPrivateText(v:unknown):string|null {
+  if(typeof v!=='string'||v.length<1||v.length>4000)return null
+  if(/^zeus1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v))return v
+  return privateText(v)
+}
 export function parseFriends(raw:unknown):FriendEntry[] {
   if(!Array.isArray(raw)||raw.length>500)throw new Error('Invalid friends response')
   return raw.map(v=>{
@@ -31,7 +37,7 @@ export function parsePrivateMessages(raw:unknown):PrivateMessage[] {
   return raw.map(v=>{
     if(!record(v)||!isAccountId(v.id)||!isAccountId(v.from)||!isAccountId(v.to)||typeof v.name!=='string'
       ||typeof v.at!=='number'||!Number.isFinite(v.at))throw new Error('Invalid private message')
-    const text=privateText(v.text);if(!text)throw new Error('Invalid private message text')
+    const text=storedPrivateText(v.text);if(!text)throw new Error('Invalid private message text')
     return {id:v.id,from:v.from,to:v.to,name:v.name.slice(0,16),text,at:v.at}
   })
 }

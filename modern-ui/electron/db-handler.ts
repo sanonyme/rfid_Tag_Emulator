@@ -52,6 +52,20 @@ function qIdent(name: string): string {
   return quoteIdent(engine, name)
 }
 
+/** pg.Client forbids overlapping query() calls; queue so Promise.all callers stay safe. */
+let pgQueryTail: Promise<unknown> = Promise.resolve()
+
+async function pgQuery(sql: string, params: any[] = []) {
+  if (!pgClient) throw new Error('Not connected')
+  const run = pgQueryTail.then(() => pgClient!.query(toPgText(sql), params))
+  // Keep the chain alive after failures so later queries still run.
+  pgQueryTail = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
 async function closeAllConnections(): Promise<void> {
   if (mysqlConn) {
     await mysqlConn.end().catch(() => {})
@@ -61,6 +75,7 @@ async function closeAllConnections(): Promise<void> {
     await pgClient.end().catch(() => {})
     pgClient = null
   }
+  pgQueryTail = Promise.resolve()
   currentDatabase = null
   pgDatabaseName = null
   tableMetaCache.clear()
@@ -71,8 +86,7 @@ async function execQuery(
   params: any[] = [],
 ): Promise<{ rows: any[]; fields?: any[]; affectedRows?: number; insertId?: any }> {
   if (engine === 'postgres') {
-    if (!pgClient) throw new Error('Not connected')
-    const result = await pgClient.query(toPgText(sql), params)
+    const result = await pgQuery(sql, params)
     return {
       rows: result.rows ?? [],
       fields: result.fields as any[] | undefined,
@@ -496,7 +510,7 @@ export async function dbExecuteQuery(
 
     if (engine === 'postgres') {
       if (!pgClient) return { ok: false, error: 'Not connected' }
-      const pgResult = await pgClient.query(toPgText(sql))
+      const pgResult = await pgQuery(sql)
       const cmd = String(pgResult.command || '').toUpperCase()
       const isResultSet =
         cmd === 'SELECT' ||

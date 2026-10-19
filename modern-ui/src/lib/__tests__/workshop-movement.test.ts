@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { createGame, receive, step } from '../../components/workshop/workshop-engine'
-import { newProfile } from '../workshop-profile'
+import { createGame, equipFromBag, handleActivity, receive, step } from '../../components/workshop/workshop-engine'
+import { addToBag, newProfile } from '../workshop-profile'
 
 const net = { send: () => {}, sound: false }
 beforeEach(() => localStorage.clear())
 
 describe('wing equipment and movement', () => {
-  it('grants starter wings once and allows exactly one extra airborne jump', () => {
+  it('does not grant free wings, and equipped wings allow exactly one extra airborne jump', () => {
     const profile=newProfile()
     const game=createGame('home','Elf',0,profile)
-    expect(profile.bag.filter(i=>i.item==='leaf-wings')).toHaveLength(1)
+    expect(profile.bag.filter(i=>i.item==='leaf-wings')).toHaveLength(0)
+    expect(game.self.equip.wings).toBeNull()
+    addToBag(profile,'leaf-wings','present')
+    equipFromBag(game,'wings','leaf-wings')
     expect(game.self.equip.wings).toBe('leaf-wings')
-    createGame('home','Elf',0,profile)
-    expect(profile.bag.filter(i=>i.item==='leaf-wings')).toHaveLength(1)
     let now=performance.now()
     game.jumpQueued=true;step(game,1/60,now+=1000/60,true,net)
     expect(game.self.jumpV).toBeGreaterThan(0)
@@ -36,5 +37,14 @@ describe('wing equipment and movement', () => {
     expect(game.peers.get(state.id)?.equip.wings).toBe('angel-wings')
     receive(game,{...state,seq:3,wg:'santa-hat'},net)
     expect(game.peers.get(state.id)?.equip.wings).toBeNull()
+  })
+})
+
+describe('RFID activity counters', () => {
+  it('counts individual tags and separates Fixed and Handheld runs', () => {
+    const game=createGame('home','Elf',0,newProfile())
+    handleActivity(game,{kind:'tags-sent',count:25,source:'fixed'},net,10_000)
+    handleActivity(game,{kind:'tags-sent',count:8,source:'handheld'},net,20_000)
+    expect(game.profile.stats).toMatchObject({tags:33,sends:2,fixed:1,handheld:1})
   })
 })

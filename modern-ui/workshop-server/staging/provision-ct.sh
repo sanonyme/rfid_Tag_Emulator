@@ -24,6 +24,8 @@ pct snapshot "$SRC" "$SNAP" --description "Staging clone base" || true
 pct clone "$SRC" "$DST" --hostname zeus-workshop-dev --full --snapname "$SNAP"
 pct set "$DST" --net0 "name=eth0,bridge=${BRIDGE},ip=${IP}/${CIDR},gw=${GW}"
 pct set "$DST" --onboot 1
+# Staging headroom (prod party sizing is applied separately on CT 250).
+pct set "$DST" --cores "${WORKSHOP_DEV_CORES:-2}" --memory "${WORKSHOP_DEV_MEMORY:-2048}" --swap "${WORKSHOP_DEV_SWAP:-1024}"
 pct start "$DST"
 # Optional cleanup of the temporary snapshot on production.
 if test "${WORKSHOP_KEEP_SNAP:-0}" != "1"; then

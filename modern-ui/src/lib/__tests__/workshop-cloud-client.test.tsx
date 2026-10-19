@@ -27,7 +27,7 @@ function mount() { return render(<TooltipProvider><WorkshopFloor /></TooltipProv
 beforeEach(() => {
   vi.useFakeTimers()
   sessionStorage.clear()
-  localStorage.setItem('workshop-pinned','1')
+  localStorage.setItem('workshop-pinned','0')
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
   FakeSocket.instances = []
   vi.stubGlobal('WebSocket',FakeSocket)
@@ -205,6 +205,49 @@ describe('Workshop cloud client', () => {
     const accountSync = request.mock.calls.find(([path,body]) => path === '/profile' && !!body && !('firstLogin' in (body as object)))
     expect((accountSync?.[1] as { profile: typeof offline }).profile.bag.map(e => e.uid)).toContain(pending.uid)
   })
+  it.each([
+    { label: 'newer', cachedAt: 3000, serverAt: 2000, cacheWins: true },
+    { label: 'older', cachedAt: 1000, serverAt: 2000, cacheWins: false },
+    { label: 'equally recent', cachedAt: 2000, serverAt: 2000, cacheWins: false },
+  ])('reconciles a $label account appearance cache without importing guest cosmetics', async ({ cachedAt, serverAt, cacheWins }) => {
+    const localGuest = newProfile()
+    localGuest.appearance = { ...localGuest.appearance, gender: 'female', hairStyle: 'braids', hairColor: 4 }
+    localGuest.appearanceAt = 9000
+    saveProfile(localGuest)
+    const server = newProfile()
+    server.appearance = { ...server.appearance, gender: 'female', skin: 4, hairStyle: 'bob', outfit: 2 }
+    server.appearanceAt = serverAt
+    const offline = newProfile()
+    offline.appearance = { ...offline.appearance, skin: 2, hairStyle: 'long', hairColor: 3, starterHat: false }
+    offline.appearanceAt = cachedAt
+    const identity = { ...guest, userId: '00000000-0000-0000-0000-000000000078', crew: 'QA' }
+    localStorage.setItem(`workshop-account-cache:${identity.userId}`, JSON.stringify(offline))
+
+    const api = new CloudApi('http://localhost:8787')
+    vi.spyOn(api, 'publishE2eKey').mockResolvedValue()
+    const syncs: typeof server[] = []
+    vi.spyOn(api, 'request').mockImplementation(async (path, body) => {
+      if (path === '/auth/login') return { token: 'a'.repeat(64), identity }
+      if (path === '/profile') {
+        const incoming = body as { profile: typeof server; firstLogin?: boolean }
+        if (incoming.firstLogin) return { profile: server, revision: 4, identity }
+        syncs.push(incoming.profile)
+        return { profile: incoming.profile, revision: 5, identity }
+      }
+      throw new Error(`Unexpected mocked request: ${path}`)
+    })
+    await api.login(false, { email: 'elf@example.com', password: 'password-long', crew: '', name: 'Elf' }, localGuest)
+
+    const expected = cacheWins ? offline : server
+    expect(syncs).toHaveLength(1)
+    expect(syncs[0].appearance).toEqual(expected.appearance)
+    expect(syncs[0].appearanceAt).toBe(expected.appearanceAt)
+    expect(loadProfile().appearance).toEqual(expected.appearance)
+    expect(loadProfile().appearanceAt).toBe(expected.appearanceAt)
+    expect(JSON.parse(localStorage.getItem(`workshop-account-cache:${identity.userId}`)!).appearance).toEqual(expected.appearance)
+    expect(JSON.parse(localStorage.getItem('workshop-guest-profile-v1')!).appearance).toEqual(localGuest.appearance)
+  })
+
   it('expires cached events locally when the backend becomes unreachable', async () => {
     vi.stubGlobal('electronAPI', { workshopConfig: async () => ({ url: 'http://localhost:8787' }) })
     const event = { id: 'short-event', title: 'Short event', body: 'Ends soon', startAt: new Date(Date.now()-1000).toISOString(), endAt: new Date(Date.now()+2000).toISOString(), enabled: true, kind: 'announcement', metric: 'sends', target: 1, reward: null, crews: null, optIn: false, value: 0, optedIn: false, recipient: null }

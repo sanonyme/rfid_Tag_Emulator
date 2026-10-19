@@ -43,6 +43,7 @@ describe('workshop protocol', () => {
       { id, seq: 8, t: 'snow', x: 0.4, dir: -1 },
       { id, seq: 9, t: 'found', item: 'golden-epc', r: 4 },
       { id, seq: 10, t: 'idrop', did: 'd0d0d0d0', item: 'penguin', x: 0.7 },
+      { id, seq: 101, t: 'idrop', did: 'e1e1e1e1', item: 'handwritten-letter', x: 0.55, note: 'Meet me by the tree' },
       { id, seq: 11, t: 'claim', did: 'd0d0d0d0', owner: to },
       { id, seq: 12, t: 'grant', did: 'd0d0d0d0', to },
       { id, seq: 13, t: 'trade', op: 'req', tid: 't0t0t0t0', to },

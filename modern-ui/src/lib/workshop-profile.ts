@@ -13,6 +13,8 @@ import {
   type WearableKind,
 } from './workshop-items'
 import { localDate, randomWorkshopToken } from './workshop-state'
+import { sanitizeWorkshopLetter } from './workshop-protocol'
+import { BASE_OUTFITS, DEFAULT_APPEARANCE, parseElfAppearance, type ElfAppearance } from './workshop-appearance'
 
 export const PROFILE_KEY = 'workshop-profile-v1'
 export const BAG_CAPACITY = 240
@@ -21,15 +23,19 @@ export const WEARABLE_SLOTS: readonly WearableKind[] = ['hat', 'pet', 'trail', '
 const UID_RE = /^[a-z0-9]{6,20}$/
 const DEVICE_RE = /^[A-Z0-9]{8}$/
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
-const ORIGINS = ['present', 'daily', 'milestone', 'jingle', 'trade', 'floor', 'admin'] as const
+const ORIGINS = ['present', 'daily', 'milestone', 'jingle', 'trade', 'floor', 'admin', 'mission', 'letter'] as const
 const LOOT_ORIGINS: ReadonlySet<ItemOrigin> = new Set(['present', 'daily', 'milestone', 'jingle'])
 
 export type ItemOrigin = (typeof ORIGINS)[number]
-export type BagEntry = { uid: string; item: string; at: number; from: ItemOrigin; by?: string }
+export type BagEntry = { uid: string; item: string; at: number; from: ItemOrigin; by?: string; note?: string }
 /** An item lying on the floor: out of the bag, but still ours until someone is granted it. */
 export type EscrowEntry = { did: string; entry: BagEntry; at: number }
 
 export type WorkshopStats = {
+  /** Individual RFID tags successfully transmitted across all emulators. */
+  tags: number
+  /** Successful send batches from the Fixed reader emulator. */
+  fixed: number
   opened: number
   sends: number
   bells: number
@@ -48,6 +54,9 @@ export type WorkshopProfile = {
   bag: BagEntry[]
   discovered: string[]
   equipped: Record<WearableKind, string | null>
+  appearance: ElfAppearance
+  /** Last intentional cosmetic edit, used when reconciling this account's offline cache. */
+  appearanceAt: number
   title: string | null
   achievements: string[]
   stats: WorkshopStats
@@ -73,7 +82,6 @@ export const ACHIEVEMENTS: readonly Achievement[] = [
   { id: 'epic-elf', name: 'Epic Elf', description: 'Find an epic item or better in a present.', title: 'Epic Elf', progress: (p) => [foundAtLeast(p, 'epic'), 1] },
   { id: 'legend', name: 'Legend of the North', description: 'Find a legendary item in a present.', title: 'Legend of the North', progress: (p) => [p.stats.found.legendary, 1] },
   { id: 'keeper', name: 'Keeper of Tags', description: 'Discover every item in the collection.', title: 'Keeper of Tags', progress: (p) => [p.discovered.length, ITEMS.length] },
-  { id: 'secret-santa', name: 'Secret Santa', description: 'Give away 3 items by trade or floor drop.', title: 'Secret Santa', progress: (p) => [p.stats.given, 3] },
   { id: 'tag-trader', name: 'Tag Trader', description: 'Complete 3 trades.', title: 'Tag Trader', progress: (p) => [p.stats.trades, 3] },
   { id: 'emulation-elf', name: 'Emulation Elf', description: 'Complete 100 tag sends.', title: 'Emulation Elf', progress: (p) => [p.stats.sends, 100] },
   { id: 'qa-engineer', name: 'QA Engineer', description: 'Complete 250 tag sends. The suite never really ends.', title: 'QA Engineer', progress: (p) => [p.stats.sends, 250] },
@@ -98,9 +106,11 @@ export function newProfile(): WorkshopProfile {
     bag: [],
     discovered: [],
     equipped: { hat: null, pet: null, trail: null, shirt: null, wings: null, mount: null, title: null },
+    appearance: { ...DEFAULT_APPEARANCE },
+    appearanceAt: 0,
     title: null,
     achievements: [],
-    stats: { opened: 0, sends: 0, bells: 0, given: 0, received: 0, trades: 0, chats: 0, hits: 0, handheld: 0, found: emptyFound() },
+    stats: { tags: 0, fixed: 0, opened: 0, sends: 0, bells: 0, given: 0, received: 0, trades: 0, chats: 0, hits: 0, handheld: 0, found: emptyFound() },
     daily: { last: null, streak: 0 },
     escrow: [],
   }
@@ -123,6 +133,7 @@ export function guestAfterAccountImport(guest: WorkshopProfile, account: Worksho
     bag: guest.bag.filter((e) => !taken.has(e.uid)),
     escrow: guest.escrow.filter((e) => !taken.has(e.entry.uid)),
     equipped: { ...guest.equipped },
+    appearance: { ...guest.appearance },
   }
   for (const slot of WEARABLE_SLOTS) {
     const id = next.equipped[slot]
@@ -160,11 +171,19 @@ function parseEntry(v: unknown): BagEntry | null {
     from: ORIGINS.includes(from as ItemOrigin) ? (from as ItemOrigin) : 'present',
   }
   if (typeof by === 'string' && by) entry.by = by.slice(0, 32)
+  const note = sanitizeWorkshopLetter(v.note)
+  if (note) entry.note = note
   return entry
 }
 
 export function loadProfile(storage: Pick<Storage, 'getItem'> = localStorage): WorkshopProfile {
   const p = newProfile()
+  // Retain the old quick-colour preference when upgrading a local guest save.
+  try {
+    const saved = storage.getItem('workshop-hat')
+    const outfit = saved === null ? NaN : Number(saved)
+    if (Number.isInteger(outfit) && outfit >= 0 && outfit < BASE_OUTFITS.length) p.appearance.outfit = outfit
+  } catch { /* storage may be unavailable */ }
   let raw: unknown = null
   try {
     raw = JSON.parse(storage.getItem(PROFILE_KEY) ?? 'null')
@@ -172,6 +191,9 @@ export function loadProfile(storage: Pick<Storage, 'getItem'> = localStorage): W
     raw = null
   }
   if (!isRecord(raw)) return p
+
+  if (isRecord(raw.appearance)) p.appearance = parseElfAppearance(raw.appearance)
+  p.appearanceAt = typeof raw.appearanceAt === 'number' && Number.isSafeInteger(raw.appearanceAt) && raw.appearanceAt >= 0 ? raw.appearanceAt : 0
 
   if (typeof raw.device === 'string' && DEVICE_RE.test(raw.device)) p.device = raw.device
   const uids = new Set<string>()
@@ -199,6 +221,8 @@ export function loadProfile(storage: Pick<Storage, 'getItem'> = localStorage): W
   const stats = isRecord(raw.stats) ? raw.stats : {}
   const found = isRecord(stats.found) ? stats.found : {}
   p.stats = {
+    tags: count(stats.tags),
+    fixed: count(stats.fixed),
     opened: count(stats.opened),
     sends: count(stats.sends),
     bells: count(stats.bells),
@@ -245,13 +269,15 @@ export function addToBag(
   p: WorkshopProfile,
   itemId: string,
   from: ItemOrigin,
-  options: { by?: string; now?: number; force?: boolean } = {},
+  options: { by?: string; now?: number; force?: boolean; note?: string } = {},
 ): BagEntry | null {
   const def = ITEM_BY_ID.get(itemId)
   if (!def) return null
   if (!options.force && p.bag.length >= BAG_CAPACITY) return null
   const entry: BagEntry = { uid: randomWorkshopToken(10), item: itemId, at: options.now ?? Date.now(), from }
   if (options.by) entry.by = options.by.slice(0, 32)
+  const note = sanitizeWorkshopLetter(options.note)
+  if (note) entry.note = note
   p.bag.push(entry)
   if (!p.discovered.includes(itemId)) p.discovered.push(itemId)
   if (LOOT_ORIGINS.has(from)) p.stats.found[def.rarity] += 1
@@ -299,13 +325,15 @@ export type BagStack = { item: ItemDef; entries: BagEntry[] }
 export function bagStacks(p: WorkshopProfile): BagStack[] {
   const groups = new Map<string, BagEntry[]>()
   for (const entry of p.bag) {
-    const list = groups.get(entry.item)
+    // Written letters stay unstacked so each note stays readable on its own.
+    const key = entry.note ? `${entry.item}:${entry.uid}` : entry.item
+    const list = groups.get(key)
     if (list) list.push(entry)
-    else groups.set(entry.item, [entry])
+    else groups.set(key, [entry])
   }
   const stacks: BagStack[] = []
-  for (const [id, entries] of groups) {
-    const item = ITEM_BY_ID.get(id)
+  for (const entries of groups.values()) {
+    const item = ITEM_BY_ID.get(entries[0]!.item)
     if (item) stacks.push({ item, entries })
   }
   return stacks.sort(

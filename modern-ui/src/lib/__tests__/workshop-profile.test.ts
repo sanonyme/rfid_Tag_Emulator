@@ -71,6 +71,18 @@ describe('workshop profile', () => {
     expect(p.bag).toHaveLength(2)
   })
 
+  it('keeps handwritten letters unstacked and persists their note text', () => {
+    const p = newProfile()
+    addToBag(p, 'handwritten-letter', 'letter', { note: 'Hello from bay 4' })
+    addToBag(p, 'handwritten-letter', 'letter', { note: 'Second note' })
+    const stacks = bagStacks(p).filter((s) => s.item.id === 'handwritten-letter')
+    expect(stacks).toHaveLength(2)
+    expect(stacks.every((s) => s.entries.length === 1 && !!s.entries[0]?.note)).toBe(true)
+    saveProfile(p)
+    const loaded = loadProfile()
+    expect(loaded.bag.map((e) => e.note).sort()).toEqual(['Hello from bay 4', 'Second note'])
+  })
+
   it('respects capacity unless forced', () => {
     const p = newProfile()
     for (let i = 0; i < BAG_CAPACITY; i++) addToBag(p, 'snowball', 'present')

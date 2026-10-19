@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { Database } from './database'
 import { RequestError } from './service'
-import { isAccountId, isHandle, privateText, type FriendAction, type FriendEntry, type PrivateMessage } from '../src/lib/workshop-social'
+import { isAccountId, isHandle, storedPrivateText, type FriendAction, type FriendEntry, type PrivateMessage } from '../src/lib/workshop-social'
 import { record } from '../src/lib/workshop-cloud-model'
+import { isE2ePublicJwk, type E2ePublicJwk } from '../src/lib/workshop-e2e'
 
 const pair=(a:string,b:string)=>[a,b].sort()
 export class WorkshopSocial {
@@ -70,7 +71,7 @@ export class WorkshopSocial {
   }
   async message(userId:string,raw:unknown):Promise<PrivateMessage> {
     if(!record(raw)||!isAccountId(raw.to)||raw.to===userId)throw new RequestError('Choose a friend')
-    const text=privateText(raw.text);if(!text)throw new RequestError('Messages must contain 1–1000 characters')
+    const text=storedPrivateText(raw.text);if(!text)throw new RequestError('Messages must contain 1–1000 characters')
     const target=raw.to
     return this.db.transaction(async db=>{
       await this.lock(db,userId,target);await this.permitted(userId,target,db,true)
@@ -80,5 +81,21 @@ export class WorkshopSocial {
       await db.query('DELETE FROM messages WHERE pair=$1 AND id NOT IN (SELECT id FROM messages WHERE pair=$1 ORDER BY at DESC,id DESC LIMIT 50)',[key])
       return {id,from:userId,to:target,name:sender.display_name,text,at:new Date(saved.at).getTime()}
     })
+  }
+  async savePublicKey(userId:string,raw:unknown):Promise<{ok:true}> {
+    if(!record(raw)||!isE2ePublicJwk(raw.publicKey))throw new RequestError('Invalid secure-message key')
+    const publicKey=JSON.stringify({kty:'EC',crv:'P-256',x:raw.publicKey.x,y:raw.publicKey.y})
+    await this.db.query('UPDATE users SET e2e_public=$2 WHERE id=$1',[userId,publicKey])
+    return {ok:true}
+  }
+  async publicKey(userId:string,target:unknown):Promise<{publicKey:E2ePublicJwk|null}> {
+    if(!isAccountId(target))throw new RequestError('Choose a player')
+    if(target!==userId)await this.permitted(userId,target,this.db,true)
+    const {rows:[row]}=await this.db.query('SELECT e2e_public FROM users WHERE id=$1',[target])
+    if(!row?.e2e_public)return {publicKey:null}
+    try{
+      const parsed=JSON.parse(row.e2e_public) as unknown
+      return {publicKey:isE2ePublicJwk(parsed)?parsed:null}
+    }catch{return {publicKey:null}}
   }
 }

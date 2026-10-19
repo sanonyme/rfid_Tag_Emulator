@@ -62,7 +62,7 @@ try {
       await q(`UPDATE live_events SET enabled=false, end_at=now() WHERE id='dev-banner' RETURNING id, enabled, end_at`)
       break
     case 'event-santa':
-      await file('secret-santa.sql')
+      await q(`UPDATE live_events SET enabled=false, end_at=now(), pairing=NULL WHERE pairing='same-crew' OR id LIKE 'secret-santa%' RETURNING id, enabled, pairing`)
       break
     default:
       console.log(`Commands: health | users | bags | events | event-up | event-down | event-santa`)

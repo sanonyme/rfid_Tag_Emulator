@@ -3,7 +3,8 @@ import { promisify } from 'node:util'
 import { ACHIEVEMENTS, addToBag, newProfile, takeFromBag, type WorkshopProfile } from '../src/lib/workshop-profile'
 import { ITEM_BY_ID, ITEMS, RARITIES } from '../src/lib/workshop-items'
 import { canEnter, canModerate, eventActive, isCrew, mergeBag, parseCloudProfile, parseLiveEvent, record, type EventView, type Identity, type LiveEvent, type RoomId } from '../src/lib/workshop-cloud-model'
-import { sanitizeWorkshopName } from '../src/lib/workshop-protocol'
+import { sanitizeWorkshopLetter, sanitizeWorkshopName } from '../src/lib/workshop-protocol'
+import { MISSION_BY_ID, RFID_MISSIONS, missionMetricValue, missionPeriod, type MissionDefinition, type MissionView } from '../src/lib/workshop-missions'
 import { isHandle, normalizeHandle } from '../src/lib/workshop-social'
 import type { Database } from './database'
 import { sendVerificationEmail, type VerificationSender } from './email'
@@ -101,7 +102,8 @@ export class WorkshopService {
   async identity(userId: string): Promise<Identity> {
     const { rows: [row] } = await this.db.query('SELECT u.id,u.display_name,u.handle,u.crew,u.is_admin,k.crew AS king,p.titles FROM users u JOIN profiles p ON p.user_id=u.id LEFT JOIN kings k ON k.user_id=u.id WHERE u.id=$1', [userId])
     if (!row) throw new RequestError('Account unavailable', 401)
-    return { userId: row.id, name: row.display_name, handle: row.handle, crew: row.crew, king: row.king ?? null, titles: row.titles, isAdmin: row.is_admin === true }
+    const titles = Array.isArray(row.titles) ? row.titles.filter((title: unknown) => title !== 'Secret Santa') : []
+    return { userId: row.id, name: row.display_name, handle: row.handle, crew: row.crew, king: row.king ?? null, titles, isAdmin: row.is_admin === true }
   }
   private async requireAdmin(userId: string) {
     const identity = await this.identity(userId)
@@ -148,9 +150,10 @@ export class WorkshopService {
     const event = parseLiveEvent(raw)
     if (!event || event.title.trim().length < 2 || Date.parse(event.endAt) <= Date.parse(event.startAt)) throw new RequestError('Complete every required event field and choose a valid date range')
     if (event.kind === 'announcement') {
-      event.metric='sends'; event.target=1; event.optIn=false; delete event.pairing; event.reward=null
+      event.metric='sends'; event.target=1; event.optIn=false; event.reward=null
     }
-    if (event.pairing && (!event.optIn || event.metric !== 'given')) throw new RequestError('Same-crew pairing requires an opt-in event using the Given metric')
+    // Secret Santa pairing is parked. Existing rows keep the column, but new saves do not pair anyone.
+    delete event.pairing
     if (event.reward?.item && !ITEM_BY_ID.has(event.reward.item)) throw new RequestError('Unknown reward item')
     const validTitles = new Set([...ACHIEVEMENTS.map(a=>a.title),...ITEMS.flatMap(item=>item.titleText?[item.titleText]:[])])
     if (event.reward?.title && !validTitles.has(event.reward.title)) throw new RequestError('Unknown reward title')
@@ -172,6 +175,47 @@ export class WorkshopService {
     const { rows } = await this.db.query('DELETE FROM live_events WHERE id=$1 RETURNING id',[eventId])
     if (!rows.length) throw new RequestError('Event not found',404)
     return this.adminEvents(userId)
+  }
+  private async missionViews(db:Database,userId:string,at=new Date()):Promise<MissionView[]> {
+    const {rows:[row]}=await db.query('SELECT data FROM profiles WHERE user_id=$1',[userId])
+    if(!row)throw new RequestError('Account unavailable',401)
+    const profile=parseCloudProfile(row.data)
+    const views:MissionView[]=[]
+    for(const mission of RFID_MISSIONS) {
+      const period=missionPeriod(mission.cadence,at)
+      const current=missionMetricValue(profile,mission.metric)
+      await db.query(`INSERT INTO mission_progress(user_id,mission_id,period_key,baseline) VALUES($1,$2,$3,$4)
+        ON CONFLICT DO NOTHING`,[userId,mission.id,period.key,current])
+      const {rows:[progress]}=await db.query('SELECT baseline,claimed FROM mission_progress WHERE user_id=$1 AND mission_id=$2 AND period_key=$3',[userId,mission.id,period.key])
+      const value=Math.max(0,current-Number(progress.baseline))
+      views.push({...mission,periodKey:period.key,value:Math.min(mission.target,value),claimed:progress.claimed===true,
+        ready:progress.claimed!==true&&value>=mission.target,resetAt:period.resetAt})
+    }
+    return views
+  }
+  async missions(userId:string):Promise<MissionView[]> {
+    await this.identity(userId)
+    return this.db.transaction(db=>this.missionViews(db,userId))
+  }
+  async claimMission(userId:string,missionId:string) {
+    const mission:MissionDefinition|undefined=MISSION_BY_ID.get(missionId)
+    if(!mission)throw new RequestError('Mission not found',404)
+    await this.db.transaction(async db=>{
+      const period=missionPeriod(mission.cadence)
+      const {rows:[row]}=await db.query('SELECT data FROM profiles WHERE user_id=$1 FOR UPDATE',[userId])
+      if(!row)throw new RequestError('Account unavailable',401)
+      const profile=parseCloudProfile(row.data)
+      const current=missionMetricValue(profile,mission.metric)
+      await db.query(`INSERT INTO mission_progress(user_id,mission_id,period_key,baseline) VALUES($1,$2,$3,$4)
+        ON CONFLICT DO NOTHING`,[userId,mission.id,period.key,current])
+      const {rows:[progress]}=await db.query('SELECT baseline,claimed FROM mission_progress WHERE user_id=$1 AND mission_id=$2 AND period_key=$3 FOR UPDATE',[userId,mission.id,period.key])
+      if(progress.claimed)throw new RequestError('Mission reward already claimed',409)
+      if(current-Number(progress.baseline)<mission.target)throw new RequestError('Mission is not complete yet')
+      addToBag(profile,mission.rewardItem,'mission',{force:true})
+      await db.query('UPDATE mission_progress SET claimed=true,claimed_at=now() WHERE user_id=$1 AND mission_id=$2 AND period_key=$3',[userId,mission.id,period.key])
+      await db.query('UPDATE profiles SET data=$2,revision=revision+1 WHERE user_id=$1',[userId,JSON.stringify(profile)])
+    })
+    return {missions:await this.missions(userId),snapshot:await this.profile(userId)}
   }
   async authenticate(token: string): Promise<Identity> {
     if (!/^[a-f0-9]{64}$/.test(token)) throw new RequestError('Sign in again', 401)
@@ -211,6 +255,11 @@ export class WorkshopService {
       const { rows: [row] } = await db.query('SELECT data,revision,merged_local,admin_removed FROM profiles WHERE user_id=$1 FOR UPDATE', [userId])
       if (!row) throw new RequestError('Account unavailable', 401)
       const previous = parseCloudProfile(row.data)
+      // Older clients omit cosmetics. Do not let a legacy save erase the wardrobe.
+      if (!record(raw.profile) || !record(raw.profile.appearance) || incoming.appearanceAt < previous.appearanceAt) {
+        incoming.appearance = { ...previous.appearance }
+        incoming.appearanceAt = previous.appearanceAt
+      }
       const removed = new Set<string>(Array.isArray(row.admin_removed) ? row.admin_removed.filter((uid:unknown):uid is string=>typeof uid==='string') : [])
       incoming = parseCloudProfile({...incoming,bag:incoming.bag.filter(entry=>!removed.has(entry.uid))})
       if (raw.firstLogin === true) {
@@ -218,9 +267,11 @@ export class WorkshopService {
           previous.bag = mergeBag(previous.bag, incoming.bag)
           previous.discovered = [...new Set([...previous.discovered, ...incoming.discovered])]
           previous.achievements = [...new Set([...previous.achievements, ...incoming.achievements])]
-          for (const metric of ['sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) previous.stats[metric] = Math.max(previous.stats[metric], incoming.stats[metric])
+          for (const metric of ['tags','fixed','sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) previous.stats[metric] = Math.max(previous.stats[metric], incoming.stats[metric])
           for (const rarity of RARITIES) previous.stats.found[rarity] = Math.max(previous.stats.found[rarity],incoming.stats.found[rarity])
           previous.equipped = incoming.equipped
+          previous.appearance = { ...incoming.appearance }
+          previous.appearanceAt = incoming.appearanceAt
           previous.daily = incoming.daily
           previous.title = incoming.title
           await db.query('UPDATE profiles SET data=$2,merged_local=true,revision=revision+1 WHERE user_id=$1', [userId, JSON.stringify(previous)])
@@ -234,7 +285,7 @@ export class WorkshopService {
       incoming.achievements = [...new Set([...previous.achievements, ...incoming.achievements])]
       // Daily gift and stats never move backwards on a second device.
       if ((previous.daily.last ?? '') > (incoming.daily.last ?? '')) incoming.daily = previous.daily
-      for (const metric of ['sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) incoming.stats[metric] = Math.max(previous.stats[metric], incoming.stats[metric])
+      for (const metric of ['tags','fixed','sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) incoming.stats[metric] = Math.max(previous.stats[metric], incoming.stats[metric])
       for (const rarity of RARITIES) incoming.stats.found[rarity] = Math.max(previous.stats.found[rarity],incoming.stats.found[rarity])
       if (typeof raw.name === 'string') await db.query('UPDATE users SET display_name=$2 WHERE id=$1', [userId, sanitizeWorkshopName(raw.name)])
       await db.query('UPDATE profiles SET data=$2,revision=revision+1 WHERE user_id=$1', [userId, JSON.stringify(incoming)])
@@ -287,7 +338,7 @@ export class WorkshopService {
         await db.query('UPDATE event_progress SET value=$3 WHERE event_id=$1 AND user_id=$2', [event.id, userId, value])
         if (event.kind !== 'announcement' && value >= event.target && !progress.rewarded && (!event.optIn || progress.opted_in)) {
           if (event.reward?.item) addToBag(p, event.reward.item, 'milestone', { force: true })
-          if (event.reward?.title && !titles.includes(event.reward.title)) titles.push(event.reward.title)
+          if (event.reward?.title && event.reward.title !== 'Secret Santa' && !titles.includes(event.reward.title)) titles.push(event.reward.title)
           await db.query('UPDATE event_progress SET rewarded=true WHERE event_id=$1 AND user_id=$2', [event.id, userId])
           changed = true
         }
@@ -296,8 +347,7 @@ export class WorkshopService {
           const { rows: [recipientRow] } = await db.query('SELECT display_name FROM users WHERE id=$1', [progress.recipient_id])
           recipient = recipientRow?.display_name ?? null
         }
-        out.push({ ...event, value, optedIn: progress.opted_in, recipient,
-          ...(event.pairing && progress.opted_in ? { pairingStatus: recipient ? `Give to ${recipient}` : 'Unmatched: fewer than two available crew participants. Waiting for another join.' } : {}) })
+        out.push({ ...event, value, optedIn: progress.opted_in, recipient })
       }
       if (changed) await db.query('UPDATE profiles SET data=$2,titles=$3,revision=revision+1 WHERE user_id=$1', [userId, JSON.stringify(p), JSON.stringify(titles)])
       return out
@@ -314,16 +364,50 @@ export class WorkshopService {
       const { rows: [profile] } = await db.query('SELECT data FROM profiles WHERE user_id=$1', [userId])
       const baseline = parseCloudProfile(profile.data).stats[event.metric]
       await db.query('UPDATE event_progress SET opted_in=true,baseline=CASE WHEN opted_in THEN baseline ELSE $3 END WHERE event_id=$1 AND user_id=$2', [eventId, userId, baseline])
-      if (event.pairing === 'same-crew') {
-        const { rows } = await db.query(`SELECT ep.user_id FROM event_progress ep JOIN users u ON u.id=ep.user_id
-          WHERE ep.event_id=$1 AND ep.opted_in=true AND ep.recipient_id IS NULL AND u.crew=$2 ORDER BY u.created_at,u.id`, [eventId, identity.crew])
-        // Pair waiting participants without changing an assignment already shown to a player.
-        for (let i = 0; i + 1 < rows.length; i += 2) {
-          await db.query('UPDATE event_progress SET recipient_id=$3 WHERE event_id=$1 AND user_id=$2', [eventId, rows[i].user_id, rows[i+1].user_id])
-          await db.query('UPDATE event_progress SET recipient_id=$3 WHERE event_id=$1 AND user_id=$2', [eventId, rows[i+1].user_id, rows[i].user_id])
-        }
-      }
+      // Pairing stays off until Secret Santa comes back.
     })
     return this.events(userId)
+  }
+  async letters(userId: string) {
+    const { rows } = await this.db.query(
+      `SELECT id, from_name, body, created_at, read_at FROM letters WHERE to_id=$1 ORDER BY created_at DESC LIMIT 40`,
+      [userId],
+    )
+    return {
+      letters: rows.map((row) => ({
+        id: row.id as string,
+        fromName: row.from_name as string,
+        body: row.body as string,
+        at: new Date(row.created_at as string).toISOString(),
+        read: row.read_at != null,
+      })),
+    }
+  }
+  async sendLetter(userId: string, raw: unknown) {
+    if (!record(raw)) throw new RequestError('Invalid letter')
+    const handle = normalizeHandle(raw.handle)
+    const body = sanitizeWorkshopLetter(raw.text)
+    if (!handle) throw new RequestError('Choose who receives the letter with their @handle')
+    if (!body) throw new RequestError('Write a letter before sending')
+    const { rows: [me] } = await this.db.query('SELECT display_name FROM users WHERE id=$1', [userId])
+    const { rows: [to] } = await this.db.query('SELECT id FROM users WHERE handle=$1', [handle])
+    if (!me || !to || to.id === userId) throw new RequestError('That @handle cannot receive mail', 404)
+    const { rows: blocks } = await this.db.query(
+      'SELECT 1 FROM user_blocks WHERE (blocker=$1 AND blocked=$2) OR (blocker=$2 AND blocked=$1) LIMIT 1',
+      [userId, to.id],
+    )
+    if (blocks.length) throw new RequestError('This mailbox is unavailable', 403)
+    const id = randomUUID()
+    await this.db.query('INSERT INTO letters(id, from_id, to_id, from_name, body) VALUES($1,$2,$3,$4,$5)', [id, userId, to.id, me.display_name, body])
+    return { ok: true, id }
+  }
+  async readLetter(userId: string, raw: unknown) {
+    if (!record(raw) || typeof raw.id !== 'string' || !/^[a-f0-9-]{36}$/.test(raw.id)) throw new RequestError('Unknown letter')
+    await this.db.query('UPDATE letters SET read_at=COALESCE(read_at, now()) WHERE id=$1 AND to_id=$2', [raw.id, userId])
+    return this.letters(userId)
+  }
+  async clearLetters(userId: string) {
+    await this.db.query('DELETE FROM letters WHERE to_id=$1', [userId])
+    return this.letters(userId)
   }
 }

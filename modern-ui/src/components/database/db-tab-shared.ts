@@ -133,7 +133,8 @@ export function sqlPanelHeightForResults(containerHeight: number): number {
   return Math.min(maxH, Math.max(DB_SQL_PANEL_RESULTS_MIN_HEIGHT, preferred))
 }
 
-export function quoteIdent(name: string): string {
+export function quoteIdent(name: string, engine: 'mysql' | 'postgres' = 'mysql'): string {
+  if (engine === 'postgres') return '"' + String(name).replace(/"/g, '""') + '"'
   return '`' + String(name).replace(/`/g, '``') + '`'
 }
 

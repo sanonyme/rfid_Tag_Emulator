@@ -15,6 +15,9 @@ export const RARITY_INFO: Record<Rarity, { label: string; color: string; weight:
 export type ItemKind = 'collectible' | 'hat' | 'pet' | 'trail' | 'shirt' | 'wings' | 'mount' | 'title' | 'consumable'
 export type WearableKind = Exclude<ItemKind, 'collectible' | 'consumable'>
 
+/** How a headpiece fits the hair, rather than treating every item as a cap. */
+export type HatFit = 'cap' | 'band' | 'earwear' | 'floating'
+
 export type ConsumeEffect = {
   verb: 'Drink' | 'Eat'
   /** Bubble shown above the elf when used. */
@@ -41,10 +44,12 @@ export type ItemDef = {
   /** A pixel that alternates between two colours, like a reader LED. */
   blink?: { char: string; on: string; off: string }
   /**
-   * How many elf-head rows the hat brim overlaps. Default 2 tucks it onto the
-   * forehead; 0 sits on the crown; negative floats above (halo).
+   * Bottom anchor in coarse elf-head rows, measured from the body top. Caps
+   * and bands use 1, outer ear cups use 3, and negative values float (halo).
    */
   hatSit?: number
+  /** Hair fit and scale policy when equipped; does not affect its bag icon. */
+  hatFit?: HatFit
   /** Text shown next to the elf's name when a 'title' item is equipped. */
   titleText?: string
   /** Only drops when the send had at least this many tags. */
@@ -72,28 +77,28 @@ const TAG = [
 export const ITEMS: readonly ItemDef[] = [
   {
     id: 'leaf-wings', name: 'Sprout Wings', rarity: 'common', kind: 'wings',
-    description: 'Your first pair of wings. Press jump again in the air for a second jump.',
-    sprite: ['.....gg', '...ggGg', '..ggGGg', '.ggGGGg', 'ggGGGgg', 'gGGGgg.', 'ggGgg..', '.ggg...', '..gg...', '...g...'],
-    palette: { g: '#1f7057', G: '#86efac' },
+    description: 'Leafy starter wings from a lucky present. Press jump again in the air for a second jump.',
+    sprite: ['....o.......', '...ohmo.....', '.o.ohhmo....', 'olhoomlmo...', 'omhloommlo..', '.omhlomlmlo.', '..omlhgllmlo', '.ohhmmgggmvo', '..omllmggvvv', '...omlhmgggo', '....olmhom..', '....ommooo..', '.....o.oo...', '............'],
+    palette: { o: '#203c35', d: '#35604b', m: '#5a8b55', l: '#95b76e', h: '#d5df96', v: '#dfb960', g: '#8d6c39' },
   },
   {
     id: 'angel-wings', name: 'Cloud Wings', rarity: 'rare', kind: 'wings',
     description: 'Soft ivory feathers and a second jump. A little piece of the sky.',
-    sprite: ['.....ww', '...wwWw', '..wwWWw', '.wwWWWw', 'wwWWWww', 'wWWWww.', 'wwWww..', '.www...', '..ww...', '...w...'],
-    palette: { w: '#93c5fd', W: '#f0f9ff' },
+    sprite: ['............', '.oo.........', '.ohho.......', '.olhhoo.....', 'ooomhhoo....', 'ohlmlhhhoo..', 'omhlmlmhhhoo', '.omhlmmgggho', '.oohllmlgggo', '..omhlmlmlgo', '..oolhlmlmo.', '....ohllmo..', '.....olmo...', '......oo....'],
+    palette: { o: '#384c62', d: '#6d91a6', s: '#a5c5cf', m: '#d5e4df', l: '#f3efda', h: '#fffcef', g: '#c59b5d' },
   },
   {
     id: 'dragon-wings', name: 'Ember Wings', rarity: 'epic', kind: 'wings',
     description: 'Glowing dragon membranes. Equip for a fiery silhouette and a second jump.',
-    sprite: ['r......', 'rr.....', 'rRr....', 'rRRr..r', 'rRRRrrr', 'rRRRRrr', 'rrRRrr.', '.rRrr..', '..rr...', '...r...'],
-    palette: { r: '#7f1d44', R: '#fb7185' },
+    sprite: ['............', '..h.........', '..og...h....', '.osgh.og....', '.osmgghgo...', '.osmmgmggo..', 'osssgmmmggo.', 'osogssmmmggo', 'oo.ogssssggh', '....gsssoghg', '...ogso.sgm.', '...oo...ogm.', '.........go.', '.........o..'],
+    palette: { o: '#482e34', d: '#77363d', s: '#a4443e', m: '#ce6147', l: '#ed9660', g: '#c58b49', h: '#f9d58d' },
   },
   {
     id: 'prism-wings', name: 'Prism Wings', rarity: 'legendary', kind: 'wings',
     description: 'A pair of luminous crystal fans. Flap once more while airborne.',
-    sprite: ['.....cc', '...ccCc', '..ccCCc', '.ccCCCc', 'ccCCCcc', 'cCCCcc.', 'ccCcc..', '.ccc...', '..cc...', '...c...'],
-    palette: { c: '#7c3aed', C: '#67e8f9' },
-    blink: { char: 'C', on: '#67e8f9', off: '#f0abfc' },
+    sprite: ['............', '.oooo.......', '..hiiroo....', '..orhiiboo..', '...obrhhibo.', '.ooobbrhiibo', '.oriihhgbhio', 'ohhhhhbggghi', '.ooooiihghbg', '...orihggggo', '...ohhboihio', '...ooo.orho.', '.......oho..', '........o...'],
+    palette: { o: '#385263', d: '#618a9b', b: '#8cc8d1', i: '#cee8e4', h: '#fff5dc', g: '#c7a15d', r: '#dba6a4' },
+    blink: { char: 'h', on: '#fff5dc', off: '#cee8e4' },
   },
   // Common
   {
@@ -238,6 +243,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'The classic. Fluffier than the standard issue.',
     sprite: ['WW........', 'WWrr......', '..rrrr....', '..rrrrrr..', '.rrrrrrrr.', 'WWWWWWWWWW'],
     palette: { W: '#ffffff', r: '#d42530' },
+    hatFit: 'cap',
+    hatSit: 1,
   },
   {
     id: 'frost-steps',
@@ -286,7 +293,7 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'Practically guarantees a spot on the sleigh team.',
     sprite: ['b........b', 'bb.b..b.bb', '.bbb..bbb.', '..bb..bb..', '...b..b...', '.hhhhhhhh.'],
     palette: { b: '#a0662f', h: '#7a4b1c' },
-    // Halfway: default 2 sat on the eyes; 0 floated above the crown.
+    hatFit: 'band',
     hatSit: 1,
   },
   {
@@ -298,6 +305,8 @@ export const ITEMS: readonly ItemDef[] = [
     sprite: ['...L......', '...a......', '..cccc....', '.cccccc...', '.ccccccc..', '.cccccccvv'],
     palette: { L: '#ef4444', a: '#9ca3af', c: '#2f7de1', v: '#1e3a8a' },
     blink: { char: 'L', on: '#ef4444', off: '#7f1d1d' },
+    hatFit: 'cap',
+    hatSit: 1,
   },
   {
     id: 'snowman',
@@ -345,6 +354,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'Wear the top of the tree. Everyone will look up to you.',
     sprite: ['....Y.....', '...yyy....', 'yyyyyyyyy.', '.yyyyyyy..', '..yyyyy...', '.yy...yy..', '.hhhhhhhh.'],
     palette: { Y: '#fff1a8', y: '#f5c542', h: '#b45309' },
+    hatFit: 'band',
+    hatSit: 1,
   },
   {
     id: 'rf-waves',
@@ -374,6 +385,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'For the elf who read them all.',
     sprite: ['.W..WW..W.', '.y..yy..y.', '.yy.yy.yy.', '.yyyyyyyy.', '.yrybbyry.', '.CCCCCCCC.'],
     palette: { W: '#ffffff', y: '#f5c542', r: '#ef4444', b: '#3b82f6', C: '#b7791f' },
+    hatFit: 'band',
+    hatSit: 1,
   },
   {
     id: 'robo-reader',
@@ -477,6 +490,17 @@ export const ITEMS: readonly ItemDef[] = [
     palette: { y: '#fde047', b: '#854d0e' },
   },
   {
+    id: 'handwritten-letter',
+    name: 'Handwritten Letter',
+    rarity: 'common',
+    kind: 'collectible',
+    description: 'A folded note you wrote yourself. Drop it on the floor to gift it.',
+    sprite: ['..wwwwww', '.wwpppww', 'wwppppww', 'wwpbbpww', 'wwppppww', '.wwwwww.', '..wkw...'],
+    palette: { w: '#f8fafc', p: '#fef3c7', b: '#92400e', k: '#dc2626' },
+    /** Composed by players — never rolls from presents. */
+    dropWeight: 0,
+  },
+  {
     id: 'wrench',
     name: 'Antenna Wrench',
     rarity: 'uncommon',
@@ -531,6 +555,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'Required on the floor. Optional in the break room.',
     sprite: ['..yyyyyy..', '.yyyyyyyy.', '.yyyyyyyy.', '.yyyyyyyy.', 'yyyyyyyyyy'],
     palette: { y: '#facc15' },
+    hatFit: 'cap',
+    hatSit: 1,
   },
   {
     id: 'dust-trail',
@@ -577,6 +603,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'So the forklift sees you before the reader does.',
     sprite: ['..oooooo..', '.oooooooo.', '.oYoYoYoY.', '.oooooooo.', 'oooooooooo'],
     palette: { o: '#f97316', Y: '#fef08a' },
+    hatFit: 'cap',
+    hatSit: 1,
   },
   {
     id: 'barcode-trail',
@@ -614,6 +642,8 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'Three bars of coverage, worn like royalty.',
     sprite: ['.c..c..c..', '.c..c..c..', 'cc.cc.cc.c', '.yyyyyyyy.', '.yyyyyyyy.', '.oooooooo.'],
     palette: { c: '#38bdf8', y: '#fbbf24', o: '#92400e' },
+    hatFit: 'band',
+    hatSit: 1,
   },
   {
     id: 'mini-drone',
@@ -677,6 +707,7 @@ export const ITEMS: readonly ItemDef[] = [
     description: 'A ring of RF floating just above your head. Reads everything.',
     sprite: ['..cccccc..', '.c......c.', 'c...yy...c', '.c......c.', '..cccccc..', '..........'],
     palette: { c: '#fde68a', y: '#ffffff' },
+    hatFit: 'floating',
     hatSit: -1,
   },
   {
@@ -887,6 +918,138 @@ export const ITEMS: readonly ItemDef[] = [
     palette: { g: '#367c2b', y: '#facc15', k: '#111827', s: '#bae6fd' },
   },
 
+  // Workshop wardrobe: ten columns across the five-row torso. The open neck
+  // and stepped sleeves let every appearance keep its face, hands and boots.
+  {
+    id: 'uhf-field-vest',
+    name: 'UHF Field Vest',
+    rarity: 'common',
+    kind: 'shirt',
+    dropWeight: 0.9,
+    description: 'Reflective tape and deep tag pockets. Ready for a snowy cycle count.',
+    sprite: ['.vvv..vvv.', '.vvvzzvvv.', '.vpvzzpvv.', '.vwwzzwwv.', '.dddzzddd.'],
+    palette: { v: '#ea9b3b', z: '#495f59', p: '#9c6035', w: '#f6efca', d: '#b77930' },
+  },
+  {
+    id: 'nfc-shift-tee',
+    name: 'NFC Shift Tee',
+    rarity: 'common',
+    kind: 'shirt',
+    dropWeight: 0.9,
+    description: 'A sea-green crew top with a little copper inlay. Tap into the next shift.',
+    sprite: ['.ttt..ttt.', 'tttttttttt', '.ttcccttt.', '.ttctcttt.', '.ddcccddd.'],
+    palette: { t: '#298d83', d: '#22695f', c: '#f2bc78' },
+  },
+  {
+    id: 'epc-workshop-hoodie',
+    name: 'EPC Workshop Hoodie',
+    rarity: 'uncommon',
+    kind: 'shirt',
+    dropWeight: 0.8,
+    description: 'Fleece, drawstrings and one enormous label pocket. EPCs stay close to the heart.',
+    sprite: ['.www..www.', 'bbbbwwbbbb', '.bbLwwbbb.', '.bbdppdbb.', '.dddbbddd.'],
+    palette: { w: '#dcece7', b: '#497a93', L: '#bcebd4', d: '#365b70', p: '#6498ab' },
+  },
+  {
+    id: 'handheld-crew-jersey',
+    name: 'Handheld Crew Jersey',
+    rarity: 'uncommon',
+    kind: 'shirt',
+    dropWeight: 0.8,
+    description: 'Sky-blue sleeves and a reader badge. For the elf who always takes the long aisle.',
+    sprite: ['.bbb..bbb.', 'wwbbbbbbww', '.bbwwLbbb.', '.bbbbbbbb.', '.dddddddd.'],
+    palette: { b: '#3687bc', w: '#d9f0f5', L: '#72d6a6', d: '#245b87' },
+  },
+  {
+    id: 'antenna-technician-parka',
+    name: 'Antenna Technician Parka',
+    rarity: 'rare',
+    kind: 'shirt',
+    dropWeight: 0.7,
+    description: 'An emerald winter shell with copper snaps. The roof antenna will not fix itself.',
+    sprite: ['.fff..fff.', 'ggggzzgggg', '.gpgzLgpg.', '.gggzYggg.', '.dddzYddd.'],
+    palette: { f: '#e8e4cd', g: '#2a7560', z: '#1e4c41', L: '#b8f1d1', Y: '#dcad65', p: '#174c3e', d: '#245947' },
+    blink: { char: 'L', on: '#b8f1d1', off: '#4d9b78' },
+  },
+  {
+    id: 'qa-lab-coat',
+    name: 'QA Lab Coat',
+    rarity: 'rare',
+    kind: 'shirt',
+    dropWeight: 0.7,
+    description: 'Warm ivory canvas, blue lapels and a test-tag pocket. Every read gets a second look.',
+    sprite: ['.www..www.', 'wwwwbbwwww', '.wpwbLwpw.', '.wwwbYwww.', '.sssbYsss.'],
+    palette: { w: '#f5eddb', b: '#4a8c9d', p: '#c5d9d3', L: '#70be9c', Y: '#d5b46e', s: '#c4c9be' },
+  },
+  {
+    id: 'signal-winter-knit',
+    name: 'Signal Winter Knit',
+    rarity: 'rare',
+    kind: 'shirt',
+    dropWeight: 0.7,
+    description: 'A cranberry sweater stitched with little radio waves. Excellent reception by the fire.',
+    sprite: ['.www..www.', 'rrrrrrrrrr', '.rwrrwrrw.', '.rrwwrwwr.', '.ddwwwwdd.'],
+    palette: { r: '#ab4354', w: '#f3dfbb', d: '#7e3042' },
+  },
+  {
+    id: 'faraday-shielding-jacket',
+    name: 'Faraday Shielding Jacket',
+    rarity: 'epic',
+    kind: 'shirt',
+    dropWeight: 0.55,
+    description: 'Graphite weave and copper shielding seams. Your tags enjoy a little privacy.',
+    sprite: ['.ccc..ccc.', 'ggggccgggg', '.gpczzpcg.', '.gcgzzgcg.', '.dddccddd.'],
+    palette: { c: '#d3a176', g: '#44575e', p: '#9cb9ba', z: '#263d44', d: '#30444d' },
+  },
+  {
+    id: 'golden-inlay-coat',
+    name: 'Golden Inlay Coat',
+    rarity: 'legendary',
+    kind: 'shirt',
+    dropWeight: 0.35,
+    description: 'An embroidered golden antenna on evergreen velvet. Reserved for truly remarkable reads.',
+    sprite: ['.fff..fff.', 'ggggyYgggg', '.gywyYwyg.', '.ggwyYwgg.', '.dddYYddd.'],
+    palette: { f: '#fff1ce', g: '#1f6657', y: '#dbac48', Y: '#ffe6a3', w: '#c2dfb1', d: '#194d43' },
+  },
+  {
+    id: 'tag-runner-beanie',
+    name: 'Tag Runner Beanie',
+    rarity: 'common',
+    kind: 'hat',
+    dropWeight: 0.85,
+    description: 'A ribbed dockside beanie with one tiny inlay patch. Every head stays warm.',
+    sprite: ['....ww....', '...bbbb...', '..bbBbbb..', '.bbbBbbbb.', '.ddwwdddd.'],
+    palette: { w: '#f3e9d0', b: '#3b8190', B: '#66a5af', d: '#2c5b6d' },
+    hatFit: 'cap',
+    hatSit: 1,
+  },
+  {
+    id: 'epc-winter-earmuffs',
+    name: 'EPC Winter Earmuffs',
+    rarity: 'uncommon',
+    kind: 'hat',
+    dropWeight: 0.75,
+    description: 'Fleece-lined antenna loops. Keeps the ears cosy and the EPC chatter outside.',
+    sprite: ['..cccccccc..', '.cc......cc.', 'ww........ww', 'wB........Bw', 'ww........ww'],
+    palette: { c: '#496276', w: '#f0e8d6', B: '#59a1ad' },
+    // Twelve columns put the cups outside the ten-column face, never on an eye.
+    hatFit: 'earwear',
+    hatSit: 3,
+  },
+  {
+    id: 'antenna-crew-headset',
+    name: 'Antenna Crew Headset',
+    rarity: 'epic',
+    kind: 'hat',
+    dropWeight: 0.55,
+    description: 'Copper antenna, soft ear cups and a patient green status light. Ready when you are.',
+    sprite: ['a...........', 'a.gggggggg..', 'Lg........g.', 'gg........gg', 'gc........cg', 'gg........gg'],
+    palette: { a: '#d5b17b', g: '#334e53', c: '#73aaa6', L: '#a9e9b8' },
+    blink: { char: 'L', on: '#a9e9b8', off: '#3a7c66' },
+    hatFit: 'earwear',
+    hatSit: 3,
+  },
+
   // ── Super rare ──
   {
     id: 'hail-king-julien-shirt',
@@ -896,17 +1059,13 @@ export const ITEMS: readonly ItemDef[] = [
     dropWeight: 0.2,
     description: 'A big gold J on the chest. Hail to the king, baby.',
     sprite: [
-      '.pp.nn.pp.',
+      '.ppp..ppp.',
       'pppppppppp',
-      'pppjjjjppp',
-      '.pppppjpp.',
-      '.pppppjpp.',
+      '.ppjjjjpp.',
       '.ppjppjpp.',
-      '.pppjjjpp.',
-      '.pppppppp.',
-      '.dddddddd.',
+      '.dddjjddd.',
     ],
-    palette: { p: '#7e22ce', j: '#fbbf24', n: '#fde68a', d: '#581c87' },
+    palette: { p: '#7e22ce', j: '#fbbf24', d: '#581c87' },
   },
 ]
 
@@ -960,7 +1119,8 @@ export function rollRarity(rand: () => number, luck = 0, min: Rarity = 'common')
  * common) inside its tier. Pass the send's tag count as the third argument.
  */
 export function rollItem(rand: () => number, rarity: Rarity, tagCount = 0): ItemDef {
-  const pool = ITEMS.filter((item) => item.rarity === rarity && (item.minTags ?? 0) <= tagCount)
+  const pool = ITEMS.filter((item) => item.rarity === rarity && (item.minTags ?? 0) <= tagCount && (item.dropWeight ?? 1) > 0)
+  if (!pool.length) return ITEMS.find((item) => item.rarity === rarity && (item.dropWeight ?? 1) > 0) ?? ITEMS[0]
   const total = pool.reduce((sum, item) => sum + (item.dropWeight ?? 1), 0)
   let pick = rand() * total
   for (const item of pool) {

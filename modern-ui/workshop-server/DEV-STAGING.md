@@ -6,6 +6,7 @@ Staging is a **separate** guest so you can drop live events, wipe accounts, and 
 | | Production | Staging |
 |---|---|---|
 | CT | 250 | **251** |
+| Size | 4 CPU / 4 GB / 20 GB | **2 CPU / 2 GB / 16 GB** |
 | Hostname | `zeus-workshop` | `zeus-workshop-dev` |
 | LAN IP | `192.168.10.250` | **`192.168.10.251`** |
 | API (LAN) | private | `http://192.168.10.251:8787` |
@@ -109,7 +110,7 @@ From the Proxmox host:
 ```sh
 bash staging/ops.sh event-up          # insert/refresh the sample announcement
 bash staging/ops.sh event-down        # end it immediately
-bash staging/ops.sh event-santa       # Secret Santa opt-in for 7 days
+bash staging/ops.sh event-santa       # turn Secret Santa pairing off
 bash staging/ops.sh users             # list accounts
 bash staging/ops.sh bags              # one row per bag item
 bash staging/ops.sh sql "SELECT id,title,enabled FROM live_events;"

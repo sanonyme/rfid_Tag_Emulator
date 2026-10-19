@@ -1,73 +1,41 @@
 import type { ItemDef } from '@/lib/workshop-items'
+import { BASE_OUTFITS, DEFAULT_APPEARANCE, HAIR_COLORS, SKIN_TONES, type ElfAppearance } from '@/lib/workshop-appearance'
 import type { TreeStage } from '@/lib/workshop-state'
 import { drawHexGlyph } from './workshop-pixel'
-
-const ELF_COLS = 10
+import { worldArtFor } from './workshop-world'
+import { drawVillageAtmosphere, paintVillageBackdrop } from './workshop-village'
+import { CHARACTER_CAP, CHARACTER_HAIR, CHARACTER_HEAD, CHARACTER_MINI_HEAD, CHARACTER_TORSO, characterFrame, characterMotion, miniatureCharacter, type CharacterPose } from './workshop-character-art'
+import { WORN_TOPS } from './workshop-worn-tops'
+import { getWingArt, type WingArt } from './workshop-wing-art'
 
 /** One outfit per hat index on the wire (`WORKSHOP_HAT_COUNT`). */
-export const ELF_OUTFITS = [
-  { hat: '#d42530', coat: '#2f7a4f' },
-  { hat: '#1f9d55', coat: '#b3262f' },
-  { hat: '#2f7de1', coat: '#2a4f7c' },
-  { hat: '#e0a526', coat: '#7a4b1c' },
-  { hat: '#8b5cf6', coat: '#4c2f8a' },
-  { hat: '#e0457b', coat: '#8a2a4d' },
-] as const
-
-// Sprites face right; drawSprite mirrors them for the other direction.
-const ELF_BODY = [
-  '..SSSSSS..',
-  '.SSSSSSSS.',
-  '.SSSSSESS.',
-  '.SSSSSSRS.',
-  '..SSSSSS..',
-  '.CCCCCCCC.',
-  'CCCCCCCCCC',
-  'SCBBBGBBCS',
-  '.CCCCCCCC.',
-]
-
-const ELF_LEGS = {
-  idle: ['..LL..LL..', '..KK..KK..'],
-  stepA: ['.LL....LL.', 'KK......KK'],
-  stepB: ['...LLLL...', '...KKKK...'],
-} as const
-
-const ELF_HAT = [
-  'W.........',
-  '.HH.......',
-  '..HHHH....',
-  '..HHHHHH..',
-  '.WWWWWWWW.',
-]
+export const ELF_OUTFITS = BASE_OUTFITS
 
 const PRESENT = [
-  '.R....R.',
-  '..R..R..',
-  'BBBRRBBB',
-  'BBBRRBBB',
+  '.RR..RR.',
+  '.RrRRrR.',
+  'HHHRRHHH',
+  'BBBRRBBD',
   'RRRRRRRR',
-  'BBBRRBBB',
-  'DDDRRDDD',
+  'BHBRRBBD',
+  'BBBRRBBD',
   'DDDRRDDD',
 ]
 
 const PRESENT_PALETTES = [
-  { B: '#d42530', D: '#a51b25', R: '#f4d27a' },
-  { B: '#1f9d55', D: '#16753f', R: '#f7f3ee' },
-  { B: '#2f7de1', D: '#2160b0', R: '#f4d27a' },
-  { B: '#e0a526', D: '#b9841a', R: '#d42530' },
+  { B: '#ce3e43', D: '#8f2635', H: '#ec7670', R: '#edcb77', r: '#fff1bd' },
+  { B: '#258364', D: '#175347', H: '#68b696', R: '#f0eee0', r: '#ffffff' },
+  { B: '#397fa3', D: '#28516e', H: '#7eb9d0', R: '#edcb77', r: '#fff1bd' },
+  { B: '#d8a344', D: '#9b6a34', H: '#f1cd80', R: '#b93642', r: '#f1948b' },
 ]
 
 /** Sprite rows from boots to hat tip; multiply by the pixel scale for canvas pixels. */
-export const ELF_ROWS = ELF_BODY.length + ELF_LEGS.idle.length + ELF_HAT.length - 1
+export const ELF_ROWS = 15
 export const PRESENT_ROWS = PRESENT.length
 
-const ORNAMENT_COLORS = ['#e63946', '#f4c542', '#4ea8ff', '#ffffff', '#ff7eb6']
-const LIGHT_COLORS = ['#ff5a5f', '#ffd166', '#5ad1ff', '#9dff8a']
 const FONT = '600 10px ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif'
 
-export type ElfPose = keyof typeof ELF_LEGS
+export type ElfPose = CharacterPose
 
 export type ElfSpec = {
   /** Canvas pixels per sprite pixel. */
@@ -77,7 +45,11 @@ export type ElfSpec = {
   lift: number
   dir: 1 | -1
   outfit: number
+  /** Cosmetic identity shared by the real floor and character portrait. */
+  appearance?: ElfAppearance
   pose: ElfPose
+  /** Full stride phase from distance travelled, not time or network packet count. */
+  walkPhase?: number
   bigHat: boolean
   /** Equipped hat item, replacing the outfit's stocking cap. */
   hatItem: ItemDef | null
@@ -227,17 +199,6 @@ function lastOpaqueRow(rows: readonly string[]): number {
   return rows.length - 1
 }
 
-/**
- * Canvas y of the hat sprite's bottom so its brim (last opaque row) overlaps
- * the elf forehead. `hatSit` is in elf-head rows: 2 = snug, 0 = on the crown, negative = float.
- */
-function hatSpriteBottom(item: ItemDef, bodyTop: number, px: number, hatPx: number): number {
-  const sit = item.hatSit ?? 2
-  const brim = lastOpaqueRow(item.sprite)
-  const trailing = item.sprite.length - 1 - brim
-  return bodyTop + sit * px + trailing * hatPx
-}
-
 /** Draws an item sprite with its bottom-centre at (cx, bottom). */
 export function drawItem(ctx: CanvasRenderingContext2D, item: ItemDef, cx: number, bottom: number, px: number, flip: boolean, t: number) {
   const cols = item.sprite[0].length
@@ -275,62 +236,150 @@ function drawBell(ctx: CanvasRenderingContext2D, cx: number, top: number, t: num
   ctx.restore()
 }
 
+const wornTopCache = new WeakMap<ItemDef, readonly string[]>()
+const farWingPalettes = new WeakMap<WingArt, Record<string, string>>()
+function wornTop(item: ItemDef): readonly string[] {
+  let rows = wornTopCache.get(item)
+  if (!rows) {
+    const art = WORN_TOPS[item.id] ?? Array.from({ length: 9 }, (_, y) => item.sprite[Math.min(item.sprite.length - 1, Math.floor(y * item.sprite.length / 9))])
+    rows = characterFrame(art, 6, 13)
+    wornTopCache.set(item, rows)
+  }
+  return rows
+}
+
 /** Draws the elf and returns the y just above its nameplate (or hat), where bubbles go. */
 export function drawElf(ctx: CanvasRenderingContext2D, e: ElfSpec, t: number, dark: boolean): number {
   const px = e.px
-  const outfit = ELF_OUTFITS[e.outfit % ELF_OUTFITS.length]
-  const palette: Record<string, string> = {
-    S: '#f2c9a0',
-    E: '#1d1d1f',
-    R: '#e8968a',
-    C: outfit.coat,
-    B: '#2a1a12',
-    G: '#f0cd72',
-    L: '#3a2a22',
-    K: '#1a1110',
-    H: outfit.hat,
-    W: '#f7f3ee',
+  const unit = px / 2
+  const mini = px < 2
+  const appearance = e.appearance ?? { ...DEFAULT_APPEARANCE, outfit: e.outfit }
+  const outfit = ELF_OUTFITS[appearance.outfit % ELF_OUTFITS.length] ?? ELF_OUTFITS[0]
+  const skin = SKIN_TONES[appearance.skin] ?? SKIN_TONES[DEFAULT_APPEARANCE.skin]
+  const hairColor = HAIR_COLORS[appearance.hairColor] ?? HAIR_COLORS[DEFAULT_APPEARANCE.hairColor]
+  const fit = e.hatItem?.hatFit ?? (e.hatItem ? ((e.hatItem.hatSit ?? 1) < 0 ? 'floating' : 'cap') : appearance.starterHat ? 'cap' : null)
+  const hairstyle = CHARACTER_HAIR[appearance.hairStyle] ?? CHARACTER_HAIR.swept
+  const hair = fit === 'cap' ? hairstyle.cap : hairstyle.full
+  const shade = (hex: string, factor = 0.66) => {
+    const n = Number.parseInt(hex.slice(1), 16)
+    return `rgb(${Math.round(((n >> 16) & 255) * factor)}, ${Math.round(((n >> 8) & 255) * factor)}, ${Math.round((n & 255) * factor)})`
   }
-  const left = Math.round(e.x - (ELF_COLS * px) / 2)
+  const highlight = (hex: string) => {
+    const n = Number.parseInt(hex.slice(1), 16)
+    return `rgb(${Math.round(((n >> 16) & 255) * 0.72 + 255 * 0.28)}, ${Math.round(((n >> 8) & 255) * 0.72 + 255 * 0.28)}, ${Math.round((n & 255) * 0.72 + 255 * 0.28)})`
+  }
+  const palette: Record<string, string> = {
+    S: skin.base, s: skin.shadow, o: shade(outfit.coat, 0.45),
+    C: outfit.coat, c: shade(outfit.coat), H: highlight(outfit.coat),
+    p: shade(outfit.coat, 0.8), W: '#e7e4cd', B: '#4b3930', G: '#d6b566',
+  }
+  const left = Math.round(e.x - 5 * px)
   const ride = e.ride ?? 0
-  const bodyTop = Math.round(e.groundY - (ELF_BODY.length + ELF_LEGS.idle.length) * px - e.lift - ride)
+  const motion = characterMotion(ride ? 'idle' : e.pose, e.walkPhase, !ride && e.lift > 0)
+  const legTop = Math.round(e.groundY - ELF_ROWS * px - e.lift - ride)
+  // Keep the entire upper assembly together; moving just the head stretches the
+  // neck, while moving the soles makes the character float. Minis skip the dip.
+  const rigTop = legTop + (mini ? 0 : motion.bodyDip * unit)
   const flip = e.dir === -1
+  const hairPalette = { H: hairColor.color, h: hairColor.shadow, A: hairColor.highlight, G: '#d6b566' }
+  const facePalette = { S: skin.base, s: skin.shadow, o: shade(skin.shadow), b: hairColor.shadow, W: '#fffaf1', P: '#111c28' }
+  const paint = (rows: readonly string[], colors: Record<string, string>, top = rigTop) =>
+    drawSprite(ctx, mini ? miniatureCharacter(rows) : rows, colors, left, top, mini ? px : unit, flip)
 
-  const shadowHalf = Math.max(px * 1.5, px * 4 - e.lift * 0.12)
-  ctx.fillStyle = dark ? 'rgba(0, 0, 0, 0.35)' : 'rgba(40, 70, 100, 0.2)'
+  const shadowHalf = Math.max(px, px * 2.7 - e.lift * 0.12)
+  ctx.fillStyle = dark ? 'rgba(3, 22, 32, 0.2)' : 'rgba(59, 92, 113, 0.1)'
   ctx.beginPath()
-  ctx.ellipse(e.x, e.groundY + 1, shadowHalf, px, 0, 0, Math.PI * 2)
+  ctx.ellipse(e.x, e.groundY + 1, shadowHalf + px, px, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = dark ? 'rgba(3, 15, 25, 0.33)' : 'rgba(41, 75, 96, 0.22)'
+  ctx.beginPath()
+  ctx.ellipse(e.x, e.groundY + 1, shadowHalf * 0.72, Math.max(0.6, px * 0.55), 0, 0, Math.PI * 2)
   ctx.fill()
 
+  if (px >= 2 && e.pose === 'idle' && e.lift === 0 && !ride) {
+    const breath = (t * 0.28 + e.x * 0.013 + e.outfit * 0.17) % 1
+    if (breath < 0.42) {
+      const drift = breath / 0.42
+      const bx = Math.round(e.x + e.dir * px * (3.2 + drift * 3))
+      const by = Math.round(rigTop + px * (5.7 - drift * 1.4))
+      ctx.save()
+      ctx.globalAlpha *= Math.sin(drift * Math.PI) * (dark ? 0.4 : 0.3)
+      ctx.fillStyle = dark ? '#e5f3f0' : '#a9c9d5'
+      ctx.fillRect(bx, by, px, unit)
+      ctx.fillRect(bx + e.dir * px, by - unit, px, unit)
+      ctx.restore()
+    }
+  }
+
+  let wingTop = Infinity
   if (e.wingsItem) {
     const wing = e.wingsItem
-    const spread = e.lift > 0 ? 1.05 + Math.sin(t * 13) * 0.12 : 0.8 + Math.sin(t * 4) * 0.12
-    const wingPx = px * spread
-    const center = e.x, top = bodyTop + 3 * px
-    drawSprite(ctx, wing.sprite, itemPalette(wing,t), center - wing.sprite[0].length * wingPx - px, top, wingPx, false)
-    drawSprite(ctx, wing.sprite, itemPalette(wing,t), center + px, top, wingPx, true)
+    const art = getWingArt(wing.id)
+    if (art) {
+      // Four beats make a complete flap. Articulated feathers and membranes
+      // pivot around one fixed shoulder, instead of inflating the whole sprite.
+      const beat = e.lift > 0 && !ride && !mini ? Math.floor(t * 10) % 4 : 1
+      const rows = beat === 0 ? art.raised : beat === 2 ? art.swept : art.rest
+      let farPalette = farWingPalettes.get(art)
+      if (!farPalette) {
+        farPalette = Object.fromEntries(Object.entries(art.palette).map(([key, color]) => [key, shade(color, 0.72)]))
+        farWingPalettes.set(art, farPalette)
+      }
+      const shoulderY = rigTop + 15 * unit
+      const farUnit = unit * 0.78
+      const farRoot = e.x + e.dir * unit
+      // Draw the smaller, darker far wing first; both roots disappear behind
+      // the shoulder blades. Hair, face, clothing and arms remain in front.
+      drawSprite(ctx, rows, farPalette, flip ? farRoot - 23 * farUnit : farRoot, shoulderY - 16 * farUnit, farUnit, !flip)
+      const nearRoot = e.x - e.dir * unit
+      wingTop = shoulderY - 16 * unit
+      drawSprite(ctx, rows, art.palette, flip ? nearRoot : nearRoot - 23 * unit, wingTop, unit, flip)
+    } else {
+      drawItem(ctx, wing, e.x - e.dir * px * 3, rigTop + px * 12, unit, flip, t)
+    }
   }
-  drawSprite(ctx, ELF_BODY, palette, left, bodyTop, px, flip)
-  // A mount covers the boots. Skip the walk cycle so the legs don't step through the vehicle.
-  if (!ride) drawSprite(ctx, ELF_LEGS[e.pose], palette, left, bodyTop + ELF_BODY.length * px, px, flip)
+
+  // Shirts have their own nine-row tailoring. The near sleeve borrows the main
+  // fabric and shading, while the hand and cuff remain separate moving layers.
+  let armPalette = palette
   if (e.shirtItem) {
-    drawItem(ctx, e.shirtItem, e.x, bodyTop + ELF_BODY.length * px, px, flip, t)
+    const shirt = e.shirtItem
+    const counts = new Map<string, number>()
+    for (const row of shirt.sprite) for (const ch of row) if (shirt.palette[ch]) counts.set(ch, (counts.get(ch) ?? 0) + 1)
+    const main = [...counts].sort((a, b) => b[1] - a[1])[0]?.[0]
+    const cloth = shirt.palette[main] ?? outfit.coat
+    armPalette = { ...palette, C: cloth, c: shade(cloth), H: highlight(cloth), o: shade(cloth, 0.45), W: shade(cloth, 0.85) }
   }
+  paint(hair.back, hairPalette)
+  paint(motion.back, armPalette)
+  if (!ride) paint(motion.legs, { L: '#52768b', l: '#344d60', H: '#7294a4', K: '#493c35', k: '#766751', o: '#253039' }, legTop)
+  paint(CHARACTER_TORSO[appearance.gender], armPalette)
+  if (e.shirtItem) paint(wornTop(e.shirtItem), itemPalette(e.shirtItem, t))
+  drawSprite(ctx, mini ? CHARACTER_MINI_HEAD : CHARACTER_HEAD, facePalette, left, rigTop, mini ? px : unit, flip)
+  paint(motion.front, armPalette)
+  paint(hair.front, hairPalette)
 
-  const hatPx = e.bigHat ? px + 1 : px
-  let hatTop: number
+  // All headwear uses the same fine grid as the head. The crown and brim sit
+  // above eye row eight; ear cups descend outside the face on their own anchor.
+  const hatCx = left + (flip ? 9 : 11) * unit
+  let hatTop = rigTop + (appearance.hairStyle === 'bald' ? 4 * unit : 0)
   if (e.hatItem) {
-    const sit = hatSpriteBottom(e.hatItem, bodyTop, px, hatPx)
-    hatTop = sit - e.hatItem.sprite.length * hatPx
-    drawItem(ctx, e.hatItem, e.x, sit, hatPx, flip, t)
-  } else {
-    const sit = bodyTop + 2 * px
-    const hatLeft = Math.round(e.x - (ELF_COLS * hatPx) / 2)
-    hatTop = sit - ELF_HAT.length * hatPx
-    drawSprite(ctx, ELF_HAT, palette, hatLeft, hatTop, hatPx, flip)
+    const item = e.hatItem
+    const brimRow = fit === 'earwear' ? 11 : fit === 'floating' ? 1 : 7
+    const trailing = item.sprite.length - 1 - lastOpaqueRow(item.sprite)
+    const bottom = rigTop + (brimRow + trailing) * unit
+    hatTop = bottom - item.sprite.length * unit
+    drawItem(ctx, item, hatCx, bottom, unit, flip, t)
+  } else if (appearance.starterHat) {
+    paint(CHARACTER_CAP, { H: outfit.hat, h: shade(outfit.hat), W: '#f7f3ee' })
+    hatTop = rigTop + 2 * unit
+    if (e.bigHat) {
+      ctx.fillStyle = '#d6b566'
+      ctx.fillRect(left + (flip ? 7 : 12) * unit, rigTop + 4 * unit, unit, unit)
+    }
   }
 
-  let top = hatTop - 2
+  let top = Math.min(hatTop, wingTop) - 2
   if (e.bell > 0) {
     drawBell(ctx, e.x, top - 13, t, e.bell)
     top -= 15
@@ -355,14 +404,18 @@ export function drawGlow(ctx: CanvasRenderingContext2D, cx: number, groundY: num
 
 /** Vertical loot beam for epic and legendary drops. */
 export function drawBeam(ctx: CanvasRenderingContext2D, cx: number, bottom: number, width: number, height: number, color: string, t: number) {
-  const pulse = 0.75 + 0.25 * Math.sin(t * 4)
-  const g = ctx.createLinearGradient(0, bottom, 0, bottom - height)
-  g.addColorStop(0, withAlpha(color, 0.42 * pulse))
+  const beamH = Math.min(height, 54)
+  const pulse = 0.8 + 0.2 * Math.sin(t * 3)
+  const g = ctx.createLinearGradient(0, bottom, 0, bottom - beamH)
+  g.addColorStop(0, withAlpha(color, 0.23 * pulse))
   g.addColorStop(1, withAlpha(color, 0))
   ctx.fillStyle = g
-  ctx.fillRect(Math.round(cx - width / 2), bottom - height, Math.round(width), height)
-  ctx.fillStyle = withAlpha('#ffffff', 0.3 * pulse)
-  ctx.fillRect(Math.round(cx - 1), bottom - height * 0.8, 2, height * 0.8)
+  ctx.fillRect(Math.round(cx - width / 2), bottom - beamH, Math.round(width), beamH)
+  for (let i = 0; i < 3; i++) {
+    const age = (t * .4 + i / 3) % 1
+    ctx.fillStyle = withAlpha(color, Math.sin(age * Math.PI) * .7)
+    ctx.fillRect(Math.round(cx + Math.sin(i * 3 + t) * width * .4), Math.round(bottom - age * beamH), 1, 2)
+  }
 }
 
 export function withAlpha(hex: string, alpha: number): string {
@@ -406,6 +459,13 @@ export function drawPresent(
   const left = Math.round(cx - size / 2)
   const top = Math.round(bottom - size)
   drawSprite(ctx, PRESENT, PRESENT_PALETTES[color % PRESENT_PALETTES.length], left, top, px, false)
+  // A tiny paper tag separates gift boxes from dropped wearable sprites at floor scale.
+  if (px >= 2) {
+    ctx.fillStyle = '#fff3d3'
+    ctx.fillRect(left + 5 * px, top + 3 * px, px, px * 1.5)
+    ctx.fillStyle = '#af8062'
+    ctx.fillRect(left + 5 * px, top + 3 * px, 1, 1)
+  }
   if (sparkle > 0) {
     ctx.save()
     ctx.globalAlpha = sparkle
@@ -420,20 +480,11 @@ export function drawPresent(
 
 type Slot = { v: number; u: number }
 
-/** Tiers in tree space: u runs 0 (tip) → 1 (base of the foliage), half is relative to the widest tier. */
-const TIERS = [
-  { top: 0, bottom: 0.4, half: 0.58 },
-  { top: 0.22, bottom: 0.7, half: 0.8 },
-  { top: 0.45, bottom: 1, half: 1 },
-]
+/** Two sprite rows per ledge: an irregular, stepped fir silhouette, 49 × 52 pixels. */
+const FIR_HALVES = [0, 1, 2, 3, 4, 6, 8, 7, 6, 8, 10, 12, 11, 10, 12, 14, 16, 17, 15, 14, 17, 19, 21, 23, 24, 22]
 
 function halfWidthAt(u: number): number {
-  let half = 0
-  for (const tier of TIERS) {
-    if (u < tier.top || u > tier.bottom) continue
-    half = Math.max(half, (tier.half * (u - tier.top)) / (tier.bottom - tier.top))
-  }
-  return half
+  return FIR_HALVES[Math.max(0, Math.min(FIR_HALVES.length - 1, Math.floor(u * FIR_HALVES.length)))] / 24
 }
 
 function seededSlots(seed: number, count: number, minU: number, spacing: number): Slot[] {
@@ -454,7 +505,73 @@ function seededSlots(seed: number, count: number, minU: number, spacing: number)
 }
 
 const ORNAMENT_SLOTS = seededSlots(7, 64, 0.16, 0.055)
-const LIGHT_SLOTS = seededSlots(4242, 22, 0.1, 0.07)
+
+/** Built once; drawSprite keeps only two tiny cached palette variants for the fir. */
+const FIR_ROWS = (() => {
+  const pixels: string[][] = Array.from({ length: 52 }, (_, y) => Array.from({ length: 49 }, (_, x) => {
+    const half = FIR_HALVES[Math.floor(y / 2)]
+    const distance = Math.abs(x - 24)
+    if (distance > half) return '.'
+    if (distance === half || y === 51) return 'D'
+    const grain = (x * 31 + y * 13 + (x * y) % 17) % 37
+    return grain < 3 ? 'H' : x < 24 ? 'L' : 'G'
+  }))
+  const put = (x: number, y: number, color: string) => {
+    if (pixels[y]?.[x + 24] && pixels[y][x + 24] !== '.') pixels[y][x + 24] = color
+  }
+  // Each branch slopes into an individual jagged tip; staggered shadows avoid flat bands.
+  const branches = [[-1, 6, 5], [1, 8, 5], [-1, 12, 8], [1, 14, 9], [-1, 18, 11], [1, 21, 12], [-1, 25, 15], [1, 28, 16], [-1, 33, 18], [1, 35, 20], [-1, 42, 23], [1, 44, 23]]
+  for (const [side, y, reach] of branches) {
+    for (let x = 1; x <= reach; x++) {
+      const row = y + Math.floor(x * 0.25)
+      put(side * x, row, side < 0 ? 'H' : 'L')
+      put(side * x, row + 2, 'D')
+      if (x > reach * 0.5) put(side * x, row + 3, 'D')
+    }
+  }
+  // Snow collects in short shelves, with a blue underside and scattered loose crystals.
+  for (const [x, y, length] of [[-5, 10, 3], [3, 15, 3], [-10, 22, 5], [-3, 27, 3], [8, 30, 5], [-17, 39, 6], [5, 43, 4], [15, 47, 6]]) {
+    for (let i = 0; i < length; i++) {
+      put(x + i, y, 'W')
+      put(x + i, y + 1, 'I')
+    }
+    put(x + 1, y - 1, 'W')
+  }
+  return pixels.map(row => row.join(''))
+})()
+
+const FIR_PALETTE_DARK = { D: '#0a3432', G: '#155144', L: '#206c50', H: '#348264', W: '#edf3df', I: '#a4c5bd' }
+const FIR_PALETTE_LIGHT = { D: '#144638', G: '#236345', L: '#327c52', H: '#529063', W: '#fff9e8', I: '#b7d2c4' }
+const TREE_BAUBLES = ['#d9584b', '#e9bd65', '#94c7ce', '#f5ead2']
+const TREE_STAR = [
+  '.....G.....', '....GYG....', '....GYG....', 'GGGGYWYGGGG', '.GYYWWWYYG.',
+  '..GYWWWYG..', '...GYYYG...', '..GYYYYYG..', '..GYYGYYG..', '.GYYG.GYYG.', '.GGG...GGG.',
+]
+
+function drawTreeRibbon(ctx: CanvasRenderingContext2D, cx: number, top: number, fh: number, maxHalf: number, stage: TreeStage, t: number) {
+  const swags = [{ u: 0.22, half: 0.25 }, { u: 0.43, half: 0.42 }, { u: 0.67, half: 0.63 }, { u: 0.84, half: 0.84 }]
+  for (let row = 0; row < swags.length; row++) {
+    const swag = swags[row]
+    const span = maxHalf * swag.half
+    const samples = Math.ceil(span * 2)
+    for (let i = 0; i <= samples; i++) {
+      const p = i / samples
+      const x = Math.round(cx + (p * 2 - 1) * span)
+      const y = Math.round(top + fh * (swag.u + p * 0.035 + Math.sin(p * Math.PI) * 0.045))
+      ctx.fillStyle = '#8d773f'
+      ctx.fillRect(x, y, 1, 1)
+      if (stage < 2 || i % 6 !== row % 3) continue
+      const flicker = 0.78 + 0.22 * Math.sin(t * 2.3 + i * 1.7 + row)
+      ctx.globalAlpha = flicker * 0.18
+      ctx.fillStyle = '#f6cb76'
+      ctx.fillRect(x - 2, y - 1, 5, 5)
+      ctx.globalAlpha = flicker
+      ctx.fillStyle = i % 3 ? '#ffe5a0' : '#eab56b'
+      ctx.fillRect(x, y + 1, 1, 2)
+    }
+  }
+  ctx.globalAlpha = 1
+}
 
 export type TreeSpec = {
   cx: number
@@ -468,84 +585,111 @@ export type TreeSpec = {
 
 export function drawTree(ctx: CanvasRenderingContext2D, tree: TreeSpec, t: number, dark: boolean) {
   const { cx, groundY, height, stage } = tree
-  const trunkH = Math.max(3, Math.round(height * 0.11))
-  const trunkW = Math.max(4, Math.round(height * 0.13))
+  // At 23px, a full set of 64 baubles obscures the silhouette. Use a tiny authored tree.
+  if (height < 42) {
+    const x = Math.round(cx)
+    const top = Math.round(groundY - height)
+    ctx.save()
+    ctx.fillStyle = '#6b4931'
+    ctx.fillRect(x - 1, groundY - 4, 3, 4)
+    const miniRows = [0, 1, 2, 3, 2, 4, 5, 4, 6, 7]
+    for (let i = 0; i < miniRows.length; i++) {
+      const half = miniRows[i]
+      const y = top + i * 2
+      ctx.fillStyle = dark ? '#184e3f' : '#286147'
+      ctx.fillRect(x - half, y, half * 2 + 1, 2)
+      ctx.fillStyle = dark ? '#397657' : '#43855d'
+      ctx.fillRect(x - half, y, half + 1, 1)
+      if (i === 3 || i === 6 || i === 9) {
+        ctx.fillStyle = '#d0e3d5'
+        ctx.fillRect(x - half + 1, y, 2, 1)
+      }
+    }
+    const count = Math.min(6, Math.ceil(tree.ornaments / 5))
+    for (let i = 0; i < count; i++) {
+      ctx.fillStyle = TREE_BAUBLES[i % TREE_BAUBLES.length]
+      ctx.fillRect(x + (i % 2 ? 3 : -3), top + 6 + Math.floor(i / 2) * 4, 1, 1)
+    }
+    if (stage >= 1) {
+      ctx.fillStyle = '#ffdf83'
+      ctx.fillRect(x - 2, top, 5, 1)
+      ctx.fillRect(x, top - 2, 1, 5)
+    }
+    if (stage >= 2) {
+      ctx.fillStyle = '#ffe4a0'
+      ctx.fillRect(x - 5, groundY - 8, 1, 1)
+      ctx.fillRect(x + 4, groundY - 6, 1, 1)
+    }
+    ctx.restore()
+    return
+  }
+  const trunkH = Math.max(3, Math.round(height * 0.12))
+  const trunkW = Math.max(3, Math.round(height * 0.075))
   const base = groundY - trunkH + 1
   const top = groundY - height
   const fh = base - top
-  const maxHalf = height * 0.42
+  const maxHalf = fh * 24 / 52
 
-  ctx.fillStyle = '#6b4226'
-  ctx.fillRect(Math.round(cx - trunkW / 2), base - 1, trunkW, trunkH)
-
-  for (const tier of TIERS) {
-    const tTop = top + fh * tier.top
-    const tBottom = top + fh * tier.bottom
-    const half = maxHalf * tier.half
-    ctx.fillStyle = dark ? '#1f7a4a' : '#2a8a57'
+  ctx.save()
+  if (tree.celebrate > 0) {
+    ctx.strokeStyle = withAlpha('#f7d98b', tree.celebrate * 0.7)
+    ctx.lineWidth = 1
     ctx.beginPath()
-    ctx.moveTo(cx, tTop)
-    ctx.lineTo(cx - half, tBottom)
-    ctx.lineTo(cx + half, tBottom)
-    ctx.closePath()
-    ctx.fill()
-    ctx.fillStyle = dark ? '#175f39' : '#1f6f45'
-    ctx.beginPath()
-    ctx.moveTo(cx, tTop)
-    ctx.lineTo(cx + half, tBottom)
-    ctx.lineTo(cx, tBottom)
-    ctx.closePath()
-    ctx.fill()
-    if (height >= 48) {
-      ctx.fillStyle = 'rgba(247, 250, 255, 0.92)'
-      const r = Math.max(1.5, height / 40)
-      for (let x = cx - half * 0.86; x <= cx + half * 0.86; x += r * 2.2) {
-        ctx.beginPath()
-        ctx.arc(x, tBottom - 0.5, r, Math.PI, 0)
-        ctx.fill()
-      }
+    ctx.ellipse(cx, groundY - 2, height * (0.45 + (1 - tree.celebrate) * 0.35), 4 + (1 - tree.celebrate) * 5, 0, Math.PI, Math.PI * 2)
+    ctx.stroke()
+    for (let i = 0; i < 8; i++) {
+      const a = t * 0.5 + i * Math.PI / 4
+      const sx = Math.round(cx + Math.cos(a) * height * 0.52)
+      const sy = Math.round(top + height * 0.45 + Math.sin(a) * height * 0.42)
+      ctx.fillStyle = withAlpha('#ffe9ac', tree.celebrate)
+      ctx.fillRect(sx - 2, sy, 5, 1)
+      ctx.fillRect(sx, sy - 2, 1, 5)
     }
   }
+  // A low timber planter anchors the tree in the town square.
+  ctx.fillStyle = dark ? '#173a36' : '#99b5a0'
+  ctx.fillRect(Math.round(cx - maxHalf * 0.93), groundY - 1, Math.round(maxHalf * 1.86), 2)
+  ctx.fillStyle = '#604630'
+  ctx.fillRect(Math.round(cx - trunkW / 2), base - 1, trunkW, trunkH)
+  ctx.fillStyle = '#99724a'
+  ctx.fillRect(Math.round(cx - trunkW / 2), base, 2, trunkH - 1)
+  ctx.fillStyle = dark ? '#6b4234' : '#89543d'
+  ctx.fillRect(Math.round(cx - height * 0.17), groundY - 5, Math.round(height * 0.34), 5)
+  ctx.fillStyle = '#c19a62'
+  ctx.fillRect(Math.round(cx - height * 0.18), groundY - 6, Math.round(height * 0.36), 2)
+  for (let i = -1; i <= 1; i++) {
+    ctx.fillStyle = '#d3b37d'
+    ctx.fillRect(Math.round(cx + i * height * 0.11), groundY - 3, 1, 1)
+  }
+  const pixel = fh / FIR_ROWS.length
+  drawSprite(ctx, FIR_ROWS, dark ? FIR_PALETTE_DARK : FIR_PALETTE_LIGHT, Math.round(cx - 24.5 * pixel), Math.round(top), pixel, false)
+  drawTreeRibbon(ctx, cx, top, fh, maxHalf, stage, t)
 
-  const ornamentR = Math.max(1.3, height / 40)
+  const ornamentR = Math.max(1, Math.round(height / 70))
   const shown = Math.min(tree.ornaments, ORNAMENT_SLOTS.length)
   for (let i = 0; i < shown; i++) {
     const slot = ORNAMENT_SLOTS[i]
-    const x = cx + slot.v * maxHalf
-    const y = top + slot.u * fh
-    ctx.fillStyle = ORNAMENT_COLORS[i % ORNAMENT_COLORS.length]
-    ctx.beginPath()
-    ctx.arc(x, y, ornamentR, 0, Math.PI * 2)
-    ctx.fill()
-    if (ornamentR >= 1.8) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.75)'
-      ctx.fillRect(x - ornamentR * 0.5, y - ornamentR * 0.5, 1, 1)
+    const x = Math.round(cx + slot.v * maxHalf)
+    const y = Math.round(top + slot.u * fh)
+    ctx.fillStyle = '#bc984f'
+    ctx.fillRect(x, y - ornamentR - 1, 1, 1)
+    ctx.fillStyle = '#0b3931'
+    ctx.fillRect(x - ornamentR, y - ornamentR, ornamentR * 2 + 2, ornamentR * 2 + 2)
+    ctx.fillStyle = TREE_BAUBLES[i % TREE_BAUBLES.length]
+    ctx.fillRect(x - ornamentR, y - ornamentR, ornamentR * 2 + 1, ornamentR * 2)
+    ctx.fillRect(x, y + ornamentR, 1, 1)
+    ctx.fillStyle = '#fff1cd'
+    ctx.fillRect(x - ornamentR, y - ornamentR, 1, 1)
+    if ((i + Math.floor(t * 0.8)) % 23 === 0) {
+      ctx.globalAlpha = 0.5 + Math.sin(t * 2.8 + i) * 0.35
+      ctx.fillRect(x - 2, y - 1, 5, 1)
+      ctx.fillRect(x, y - 3, 1, 5)
+      ctx.globalAlpha = 1
     }
   }
 
-  if (stage >= 2) {
-    const lightR = Math.max(1.1, height / 55)
-    for (let i = 0; i < LIGHT_SLOTS.length; i++) {
-      const slot = LIGHT_SLOTS[i]
-      const x = cx + slot.v * maxHalf
-      const y = top + slot.u * fh
-      const color = LIGHT_COLORS[(i + Math.floor(t * 2.5)) % LIGHT_COLORS.length]
-      const glow = 0.55 + 0.45 * Math.sin(t * 5 + i * 1.7)
-      ctx.globalAlpha = 0.28 * glow
-      ctx.fillStyle = color
-      ctx.beginPath()
-      ctx.arc(x, y, lightR * 3, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.globalAlpha = 0.65 + 0.35 * glow
-      ctx.beginPath()
-      ctx.arc(x, y, lightR, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.globalAlpha = 1
-  }
-
-  const starR = Math.max(3.5, height * 0.09)
-  const starY = top - starR * 0.15
+  const starR = Math.max(4, height * 0.068)
+  const starY = top - starR * 0.4
   if (stage >= 1) {
     const pulse = 1 + 0.08 * Math.sin(t * 3) + tree.celebrate * 0.5
     const glowR = starR * 2.6 * pulse
@@ -556,18 +700,34 @@ export function drawTree(ctx: CanvasRenderingContext2D, tree: TreeSpec, t: numbe
     ctx.beginPath()
     ctx.arc(cx, starY, glowR, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = '#f5c542'
-    starPath(ctx, cx, starY, starR * pulse)
-    ctx.fill()
+    const starPixel = starR * 2 / TREE_STAR.length
+    drawSprite(ctx, TREE_STAR, { G: '#d39a49', Y: '#f4ca70', W: '#fff2bd' }, Math.round(cx - starR), Math.round(starY - starR), starPixel, false)
+    // Sparse orbiting ice glints make the unlocked topper visible across a busy floor.
+    for (let i = 0; i < 3; i++) {
+      const a = t * 0.32 + i * Math.PI * 2 / 3
+      const x = Math.round(cx + Math.cos(a) * starR * (2.1 + i * 0.15))
+      const y = Math.round(starY + Math.sin(a) * starR * 1.5)
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 2.1 + i * 2)
+      ctx.fillStyle = '#fff0bb'
+      ctx.fillRect(x - 1, y, 3, 1)
+      ctx.fillRect(x, y - 1, 1, 3)
+    }
+    ctx.globalAlpha = 1
   } else {
     ctx.strokeStyle = dark ? 'rgba(245, 197, 66, 0.4)' : 'rgba(180, 130, 20, 0.45)'
     ctx.lineWidth = 1
     starPath(ctx, cx, starY, starR)
     ctx.stroke()
   }
+  ctx.restore()
 }
 
 export function drawTrain(ctx: CanvasRenderingContext2D, cx: number, groundY: number, span: number, t: number) {
+  ctx.strokeStyle = 'rgba(75, 103, 114, 0.6)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.ellipse(cx, groundY + 1, span * 0.54, 3, 0, 0, Math.PI * 2)
+  ctx.stroke()
   const traverse = span / 26
   const phase = (t / traverse) % 2
   const dir = phase < 1 ? 1 : -1
@@ -614,52 +774,44 @@ export function drawTrain(ctx: CanvasRenderingContext2D, cx: number, groundY: nu
   ctx.globalAlpha = 1
 }
 
-export function drawGround(ctx: CanvasRenderingContext2D, width: number, height: number, groundY: number, dark: boolean) {
-  const traceTop = () => {
-    ctx.moveTo(0, groundY + 1)
-    for (let x = 0; x < width; x += 18) {
-      const bump = (x / 18) % 3 === 0 ? 2.5 : 1.2
-      ctx.quadraticCurveTo(x + 9, groundY - bump, x + 18, groundY + 1)
-    }
+export function drawGround(ctx: CanvasRenderingContext2D, width: number, height: number, groundY: number, dark: boolean, room = 'anexya-general', t = 0) {
+  if (height < 50) {
+    ctx.fillStyle = dark ? '#d2e5ec' : '#eff8fc'
+    ctx.fillRect(0, groundY, width, height - groundY)
+    ctx.fillStyle = dark ? '#7eacbd' : '#b2d1df'
+    ctx.fillRect(0, height - 1, width, 1)
+    return
   }
-  const bank = ctx.createLinearGradient(0, groundY - 4, 0, height)
-  if (dark) {
-    bank.addColorStop(0, 'rgba(232, 242, 252, 0.96)')
-    bank.addColorStop(0.55, 'rgba(196, 214, 232, 0.95)')
-    bank.addColorStop(1, 'rgba(148, 174, 198, 0.98)')
-  } else {
-    bank.addColorStop(0, '#ffffff')
-    bank.addColorStop(0.55, '#eef6fc')
-    bank.addColorStop(1, '#d7e7f4')
+  ctx.save()
+  // The raised street has a powder cap and a faceted ice edge, within the same ground line.
+  ctx.fillStyle = dark ? '#a6c5c3' : '#c4dcd5'
+  ctx.fillRect(0, groundY - 1, width, height - groundY + 1)
+  ctx.fillStyle = dark ? '#dce9dc' : '#f3f7e9'
+  ctx.fillRect(0, groundY - 1, width, 3)
+  for (let x = 0; x < width; x += 31) {
+    ctx.fillRect(x + 5, groundY - 2, 16, 1)
+    ctx.fillStyle = dark ? '#779d9f' : '#a0c0bd'
+    ctx.fillRect(x + 26, groundY + 3, 1, 3)
+    ctx.fillStyle = dark ? '#dce9dc' : '#f3f7e9'
   }
-  ctx.fillStyle = bank
-  ctx.beginPath()
-  traceTop()
-  ctx.lineTo(width, height)
-  ctx.lineTo(0, height)
-  ctx.closePath()
-  ctx.fill()
-
-  ctx.strokeStyle = dark ? 'rgba(255, 255, 255, 0.75)' : 'rgba(140, 170, 198, 0.55)'
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  traceTop()
-  ctx.stroke()
-
-  // Soft sparkle on the snow bank
-  ctx.fillStyle = dark ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.85)'
+  ctx.fillStyle = dark ? '#5d8b91' : '#8db2b3'
+  ctx.fillRect(0, height - 1, width, 1)
+  ctx.fillStyle = dark ? 'rgba(75, 126, 137, .4)' : 'rgba(103, 152, 155, .3)'
+  for (let x = 19; x < width - 110; x += 43) {
+    ctx.fillRect(x, groundY + 2, 3, 1); ctx.fillRect(x + 8, groundY + 4, 3, 1)
+  }
+  const art = worldArtFor(room)
+  ctx.fillStyle = withAlpha(art.accent, dark ? .13 : .07)
+  ctx.fillRect(Math.round(width * (art.key === 'home' ? .44 : .48) - 27), groundY + 2, 54, 2)
+  ctx.fillStyle = dark ? '#f2f7e5' : '#ffffff'
   for (let i = 0; i < 18; i++) {
     const x = ((i * 97) % Math.max(8, width - 8)) + 4
-    const y = groundY + 4 + ((i * 13) % Math.max(4, height - groundY - 6))
-    ctx.fillRect(x, y, i % 5 === 0 ? 2 : 1, 1)
+    const y = groundY + 2 + i % 4
+    if (i % 3 !== Math.floor(t * 1.5) % 3) ctx.fillRect(x, y, i % 5 === 0 ? 2 : 1, 1)
   }
+  ctx.restore()
 }
 
-const SKY_STARS = Array.from({ length: 34 }, (_, i) => {
-  const a = Math.sin(i * 12.9898) * 43758.5453
-  const b = Math.sin(i * 78.233) * 12345.6789
-  return { x: a - Math.floor(a), y: b - Math.floor(b), phase: i * 0.9 }
-})
 
 const SKY_FLAKES = Array.from({ length: 48 }, (_, i) => {
   const a = Math.sin(i * 4.11 + 2.1) * 9973.1
@@ -673,145 +825,44 @@ const SKY_FLAKES = Array.from({ length: 48 }, (_, i) => {
   }
 })
 
-const HILL_TREES = Array.from({ length: 14 }, (_, i) => ({
-  x: 0.04 + (i / 13) * 0.78 + (i % 2 === 0 ? 0.01 : -0.01),
-  h: 10 + (i % 5) * 3,
-  w: 5 + (i % 3),
-}))
 
-/** Fills the floor canvas with a winter workshop sky so the world never feels blank. */
-export function drawSky(ctx: CanvasRenderingContext2D, width: number, groundY: number, t: number, dark: boolean) {
-  const sky = ctx.createLinearGradient(0, 0, 0, groundY)
-  if (dark) {
-    sky.addColorStop(0, '#050d18')
-    sky.addColorStop(0.4, '#0a1f35')
-    sky.addColorStop(0.78, '#12324f')
-    sky.addColorStop(1, '#1a4660')
-  } else {
-    sky.addColorStop(0, '#7eb6e8')
-    sky.addColorStop(0.35, '#b7d8f5')
-    sky.addColorStop(0.72, '#e4f1fb')
-    sky.addColorStop(1, '#f7fbfe')
-  }
-  ctx.fillStyle = sky
-  ctx.fillRect(0, 0, width, groundY)
+const worldBackdropCache = new Map<string, HTMLCanvasElement>()
+const WORLD_CACHE_LIMIT = 10
 
-  if (dark) {
-    // Soft aurora ribbons
-    for (let band = 0; band < 3; band++) {
-      const y0 = 18 + band * 16
-      const g = ctx.createLinearGradient(0, y0, width, y0 + 28)
-      g.addColorStop(0, 'rgba(34, 197, 94, 0)')
-      g.addColorStop(0.35, `rgba(${band === 1 ? '56, 189, 248' : '52, 211, 153'}, ${0.08 + band * 0.03})`)
-      g.addColorStop(0.7, `rgba(${band === 2 ? '167, 139, 250' : '74, 222, 128'}, ${0.06 + band * 0.02})`)
-      g.addColorStop(1, 'rgba(34, 197, 94, 0)')
-      ctx.fillStyle = g
-      ctx.beginPath()
-      ctx.moveTo(0, y0 + 10)
-      for (let x = 0; x <= width; x += 24) {
-        const wave = Math.sin(t * 0.4 + x * 0.02 + band) * 7 + Math.sin(t * 0.7 + x * 0.05) * 3
-        ctx.lineTo(x, y0 + wave)
-      }
-      ctx.lineTo(width, y0 + 34)
-      ctx.lineTo(0, y0 + 34)
-      ctx.closePath()
-      ctx.fill()
-    }
-    // Moon
-    const mx = width * 0.82
-    const my = groundY * 0.22
-    const moon = ctx.createRadialGradient(mx, my, 2, mx, my, 18)
-    moon.addColorStop(0, 'rgba(248, 250, 252, 0.95)')
-    moon.addColorStop(0.45, 'rgba(226, 232, 240, 0.55)')
-    moon.addColorStop(1, 'rgba(226, 232, 240, 0)')
-    ctx.fillStyle = moon
-    ctx.beginPath()
-    ctx.arc(mx, my, 18, 0, Math.PI * 2)
-    ctx.fill()
-    for (const s of SKY_STARS) {
-      const y = 4 + s.y * (groundY * 0.62)
-      ctx.globalAlpha = 0.28 + 0.4 * (0.5 + 0.5 * Math.sin(t * 1.5 + s.phase))
-      ctx.fillStyle = '#e9f2ff'
-      ctx.fillRect(Math.round(s.x * width), Math.round(y), s.phase % 3 === 0 ? 2 : 1, 1)
-    }
-    ctx.globalAlpha = 1
-  } else {
-    // Soft winter sun
-    const sx = width * 0.78
-    const sy = groundY * 0.28
-    const sun = ctx.createRadialGradient(sx, sy, 2, sx, sy, 36)
-    sun.addColorStop(0, 'rgba(255, 248, 220, 0.95)')
-    sun.addColorStop(0.35, 'rgba(255, 214, 153, 0.45)')
-    sun.addColorStop(1, 'rgba(255, 214, 153, 0)')
-    ctx.fillStyle = sun
-    ctx.beginPath()
-    ctx.arc(sx, sy, 36, 0, Math.PI * 2)
-    ctx.fill()
-    // Cloud puffs
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
-    for (let i = 0; i < 5; i++) {
-      const cx = ((t * 8 + i * 140) % (width + 120)) - 40
-      const cy = 18 + (i % 3) * 14
-      ctx.beginPath()
-      ctx.ellipse(cx, cy, 28, 9, 0, 0, Math.PI * 2)
-      ctx.ellipse(cx + 16, cy + 2, 18, 7, 0, 0, Math.PI * 2)
-      ctx.ellipse(cx - 14, cy + 3, 16, 6, 0, 0, Math.PI * 2)
-      ctx.fill()
+export function drawSky(ctx: CanvasRenderingContext2D, width: number, groundY: number, t: number, dark: boolean, room = 'anexya-general') {
+  const art = worldArtFor(room)
+  const mini = groundY < 50
+  const key = `${art.key}:${dark}:${Math.ceil(width)}:${Math.ceil(groundY)}`
+  let backdrop = worldBackdropCache.get(key)
+  if (!backdrop && typeof document !== 'undefined') {
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.ceil(width))
+    canvas.height = Math.max(1, Math.ceil(groundY) + 1)
+    const target = canvas.getContext('2d')
+    if (target) {
+      paintVillageBackdrop(target, width, groundY, dark, art)
+      worldBackdropCache.set(key, canvas)
+      if (worldBackdropCache.size > WORLD_CACHE_LIMIT) worldBackdropCache.delete(worldBackdropCache.keys().next().value as string)
+      backdrop = canvas
     }
   }
-
-  // Distant snow hills
-  ctx.fillStyle = dark ? 'rgba(120, 150, 175, 0.35)' : 'rgba(210, 228, 242, 0.85)'
-  ctx.beginPath()
-  ctx.moveTo(0, groundY)
-  for (let x = 0; x <= width; x += 20) {
-    const h = 16 + Math.sin(x * 0.02) * 8 + Math.sin(x * 0.05 + 1) * 5
-    ctx.lineTo(x, groundY - h)
-  }
-  ctx.lineTo(width, groundY)
-  ctx.closePath()
-  ctx.fill()
-  ctx.fillStyle = dark ? 'rgba(160, 185, 205, 0.4)' : 'rgba(232, 243, 250, 0.95)'
-  ctx.beginPath()
-  ctx.moveTo(0, groundY)
-  for (let x = 0; x <= width; x += 16) {
-    const h = 8 + Math.sin(x * 0.03 + 2) * 5
-    ctx.lineTo(x, groundY - h)
-  }
-  ctx.lineTo(width, groundY)
-  ctx.closePath()
-  ctx.fill()
-
-  // Tiny fir silhouettes on the ridge
-  for (const tree of HILL_TREES) {
-    const tx = tree.x * width
-    if (tx < 8 || tx > width - 70) continue
-    const base = groundY - 10 - Math.sin(tree.x * 20) * 4
-    ctx.fillStyle = dark ? 'rgba(30, 58, 48, 0.75)' : 'rgba(47, 99, 72, 0.55)'
-    ctx.beginPath()
-    ctx.moveTo(tx, base - tree.h)
-    ctx.lineTo(tx + tree.w, base)
-    ctx.lineTo(tx - tree.w, base)
-    ctx.closePath()
-    ctx.fill()
-    if (!dark) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.55)'
-      ctx.fillRect(Math.round(tx) - 1, Math.round(base - tree.h), 2, 2)
-    } else if (Math.floor(t * 2 + tree.x * 40) % 5 === 0) {
-      ctx.fillStyle = 'rgba(250, 204, 21, 0.7)'
-      ctx.fillRect(Math.round(tx), Math.round(base - tree.h * 0.45), 1, 1)
-    }
-  }
+  ctx.save()
+  ctx.imageSmoothingEnabled = false
+  if (backdrop) ctx.drawImage(backdrop, 0, 0)
+  else paintVillageBackdrop(ctx, width, groundY, dark, art)
+  if (!mini) drawVillageAtmosphere(ctx, width, groundY, t, dark, art)
 
   // Falling snow
-  for (const f of SKY_FLAKES) {
+  const flakes = mini ? 9 : SKY_FLAKES.length
+  for (let i = 0; i < flakes; i++) {
+    const f = SKY_FLAKES[i]
     const x = ((f.x * width + t * f.drift * 40) % width + width) % width
     const y = ((f.y * groundY + t * f.speed * 28) % groundY + groundY) % groundY
     ctx.globalAlpha = dark ? 0.35 + f.size * 0.1 : 0.55 + f.size * 0.15
     ctx.fillStyle = '#ffffff'
-    ctx.fillRect(Math.round(x), Math.round(y), f.size, f.size)
+    ctx.fillRect(Math.round(x), Math.round(y), mini ? 1 : f.size, mini ? 1 : f.size)
   }
-  ctx.globalAlpha = 1
+  ctx.restore()
 }
 
 export function drawParticles(ctx: CanvasRenderingContext2D, particles: readonly Particle[]) {

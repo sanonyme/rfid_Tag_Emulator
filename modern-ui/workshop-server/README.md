@@ -16,7 +16,7 @@ The visual redesign has been reverted: the original 164px floor, translucent com
 
 Every verified signup receives a permanent unique lowercase handle such as `snowelf_12`, displayed as `@snowelf_12`. The suffix comes from a database sequence and a unique index enforces uniqueness. Existing accounts are backfilled once with `elf_N` handles. Changing a display name never changes the handle. Find/copy your handle in the account window; it exposes no email address. To log out, open the Workshop account button and select **Log out**. The server revokes the session, the app restores its separate guest collection, and account data stays in Postgres.
 
-Open **Friends** to search by exact @handle, send a request, accept/decline incoming requests, cancel outgoing requests, remove friends, or block/unblock players. Friends have stable account ids, independent of room or desktop session. New account conversations require an accepted friendship. Send up to 1,000 characters; the last 50 messages per account pair are retained. Offline friends receive the conversation when they next connect. Opening a conversation marks incoming messages as read; the Friends badge counts unread messages and incoming requests. WebSocket `social` notices only notify the two affected accounts to refresh; message content is fetched through authenticated HTTP, with a 10-second polling fallback. Third accounts cannot fetch a conversation. Blocking denies messaging/history in both directions, including legacy account DM sockets, and removes the friendship. Unblocking does not restore friendship automatically.
+Open **Friends** to search by exact @handle, send a request, accept/decline incoming requests, cancel outgoing requests, remove friends, or block/unblock players. Friends have stable account ids, independent of room or desktop session. New account conversations require an accepted friendship. Send up to 1,000 characters; the last 50 messages per account pair are retained. Friend messages are end-to-end encrypted on the client (ECDH P-256 + AES-GCM): the server stores only public keys and ciphertext. Private keys stay in that PC’s local storage; signing in on a new device creates new keys and cannot read older sealed messages. Offline friends receive the conversation when they next connect. Opening a conversation marks incoming messages as read; the Friends badge counts unread messages and incoming requests. WebSocket `social` notices only notify the two affected accounts to refresh; message content is fetched through authenticated HTTP, with a 10-second polling fallback. Third accounts cannot fetch a conversation. Blocking denies messaging/history in both directions, including legacy account DM sockets, and removes the friendship. Unblocking does not restore friendship automatically.
 
 Home remains offline. Switch to General or a crew room to connect to Friends. The existing quick player DMs remain available while players share online presence; guest conversations remain ephemeral. Durable friends/messages require accounts. Database backups should include `friend_links`, `user_blocks`, and the handle sequence in addition to the existing tables.
 
@@ -90,21 +90,29 @@ Identity/title changes reach connected clients within five seconds. Changing a K
 
 ## Live operations
 
-Administrators can open **Workshop account → Admin tools** in Zeus. The **Players & bags** tab shows the selected account's real item stacks and can add or remove one, several, or an entire stack. The **Events** tab is the preferred event-management path: its wizard covers type, copy, schedule, audience, goal, opt-in/pairing, rewards, review, activation, editing, progress reset, and deletion. The SQL below remains useful for recovery and unattended provisioning, but is not required for ordinary event operations.
+Administrators can open **Workshop account → Admin tools** in Zeus. The **Players & bags** tab shows the selected account's real item stacks and can add or remove one, several, or an entire stack. The **Events** tab is the preferred event-management path: its wizard covers type, copy, schedule, audience, goal, opt-in, rewards, review, activation, editing, progress reset, and deletion. The SQL below remains useful for recovery and unattended provisioning, but is not required for ordinary event operations.
+
+### RFID mission board
+
+Signed-in players can open **Missions** from the Workshop toolbar. The board has three daily and three weekly objectives based only on real emulator work: individual RFID tags transmitted, successful Fixed send runs, and successful Handheld send runs. Daily periods reset at 00:00 UTC; weekly periods reset Monday at 00:00 UTC. Progress starts from the account's server-recorded baseline for each period, follows normal profile sync, and can be resumed on another device.
+
+Rewards use existing RFID-themed Workshop items and are claimed explicitly from the board. The server checks progress, records the period claim, and adds the item in one database transaction, so retries cannot grant duplicates. Guests can preview the board but must sign in before progress or rewards are stored. Backups should include `mission_progress` alongside profiles and event progress.
 
 `live_events` contains data, never JavaScript. Valid metrics map directly to existing profile stats: `sends`, `handheld`, `opened`, `trades`, `given`. Kinds are `challenge`, `opt-in`, `announcement`. `crews=NULL` means all; otherwise use a JSON array of crew ids. Rewards reference a current item id or an existing achievement title string; invalid definitions are ignored. New sprites still require a client release.
 
 ```sql
-INSERT INTO live_events(id,title,body,start_at,end_at,enabled,kind,metric,target,opt_in,pairing)
-VALUES ('secret-santa','Secret Santa','Give an item to your crew partner.',
-        now(),now()+interval '7 days',true,'opt-in','given',1,true,'same-crew');
+INSERT INTO live_events(id,title,body,start_at,end_at,enabled,kind,metric,target,opt_in)
+VALUES ('winter-gifts','Winter gifts','Give away three items.',
+        now(),now()+interval '7 days',true,'challenge','given',3,false);
 -- Optional reward using an existing item id:
-UPDATE live_events SET reward='{"item":"plain-tag"}'::jsonb WHERE id='secret-santa';
--- End immediately; no new joins, and the banner disappears on the next poll:
-UPDATE live_events SET enabled=false,end_at=now() WHERE id='secret-santa';
+UPDATE live_events SET reward='{"item":"plain-tag"}'::jsonb WHERE id='winter-gifts';
+-- End immediately; the banner disappears on the next poll:
+UPDATE live_events SET enabled=false,end_at=now() WHERE id='winter-gifts';
+-- Secret Santa pairing is parked. Turn any leftover row off:
+UPDATE live_events SET enabled=false,end_at=now(),pairing=NULL WHERE pairing='same-crew' OR id LIKE 'secret-santa%';
 ```
 
-Events poll on open and every 60 seconds. Windows are also checked locally, so an expired cached banner disappears during an outage. Challenges count increases from their first server observation; opt-in events count increases after joining. Progress uses the monotonically increasing existing gameplay stats synced by the client, rather than independent server simulation. Rewards are granted once within a database transaction and use server-owned titles. Guest progress has a per-device baseline and cannot earn cloud rewards. Secret Santa uses the existing opt-in runner with `pairing='same-crew'`: waiting signed-in participants are paired within their crew as they join; established pairs stay stable. Fewer than two waiting participants remain unmatched with an explicit status. An odd participant waits for the next join. The goal counts the existing `given` stat; v1 does not verify the recipient of a gift.
+Events poll on open and every 60 seconds. Windows are also checked locally, so an expired cached banner disappears during an outage. Challenges count increases from their first server observation; opt-in events count increases after joining. Progress uses the monotonically increasing existing gameplay stats synced by the client, rather than independent server simulation. Rewards are granted once within a database transaction and use server-owned titles. Guest progress has a per-device baseline and cannot earn cloud rewards. Same-crew Secret Santa pairing is off: joins do not assign a partner, and saving an event clears `pairing`.
 
 First login imports the device bag exactly once per account, unioned by UID with newer `at` winning. Later sync uses optimistic profile revisions; clients reconcile UID conflicts, while crew, King and granted titles always come from the database. Per-profile daily gifts are included in the account cache. No reader IP is sent or used for room membership.
 

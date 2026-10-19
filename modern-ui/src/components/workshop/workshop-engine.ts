@@ -4,6 +4,7 @@
  * pixels of the expanded panel, whether or not it is currently visible.
  */
 import type { WorkshopActivity } from '@/lib/workshop-activity'
+import { DEFAULT_APPEARANCE, isElfAppearance, parseElfAppearance, type ElfAppearance } from '@/lib/workshop-appearance'
 import {
   ITEM_BY_ID,
   RARITY_INFO,
@@ -37,6 +38,7 @@ import {
   WORKSHOP_MAX_TREE_ENTRIES,
   WORKSHOP_PRESENT_COLORS,
   sanitizeWorkshopChat,
+  sanitizeWorkshopLetter,
   type WorkshopMessage,
   type WorkshopPayload,
   type WorkshopScore,
@@ -90,6 +92,7 @@ import {
   type Particle,
 } from './workshop-draw'
 import { chatBubble, crispScale, drawHexText, drawPixelSprite, hexTextWidth, iconBubble, pixelBanner } from './workshop-pixel'
+import { CHARACTER_STRIDE_PX } from './workshop-character-art'
 import { playBell, playBlip, playChime, playFanfare, playLoot, playSplat, playThrow, playUnlock } from './workshop-sound'
 
 export const PANEL_H = 164
@@ -97,7 +100,10 @@ export const MINI_W = 112
 export const MINI_H = 30
 export const PEER_TIMEOUT_MS = 5000
 export const JOIN_QUIET_MS = 3000
-export const MAX_PEERS = 24
+/** Others besides yourself. The server refuses a 49th person, so nobody in the room is hidden. */
+export const MAX_PEERS = 47
+export const ROOM_CAP = 48
+const TRADE_HOLD_MS = 20_000
 
 const GROUND_INSET = 7
 const WALK_PX_PER_S = 125
@@ -107,9 +113,9 @@ const HEARTBEAT_MS = 900
 const MOVE_SEND_MS = 60
 const PRESENT_COOLDOWN_MS = 4000
 const PRESENT_TTL_MS = 10 * 60_000
-const MAX_PRESENTS = 12
-const MAX_PERSONAL = 4
-const MAX_FLOOR_ITEMS = 16
+const MAX_PRESENTS = 24
+const MAX_PERSONAL = 6
+const MAX_FLOOR_ITEMS = 32
 const BELL_MS = 1500
 const CHAT_GAP_MS = 900
 const CHAT_BURST = 5
@@ -152,6 +158,7 @@ type ElfBase = {
   id: string
   name: string
   hat: number
+  appearance: ElfAppearance
   x: number
   lift: number
   dir: 1 | -1
@@ -217,6 +224,7 @@ type FloorItem = {
   born: number
   claimAt: number
   phase: number
+  note?: string
 }
 
 type Snowball = { x: number; h: number; vx: number; vy: number; from: string; alive: boolean }
@@ -235,7 +243,7 @@ export type Layout = {
 
 export type GameEvent =
   | { kind: 'found'; item: string; rarity: number; by: string; self: boolean }
-  | { kind: 'gift'; item: string; from: string }
+  | { kind: 'gift'; item: string; from: string; note?: string }
   | { kind: 'achievement'; id: string }
   | { kind: 'trade'; tid: string; phase: TradePhase; partnerName: string; reason: TradeCloseReason | null }
   | { kind: 'chat'; name: string; self: boolean }
@@ -280,6 +288,8 @@ export type Game = {
   profile: WorkshopProfile
   profileDirty: boolean
   trade: TradeSession | null
+  /** Epoch ms until which a missing partner does not cancel the trade. */
+  tradeHeld: number | null
   events: GameEvent[]
   /** Bumped whenever something the React UI shows (bag, trade, roster extras) changes. */
   version: number
@@ -320,7 +330,7 @@ export function layoutFor(width: number, height: number): Layout {
 
 function poseFor(elf: ElfBase): ElfPose {
   if (!elf.moving) return 'idle'
-  return Math.floor(elf.walk / 7) % 2 === 0 ? 'stepA' : 'stepB'
+  return Math.floor(elf.walk / (CHARACTER_STRIDE_PX / 2)) % 2 === 0 ? 'stepA' : 'stepB'
 }
 
 function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, score: WorkshopScore): ElfBase {
@@ -328,6 +338,7 @@ function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, 
     id,
     name,
     hat,
+    appearance: { ...DEFAULT_APPEARANCE, outfit: hat },
     x,
     lift: 0,
     dir,
@@ -347,11 +358,6 @@ function elfBase(id: string, name: string, hat: number, x: number, dir: 1 | -1, 
 }
 
 export function createGame(room: string, name: string, hat: number, profile: WorkshopProfile): Game {
-  if (!profile.discovered.includes('leaf-wings')) {
-    addToBag(profile, 'leaf-wings', 'milestone', { force: true })
-    if (!profile.equipped.wings) equipItem(profile, 'wings', 'leaf-wings')
-    saveProfile(profile)
-  }
   const dayKey = workshopDayKey(room)
   const day = loadWorkshopDay(dayKey)
   const now = performance.now()
@@ -405,6 +411,7 @@ export function createGame(room: string, name: string, hat: number, profile: Wor
     profile,
     profileDirty: false,
     trade: null,
+    tradeHeld: null,
     events: [],
     version: 0,
   }
@@ -415,11 +422,23 @@ export function createGame(room: string, name: string, hat: number, profile: Wor
 /** Copies what other players see of our profile onto our elf and re-announces it. */
 export function syncSelf(game: Game) {
   const p = game.profile
+  game.self.appearance = parseElfAppearance(p.appearance)
+  game.self.hat = game.self.appearance.outfit
   game.self.equip = { ...p.equipped }
   game.self.title = p.title ?? ''
   game.self.prestige = prestige(p)
   game.lastFull = 0
   game.version += 1
+}
+
+/** Free base cosmetics are separate from owned, tradeable wardrobe equipment. */
+export function customizeElf(game: Game, appearance: ElfAppearance): boolean {
+  if (!isElfAppearance(appearance)) return false
+  game.profile.appearance = parseElfAppearance(appearance)
+  game.profile.appearanceAt = Date.now()
+  syncSelf(game)
+  markProfile(game, true)
+  return true
 }
 
 function markProfile(game: Game, immediate: boolean) {
@@ -609,13 +628,9 @@ function removePeer(game: Game, id: string, now: number) {
       game.settled.add(did)
     }
   }
-  if (game.trade?.partner === id) {
-    const next = partnerLeft(game.trade, now)
-    if (next !== game.trade) {
-      game.trade = next
-      if (next) game.events.push({ kind: 'trade', tid: next.tid, phase: next.phase, partnerName: next.partnerName, reason: next.reason })
-      game.version += 1
-    }
+  if (game.trade?.partner === id && (game.trade.phase === 'open' || game.trade.phase === 'outgoing' || game.trade.phase === 'incoming')) {
+    game.tradeHeld = now + TRADE_HOLD_MS
+    game.version += 1
   }
   game.version += 1
 }
@@ -697,6 +712,7 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
       }
       peer.name = msg.name
       peer.hat = msg.hat
+      peer.appearance = msg.av ? parseElfAppearance(msg.av) : { ...peer.appearance, outfit: msg.hat }
       peer.targetX = msg.x
       peer.targetLift = msg.y
       peer.dir = msg.dir
@@ -772,6 +788,7 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
         born: now,
         claimAt: 0,
         phase: Math.random() * 6,
+        ...(msg.note ? { note: msg.note } : {}),
       })
       return
     }
@@ -797,12 +814,12 @@ export function receive(game: Game, msg: WorkshopMessage, net: Net) {
       const x = item.x * game.width
       const def = ITEM_BY_ID.get(item.item)
       if (msg.to === game.self.id && def) {
-        addToBag(game.profile, def.id, 'floor', { by: item.ownerName, force: true })
+        addToBag(game.profile, def.id, 'floor', { by: item.ownerName, force: true, note: item.note })
         game.profile.stats.received += 1
-        float(game, `+ ${def.name}`, x, L.groundY - L.elfH - 14, RARITY_INFO[def.rarity].color)
+        float(game, item.note ? '+ Letter' : `+ ${def.name}`, x, L.groundY - L.elfH - 14, RARITY_INFO[def.rarity].color)
         burst(game, x, L.groundY - 8, 'gold')
         if (net.sound) playLoot(rarityIndex(def.rarity))
-        game.events.push({ kind: 'gift', item: def.id, from: item.ownerName })
+        game.events.push({ kind: 'gift', item: def.id, from: item.ownerName, ...(item.note ? { note: item.note } : {}) })
         syncSelf(game)
         markProfile(game, true)
         checkAchievements(game, net)
@@ -1066,6 +1083,15 @@ export function step(game: Game, dt: number, now: number, focused: boolean, net:
   }
 
   updateCosmetics(game, s, selfMoved, dt)
+  if (game.tradeHeld != null && game.trade && (game.peers.has(game.trade.partner) || now > game.tradeHeld)) {
+    if (!game.peers.has(game.trade.partner) && (game.trade.phase === 'open' || game.trade.phase === 'outgoing' || game.trade.phase === 'incoming')) {
+      const next = partnerLeft(game.trade, now)
+      game.trade = next
+      if (next) game.events.push({ kind: 'trade', tid: next.tid, phase: next.phase, partnerName: next.partnerName, reason: next.reason })
+    }
+    game.tradeHeld = null
+    game.version += 1
+  }
   for (const [id, p] of game.peers) {
     if (now - p.seen > PEER_TIMEOUT_MS) {
       removePeer(game, id, now)
@@ -1174,6 +1200,7 @@ export function netTick(game: Game, now: number, send: Net['send']) {
     payload.pf = s.prestige
     payload.sh = s.equip.shirt ?? ''
     payload.wg = s.equip.wings ?? ''
+    payload.av = { ...s.appearance }
   }
   send(payload)
 }
@@ -1190,7 +1217,9 @@ export function handleActivity(game: Game, activity: WorkshopActivity, net: Net,
   if (activity.kind === 'tags-sent') {
     s.score[0] += 1
     p.stats.sends += 1
+    p.stats.tags += Math.max(0,Math.floor(activity.count))
     if (activity.source === 'handheld') p.stats.handheld += 1
+    else if (activity.source === 'fixed') p.stats.fixed += 1
     let shared = 0
     for (const present of game.presents.values()) if (!present.origin) shared++
     if (now - game.lastDrop >= PRESENT_COOLDOWN_MS && shared < MAX_PRESENTS) {
@@ -1273,14 +1302,14 @@ export function lockedUids(game: Game): ReadonlySet<string> {
   return new Set(t && (t.phase === 'open' || t.phase === 'outgoing' || t.phase === 'incoming') ? t.mine : [])
 }
 
-export function dropFromBag(game: Game, uid: string, net: Net, now: number): boolean {
+export function dropFromBag(game: Game, uid: string, net: Net, now: number, atX?: number): boolean {
   if (lockedUids(game).has(uid)) return false
   const s = game.self
   const entry = takeFromBag(game.profile, uid)
   if (!entry) return false
   const did = randomWorkshopToken(10)
   game.profile.escrow.push({ did, entry, at: Date.now() })
-  const x = round4(clamp(s.x + s.dir * 0.035, 0.03, 0.9))
+  const x = round4(clamp(atX ?? s.x + s.dir * 0.035, 0.03, 0.9))
   game.floorItems.set(did, {
     did,
     item: entry.item,
@@ -1293,12 +1322,30 @@ export function dropFromBag(game: Game, uid: string, net: Net, now: number): boo
     born: now,
     claimAt: 0,
     phase: Math.random() * 6,
+    ...(entry.note ? { note: entry.note } : {}),
   })
-  net.send({ t: 'idrop', did, item: entry.item, x })
+  net.send({ t: 'idrop', did, item: entry.item, x, ...(entry.note ? { note: entry.note } : {}) })
   if (net.sound) playThrow()
   syncSelf(game)
   markProfile(game, true)
   return true
+}
+
+/** Write a letter into the bag (keep it, or drop/gift later). */
+export function writeLetter(game: Game, text: string): boolean {
+  const note = sanitizeWorkshopLetter(text)
+  if (!note) return false
+  if (!addToBag(game.profile, 'handwritten-letter', 'letter', { note, force: true })) return false
+  markProfile(game, true)
+  return true
+}
+
+/** Compose a letter and drop it near a peer (or yourself) as a floor gift. */
+export function giftLetter(game: Game, text: string, net: Net, now: number, atX?: number): boolean {
+  if (!writeLetter(game, text)) return false
+  const entry = [...game.profile.bag].reverse().find((e) => e.item === 'handwritten-letter' && e.note)
+  if (!entry) return false
+  return dropFromBag(game, entry.uid, net, now, atX)
 }
 
 export function useFromBag(game: Game, uid: string, net: Net, now: number): boolean {
@@ -1469,7 +1516,7 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
 
-  drawSky(ctx, width, L.groundY, t, dark)
+  drawSky(ctx, width, L.groundY, t, dark, game.room)
   drawTree(
     ctx,
     {
@@ -1483,7 +1530,7 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
     t,
     dark,
   )
-  drawGround(ctx, width, height, L.groundY, dark)
+  drawGround(ctx, width, height, L.groundY, dark, game.room, t)
   if (game.stage >= 3) drawTrain(ctx, L.treeCx, L.groundY, Math.max(70, L.treeH * 1.5), t)
 
   const signs: { x: number; top: number; text: string }[] = []
@@ -1539,7 +1586,9 @@ export function renderPanel(ctx: CanvasRenderingContext2D, game: Game, now: numb
         lift: e.lift,
         dir: e.dir,
         outfit: e.hat,
+        appearance: e.appearance,
         pose: poseFor(e),
+        walkPhase: (e.walk / CHARACTER_STRIDE_PX) % 1,
         bigHat: e.cloudKing === true,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
         shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,
@@ -1617,9 +1666,9 @@ export function renderMini(ctx: CanvasRenderingContext2D, game: Game, now: numbe
   const sx = (x: number) => 5 + x * (w - 10)
   const sy = groundY / Math.max(1, L.groundY)
 
-  drawSky(ctx, w, groundY, t, dark)
+  drawSky(ctx, w, groundY, t, dark, game.room)
   drawTree(ctx, { cx: w - 11, groundY, height: h - 7, ornaments: treeTotal(game.tree), stage: game.stage, celebrate: 0 }, t, dark)
-  drawGround(ctx, w, h, groundY, dark)
+  drawGround(ctx, w, h, groundY, dark, game.room, t)
 
   for (const item of game.floorItems.values()) {
     const def = ITEM_BY_ID.get(item.item)
@@ -1646,7 +1695,9 @@ export function renderMini(ctx: CanvasRenderingContext2D, game: Game, now: numbe
         lift: e.lift * sy * 0.5,
         dir: e.dir,
         outfit: e.hat,
+        appearance: e.appearance,
         pose: poseFor(e),
+        walkPhase: (e.walk / CHARACTER_STRIDE_PX) % 1,
         bigHat: e.cloudKing === true,
         hatItem: e.equip.hat ? ITEM_BY_ID.get(e.equip.hat) ?? null : null,
         shirtItem: e.equip.shirt ? ITEM_BY_ID.get(e.equip.shirt) ?? null : null,

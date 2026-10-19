@@ -23,6 +23,7 @@ UPDATE users SET handle='elf_' || nextval('workshop_handle_seq')::text WHERE han
 ALTER TABLE users ALTER COLUMN handle SET NOT NULL;
 ALTER TABLE users ALTER COLUMN handle SET DEFAULT ('elf_' || nextval('workshop_handle_seq')::text);
 CREATE UNIQUE INDEX IF NOT EXISTS users_handle_unique ON users(handle);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS e2e_public text;
 CREATE TABLE IF NOT EXISTS profiles (
   user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   data jsonb NOT NULL, titles jsonb NOT NULL DEFAULT '[]', merged_local boolean NOT NULL DEFAULT false,
@@ -58,6 +59,14 @@ CREATE TABLE IF NOT EXISTS event_progress (
   rewarded boolean NOT NULL DEFAULT false, baseline integer NOT NULL DEFAULT 0,
   recipient_id text REFERENCES users(id), PRIMARY KEY(event_id, user_id)
 );
+CREATE TABLE IF NOT EXISTS mission_progress (
+  user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  mission_id text NOT NULL, period_key text NOT NULL,
+  baseline integer NOT NULL CHECK (baseline >= 0),
+  claimed boolean NOT NULL DEFAULT false, claimed_at timestamptz,
+  PRIMARY KEY(user_id, mission_id, period_key)
+);
+CREATE INDEX IF NOT EXISTS mission_progress_period ON mission_progress(period_key);
 CREATE TABLE IF NOT EXISTS messages (
   id text PRIMARY KEY, pair text NOT NULL, from_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   to_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE, name text NOT NULL,
@@ -89,6 +98,18 @@ ALTER TABLE room_acl ENABLE ROW LEVEL SECURITY;
 ALTER TABLE knocks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE live_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE event_progress ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mission_progress ENABLE ROW LEVEL SECURITY;
+CREATE TABLE IF NOT EXISTS letters (
+  id text PRIMARY KEY,
+  from_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  from_name text NOT NULL,
+  body text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  read_at timestamptz
+);
+CREATE INDEX IF NOT EXISTS letters_inbox ON letters(to_id, created_at DESC);
+ALTER TABLE letters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE friend_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_blocks ENABLE ROW LEVEL SECURITY;

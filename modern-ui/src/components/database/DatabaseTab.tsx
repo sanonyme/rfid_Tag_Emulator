@@ -662,13 +662,18 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     let useDb: string | undefined
 
     if (q.kind === 'truncate') {
-      sqlText = `TRUNCATE TABLE ${quoteIdent(q.table)}`
+      // Postgres needs double-quoted idents; RESTART IDENTITY resets serial/identity columns.
+      sqlText = dbEngine === 'postgres'
+        ? `TRUNCATE TABLE ${quoteIdent(q.table, 'postgres')} RESTART IDENTITY`
+        : `TRUNCATE TABLE ${quoteIdent(q.table)}`
       useDb = q.db
     } else if (q.kind === 'dropTable') {
-      sqlText = `DROP TABLE ${quoteIdent(q.table)}`
+      sqlText = `DROP TABLE ${quoteIdent(q.table, dbEngine === 'postgres' ? 'postgres' : 'mysql')}`
       useDb = q.db
     } else {
-      sqlText = `DROP DATABASE ${quoteIdent(q.db)}`
+      sqlText = dbEngine === 'postgres'
+        ? `DROP SCHEMA ${quoteIdent(q.db, 'postgres')} CASCADE`
+        : `DROP DATABASE ${quoteIdent(q.db)}`
       useDb = undefined
     }
 
@@ -701,6 +706,7 @@ export function DatabaseTab({ host, connected, active = true }: DatabaseTabProps
     await refreshDatabases()
   }, [
     schemaConfirm,
+    dbEngine,
     executeMutationSql,
     selectedDb,
     selectedTable,

@@ -4,6 +4,7 @@ import {
   Backpack,
   Crown,
   Heart,
+  Mail,
   MessageCircle,
   Pencil,
   Pin,
@@ -11,21 +12,27 @@ import {
   Home,
   Smile,
   Snowflake,
+  Trash2,
   TreePine,
   Users,
   Volume2,
   VolumeX,
   X,
   Send,
+  Radio,
+  Shirt,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { subscribeWorkshopActivity } from '@/lib/workshop-activity'
-import { ITEM_BY_ID, RARITIES, RARITY_INFO, rarityAt } from '@/lib/workshop-items'
+import { ITEM_BY_ID, RARITY_INFO, rarityAt } from '@/lib/workshop-items'
 import { ACHIEVEMENT_BY_ID, WEARABLE_SLOTS, loadProfile, personalWorldRoom, returnEscrow, saveProfile } from '@/lib/workshop-profile'
 import { CloudApi, CloudConnection, SessionLostError, cacheAccount, clearLocalSession, isWorkshopStaging, parseSnapshot, restoreGuestSession, storedAccount, workshopEndpoint } from '@/lib/workshop-cloud'
 import { CREWS, ROOMS, canModerate, eventActive, mergeBag, type DirectoryPlayer, type Dm, type EventView, type Identity, type RoomId } from '@/lib/workshop-cloud-model'
+import type { FriendEntry } from '@/lib/workshop-social'
+import type { ElfAppearance } from '@/lib/workshop-appearance'
+import { WORKSHOP_LETTER_MAX } from '@/lib/workshop-protocol'
 import {
   WORKSHOP_CHAT_MAX,
   WORKSHOP_HAT_COUNT,
@@ -43,6 +50,7 @@ import {
   workshopDayKey,
 } from '@/lib/workshop-state'
 import type { TradeCloseReason } from '@/lib/workshop-trade'
+import type { MissionView } from '@/lib/workshop-missions'
 import { ELF_OUTFITS, EMOTES } from './workshop-draw'
 import {
   JOIN_QUIET_MS,
@@ -54,6 +62,7 @@ import {
   claimDailyGift,
   clamp,
   createGame,
+  customizeElf,
   dropFromBag,
   elfAt,
   equipFromBag,
@@ -80,6 +89,7 @@ import {
   tradeLockIn,
   tradeOffer,
   tradeRequest,
+  ROOM_CAP,
   type GameEvent,
   type Net,
   type RosterEntry,
@@ -89,6 +99,7 @@ import { WorkshopBag } from './WorkshopBag'
 import { WorkshopTrade } from './WorkshopTrade'
 import { WorkshopAccount } from './WorkshopAccount'
 import { WorkshopFriends } from './WorkshopFriends'
+import { WorkshopMissions } from './WorkshopMissions'
 
 const NAME_KEY = 'workshop-name'
 const HAT_KEY = 'workshop-hat'
@@ -110,6 +121,20 @@ const CLOSED_TOAST: Partial<Record<TradeCloseReason, (partner: string) => string
   timeout: (p) => `Your trade with ${p} timed out.`,
   left: (p) => `${p} left the floor, so the trade was cancelled.`,
   invalid: () => 'That trade had an item this version of Zeus does not know.',
+}
+
+async function revealFloorDm(message: Dm, endpoint: string, directory: DirectoryPlayer[]): Promise<Dm> {
+  const selfId = storedAccount()?.identity.userId
+  if (!selfId || !endpoint) return message
+  const from = directory.find((p) => p.id === message.from)
+  const to = directory.find((p) => p.id === message.to)
+  const peerUserId = from?.userId === selfId ? to?.userId : from?.userId
+  if (!peerUserId) return message
+  try {
+    return { ...message, text: await new CloudApi(endpoint).openFloorDm(peerUserId, message.text) }
+  } catch {
+    return message
+  }
 }
 
 const CHIP_FRAME = 'relative flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-border/50 bg-card p-1 pr-2 shadow-sm'
@@ -135,15 +160,6 @@ function writeStored(key: string, value: string) {
   }
 }
 
-function initialHat(): number {
-  const raw = readStored(HAT_KEY)
-  const saved = raw === null ? NaN : Number(raw)
-  if (Number.isInteger(saved) && saved >= 0 && saved < WORKSHOP_HAT_COUNT) return saved
-  const picked = Math.floor(Math.random() * WORKSHOP_HAT_COUNT)
-  writeStored(HAT_KEY, String(picked))
-  return picked
-}
-
 function fit(canvas: HTMLCanvasElement, width: number, height: number, dpr: number) {
   const bw = Math.round(width * dpr)
   const bh = Math.round(height * dpr)
@@ -166,8 +182,14 @@ export function WorkshopFloor({
 }) {
   const [world, setWorld] = useState<World>(() => { restoreGuestSession(); return 'anexya-general' })
   const [generation, setGeneration] = useState(0)
+  // Lives above Floor so room switches (which remount Floor) do not collapse the panel.
+  const [pinned, setPinned] = useState(false)
   const [device] = useState(() => { const profile = loadProfile(); saveProfile(profile); return profile.device })
   const activeRoom = world === 'home' ? personalWorldRoom(device) : world
+  const changeWorld = (next: World) => {
+    setPinned(true)
+    setWorld(next)
+  }
   return (
     <Floor
       key={`${activeRoom}:${generation}`}
@@ -176,7 +198,12 @@ export function WorkshopFloor({
       anchor={anchor}
       online={world !== 'home'}
       world={world}
-      onWorld={setWorld}
+      pinned={pinned}
+      onPinnedChange={(next) => {
+        setPinned(next)
+        writeStored(PIN_KEY, next ? '1' : '0')
+      }}
+      onWorld={changeWorld}
       onIdentityChange={() => setGeneration(n => n+1)}
     />
   )
@@ -188,6 +215,8 @@ function Floor({
   anchor,
   online,
   world,
+  pinned,
+  onPinnedChange,
   onWorld,
   onIdentityChange,
 }: {
@@ -196,6 +225,8 @@ function Floor({
   anchor: 'titlebar' | 'row'
   online: boolean
   world: World
+  pinned: boolean
+  onPinnedChange: (next: boolean) => void
   onWorld: (next: World) => void
   onIdentityChange: () => void
 }) {
@@ -203,12 +234,10 @@ function Floor({
   const panelRef = useRef<HTMLCanvasElement>(null)
   const miniRef = useRef<HTMLCanvasElement>(null)
   const [name, setName] = useState(() => storedAccount()?.identity.name ?? sanitizeWorkshopName(readStored(NAME_KEY) ?? 'Elf'))
-  const [hat, setHat] = useState(initialHat)
   const [muted, setMuted] = useState(() => readStored(MUTED_KEY) === '1')
   const [link, setLink] = useState<'joining' | 'live' | 'offline' | 'solo'>(online ? 'joining' : 'solo')
   const [hovered, setHovered] = useState(false)
   const [focusWithin, setFocusWithin] = useState(false)
-  const [pinned, setPinned] = useState(() => readStored(PIN_KEY) === '1')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [hintSeen, setHintSeen] = useState(() => readStored(HINT_KEY) === '1')
@@ -217,7 +246,13 @@ function Floor({
   const [chatNote, setChatNote] = useState<string | null>(null)
   const [emotesOpen, setEmotesOpen] = useState(false)
   const [card, setCard] = useState<{ id: string; x: number } | null>(null)
+  const [letterTo, setLetterTo] = useState<string | null>(null)
+  const [letterDraft, setLetterDraft] = useState('')
   const [bagOpen, setBagOpen] = useState(false)
+  const [bagTab, setBagTab] = useState<'bag' | 'character'>('bag')
+  const [missionOpen,setMissionOpen]=useState(false)
+  const [missions,setMissions]=useState<MissionView[]>([])
+  const [missionBusy,setMissionBusy]=useState<string|null>(null)
   const [tradeView, setTradeView] = useState(false)
   const [attention, setAttention] = useState(false)
   const [freshLoot, setFreshLoot] = useState(0)
@@ -230,17 +265,31 @@ function Floor({
   const [socialBadge,setSocialBadge]=useState(0)
   const [endpoint, setEndpoint] = useState('')
   const [identity, setIdentity] = useState<Identity | null>(() => storedAccount()?.identity ?? null)
-  const [admission, setAdmission] = useState<'inside' | 'knock' | 'pending' | 'denied'>(online ? 'pending' : 'inside')
+  const [admission, setAdmission] = useState<'inside' | 'knock' | 'pending' | 'denied' | 'full'>(online ? 'pending' : 'inside')
+  const [reconnecting, setReconnecting] = useState(false)
+  const [announce, setAnnounce] = useState('Workshop floor')
+  const [mailOpen, setMailOpen] = useState(false)
+  const [letters, setLetters] = useState<{ id: string; fromName: string; body: string; at: string; read: boolean }[]>([])
+  const [mailError, setMailError] = useState<string | null>(null)
+  const [mailClearAsk, setMailClearAsk] = useState(false)
+  const [mailBusy, setMailBusy] = useState(false)
+  const [mailFocus, setMailFocus] = useState<string | null>(null)
   const [knocks, setKnocks] = useState<{ subject: string; name: string }[]>([])
   const [players, setPlayers] = useState<DirectoryPlayer[]>([])
+  const [friendLinks, setFriendLinks] = useState<FriendEntry[]>([])
   const [counts, setCounts] = useState<Partial<Record<RoomId, number>>>({})
   const [events, setEvents] = useState<EventView[]>([])
   const [eventTime, setEventTime] = useState(Date.now)
   const [dmTo, setDmTo] = useState('')
   const [dms, setDms] = useState<Dm[]>([])
   const cloudRef = useRef<CloudConnection | null>(null)
+  const playersRef = useRef(players)
+  playersRef.current = players
   const admissionRef = useRef(admission)
-  const [game] = useState(() => createGame(room, name, hat, loadProfile()))
+  const [game] = useState(() => {
+    const profile = loadProfile()
+    return createGame(room, name, profile.appearance.outfit, profile)
+  })
   const sendRef = useRef<Net['send']>(() => {})
   const mutedRef = useRef(muted)
   const focusedRef = useRef(false)
@@ -252,12 +301,33 @@ function Floor({
   const hoverTimer = useRef<number | undefined>(undefined)
 
   const trade = game.trade
+  const missionReady=missions.filter(mission=>mission.ready).length
   const pending = trade?.phase === 'incoming' || trade?.phase === 'outgoing'
   const cardPeer = card ? game.peers.get(card.id) : undefined
   const open =
-    pinned || hovered || focusWithin || chatOpen || emotesOpen || cardPeer !== undefined || pending || bagOpen || tradeView || accountOpen || friendsOpen
+    pinned || hovered || focusWithin || chatOpen || emotesOpen || cardPeer !== undefined || pending || bagOpen || missionOpen || tradeView || accountOpen || friendsOpen || mailOpen
 
   const net = (): Net => ({ send: sendRef.current, sound: !mutedRef.current })
+
+  const claimMission=async(id:string)=>{
+    if(!identity?.userId||missionBusy)return
+    setMissionBusy(id)
+    try{
+      const result=await new CloudApi(endpoint).claimMission(id)
+      const account=storedAccount()
+      if(account){account.revision=result.snapshot.revision;account.identity=result.snapshot.identity;cacheAccount(account)}
+      const removed=new Set(result.snapshot.removedBagUids)
+      const localUids=new Set(game.profile.bag.map(entry=>entry.uid))
+      const additions=result.snapshot.profile.bag.filter(entry=>!localUids.has(entry.uid)&&!removed.has(entry.uid))
+      game.profile.bag=mergeBag(game.profile.bag.filter(entry=>!removed.has(entry.uid)),additions)
+      game.profile.discovered=[...new Set([...game.profile.discovered,...result.snapshot.profile.discovered])]
+      setMissions(result.missions);setFreshLoot(n=>n+additions.length);saveProfile(game.profile);syncSelf(game)
+      const claimed=result.missions.find(mission=>mission.id===id)
+      const reward=claimed&&ITEM_BY_ID.get(claimed.rewardItem)
+      toast.success('RFID mission complete',{description:reward?`${reward.name} was added to your bag.`:'Reward added to your bag.'})
+    }catch(error){toast.error(error instanceof Error?error.message:'Could not claim mission reward')}
+    finally{setMissionBusy(null)}
+  }
 
   useEffect(() => {
     if (anchor !== 'titlebar') return
@@ -278,9 +348,9 @@ function Floor({
   useEffect(() => {
     focusedRef.current = focusWithin
     openRef.current = open
-    paintFloorRef.current = open && !accountOpen && !bagOpen && !tradeView && !friendsOpen
+    paintFloorRef.current = open && !accountOpen && !bagOpen && !missionOpen && !tradeView && !friendsOpen
     tradeViewRef.current = tradeView
-  }, [focusWithin, open, tradeView, accountOpen, bagOpen, friendsOpen])
+  }, [focusWithin, open, tradeView, accountOpen, bagOpen, missionOpen, friendsOpen])
 
   useEffect(()=>{if(socialBadge>0)setAttention(true)},[socialBadge])
 
@@ -289,19 +359,54 @@ function Floor({
   }, [open])
 
   useEffect(() => { admissionRef.current = admission }, [admission])
+  useEffect(() => {
+    if (!identity?.userId || !endpoint) return
+    void new CloudApi(endpoint).publishE2eKey().catch(() => {})
+  }, [identity?.userId, endpoint])
 
   useEffect(() => {
-    if (!online) return
+    if (!identity?.userId || !endpoint || !online) { setFriendLinks([]); return }
+    let alive = true
+    const load = () => {
+      void new CloudApi(endpoint).friends().then((next) => { if (alive) setFriendLinks(next) }).catch(() => {})
+    }
+    load()
+    const timer = window.setInterval(load, 15000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [identity?.userId, endpoint, online, socialTick])
+  useEffect(() => {
+    if (!identity?.userId || !endpoint) { setLetters([]); setMailError(null); return }
+    let alive = true
+    let unread = 0
+    const load = () => {
+      void new CloudApi(endpoint).letters().then((next) => {
+        if (!alive) return
+        setMailError(null)
+        const fresh = next.filter((letter) => !letter.read).length
+        setLetters(next)
+        if (fresh > unread) setAnnounce(`${fresh} unread ${fresh === 1 ? 'letter waits' : 'letters wait'} in your Home mailbox.`)
+        unread = fresh
+      }).catch((err) => {
+        if (!alive) return
+        setMailError(err instanceof Error ? err.message : 'Could not open the mailbox')
+      })
+    }
+    load()
+    const timer = window.setInterval(load, mailOpen ? 5000 : 15000)
+    return () => { alive = false; window.clearInterval(timer) }
+  }, [identity?.userId, endpoint, mailOpen])
+
+  useEffect(() => {
+    // Home is a local floor, but the mailbox still has to reach the account server.
     let alive = true
     void workshopEndpoint().then(url => { if (alive) setEndpoint(url) }).catch(() => { /* invalid saved endpoint stays offline */ })
     return () => { alive = false }
-  }, [online])
+  }, [])
 
   useEffect(() => {
     game.self.name = name
-    game.self.hat = hat
     game.lastFull = 0
-  }, [game, name, hat])
+  }, [game, name])
 
   useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
@@ -355,13 +460,31 @@ function Floor({
         game.chatLog.push({ key: ++game.chatKey, id: 'system', name: 'Workshop', text: notice.text, self: false })
         game.chatLog = game.chatLog.slice(-50)
       }
-      else if (notice.op === 'dm') { setDms(prev => [...prev, notice.message].slice(-50)); if (notice.message.from !== game.self.id) { setDmTo(notice.message.from); setChatOpen(true) } }
-      else if (notice.op === 'history') setDms(notice.messages)
+      else if (notice.op === 'dm') {
+        void (async () => {
+          const message = await revealFloorDm(notice.message, endpoint, playersRef.current)
+          if (!alive) return
+          setDms((prev) => [...prev, message].slice(-50))
+          if (notice.message.from !== game.self.id) { setDmTo(notice.message.from); setChatOpen(true) }
+        })()
+      }
+      else if (notice.op === 'history') {
+        void (async () => {
+          const messages = []
+          for (const message of notice.messages) messages.push(await revealFloorDm(message, endpoint, playersRef.current))
+          if (alive) setDms(messages)
+        })()
+      }
       else if (notice.op === 'social') setSocialTick(n=>n+1)
     }, live => {
       if (!alive) return
       setLink(live ? 'live' : 'offline')
-      if (!live) { game.peers.clear(); setPlayers([]); setCounts({}); setKnocks([]); setAdmission('inside'); admissionRef.current = 'inside' }
+      if (live) setReconnecting(false)
+      if (!live) {
+        game.peers.clear(); setPlayers([]); setCounts({}); setKnocks([])
+        setReconnecting(true)
+        setAnnounce('Disconnected. Reconnecting to the Workshop. This is not solo mode.')
+      }
     }, () => { if (alive) dropDeadSession(false) })
     cloudRef.current = cloud
     sendRef.current = payload => {
@@ -377,7 +500,7 @@ function Floor({
       for (const elf of [game.self, ...game.peers.values()]) {
         const who = directory.get(elf.id) ?? (elf === game.self ? identity : null)
         elf.cloudKing = !!who?.userId && !!who.king
-        elf.cloudTitle = [who?.king ? 'King ' + who.king : '', ...(who?.titles ?? [])].filter(Boolean).join(' · ')
+        elf.cloudTitle = [who?.king ? 'King ' + who.king : '', ...(who?.titles ?? [])].filter((part) => part && part !== 'Secret Santa').join(' · ')
         elf.signedIn = !!who?.userId
       }
     }
@@ -392,6 +515,8 @@ function Floor({
     let alive = true, busy = false
     const poll = async () => {
       try { const next = await api.events(); if (alive) setEvents(next) } catch { /* cached windows expire locally */ }
+      if(storedAccount())try{const next=await api.missions();if(alive)setMissions(next)}catch{/* profile sync can retry */}
+      else if(alive)setMissions([])
     }
     const sync = async () => {
       const account = storedAccount()
@@ -409,6 +534,8 @@ function Floor({
         if (!alive) return
         const next = parseSnapshot(raw)
         account.revision = next.revision; account.identity = next.identity; cacheAccount(account)
+        const localAppearance = game.profile.appearance
+        const localAppearanceAt = game.profile.appearanceAt
         const removed = new Set(next.removedBagUids)
         if (conflict) {
           // Server bag wins on revision conflict (admin edits / other device). Never re-push
@@ -444,8 +571,18 @@ function Floor({
             }
           }
         }
+        // Cosmetics can safely reconcile independently of inventory ownership. A newer
+        // local fitting-room edit must survive an admin/other-device bag revision.
+        if (localAppearanceAt > next.profile.appearanceAt) {
+          game.profile.appearance = { ...localAppearance }
+          game.profile.appearanceAt = localAppearanceAt
+        } else {
+          game.profile.appearance = { ...next.profile.appearance }
+          game.profile.appearanceAt = next.profile.appearanceAt
+        }
         setIdentity(next.identity); syncSelf(game); saveProfile(game.profile)
         localStorage.setItem(`workshop-account-cache:${next.identity.userId}`,JSON.stringify(game.profile))
+        try{const nextMissions=await api.missions();if(alive)setMissions(nextMissions)}catch{/* retry on next sync */}
       } catch (error) {
         if (error instanceof SessionLostError) dropDeadSession()
         /* otherwise account cache remains playable offline */
@@ -541,7 +678,11 @@ function Floor({
         case 'gift': {
           setFreshLoot((n) => n + 1)
           const def = ITEM_BY_ID.get(ev.item)
-          if (!visible && def) toast.success(`${ev.from} gave you ${def.name}`)
+          if (def) setAnnounce(ev.note ? `Letter from ${ev.from}. ${ev.note}` : `${ev.from} gave you ${def.name}`)
+          if (!visible && def) {
+            if (ev.note) toast.success(`Letter from ${ev.from}`, { description: ev.note.slice(0, 120), duration: 8000 })
+            else toast.success(`${ev.from} gave you ${def.name}`)
+          }
           break
         }
         case 'achievement': {
@@ -554,7 +695,7 @@ function Floor({
             setAttention(true)
             toast('A daily gift landed on the workshop floor', {
               description: ev.streak > 1 ? `Day ${ev.streak} of your streak.` : 'Come back tomorrow to start a streak.',
-              action: { label: 'Open', onClick: () => setPinned(true) },
+              action: { label: 'Open', onClick: () => onPinnedChange(true) },
             })
           }
           break
@@ -562,13 +703,14 @@ function Floor({
           if (!visible && !ev.self) setAttention(true)
           break
         case 'trade': {
+          setAnnounce(ev.reason === 'left' ? `${ev.partnerName} left. Trade paused, then cancelled.` : ev.phase === 'incoming' ? `${ev.partnerName} wants to trade.` : ev.phase === 'done' ? `Trade with ${ev.partnerName} completed.` : `Trade with ${ev.partnerName} is ${ev.phase}.`)
           if (ev.phase === 'incoming') {
             setTradeView(false)
             setAttention(true)
             if (!visible) {
               toast(`${ev.partnerName} wants to trade with you`, {
                 description: 'Open the workshop floor to answer.',
-                action: { label: 'Open', onClick: () => setPinned(true) },
+                action: { label: 'Open', onClick: () => onPinnedChange(true) },
               })
             }
           } else if (ev.phase === 'open') {
@@ -664,11 +806,7 @@ function Floor({
     hoverTimer.current = window.setTimeout(() => setHovered(false), 300)
   }
 
-  const togglePin = () => {
-    const next = !pinned
-    setPinned(next)
-    writeStored(PIN_KEY, next ? '1' : '0')
-  }
+  const togglePin = () => onPinnedChange(!pinned)
 
   const onBlur = (e: FocusEvent<HTMLDivElement>) => {
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
@@ -696,7 +834,16 @@ function Floor({
   const submitChat = (e: FormEvent) => {
     e.preventDefault()
     if (dmTo) {
-      cloudRef.current?.send({ op: 'dm', to: dmTo, text: chatDraft }); setChatDraft(''); return
+      const peer = players.find((p) => p.id === dmTo)
+      const draft = chatDraft
+      setChatDraft('')
+      void (async () => {
+        const text = identity?.userId && peer?.userId
+          ? await new CloudApi(endpoint).sealFloorDm(peer.userId, draft)
+          : draft
+        cloudRef.current?.send({ op: 'dm', to: dmTo, text })
+      })()
+      return
     }
     const result = sendChat(game, chatDraft, net(), performance.now())
     if (result === 'slow') {
@@ -798,6 +945,7 @@ function Floor({
         snowball()
         break
       case 'b':
+        setBagTab('bag')
         setBagOpen(true)
         setFreshLoot(0)
         break
@@ -839,8 +987,15 @@ function Floor({
 
   const cycleHat = () => {
     const next = (hat + 1) % WORKSHOP_HAT_COUNT
-    setHat(next)
+    customizeElf(game, { ...game.profile.appearance, outfit: next })
     writeStored(HAT_KEY, String(next))
+  }
+
+  const updateAppearance = (appearance: ElfAppearance) => {
+    if (!customizeElf(game, appearance)) return
+    writeStored(HAT_KEY, String(appearance.outfit))
+    setVersion(n => n + 1)
+    setAnnounce('Your elf appearance has been saved.')
   }
 
   const toggleMute = () => {
@@ -864,11 +1019,14 @@ function Floor({
   const activeEvents = events.filter(event => eventActive(event, identity?.crew ?? (readStored('workshop-guest-crew') as typeof CREWS[number] | null), eventTime))
 
   const profile = game.profile
+  const hat = profile.appearance.outfit
   const others = Math.max(0, snapshot.roster.length - 1)
   const presence =
     link === 'live' && admission !== 'inside' ? 'Outside room' : link === 'solo'
       ? 'Your world'
-      : link === 'offline'
+      : reconnecting
+        ? 'Reconnecting…'
+        : link === 'offline'
         ? 'Offline'
         : link === 'joining'
           ? 'Joining…'
@@ -941,11 +1099,12 @@ function Floor({
         onFocus={() => setFocusWithin(true)}
         onBlur={onBlur}
       >
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{announce}</div>
         <div data-workshop-stage className="relative shrink-0 overflow-hidden" style={{ height: PANEL_H }}>
         <canvas
           ref={panelRef}
           tabIndex={open ? 0 : -1}
-          aria-label="Workshop floor. Click to walk or click an elf, arrow keys or A and D to move, Space to jump, jump again with wings, Enter to chat, F to throw a snowball, 1 to 5 for emotes, B for your bag."
+          aria-label={`Workshop floor, ${presence}. Click an elf to trade or send a letter to their Home mailbox. Arrow keys or A and D move, Space jumps, Enter chats, B opens the bag. Home has a mailbox for letters.`}
           className="absolute inset-0 h-full w-full cursor-pointer outline-none"
           onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
@@ -985,10 +1144,14 @@ function Floor({
           <button type="button" className={TOOL} onClick={cycleHat} title="Change outfit colour" aria-label="Change outfit colour">
             <span className="h-2.5 w-2.5 rounded-full ring-1 ring-black/10" style={{ background: ELF_OUTFITS[hat].hat }} />
           </button>
+          <button type="button" className={TOOL} onClick={() => { setBagTab('character'); setBagOpen(true) }} title="Customize your elf" aria-label="Customize your elf">
+            <Shirt className="h-3 w-3" />My Elf
+          </button>
           <button
             type="button"
             className={cn(TOOL, freshLoot > 0 && 'border-amber-400/70 text-amber-700 dark:text-amber-300')}
             onClick={() => {
+              setBagTab('bag')
               setBagOpen(true)
               setFreshLoot(0)
             }}
@@ -997,6 +1160,9 @@ function Floor({
             <Backpack className="h-3 w-3" />
             <span className="tabular-nums">{profile.bag.length}</span>
             {freshLoot > 0 && <span className="rounded bg-amber-400/90 px-1 text-[9px] font-bold text-amber-950">+{freshLoot}</span>}
+          </button>
+          <button type="button" className={cn(TOOL,missionReady>0&&'border-emerald-400/70 text-emerald-700 dark:text-emerald-300')} onClick={()=>setMissionOpen(true)} title="RFID missions" aria-label="RFID missions">
+            <Radio className="h-3 w-3"/>Missions{missionReady>0&&<span className="rounded bg-emerald-500/20 px-1 text-[9px] font-bold">{missionReady}</span>}
           </button>
           <button type="button" className={TOOL} onClick={openChat} title="Chat (Enter)" aria-label="Chat">
             <MessageCircle className="h-3 w-3" />
@@ -1028,7 +1194,7 @@ function Floor({
           <button type="button" aria-label="Friends & messages" className={TOOL} onClick={() => setFriendsOpen(true)}><Heart className="h-3 w-3 text-rose-500" />Friends{socialBadge > 0 && <span className="min-w-4 rounded-full bg-emerald-700 px-1 text-[10px] leading-4 text-white">{socialBadge}</span>}</button>
           <button type="button" className={TOOL} onClick={toggleMute} title={muted ? 'Unmute sounds' : 'Mute sounds'} aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}>{muted ? <VolumeX className="h-3 w-3" /> : <Volume2 className="h-3 w-3" />}</button>
           <button type="button" className={cn(TOOL, pinned && 'text-primary')} onClick={togglePin} aria-label={pinned ? 'Unpin the floor' : 'Pin the floor open'} aria-pressed={pinned}>{pinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}</button>
-          <button type="button" className={TOOL} aria-label="Close Workshop" onClick={e => { window.clearTimeout(hoverTimer.current); setPinned(false); writeStored(PIN_KEY,'0'); setHovered(false); setFocusWithin(false); setChatOpen(false); setEmotesOpen(false); setCard(null); panelRef.current?.blur(); e.currentTarget.blur() }}><X className="h-3 w-3" /></button>
+          <button type="button" className={TOOL} aria-label="Close Workshop" onClick={e => { window.clearTimeout(hoverTimer.current); onPinnedChange(false); setHovered(false); setFocusWithin(false); setChatOpen(false); setEmotesOpen(false); setCard(null); panelRef.current?.blur(); e.currentTarget.blur() }}><X className="h-3 w-3" /></button>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
@@ -1078,12 +1244,29 @@ function Floor({
         </Tooltip>
         </div>
         {!pending && !hintSeen && <div className="pointer-events-none absolute left-1/2 top-[68px] hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur-sm xl:block">Click to walk · Space jump · Enter chat · F snowball · B bag</div>}
-
-        {admission !== 'inside' && link !== 'offline' && (
+        {world === 'home' && (
+          <button
+            type="button"
+            className={cn(TOOL, 'absolute bottom-2 left-2 z-20 bg-background/90')}
+            aria-label={letters.some((letter) => !letter.read) ? `Home mailbox, ${letters.filter((letter) => !letter.read).length} unread letters` : 'Home mailbox'}
+            onClick={() => { setMailOpen(true); setMailClearAsk(false); setMailFocus(null) }}
+          >
+            <Mail className="h-3.5 w-3.5" />
+            Mailbox
+            {letters.some((letter) => !letter.read) && <span className="rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">{letters.filter((letter) => !letter.read).length}</span>}
+          </button>
+        )}
+        {reconnecting && world !== 'home' && (
+          <div role="status" className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-card/95 p-5 text-center text-sm">
+            <b>Reconnecting to the Workshop…</b>
+            <span className="max-w-sm text-xs text-muted-foreground">You are not in solo mode. Other elves come back when the connection does. A short blip also keeps an open trade alive.</span>
+          </div>
+        )}
+        {admission !== 'inside' && link !== 'offline' && !reconnecting && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-card/95 p-5 text-center text-sm text-foreground">
             <b>{ROOMS.find(r => r.id === room)?.name}</b>
-            <span>{admission === 'pending' ? 'Waiting outside. This room’s King must allow your knock.' : admission === 'denied' ? 'Your knock was denied.' : 'Knock to ask this room’s King for entry.'}</span>
-            {admission !== 'pending' && <button type="button" className={TOOL} onClick={() => cloudRef.current?.send({ op: 'knock' })}>Knock</button>}
+            <span>{admission === 'full' ? `This room is full (${ROOM_CAP} people). Everyone inside can see each other. Wait for someone to leave.` : admission === 'pending' ? 'Waiting outside. This room’s King must allow your knock. If no King is online, the room opens on its own.' : admission === 'denied' ? 'Your knock was denied.' : 'Knock to ask this room’s King for entry.'}</span>
+            {admission !== 'pending' && admission !== 'full' && <button type="button" className={TOOL} onClick={() => cloudRef.current?.send({ op: 'knock' })}>Knock</button>}
             <button type="button" className={TOOL} onClick={() => onWorld('anexya-general')}>Return to General</button>
           </div>
         )}
@@ -1143,75 +1326,213 @@ function Floor({
 
 
         </div>
-        {cardPeer && card && (
-          <div
-            className="mx-2 my-2 w-72 shrink-0 rounded-lg border border-border/60 bg-popover/95 p-2.5 text-xs shadow-elev-lg backdrop-blur-sm animate-in fade-in-0 zoom-in-95"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ELF_OUTFITS[cardPeer.hat % ELF_OUTFITS.length].hat }} />
-              <span className="truncate font-semibold">{cardPeer.name}{cardPeer.signedIn ? ' ✓' : ''}</span>
-              {cardInfo?.leader && <Crown className="h-3 w-3 shrink-0 text-amber-500" />}
+        {mailOpen && world === 'home' && (() => {
+          const unread = letters.filter((letter) => !letter.read).length
+          const focused = letters.find((letter) => letter.id === mailFocus) ?? null
+          const when = (at: string) => {
+            const t = Date.parse(at)
+            if (!Number.isFinite(t)) return ''
+            const ago = Date.now() - t
+            if (ago < 60_000) return 'just now'
+            if (ago < 3_600_000) return `${Math.max(1, Math.floor(ago / 60_000))}m ago`
+            if (ago < 86_400_000) return `${Math.max(1, Math.floor(ago / 3_600_000))}h ago`
+            return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+          }
+          return (
+          <div role="dialog" aria-label="Home mailbox" className="relative z-40 mx-2 mb-2 mt-2 flex max-h-72 shrink-0 flex-col overflow-hidden rounded-xl border border-amber-400/35 bg-popover shadow-elev-lg animate-in fade-in-0 zoom-in-95">
+            <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-3 py-2">
+              <Mail className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <div className="min-w-0 flex-1">
+                <b className="block text-sm leading-tight">Mailbox</b>
+                <span className="text-[10px] text-muted-foreground">
+                  {!identity?.userId ? 'Sign in to receive letters' : letters.length === 0 ? 'Empty' : `${letters.length} letter${letters.length === 1 ? '' : 's'}${unread ? ` · ${unread} new` : ''}`}
+                </span>
+              </div>
+              {identity?.userId && letters.length > 0 && !mailClearAsk && (
+                <button type="button" className={TOOL} disabled={mailBusy} onClick={() => setMailClearAsk(true)}>
+                  <Trash2 className="h-3.5 w-3.5" />Clear
+                </button>
+              )}
+              <button type="button" className={TOOL} aria-label="Close mailbox" onClick={() => { setMailOpen(false); setMailClearAsk(false); setMailFocus(null) }}>
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-            {players.find(p=>p.id===cardPeer.id)?.handle&&<p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">@{players.find(p=>p.id===cardPeer.id)?.handle}</p>}
-            {cardTitle && (
-              <div className="mt-0.5 text-[11px] font-medium" style={{ color: RARITY_INFO[rarityAt(cardPeer.prestige)].color }}>
-                {cardTitle}
+            {mailClearAsk && (
+              <div className="flex shrink-0 items-center gap-2 border-b border-rose-400/30 bg-rose-500/10 px-3 py-2 text-xs">
+                <span className="min-w-0 flex-1 text-rose-800 dark:text-rose-200">Delete every letter in this mailbox?</span>
+                <button type="button" className={TOOL} disabled={mailBusy} onClick={() => setMailClearAsk(false)}>Keep</button>
+                <button
+                  type="button"
+                  className={cn(TOOL, 'border-rose-400/50 bg-rose-500/15 text-rose-800 dark:text-rose-200')}
+                  disabled={mailBusy}
+                  onClick={() => {
+                    setMailBusy(true)
+                    void new CloudApi(endpoint).clearLetters().then((next) => {
+                      setLetters(next)
+                      setMailFocus(null)
+                      setMailClearAsk(false)
+                      setAnnounce('Mailbox cleared.')
+                      toast.success('Mailbox cleared')
+                    }).catch((err) => {
+                      toast.info(err instanceof Error ? err.message : 'Could not clear the mailbox')
+                    }).finally(() => setMailBusy(false))
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />Delete all
+                </button>
               </div>
             )}
-            <div className="mt-2 flex min-h-[28px] items-center gap-1">
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {!identity?.userId ? (
+                <p className="px-2 py-6 text-center text-xs text-muted-foreground">Sign in so letters can reach this mailbox.</p>
+              ) : mailError ? (
+                <p className="px-2 py-6 text-center text-xs text-amber-700 dark:text-amber-300">{mailError}</p>
+              ) : letters.length === 0 ? (
+                <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
+                  <Mail className="h-8 w-8 text-muted-foreground/50" />
+                  <p className="text-xs font-medium">No letters yet</p>
+                  <p className="text-[11px] text-muted-foreground">Friends write you from your elf card. Mail lands here, not on the floor.</p>
+                </div>
+              ) : focused ? (
+                <div className="space-y-2">
+                  <button type="button" className={TOOL} onClick={() => setMailFocus(null)}>← All letters</button>
+                  <div className="rounded-lg border border-border/60 bg-background/80 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-sm font-semibold">{focused.fromName}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">{when(focused.at)}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">{focused.body}</p>
+                  </div>
+                </div>
+              ) : (
+                <ul className="space-y-1.5">
+                  {letters.map((letter) => (
+                    <li key={letter.id}>
+                      <button
+                        type="button"
+                        className={cn(
+                          'flex w-full flex-col gap-0.5 rounded-lg border px-3 py-2 text-left outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/40',
+                          letter.read ? 'border-border/50 bg-background/40' : 'border-amber-400/40 bg-amber-400/10',
+                        )}
+                        onClick={() => {
+                          setMailFocus(letter.id)
+                          setAnnounce(`Letter from ${letter.fromName}. ${letter.body}`)
+                          if (!letter.read) {
+                            void new CloudApi(endpoint).readLetter(letter.id).then(setLetters).catch(() => {})
+                          }
+                        }}
+                      >
+                        <div className="flex items-center gap-2">
+                          {!letter.read && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />}
+                          <span className="min-w-0 flex-1 truncate text-xs font-semibold">{letter.fromName}</span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">{when(letter.at)}</span>
+                        </div>
+                        <span className="line-clamp-2 text-[11px] leading-snug text-muted-foreground">{letter.body}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+          )
+        })()}
+        {cardPeer && card && (() => {
+          const target = players.find((p) => p.id === cardPeer.id)
+          const bond = friendLinks.find((f) => f.userId === target?.userId || (target?.handle && f.handle === target.handle))
+          const shownTitle = cardTitle?.split(' · ').filter((part) => part !== 'Secret Santa').join(' · ')
+          const action = 'flex h-9 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border/60 bg-background px-2 text-xs font-medium outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-primary/40'
+          return (
+          <div
+            role="dialog"
+            aria-label={`${cardPeer.name}'s card`}
+            className="mx-2 my-2 w-80 shrink-0 rounded-xl border border-border/60 bg-popover/95 p-3 text-xs shadow-elev-lg backdrop-blur-sm animate-in fade-in-0 zoom-in-95"
+          >
+            <div className="flex items-start gap-2">
+              <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: ELF_OUTFITS[cardPeer.hat % ELF_OUTFITS.length].hat }} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-sm font-semibold">{cardPeer.name}{cardPeer.signedIn ? ' ✓' : ''}</span>
+                  {cardInfo?.leader && <Crown className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+                </div>
+                {target?.handle && <p className="truncate font-mono text-[11px] text-muted-foreground">@{target.handle}</p>}
+                {shownTitle && (
+                  <div className="mt-0.5 truncate text-[11px] font-medium" style={{ color: RARITY_INFO[rarityAt(cardPeer.prestige)].color }}>
+                    {shownTitle}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-3 flex min-h-8 items-center gap-1.5">
               {cardGear.length === 0 ? (
                 <span className="text-[11px] text-muted-foreground">No gear yet</span>
               ) : (
                 cardGear.map((def) => (
-                  <span key={def.id} title={def.name} className="grid h-7 w-7 place-items-center rounded-md bg-muted">
-                    <ItemIcon item={def} size={20} />
+                  <span key={def.id} title={def.name} className="grid h-8 w-8 place-items-center rounded-md bg-muted">
+                    <ItemIcon item={def} size={22} />
                   </span>
                 ))
               )}
             </div>
-            {identity && world !== 'home' && canModerate(identity, world) && <button type="button" className={TOOL} onClick={() => {
-              const target = players.find(p => p.id === cardPeer.id)
+            {cardPeer.id !== game.self.id && (
+              <div className="mt-3 space-y-2 border-t border-border/50 pt-3">
+                {bond?.status === 'friend' && <div className="flex items-center gap-2 rounded-lg bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-800 dark:text-emerald-200"><Heart className="h-3.5 w-3.5 fill-rose-500 text-rose-500"/>Already friends</div>}
+                {bond?.status === 'outgoing' && <div className="rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">Friend request sent</div>}
+                {bond?.status === 'blocked' && <div className="rounded-lg bg-muted px-3 py-2 text-[11px] text-muted-foreground">Blocked</div>}
+                {bond?.status === 'incoming' && <button type="button" className={action} onClick={() => { setFriendsOpen(true); setCard(null) }}><Heart className="h-3.5 w-3.5"/>Wants to be friends</button>}
+                {!bond && identity?.userId && target?.handle && <button type="button" className={action} onClick={async () => {
+                  const handle = target?.handle
+                  if (!handle) return
+                  try { await new CloudApi(endpoint).friendAction('request', handle); setSocialTick(n => n+1); setFriendsOpen(true); setCard(null) } catch (e) { toast.info(e instanceof Error ? e.message : 'Could not add friend') }
+                }}><Heart className="h-3.5 w-3.5"/>Add friend</button>}
+                {letterTo === cardPeer.id ? (
+                  <div className="space-y-2 rounded-lg border border-border/60 bg-background p-2.5">
+                    <textarea
+                      aria-label="Letter to peer"
+                      rows={4}
+                      maxLength={WORKSHOP_LETTER_MAX}
+                      value={letterDraft}
+                      onChange={(e) => setLetterDraft(e.target.value)}
+                      placeholder={`Write to ${cardPeer.name}…`}
+                      className="w-full resize-none rounded-md border border-border/60 bg-popover px-2.5 py-2 text-xs outline-none focus:border-emerald-500"
+                    />
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" className={action} onClick={() => { setLetterTo(null); setLetterDraft('') }}>Cancel</button>
+                      <button type="button" className={cn(action, 'bg-primary text-primary-foreground hover:bg-primary/90')} disabled={!letterDraft.trim()} onClick={() => {
+                        void (async () => {
+                          const handle = target?.handle
+                          if (!identity?.userId) { toast.info('Sign in so the letter can reach their Home mailbox.'); return }
+                          if (!handle) { toast.info('They need an account. Letters are delivered to a Home mailbox.'); return }
+                          try {
+                            await new CloudApi(endpoint).sendLetter(handle, letterDraft)
+                            toast.success(`Letter is in ${cardPeer.name}’s Home mailbox`)
+                            setAnnounce(`Letter sent to ${cardPeer.name}. It waits in their Home mailbox.`)
+                            setLetterTo(null); setLetterDraft(''); setCard(null)
+                          } catch (err) { toast.info(err instanceof Error ? err.message : 'Could not send that letter') }
+                        })()
+                      }}><Mail className="h-3.5 w-3.5"/>Send</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <button type="button" className={action} onClick={() => { setLetterTo(cardPeer.id); setLetterDraft('') }}><Mail className="h-3.5 w-3.5"/>Write letter</button>
+                    <button type="button" className={action} onClick={() => { setDmTo(cardPeer.id); setChatOpen(true); cloudRef.current?.send({ op: 'history', to: cardPeer.id, text: '' }); setCard(null) }}><MessageCircle className="h-3.5 w-3.5"/>Private message</button>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="mt-3 grid grid-cols-3 gap-2 border-t border-border/50 pt-3">
+              <button type="button" onClick={() => startTrade(cardPeer.id)} className="flex h-9 cursor-pointer items-center justify-center gap-1 rounded-lg bg-primary text-xs font-semibold text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40"><ArrowLeftRight className="h-3.5 w-3.5"/>Trade</button>
+              <button type="button" onClick={() => { emote(0); setCard(null) }} className={action}>Wave</button>
+              <button type="button" onClick={() => { snowball(cardPeer.id); setCard(null) }} className={action}>Snowball</button>
+            </div>
+            {identity && world !== 'home' && canModerate(identity, world) && <button type="button" className={cn(action, 'mt-2')} onClick={() => {
               if (target) cloudRef.current?.send({ op: 'moderate', subject: target.userId ? 'user:' + target.userId : target.subject, action: 'kick' })
               setCard(null)
             }}>Kick to General</button>}
-            {identity?.userId&&players.find(p=>p.id===cardPeer.id)?.handle&&<button type="button" className={TOOL} onClick={async()=>{
-              const target=players.find(p=>p.id===cardPeer.id)
-              if(!target?.handle)return
-              try{await new CloudApi(endpoint).friendAction('request',target.handle);setSocialTick(n=>n+1);setFriendsOpen(true);setCard(null)}catch(e){toast.info(e instanceof Error?e.message:'Could not add friend')}
-            }}><Heart className="h-3.5 w-3.5"/>Add friend</button>}
-            <button type="button" className={TOOL} onClick={() => { setDmTo(cardPeer.id); setChatOpen(true); cloudRef.current?.send({ op: 'history', to: cardPeer.id, text: '' }); setCard(null) }}>Private message</button>
-            <div className="mt-2 grid grid-cols-3 gap-1">
-              <button
-                type="button"
-                onClick={() => startTrade(cardPeer.id)}
-                className="flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md bg-primary px-1 text-[11px] font-semibold text-primary-foreground outline-none hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-primary/40"
-              >
-                <ArrowLeftRight className="h-3 w-3" />
-                Trade
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  emote(0)
-                  setCard(null)
-                }}
-                className="h-7 cursor-pointer rounded-md border border-border/60 text-[11px] outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-primary/50"
-              >
-                Wave
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  snowball(cardPeer.id)
-                  setCard(null)
-                }}
-                className="h-7 cursor-pointer rounded-md border border-border/60 text-[11px] outline-none hover:bg-accent focus-visible:ring-1 focus-visible:ring-primary/50"
-              >
-                Snowball
-              </button>
-            </div>
           </div>
-        )}
+          )
+        })()}
         {isWorkshopStaging(endpoint) && (
           <div role="status" className="shrink-0 border-b border-amber-600/50 bg-amber-400 px-3 py-1.5 text-center text-[11px] font-semibold tracking-wide text-amber-950">
             Staging — not production. Accounts, bags, and events here are separate.
@@ -1279,11 +1600,14 @@ function Floor({
         onGuestCrewChange={() => setVersion(n => n+1)}
       />
       <WorkshopFriends open={friendsOpen} onOpenChange={setFriendsOpen} identity={identity} online={online} endpoint={endpoint} refreshToken={socialTick} onBadge={setSocialBadge} onSignIn={()=>setAccountOpen(true)}/>
+      <WorkshopMissions open={missionOpen} onOpenChange={setMissionOpen} missions={missions} signedIn={!!identity?.userId} busy={missionBusy} onClaim={id=>void claimMission(id)}/>
 
       <WorkshopBag
         open={bagOpen}
+        initialTab={bagTab}
         onOpenChange={setBagOpen}
         profile={profile}
+        onAppearance={updateAppearance}
         locked={lockedUids(game)}
         onEquip={(slot, id) => equipFromBag(game, slot, id)}
         onTitle={(id) => chooseTitle(game, id)}
@@ -1292,6 +1616,18 @@ function Floor({
         }}
         onDrop={(uid) => {
           if (dropFromBag(game, uid, net(), performance.now())) setBagOpen(false)
+        }}
+        onWriteLetter={async (handle, text) => {
+          if (!identity?.userId) { toast.info('Sign in so letters can reach a Home mailbox.'); return false }
+          try {
+            await new CloudApi(endpoint).sendLetter(handle, text)
+            toast.success(`Letter delivered to @${handle.replace(/^@/, '')}’s Home mailbox`)
+            setAnnounce(`Letter sent to @${handle.replace(/^@/, '')}.`)
+            return true
+          } catch (err) {
+            toast.info(err instanceof Error ? err.message : 'Could not send that letter')
+            return false
+          }
         }}
       />
       <WorkshopTrade

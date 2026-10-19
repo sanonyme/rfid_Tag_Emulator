@@ -14,6 +14,7 @@ const wrap = (q: typeof local): Database => ({ query: (sql, params) => q.query(s
   transaction: fn => q.transaction(tx => fn(wrap(tx as unknown as typeof local))), close: () => local.close() })
 const db = wrap(local)
 const emailCodes = new Map<string,string>()
+const testHandle = (prefix = 'test') => `${prefix}_${randomUUID().replaceAll('-','').slice(0,12)}`
 let emailFailure = false
 const app = createWorkshopServer(db, undefined, async ({email,code}) => {
   if (emailFailure) throw new Error('Test delivery failed')
@@ -27,7 +28,7 @@ async function api(path: string, body?: unknown, token?: string) {
 }
 async function account(crew: string, name: string) {
   const email = `${randomUUID()}@example.com`
-  const response = await api('/auth/signup', { email, password: 'a strong password', crew, name })
+  const response = await api('/auth/signup', { email, password: 'a strong password', crew, name, handle: testHandle() })
   expect(response.status).toBe(200)
   expect(response.data.verificationRequired).toBe(true)
   return await app.service.verifySignup({requestId:response.data.requestId,code:emailCodes.get(email)}) as { token: string; identity: { userId: string } }
@@ -63,13 +64,14 @@ describe('Workshop database and real socket clients', () => {
   it('assigns permanent unique handles and supports consent-based friends and offline private conversations', async () => {
     const make=async()=>{
       const email=`${randomUUID()}@example.com`
-      const pending=await app.service.auth({email,password:'strong-password',crew:'QA',name:'Snow Elf'},true) as {requestId:string}
-      return app.service.verifySignup({requestId:pending.requestId,code:emailCodes.get(email)})
+      const handle=testHandle('snowelf')
+      const pending=await app.service.auth({email,password:'strong-password',crew:'QA',name:'Snow Elf',handle},true) as {requestId:string}
+      return { ...(await app.service.verifySignup({requestId:pending.requestId,code:emailCodes.get(email)})), requestedHandle:handle }
     }
     const a=await make(),b=await make(),outsider=await make()
     const aSocket=await windowClient('socialaa',a.token),bSocket=await windowClient('socialbb',b.token),outsiderSocket=await windowClient('socialcc',outsider.token)
     for(const client of [aSocket,bSocket,outsiderSocket]){client.send({op:'join',room:'anexya-general'});await client.next(n=>n.op==='joined')}
-    expect(a.identity.handle).toMatch(/^snowelf_\d+$/)
+    expect(a.identity.handle).toBe(a.requestedHandle)
     expect(a.identity.handle).not.toBe(b.identity.handle)
     expect((await api('/friends')).status).toBe(401)
     expect((await api('/friends',{action:'request',handle:'@'+b.identity.handle},a.token)).status).toBe(200)
@@ -109,7 +111,7 @@ describe('Workshop database and real socket clients', () => {
   },15000)
   it('creates no account or session before email verification, then consumes the code exactly once', async () => {
     const email=`${randomUUID()}@example.com`
-    const pending=await app.service.auth({email,password:'strong-password',crew:'QA',name:'Verified'},true)
+    const pending=await app.service.auth({email,password:'strong-password',crew:'QA',name:'Verified',handle:testHandle('verified')},true)
     expect(pending).toHaveProperty('verificationRequired',true)
     expect(pending).not.toHaveProperty('token')
     expect((await db.query('SELECT id FROM users WHERE email=$1',[email])).rows).toHaveLength(0)
@@ -121,7 +123,7 @@ describe('Workshop database and real socket clients', () => {
     await expect(app.service.verifySignup({requestId,code:emailCodes.get(email)})).rejects.toThrow('expired')
   })
   it('limits attempts and resends, expires codes, and refuses signup on delivery failure', async () => {
-    const email=`${randomUUID()}@example.com`, fields={email,password:'strong-password',crew:'UI',name:'Check'}
+    const email=`${randomUUID()}@example.com`, fields={email,password:'strong-password',crew:'UI',name:'Check',handle:testHandle('check')}
     const pending=await app.service.auth(fields,true) as {requestId:string}
     await expect(app.service.auth(fields,true)).rejects.toThrow('wait')
     const wrong=emailCodes.get(email)==='00000000'?'11111111':'00000000'
@@ -135,7 +137,7 @@ describe('Workshop database and real socket clients', () => {
     await expect(app.service.verifySignup({requestId:fresh.requestId,code:emailCodes.get(email)})).rejects.toThrow('expired')
     emailFailure=true
     const failedEmail=`${randomUUID()}@example.com`
-    try { await expect(app.service.auth({...fields,email:failedEmail},true)).rejects.toThrow('could not be sent') }
+    try { await expect(app.service.auth({...fields,email:failedEmail,handle:testHandle('failed')},true)).rejects.toThrow('could not be sent') }
     finally { emailFailure=false }
     expect((await db.query('SELECT id FROM users WHERE email=$1',[failedEmail])).rows).toHaveLength(0)
     expect((await db.query('SELECT id FROM signup_verifications WHERE email=$1',[failedEmail])).rows).toHaveLength(0)
@@ -164,6 +166,55 @@ describe('Workshop database and real socket clients', () => {
     await app.service.moderate(king,'vsbl',subject,'allow')
     expect(await app.service.allowed(member,'vsbl',subject)).toBe(true)
     await db.query('DELETE FROM kings WHERE user_id=$1',[a.identity.userId])
+  })
+
+  it('persists guest elf customization on the first account import without importing it again', async () => {
+    const user = await account('QA', 'Wardrobe Elf')
+    const guestProfile = newProfile()
+    guestProfile.appearance = { gender: 'female', skin: 4, hairStyle: 'braids', hairColor: 4, outfit: 2, starterHat: false }
+    guestProfile.appearanceAt = 1700000000000
+    const first = await api('/profile', { firstLogin: true, profile: guestProfile }, user.token)
+    expect(first.status).toBe(200)
+    expect(first.data.profile.appearance).toEqual(guestProfile.appearance)
+    expect(first.data.profile.appearanceAt).toBe(guestProfile.appearanceAt)
+    const stored = await app.service.profile(user.identity.userId)
+    expect(stored.profile.appearance).toEqual(guestProfile.appearance)
+
+    const otherGuest = newProfile()
+    otherGuest.appearanceAt = guestProfile.appearanceAt + 1000
+    const again = await api('/profile', { firstLogin: true, profile: otherGuest }, user.token)
+    expect(again.status).toBe(200)
+    expect(again.data.profile.appearance).toEqual(guestProfile.appearance)
+    expect(again.data.profile.appearanceAt).toBe(guestProfile.appearanceAt)
+  })
+
+  it('preserves saved cosmetics across legacy and stale saves, then accepts a newer appearance', async () => {
+    const user = await account('QA', 'Persistent Wardrobe')
+    const customized = newProfile()
+    customized.appearance = { gender: 'female', skin: 3, hairStyle: 'bob', hairColor: 3, outfit: 1, starterHat: false }
+    customized.appearanceAt = 1700000002000
+    const first = await api('/profile', { firstLogin: true, profile: customized }, user.token)
+    expect(first.status).toBe(200)
+
+    const legacy: Partial<typeof customized> = { ...first.data.profile }
+    delete legacy.appearance
+    delete legacy.appearanceAt
+    const oldClient = await api('/profile', { profile: legacy, revision: first.data.revision }, user.token)
+    expect(oldClient.status).toBe(200)
+    expect(oldClient.data.profile.appearance).toEqual(customized.appearance)
+    expect(oldClient.data.profile.appearanceAt).toBe(customized.appearanceAt)
+
+    const stale = { ...oldClient.data.profile, appearance: newProfile().appearance, appearanceAt: customized.appearanceAt - 1000 }
+    const staleSave = await api('/profile', { profile: stale, revision: oldClient.data.revision }, user.token)
+    expect(staleSave.status).toBe(200)
+    expect(staleSave.data.profile.appearance).toEqual(customized.appearance)
+    expect(staleSave.data.profile.appearanceAt).toBe(customized.appearanceAt)
+
+    const latest = { ...staleSave.data.profile, appearance: { ...customized.appearance, hairStyle: 'long', hairColor: 5 }, appearanceAt: customized.appearanceAt + 1000 }
+    const newSave = await api('/profile', { profile: latest, revision: staleSave.data.revision }, user.token)
+    expect(newSave.status).toBe(200)
+    expect(newSave.data.profile.appearance).toEqual(latest.appearance)
+    expect(newSave.data.profile.appearanceAt).toBe(latest.appearanceAt)
   })
 
   it('shares General, keeps a knocker invisible, allows, reconnects and kicks to General', async () => {
@@ -212,13 +263,14 @@ describe('Workshop database and real socket clients', () => {
     alice.ws.close(); bob.ws.close(); guest.ws.close()
   },15000)
 
-  it('runs database events, pairs same-crew accounts, gives rewards once, and closes without a build', async () => {
+  it('runs database events, gives rewards once, and does not pair Secret Santa', async () => {
     const a = await account('CNCT','Santa'), b = await account('CNCT','Recipient')
     const id = 'secret-santa'
     await db.query("INSERT INTO live_events(id,title,start_at,end_at,enabled,kind,metric,target,reward,opt_in,pairing) VALUES($1,'Secret Santa',now()-interval '1 hour',now()+interval '7 days',true,'opt-in','given',1,$2,true,'same-crew')", [id,JSON.stringify({ item: ITEMS[0].id })])
     expect((await api(`/events/${id}/join`,{},a.token)).data[0].recipient).toBe(null)
     await api(`/events/${id}/join`,{},b.token)
-    expect((await api('/events',undefined,a.token)).data[0].recipient).toBe('Recipient')
+    expect((await api('/events',undefined,a.token)).data[0].recipient).toBe(null)
+    expect((await api('/events',undefined,a.token)).data[0].pairingStatus).toBeUndefined()
     const snapshot = (await api('/profile',undefined,a.token)).data
     snapshot.profile.stats.given++
     await api('/profile', { profile: snapshot.profile, revision: snapshot.revision },a.token)
@@ -228,6 +280,32 @@ describe('Workshop database and real socket clients', () => {
     await db.query('UPDATE live_events SET enabled=false,end_at=now() WHERE id=$1',[id])
     expect((await api('/events',undefined,a.token)).data).toEqual([])
     expect((await api(`/events/${id}/join`,{},a.token)).status).toBe(400)
+  })
+
+  it('tracks RFID missions from synced tag activity and grants each reward once',async()=>{
+    const player=await account('EDGE','RFID Operator')
+    expect((await api('/missions')).status).toBe(401)
+    const initial=await api('/missions',undefined,player.token)
+    expect(initial.status).toBe(200)
+    expect(initial.data).toHaveLength(6)
+    expect(initial.data.find((mission:{id:string})=>mission.id==='daily-tag-throughput')).toMatchObject({value:0,ready:false,claimed:false,target:50,metric:'tags'})
+
+    let snapshot=(await api('/profile',undefined,player.token)).data
+    snapshot.profile.stats.tags+=50
+    snapshot.profile.stats.sends+=1
+    snapshot.profile.stats.fixed+=1
+    await api('/profile',{profile:snapshot.profile,revision:snapshot.revision},player.token)
+    const progressed=await api('/missions',undefined,player.token)
+    expect(progressed.data.find((mission:{id:string})=>mission.id==='daily-tag-throughput')).toMatchObject({value:50,ready:true})
+    expect(progressed.data.find((mission:{id:string})=>mission.id==='weekly-epc-marathon')).toMatchObject({value:50,ready:false})
+
+    const claimed=await api('/missions/daily-tag-throughput/claim',{},player.token)
+    expect(claimed.status).toBe(200)
+    expect(claimed.data.missions.find((mission:{id:string})=>mission.id==='daily-tag-throughput')).toMatchObject({claimed:true,ready:false})
+    snapshot=(await api('/profile',undefined,player.token)).data
+    expect(snapshot.profile.bag.filter((entry:{item:string;from:string})=>entry.item==='paper-label'&&entry.from==='mission')).toHaveLength(1)
+    expect((await api('/missions/daily-tag-throughput/claim',{},player.token)).status).toBe(409)
+    expect((await db.query('SELECT claimed FROM mission_progress WHERE user_id=$1 AND mission_id=$2',[player.identity.userId,'daily-tag-throughput'])).rows[0].claimed).toBe(true)
   })
 
   it('lets only administrators manage visual bags and event definitions', async () => {

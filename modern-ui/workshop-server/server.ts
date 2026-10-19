@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { WebSocket, WebSocketServer } from 'ws'
-import { canModerate, parseClientCommand, record, type ClientCommand, type Identity, type RoomId, type ServerNotice } from '../src/lib/workshop-cloud-model'
+import { canModerate, parseClientCommand, record, roomCrew, type ClientCommand, type Identity, type RoomId, type ServerNotice } from '../src/lib/workshop-cloud-model'
 import { type WorkshopMessage } from '../src/lib/workshop-protocol'
 import { WorkshopService, RequestError } from './service'
 import type { Database } from './database'
@@ -14,10 +14,14 @@ const send = (c: Client, notice: ServerNotice) => {
   if (c.ws.readyState === WebSocket.OPEN && c.ws.bufferedAmount < 512000) c.ws.send(JSON.stringify(notice))
 }
 const pairKey = (a: string, b: string) => [a, b].sort().join(':')
+/** Hard cap so every person who got in is visible. The client peer list matches this. */
+const ROOM_CAP = 48
+const TRADE_HOLD_MS = 30_000
 export function createWorkshopServer(db: Database, origins = ['null', 'file://', 'http://localhost:5173'], deliverVerification: VerificationSender = sendVerificationEmail) {
   const service = new WorkshopService(db, deliverVerification)
   const social = new WorkshopSocial(db)
   const clients = new Set<Client>()
+  const heldTrades = new Map<string, { message: WorkshopMessage; at: number }[]>()
   const guestAllows = new Map<string, number>()
   const roomTrees = new Map<string, Record<string, number>>()
   const drops = new Map<RoomId, Map<string, { message: WorkshopMessage; at: number }>>()
@@ -44,13 +48,28 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
     if (c.room) for (const [key, drop] of drops.get(c.room) ?? []) if (drop.message.id === c.id) drops.get(c.room)?.delete(key)
     c.room = null; c.state = null
   }
+  const roomSize = (room: RoomId) => [...clients].filter(peer => peer.room === room).length
+  const kingPresent = (room: RoomId) => {
+    const crew = roomCrew(room)
+    if (!crew) return true
+    return [...clients].some(peer => peer.identity.userId && peer.identity.king === crew)
+  }
   const enter = (c: Client, room: RoomId) => {
+    if (roomSize(room) >= ROOM_CAP) {
+      leave(c); c.desired = room
+      send(c, { op: 'waiting', room, status: 'full' })
+      directory(); queues()
+      return
+    }
     leave(c); c.room = room; c.desired = null
     const tree = roomTrees.get(`${room}:${new Date().toISOString().slice(0,10)}`) ?? {}
     send(c, { op: 'joined', room, identity: c.identity, tree: Object.fromEntries(Object.entries(tree).sort((a,b) => b[1]-a[1]).slice(0,16)) })
     const states = [...clients].flatMap(peer => peer !== c && peer.room === room && peer.state ? [peer.state] : [])
     const floor = [...(drops.get(room)?.values() ?? [])].map(d => d.message)
-    send(c, { op: 'snapshot', messages: [...states,...floor].slice(0,256) })
+    const now = Date.now()
+    const queued = (heldTrades.get(c.id) ?? []).filter(item => now - item.at < TRADE_HOLD_MS).map(item => item.message)
+    heldTrades.delete(c.id)
+    send(c, { op: 'snapshot', messages: [...states,...floor,...queued].slice(0,256) })
     directory(); queues()
   }
   async function command(c: Client, cmd: Exclude<ClientCommand, { op: 'hello' }>) {
@@ -58,7 +77,12 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
       c.identity = c.identity.userId ? await service.identity(c.identity.userId) : c.identity
       const allowed = await service.allowed(c.identity, cmd.room, c.subject)
         || (guestAllows.get(`${cmd.room}:${c.subject}`) ?? 0) > Date.now()
-      if (allowed) enter(c, cmd.room)
+      // Crew rooms stay closed only while that crew's King is actually online.
+      const openHouse = cmd.room !== 'anexya-general' && !kingPresent(cmd.room)
+      if (allowed || openHouse) {
+        if (openHouse && !allowed) send(c, { op: 'notice', text: 'No King is online, so this crew room is open.' })
+        enter(c, cmd.room)
+      }
       else {
         leave(c); c.desired = cmd.room; c.status = 'knock'
         if (c.identity.userId) {
@@ -115,7 +139,13 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
       // Grants broadcast so every bystander removes the claimed drop. Trade and claim stay directed.
       const to = message.t === 'trade' ? message.to : message.t === 'claim' ? message.owner : null
       if (to) {
-        for (const target of clients) if (target.room === c.room && target.id === to) send(target, { op: 'packet', message })
+        const targets = [...clients].filter(target => target.room === c.room && target.id === to)
+        if (message.t === 'trade' && !targets.length) {
+          const bucket = heldTrades.get(to) ?? []
+          bucket.push({ message, at: Date.now() })
+          heldTrades.set(to, bucket.slice(-12))
+        }
+        for (const target of targets) send(target, { op: 'packet', message })
       } else broadcast(c.room, { op: 'packet', message }, c)
       if (message.t === 'bye') { leave(c); directory(); queues() }
     } else if ((cmd.op === 'dm' || cmd.op === 'history') && c.room) {
@@ -182,12 +212,35 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
         result = await service.handleAvailable(handle, email)
       } else if (path === '/auth/login' || path === '/auth/signup' || path === '/auth/verify') {
         if (req.method !== 'POST') throw new RequestError('Use POST', 405)
-        const key = req.socket.remoteAddress ?? 'unknown'
-        const rate = httpRates.get(key) ?? { at: Date.now(), count: 0 }
-        if (Date.now() - rate.at > 60000) { rate.count = 0; rate.at = Date.now() }
-        rate.count++; httpRates.set(key, rate)
-        if (rate.count > 20) throw new RequestError('Too many attempts; try again in a minute', 429)
+        // Funnel/office NAT shares one address, so the IP bucket is wide and each email is capped tightly.
+        const forwarded = req.headers['x-forwarded-for']
+        const ip = (typeof forwarded === 'string' ? forwarded.split(',')[0]?.trim() : '') || req.socket.remoteAddress || 'unknown'
+        const ipKey = `auth-ip:${ip.slice(0, 80)}`
+        const ipRate = httpRates.get(ipKey) ?? { at: Date.now(), count: 0 }
+        if (Date.now() - ipRate.at > 60000) { ipRate.count = 0; ipRate.at = Date.now() }
+        ipRate.count++; httpRates.set(ipKey, ipRate)
+        if (ipRate.count > 180) throw new RequestError('Too many sign-in attempts from this network; try again in a minute', 429)
+        const email = record(body) && typeof body.email === 'string' ? body.email.trim().toLowerCase() : ''
+        if (email) {
+          const emailKey = `auth-email:${email}`
+          const emailRate = httpRates.get(emailKey) ?? { at: Date.now(), count: 0 }
+          if (Date.now() - emailRate.at > 60000) { emailRate.count = 0; emailRate.at = Date.now() }
+          emailRate.count++; httpRates.set(emailKey, emailRate)
+          if (emailRate.count > 8) throw new RequestError('Too many attempts for this email; try again in a minute', 429)
+        }
         result = path === '/auth/verify' ? await service.verifySignup(body) : await service.auth(body, path.endsWith('signup'))
+      } else if (path === '/letters' && req.method === 'GET') {
+        const identity = await bearer(req)
+        result = await service.letters(identity!.userId!)
+      } else if (path === '/letters' && req.method === 'POST') {
+        const identity = await bearer(req)
+        result = await service.sendLetter(identity!.userId!, body)
+      } else if (path === '/letters/read' && req.method === 'POST') {
+        const identity = await bearer(req)
+        result = await service.readLetter(identity!.userId!, body)
+      } else if (path === '/letters/clear' && req.method === 'POST') {
+        const identity = await bearer(req)
+        result = await service.clearLetters(identity!.userId!)
       } else if(path==='/friends'||path==='/friends/messages') {
         const identity=await bearer(req),userId=identity!.userId!
         if(req.method==='POST'){
@@ -203,11 +256,22 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
         }else if(req.method==='GET')result=await social.history(userId,requestUrl.searchParams.get('to'))
         else if(req.method==='POST'){const message=await social.message(userId,body);socialChanged(userId,message.to);result=message}
         else throw new RequestError('Method not allowed',405)
+      } else if (path === '/crypto/key') {
+        const identity = await bearer(req)
+        const userId = identity!.userId!
+        if (req.method === 'POST') result = await social.savePublicKey(userId, body)
+        else if (req.method === 'GET') result = await social.publicKey(userId, requestUrl.searchParams.get('user') ?? userId)
+        else throw new RequestError('Method not allowed', 405)
       } else if (path === '/events' && req.method === 'GET') {
         result = await service.events((await bearer(req, true))?.userId ?? undefined)
       } else if (path.startsWith('/events/') && path.endsWith('/join') && req.method === 'POST') {
         const identity = await bearer(req)
         result = await service.joinEvent(identity!.userId!, decodeURIComponent(path.split('/')[2]))
+      } else if (path === '/missions' && req.method === 'GET') {
+        const identity=await bearer(req);result=await service.missions(identity!.userId!)
+      } else if (path.startsWith('/missions/') && path.endsWith('/claim') && req.method === 'POST') {
+        const identity=await bearer(req)
+        result=await service.claimMission(identity!.userId!,decodeURIComponent(path.split('/')[2]))
       } else if (path === '/profile') {
         const identity = await bearer(req)
         result = req.method === 'GET' ? await service.profile(identity!.userId!) : req.method === 'POST' ? await service.sync(identity!.userId!, body) : (() => { throw new RequestError('Method not allowed', 405) })()
@@ -249,7 +313,8 @@ export function createWorkshopServer(db: Database, origins = ['null', 'file://',
     ws.on('message', (data, binary) => {
       if (binary) return
       if (Date.now()-windowAt > 1000) { count = 0; windowAt = Date.now() }
-      if (++count > 60 || backlog > 100) { ws.close(1008, 'Rate limit'); return }
+      // Drop bursts instead of closing the socket — a close looked like solo mode.
+      if (++count > 80 || backlog > 100) return
       let cmd: ClientCommand | null = null
       try { cmd = parseClientCommand(JSON.parse(data.toString())) } catch { return }
       if (!cmd) return

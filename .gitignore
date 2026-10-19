@@ -28,3 +28,5 @@ npm-debug.log*
 
 modern-ui/.env
 .env
+.workshop-data/
+.workshop-deploy/

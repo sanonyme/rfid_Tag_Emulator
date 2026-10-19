@@ -19,10 +19,80 @@ export function quoteIdent(engine: DbEngine, name: string): string {
   return `\`${String(name).replace(/`/g, '``')}\``
 }
 
-/** Convert `?` placeholders to `$1…$n` for node-postgres. */
+/**
+ * Convert MySQL-style `` `ident` `` quoting to PostgreSQL `"ident"`, then
+ * turn `?` placeholders into `$1…$n` for node-postgres.
+ * String literals stay untouched so values containing backticks are safe.
+ */
 export function toPgText(sql: string): string {
+  const quoted = translateMysqlIdentsToPg(sql)
   let i = 0
-  return sql.replace(/\?/g, () => `$${++i}`)
+  return quoted.replace(/\?/g, () => `$${++i}`)
+}
+
+/** Exported for unit tests — identifier rewrite only. */
+export function translateMysqlIdentsToPg(sql: string): string {
+  let out = ''
+  let i = 0
+  let inSingle = false
+  let inDouble = false
+  while (i < sql.length) {
+    const ch = sql[i]!
+    if (inSingle) {
+      out += ch
+      if (ch === "'" && sql[i + 1] === "'") {
+        out += sql[++i]
+        i++
+        continue
+      }
+      if (ch === "'") inSingle = false
+      i++
+      continue
+    }
+    if (inDouble) {
+      out += ch
+      if (ch === '"' && sql[i + 1] === '"') {
+        out += sql[++i]
+        i++
+        continue
+      }
+      if (ch === '"') inDouble = false
+      i++
+      continue
+    }
+    if (ch === "'") {
+      inSingle = true
+      out += ch
+      i++
+      continue
+    }
+    if (ch === '"') {
+      inDouble = true
+      out += ch
+      i++
+      continue
+    }
+    if (ch === '`') {
+      let j = i + 1
+      let name = ''
+      while (j < sql.length) {
+        if (sql[j] === '`' && sql[j + 1] === '`') {
+          name += '`'
+          j += 2
+          continue
+        }
+        if (sql[j] === '`') break
+        name += sql[j]!
+        j++
+      }
+      out += `"${name.replace(/"/g, '""')}"`
+      i = j < sql.length ? j + 1 : j
+      continue
+    }
+    out += ch
+    i++
+  }
+  return out
 }
 
 export const PG_SYSTEM_SCHEMAS = new Set([

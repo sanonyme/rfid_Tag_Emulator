@@ -2,6 +2,8 @@
 
 A comprehensive RFID tag emulation suite providing both a modern, feature-rich desktop application and a legacy Java-based utility. This tool is designed to simulate RFID tag data transmission over TCP/IP to RFID reader software and Edge servers, facilitating testing and development without physical hardware.
 
+The optional cloud Workshop adds shared rooms, accounts, crew Kings, and live events while preserving guest and offline play. See [Workshop setup and owner operations](modern-ui/workshop-server/README.md).
+
 ![License](https://img.shields.io/github/license/sanonyme/rfid_Tag_Emulator)
 ![Version](https://img.shields.io/github/v/release/sanonyme/rfid_Tag_Emulator)
 

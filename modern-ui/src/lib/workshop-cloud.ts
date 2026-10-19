@@ -2,7 +2,9 @@ import { parseClientCommand, parseServerNotice, parseIdentity, record, parseLive
 import { PROFILE_KEY, guestAfterAccountImport, loadProfile, newProfile, saveProfile, type WorkshopProfile } from './workshop-profile'
 import { mergeBag, parseCloudProfile } from './workshop-cloud-model'
 import { RARITIES } from './workshop-items'
-import { parseFriends, parsePrivateMessages, type FriendAction } from './workshop-social'
+import { parseFriends, parsePrivateMessages, privateText, type FriendAction, type PrivateMessage } from './workshop-social'
+import { decryptPrivateMessage, encryptPrivateMessage, ensureE2eKeys, isE2ePublicJwk, type E2ePublicJwk } from './workshop-e2e'
+import { parseMissionView, type MissionView } from './workshop-missions'
 
 const SESSION_KEY = 'workshop-account-session'
 const GUEST_KEY = 'workshop-guest-profile-v1'
@@ -173,9 +175,13 @@ export class CloudApi {
         profile.bag = mergeBag(profile.bag, offline.bag.filter(entry=>!removed.has(entry.uid)))
         profile.discovered = [...new Set([...profile.discovered,...offline.discovered])]
         profile.achievements = [...new Set([...profile.achievements,...offline.achievements])]
-        for (const metric of ['sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) profile.stats[metric] = Math.max(profile.stats[metric],offline.stats[metric])
+        for (const metric of ['tags','fixed','sends','handheld','opened','trades','given','received','bells','chats','hits'] as const) profile.stats[metric] = Math.max(profile.stats[metric],offline.stats[metric])
         for (const rarity of RARITIES) profile.stats.found[rarity] = Math.max(profile.stats.found[rarity],offline.stats.found[rarity])
         if ((offline.daily.last ?? '') > (profile.daily.last ?? '')) profile.daily = offline.daily
+        if (offline.appearanceAt > profile.appearanceAt) {
+          profile.appearance = { ...offline.appearance }
+          profile.appearanceAt = offline.appearanceAt
+        }
         snapshot = parseSnapshot(await this.request('/profile', { profile, revision: snapshot.revision },account))
       }
     }
@@ -193,7 +199,29 @@ export class CloudApi {
     const profile = snapshot.profile; profile.device = local.device
     saveProfile(profile)
     localStorage.setItem(`workshop-account-cache:${identity.userId}`, JSON.stringify(profile))
+    await this.publishE2eKey(account).catch(() => { /* chat still works; retry on next private send */ })
     return account
+  }
+  /** Publish this device's public key so friends can encrypt to us. */
+  async publishE2eKey(account: Account | null = storedAccount()) {
+    if (!account?.identity.userId) return
+    const publicKey = await ensureE2eKeys(account.identity.userId)
+    await this.request('/crypto/key', { publicKey }, account)
+  }
+  async peerPublicKey(userId: string): Promise<E2ePublicJwk | null> {
+    const raw = await this.request(`/crypto/key?user=${encodeURIComponent(userId)}`)
+    if (!record(raw)) return null
+    return isE2ePublicJwk(raw.publicKey) ? raw.publicKey : null
+  }
+  private async decryptThread(selfId: string, peerId: string, messages: PrivateMessage[]): Promise<PrivateMessage[]> {
+    const peerKey = await this.peerPublicKey(peerId).catch(() => null)
+    const out: PrivateMessage[] = []
+    for (const message of messages) {
+      const other = message.from === selfId ? peerId : message.from
+      const key = other === peerId ? peerKey : await this.peerPublicKey(other).catch(() => null)
+      out.push({ ...message, text: await decryptPrivateMessage(selfId, key, message.text) })
+    }
+    return out
   }
   async logout(profile: WorkshopProfile) {
     const account = storedAccount()
@@ -214,10 +242,79 @@ export class CloudApi {
         ...(typeof raw.pairingStatus === 'string' ? { pairingStatus: raw.pairingStatus.slice(0,200) } : {}) }]
     })
   }
+  async missions():Promise<MissionView[]> {
+    const result=await this.request('/missions')
+    return Array.isArray(result)?result.flatMap(raw=>{const mission=parseMissionView(raw);return mission?[mission]:[]}):[]
+  }
+  async claimMission(id:string) {
+    const result=await this.request(`/missions/${encodeURIComponent(id)}/claim`,{})
+    if(!record(result)||!Array.isArray(result.missions))throw new Error('Invalid mission response')
+    return {missions:result.missions.flatMap(raw=>{const mission=parseMissionView(raw);return mission?[mission]:[]}),snapshot:parseSnapshot(result.snapshot)}
+  }
   async friends(){return parseFriends(await this.request('/friends'))}
   async friendAction(action:FriendAction,handle:string){await this.request('/friends',{action,handle})}
-  async privateHistory(to:string){return parsePrivateMessages(await this.request(`/friends/messages?to=${encodeURIComponent(to)}`))}
-  async privateMessage(to:string,text:string){return parsePrivateMessages([await this.request('/friends/messages',{to,text})])[0]}
+  async letters() {
+    return this.parseLetters(await this.request('/letters'))
+  }
+  async sendLetter(handle: string, text: string) {
+    await this.request('/letters', { handle, text })
+  }
+  async readLetter(id: string) {
+    return this.parseLetters(await this.request('/letters/read', { id }))
+  }
+  async clearLetters() {
+    return this.parseLetters(await this.request('/letters/clear', {}))
+  }
+  private parseLetters(raw: unknown) {
+    if (!record(raw) || !Array.isArray(raw.letters)) return []
+    return raw.letters.flatMap((row) => {
+      if (!record(row) || typeof row.id !== 'string' || typeof row.body !== 'string' || typeof row.fromName !== 'string') return []
+      return [{ id: row.id, fromName: row.fromName, body: row.body, at: typeof row.at === 'string' ? row.at : '', read: row.read === true }]
+    })
+  }
+  async privateHistory(to: string) {
+    const account = storedAccount()
+    if (!account?.identity.userId) throw new Error('Sign in to read private messages')
+    const messages = parsePrivateMessages(await this.request(`/friends/messages?to=${encodeURIComponent(to)}`))
+    return this.decryptThread(account.identity.userId, to, messages)
+  }
+  async privateMessage(to: string, text: string) {
+    const account = storedAccount()
+    if (!account?.identity.userId) throw new Error('Sign in to send private messages')
+    const plain = privateText(text)
+    if (!plain) throw new Error('Messages must contain 1–1000 characters')
+    await this.publishE2eKey(account)
+    const peerKey = await this.peerPublicKey(to)
+    if (!peerKey) throw new Error('This friend has not opened Zeus on a device that supports secure chat yet. Ask them to sign in once.')
+    const sealed = await encryptPrivateMessage(account.identity.userId, peerKey, plain)
+    const saved = parsePrivateMessages([await this.request('/friends/messages', { to, text: sealed })])[0]
+    return { ...saved, text: plain }
+  }
+  /** Seal a quick floor DM when both players are signed-in accounts. Guests stay plaintext. */
+  async sealFloorDm(toUserId: string | null | undefined, text: string): Promise<string> {
+    const account = storedAccount()
+    const plain = privateText(text) ?? text.trim()
+    if (!account?.identity.userId || !toUserId || !plain) return text.trim()
+    try {
+      await this.publishE2eKey(account)
+      const peerKey = await this.peerPublicKey(toUserId)
+      if (!peerKey) return plain.slice(0, 80)
+      return await encryptPrivateMessage(account.identity.userId, peerKey, plain.slice(0, 1000))
+    } catch {
+      return plain.slice(0, 80)
+    }
+  }
+  /** `peerUserId` is the other account in the conversation (not necessarily the sender). */
+  async openFloorDm(peerUserId: string | null | undefined, text: string): Promise<string> {
+    const account = storedAccount()
+    if (!account?.identity.userId || !peerUserId) return text
+    try {
+      const peerKey = await this.peerPublicKey(peerUserId)
+      return await decryptPrivateMessage(account.identity.userId, peerKey, text)
+    } catch {
+      return text
+    }
+  }
   async adminUsers(search = ''): Promise<WorkshopAdminUser[]> { const data = await this.request(`/admin/users?q=${encodeURIComponent(search)}`); return Array.isArray(data) ? data as WorkshopAdminUser[] : [] }
   async adminBag(user: string, action: 'add'|'remove', item: string, amount: number): Promise<WorkshopAdminUser[]> {
     const data = await this.request('/admin/bag', { user, action, item, amount }); return Array.isArray(data) ? data as WorkshopAdminUser[] : []
@@ -276,7 +373,9 @@ export class CloudConnection {
       clearTimeout(this.deadline)
       this.onLink(false)
       if (!this.stopped && (e.reason === 'Session expired' || e.reason === 'Authentication failed')) this.onAuthLost?.()
-      if (!this.stopped && e.code !== 4000 && e.code !== 1008) this.timer = setTimeout(() => this.connect(), 5000)
+      // 4000 means this account opened somewhere else. Every other close, including rate-limit, reconnects.
+      const replaced = e.code === 4000 || e.reason === 'Session expired' || e.reason === 'Authentication failed'
+      if (!this.stopped && !replaced) this.timer = setTimeout(() => this.connect(), e.code === 1008 ? 1500 : 3000)
     }
   }
   send(command: ClientCommand) {
