@@ -1,15 +1,48 @@
 declare const __ZEUS_EMBED_WORKSHOP_URL__: string
 import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import * as pty from 'node-pty'
 import electronUpdater from 'electron-updater'
 const { autoUpdater } = electronUpdater
 
-// The local Release Console starts isolated staging players with this override.
-// It must happen before Electron becomes ready so each player receives its own
-// localStorage, preferences, and Workshop guest identity.
-if (process.env.ZEUS_USER_DATA_DIR) app.setPath('userData', process.env.ZEUS_USER_DATA_DIR)
+// Isolate Chromium localStorage / session before ready.
+// Release Console sets ZEUS_USER_DATA_DIR per player. A second plain `npm run dev`
+// without that env would otherwise share userData and clobber E2E chat keys.
+{
+  if (process.env.ZEUS_USER_DATA_DIR) {
+    app.setPath('userData', process.env.ZEUS_USER_DATA_DIR)
+  } else if (!app.isPackaged) {
+    const base = app.getPath('userData')
+    const lockFile = path.join(base, 'zeus-primary-instance.pid')
+    const pidAlive = (pid: number) => {
+      try { process.kill(pid, 0); return true } catch { return false }
+    }
+    let primary = true
+    try {
+      if (fs.existsSync(lockFile)) {
+        const prev = Number(fs.readFileSync(lockFile, 'utf8'))
+        if (Number.isFinite(prev) && prev !== process.pid && pidAlive(prev)) primary = false
+      }
+      if (primary) {
+        fs.mkdirSync(base, { recursive: true })
+        fs.writeFileSync(lockFile, String(process.pid))
+        const release = () => { try { if (fs.readFileSync(lockFile, 'utf8') === String(process.pid)) fs.unlinkSync(lockFile) } catch { /* already gone */ } }
+        app.on('will-quit', release)
+        process.on('exit', release)
+      }
+    } catch {
+      primary = false
+    }
+    if (!primary) {
+      const alt = path.join(os.tmpdir(), `zeus-dev-player-${process.pid}`)
+      fs.mkdirSync(alt, { recursive: true })
+      app.setPath('userData', alt)
+    }
+  }
+}
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
 import type { HandheldSendRecipe } from '../src/lib/handheld-tag-iterate.js'
 import {

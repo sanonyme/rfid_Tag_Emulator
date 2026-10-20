@@ -3,7 +3,7 @@ import type { Database } from './database'
 import { RequestError } from './service'
 import { isAccountId, isHandle, storedPrivateText, type FriendAction, type FriendEntry, type PrivateMessage } from '../src/lib/workshop-social'
 import { record } from '../src/lib/workshop-cloud-model'
-import { isE2ePublicJwk, type E2ePublicJwk } from '../src/lib/workshop-e2e'
+import { isE2eKeyBackup, isE2ePublicJwk, type E2ePublicJwk } from '../src/lib/workshop-e2e'
 
 const pair=(a:string,b:string)=>[a,b].sort()
 export class WorkshopSocial {
@@ -85,17 +85,29 @@ export class WorkshopSocial {
   async savePublicKey(userId:string,raw:unknown):Promise<{ok:true}> {
     if(!record(raw)||!isE2ePublicJwk(raw.publicKey))throw new RequestError('Invalid secure-message key')
     const publicKey=JSON.stringify({kty:'EC',crv:'P-256',x:raw.publicKey.x,y:raw.publicKey.y})
-    await this.db.query('UPDATE users SET e2e_public=$2 WHERE id=$1',[userId,publicKey])
+    const wrapped=raw.wrapped==null?null:isE2eKeyBackup(raw.wrapped)?JSON.stringify(raw.wrapped):null
+    if(raw.wrapped!=null&&!wrapped)throw new RequestError('Invalid secure-message backup')
+    if(!wrapped){
+      await this.db.query('UPDATE users SET e2e_public=$2 WHERE id=$1 AND e2e_public IS NULL AND e2e_wrapped IS NULL',[userId,publicKey])
+      return {ok:true}
+    }
+    const claimed=await this.db.query('UPDATE users SET e2e_public=$2, e2e_wrapped=$3 WHERE id=$1 AND e2e_wrapped IS NULL RETURNING id',[userId,publicKey,wrapped])
+    if(claimed.rows.length)return {ok:true}
+    const refreshed=await this.db.query('UPDATE users SET e2e_wrapped=$3 WHERE id=$1 AND e2e_public=$2 RETURNING id',[userId,publicKey,wrapped])
+    if(!refreshed.rows.length)throw new RequestError('This account already has a secure chat key')
     return {ok:true}
   }
-  async publicKey(userId:string,target:unknown):Promise<{publicKey:E2ePublicJwk|null}> {
+  async publicKey(userId:string,target:unknown):Promise<{publicKey:E2ePublicJwk|null;wrapped?:unknown}> {
     if(!isAccountId(target))throw new RequestError('Choose a player')
     if(target!==userId)await this.permitted(userId,target,this.db,true)
-    const {rows:[row]}=await this.db.query('SELECT e2e_public FROM users WHERE id=$1',[target])
-    if(!row?.e2e_public)return {publicKey:null}
-    try{
-      const parsed=JSON.parse(row.e2e_public) as unknown
-      return {publicKey:isE2ePublicJwk(parsed)?parsed:null}
-    }catch{return {publicKey:null}}
+    const {rows:[row]}=await this.db.query('SELECT e2e_public, e2e_wrapped FROM users WHERE id=$1',[target])
+    let publicKey:E2ePublicJwk|null=null
+    try{const parsed=JSON.parse(row?.e2e_public??'null') as unknown; publicKey=isE2ePublicJwk(parsed)?parsed:null}catch{publicKey=null}
+    if(target!==userId)return {publicKey}
+    let wrapped:unknown=null
+    if(row?.e2e_wrapped){
+      try{const parsed=JSON.parse(row.e2e_wrapped) as unknown; wrapped=isE2eKeyBackup(parsed)?parsed:null}catch{wrapped=null}
+    }
+    return {publicKey,wrapped}
   }
 }

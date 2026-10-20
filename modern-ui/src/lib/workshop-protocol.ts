@@ -138,6 +138,7 @@ export function sanitizeWorkshopChat(raw: unknown): string | null {
 export function sanitizeWorkshopDm(raw: unknown): string | null {
   if (typeof raw !== 'string' || raw.length < 1 || raw.length > 4000) return null
   if (/^zeus1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(raw)) return raw
+  if (/^zeus2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(raw)) return raw
   return sanitizeWorkshopChat(raw)
 }
 

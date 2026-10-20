@@ -24,6 +24,7 @@ ALTER TABLE users ALTER COLUMN handle SET NOT NULL;
 ALTER TABLE users ALTER COLUMN handle SET DEFAULT ('elf_' || nextval('workshop_handle_seq')::text);
 CREATE UNIQUE INDEX IF NOT EXISTS users_handle_unique ON users(handle);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS e2e_public text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS e2e_wrapped text;
 CREATE TABLE IF NOT EXISTS profiles (
   user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   data jsonb NOT NULL, titles jsonb NOT NULL DEFAULT '[]', merged_local boolean NOT NULL DEFAULT false,

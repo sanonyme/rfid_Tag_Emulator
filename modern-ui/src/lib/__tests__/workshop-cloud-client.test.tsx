@@ -224,7 +224,7 @@ describe('Workshop cloud client', () => {
     localStorage.setItem(`workshop-account-cache:${identity.userId}`, JSON.stringify(offline))
 
     const api = new CloudApi('http://localhost:8787')
-    vi.spyOn(api, 'publishE2eKey').mockResolvedValue()
+    vi.spyOn(api, 'restoreAccountKeys').mockResolvedValue()
     const syncs: typeof server[] = []
     vi.spyOn(api, 'request').mockImplementation(async (path, body) => {
       if (path === '/auth/login') return { token: 'a'.repeat(64), identity }

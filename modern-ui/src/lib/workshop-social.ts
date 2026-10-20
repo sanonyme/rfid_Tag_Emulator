@@ -21,6 +21,8 @@ export function privateText(v:unknown):string|null {
 export function storedPrivateText(v:unknown):string|null {
   if(typeof v!=='string'||v.length<1||v.length>4000)return null
   if(/^zeus1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v))return v
+  // zeus2.<senderX>.<senderY>.<recipientX>.<recipientY>.<iv>.<ciphertext>
+  if(/^zeus2\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(v))return v
   return privateText(v)
 }
 export function parseFriends(raw:unknown):FriendEntry[] {

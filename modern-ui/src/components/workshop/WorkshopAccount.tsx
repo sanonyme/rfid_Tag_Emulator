@@ -68,7 +68,7 @@ export function WorkshopAccount({ open, onOpenChange, identity, online, endpoint
     try {
       onPrepare()
       const api = new CloudApi(endpoint)
-      if (verification && signup) await api.verifySignup(verification.requestId, code, profile)
+      if (verification && signup) await api.verifySignup(verification.requestId, code, profile, password)
       else {
         const normalized = signup ? normalizeHandle(handle) : null
         if (signup && !normalized) throw new Error('Choose a username: 3–40 characters, start with a letter, letters/numbers/underscores only.')

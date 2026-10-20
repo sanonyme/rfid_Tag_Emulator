@@ -3,7 +3,7 @@ import { PROFILE_KEY, guestAfterAccountImport, loadProfile, newProfile, saveProf
 import { mergeBag, parseCloudProfile } from './workshop-cloud-model'
 import { RARITIES } from './workshop-items'
 import { parseFriends, parsePrivateMessages, privateText, type FriendAction, type PrivateMessage } from './workshop-social'
-import { decryptPrivateMessage, encryptPrivateMessage, ensureE2eKeys, isE2ePublicJwk, type E2ePublicJwk } from './workshop-e2e'
+import { adoptExtraKeys, copyLocalKeyEntries, createAccountKeyBackup, decryptPrivateMessage, encryptPrivateMessage, ensureE2eKeys, hasLocalE2eKeys, installAccountKeyBackup, isE2eKeyBackup, isE2ePublicJwk, type E2eKeyBackup, type E2ePublicJwk } from './workshop-e2e'
 import { parseMissionView, type MissionView } from './workshop-missions'
 
 const SESSION_KEY = 'workshop-account-session'
@@ -117,7 +117,7 @@ export class CloudApi {
     if (record(auth) && auth.verificationRequired === true && typeof auth.requestId === 'string' && typeof auth.email === 'string') {
       return { requestId: auth.requestId, email: auth.email, resendAfter: Date.now() + 60000 } satisfies VerificationChallenge
     }
-    await this.completeLogin(auth, local, { consumeGuestBag: signup })
+    await this.completeLogin(auth, local, { consumeGuestBag: signup, password: fields.password })
     return null
   }
   async handleAvailable(handle: string, email = '') {
@@ -131,8 +131,8 @@ export class CloudApi {
       reason: typeof raw.reason === 'string' ? raw.reason : null,
     }
   }
-  async verifySignup(requestId: string, code: string, local: WorkshopProfile) {
-    await this.completeLogin(await this.request('/auth/verify', { requestId, code }, null), local, { consumeGuestBag: true })
+  async verifySignup(requestId: string, code: string, local: WorkshopProfile, password = '') {
+    await this.completeLogin(await this.request('/auth/verify', { requestId, code }, null), local, { consumeGuestBag: true, password })
   }
   /** Bag offered on first-login: guest progress only — never a leftover signed-in account bag. */
   private firstLoginSeed(local: WorkshopProfile): WorkshopProfile {
@@ -153,7 +153,7 @@ export class CloudApi {
     }
     return local
   }
-  private async completeLogin(auth: unknown, local: WorkshopProfile, opts: { consumeGuestBag?: boolean } = {}) {
+  private async completeLogin(auth: unknown, local: WorkshopProfile, opts: { consumeGuestBag?: boolean; password?: string } = {}) {
     if (!record(auth) || typeof auth.token !== 'string') throw new Error('Invalid account response')
     const identity = parseIdentity(auth.identity)
     if (!identity?.userId) throw new Error('Invalid account identity')
@@ -199,14 +199,49 @@ export class CloudApi {
     const profile = snapshot.profile; profile.device = local.device
     saveProfile(profile)
     localStorage.setItem(`workshop-account-cache:${identity.userId}`, JSON.stringify(profile))
-    await this.publishE2eKey(account).catch(() => { /* chat still works; retry on next private send */ })
+    if (opts.password && opts.password.length >= 10) await this.restoreAccountKeys(opts.password, account).catch(() => { /* chat retries on the next sign-in */ })
     return account
   }
-  /** Publish this device's public key so friends can encrypt to us. */
-  async publishE2eKey(account: Account | null = storedAccount()) {
-    if (!account?.identity.userId) return
-    const publicKey = await ensureE2eKeys(account.identity.userId)
-    await this.request('/crypto/key', { publicKey }, account)
+  private async ownKeyRecord(account: Account): Promise<{ supported: boolean; publicKey: E2ePublicJwk | null; wrapped: E2eKeyBackup | null }> {
+    const raw = await this.request(`/crypto/key?user=${encodeURIComponent(account.identity.userId!)}`, undefined, account)
+    if (!record(raw) || !('wrapped' in raw)) return { supported: false, publicKey: null, wrapped: null }
+    return {
+      supported: true,
+      publicKey: isE2ePublicJwk(raw.publicKey) ? raw.publicKey : null,
+      wrapped: isE2eKeyBackup(raw.wrapped) ? raw.wrapped : null,
+    }
+  }
+  /** Pull the account key backup (or publish this device's keys) so chat follows the login. */
+  async restoreAccountKeys(password: string, account: Account | null = storedAccount()) {
+    if (!account?.identity.userId || password.length < 10) return
+    const userId = account.identity.userId
+    const remote = await this.ownKeyRecord(account).catch(() => null)
+    // Older servers omit `wrapped` and would throw away a new key. Wait for the backup column.
+    if (!remote?.supported) return
+    if (remote.wrapped) {
+      const prior = copyLocalKeyEntries(userId)
+      await installAccountKeyBackup(userId, password, remote.wrapped)
+      const merged = adoptExtraKeys(userId, prior)
+      if (merged) {
+        const backup = await createAccountKeyBackup(userId, password)
+        await this.request('/crypto/key', { publicKey: backup.publicKey, wrapped: backup.wrapped }, account)
+      }
+      return
+    }
+    if (!hasLocalE2eKeys(userId)) await ensureE2eKeys(userId)
+    const backup = await createAccountKeyBackup(userId, password)
+    try {
+      await this.request('/crypto/key', { publicKey: backup.publicKey, wrapped: backup.wrapped }, account)
+    } catch {
+      const again = await this.ownKeyRecord(account).catch(() => null)
+      if (!again?.wrapped) return
+      const prior = copyLocalKeyEntries(userId)
+      await installAccountKeyBackup(userId, password, again.wrapped)
+      if (adoptExtraKeys(userId, prior)) {
+        const merged = await createAccountKeyBackup(userId, password)
+        await this.request('/crypto/key', { publicKey: merged.publicKey, wrapped: merged.wrapped }, account)
+      }
+    }
   }
   async peerPublicKey(userId: string): Promise<E2ePublicJwk | null> {
     const raw = await this.request(`/crypto/key?user=${encodeURIComponent(userId)}`)
@@ -283,7 +318,7 @@ export class CloudApi {
     if (!account?.identity.userId) throw new Error('Sign in to send private messages')
     const plain = privateText(text)
     if (!plain) throw new Error('Messages must contain 1–1000 characters')
-    await this.publishE2eKey(account)
+    if (!hasLocalE2eKeys(account.identity.userId)) throw new Error('Sign out and sign in again to restore messages on this device.')
     const peerKey = await this.peerPublicKey(to)
     if (!peerKey) throw new Error('This friend has not opened Zeus on a device that supports secure chat yet. Ask them to sign in once.')
     const sealed = await encryptPrivateMessage(account.identity.userId, peerKey, plain)
@@ -296,7 +331,7 @@ export class CloudApi {
     const plain = privateText(text) ?? text.trim()
     if (!account?.identity.userId || !toUserId || !plain) return text.trim()
     try {
-      await this.publishE2eKey(account)
+      if (!hasLocalE2eKeys(account.identity.userId)) return plain.slice(0, 80)
       const peerKey = await this.peerPublicKey(toUserId)
       if (!peerKey) return plain.slice(0, 80)
       return await encryptPrivateMessage(account.identity.userId, peerKey, plain.slice(0, 1000))

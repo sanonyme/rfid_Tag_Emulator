@@ -359,10 +359,6 @@ function Floor({
   }, [open])
 
   useEffect(() => { admissionRef.current = admission }, [admission])
-  useEffect(() => {
-    if (!identity?.userId || !endpoint) return
-    void new CloudApi(endpoint).publishE2eKey().catch(() => {})
-  }, [identity?.userId, endpoint])
 
   useEffect(() => {
     if (!identity?.userId || !endpoint || !online) { setFriendLinks([]); return }
