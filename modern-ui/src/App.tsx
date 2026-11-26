@@ -597,10 +597,13 @@ function App() {
     })
   }, [connected, host, port])
 
-  // Toast when update is available (Electron only)
+  // Toast when update is available / downloaded (Electron only)
   React.useEffect(() => {
     const api = window.electronAPI
     if (!api) return
+    const openUpdatesInSettings = () => {
+      handleOpenSettings('updates')
+    }
     api.onUpdateAvailable(async () => {
       let autoDownload = true
       try {
@@ -609,24 +612,66 @@ function App() {
         autoDownload = true
       }
       if (autoDownload) {
-        toast.info('Update found', {
-          description: 'Downloading in the background. Restart from Settings when it is ready.',
+        const toastId = toast.info('Update found — downloading…', {
+          description: (
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(toastId)
+                openUpdatesInSettings()
+              }}
+              className="text-left underline-offset-2 hover:underline"
+            >
+              Downloading in the background. Click here to view progress in Settings.
+            </button>
+          ),
           duration: 8000,
+          action: {
+            label: 'View',
+            onClick: openUpdatesInSettings,
+          },
         })
       } else {
-        toast.info('Update available', {
-          description: 'Open Settings → Updates to download and install.',
+        const toastId = toast.info('Update available', {
+          description: (
+            <button
+              type="button"
+              onClick={() => {
+                toast.dismiss(toastId)
+                openUpdatesInSettings()
+              }}
+              className="text-left underline-offset-2 hover:underline"
+            >
+              Click here to open Settings → Updates to download and install.
+            </button>
+          ),
           duration: 8000,
+          action: {
+            label: 'Open',
+            onClick: openUpdatesInSettings,
+          },
         })
       }
     })
     api.onUpdateDownloaded(() => {
-      toast.success('Update ready', {
-        description: 'Restart the app to install the update.',
-        duration: 10000,
+      toast.success('Update ready to install', {
+        description: 'Restart Zeus now to apply the update?',
+        duration: Infinity,
+        action: {
+          label: 'Yes, Restart',
+          onClick: () => {
+            api.quitAndInstall()
+          },
+        },
+        cancel: {
+          label: 'No, Later',
+          onClick: () => {
+            /* dismiss */
+          },
+        },
       })
     })
-  }, [])
+  }, [handleOpenSettings])
 
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

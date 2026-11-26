@@ -133,20 +133,24 @@ export function SettingsDialog({
   }, [open])
 
   useEffect(() => {
-    if (!open || highlight !== 'upcCheckDigitHints') return
+    if (!open || !highlight) return
+    const targetId = SETTINGS_HIGHLIGHT_IDS[highlight]
+    if (!targetId) return
 
     const scrollTarget = () => {
-      document.getElementById(SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints)?.scrollIntoView({
+      document.getElementById(targetId)?.scrollIntoView({
         behavior: 'smooth',
         block: 'center',
       })
     }
 
     const scrollTimer = window.setTimeout(scrollTarget, 150)
-    toast.message('Turn off live check-digit hints', {
-      description: 'Use the “Live check-digit hints” switch in the UPC section below.',
-      duration: 7000,
-    })
+    if (highlight === 'upcCheckDigitHints') {
+      toast.message('Turn off live check-digit hints', {
+        description: 'Use the “Live check-digit hints” switch in the UPC section below.',
+        duration: 7000,
+      })
+    }
 
     const clearTimer = window.setTimeout(() => onHighlightClear?.(), 6000)
     return () => {
@@ -595,7 +599,13 @@ export function SettingsDialog({
 
           {/* Updates — desktop Electron only (mock in dev browser) */}
           {window.electronAPI?.checkForUpdate && (
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+          <div
+            id={SETTINGS_HIGHLIGHT_IDS.updates}
+            className={cn(
+              'rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4 transition-all duration-300',
+              highlight === 'updates' && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+            )}
+          >
             <h4 className="text-sm font-semibold">Updates</h4>
             <div className="flex items-start justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
                 <div className="min-w-0 flex-1">

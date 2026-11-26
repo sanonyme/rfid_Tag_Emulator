@@ -102,6 +102,7 @@
     "serialize-javascript": "^7.0.3",
     "node-gyp": "^12.2.0",
     "uuid": "^14.0.0",
+    "nan": "^2.30.0",
     "workbox-build": {
       "glob": "^14.0.6"
     },

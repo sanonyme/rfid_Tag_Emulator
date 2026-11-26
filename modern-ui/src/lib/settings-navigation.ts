@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
 
 /** Sections that can be scrolled to / highlighted when opening Settings. */
-export type SettingsHighlightTarget = 'upcCheckDigitHints'
+export type SettingsHighlightTarget = 'upcCheckDigitHints' | 'updates'
 
 export const SETTINGS_HIGHLIGHT_IDS: Record<SettingsHighlightTarget, string> = {
   upcCheckDigitHints: 'settings-upc-check-digit-hints',
+  updates: 'settings-updates',
 }
 
 const OPEN_SETTINGS_EVENT = 'zeus:open-settings'

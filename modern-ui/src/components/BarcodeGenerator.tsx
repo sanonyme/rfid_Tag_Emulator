@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { Tabs, TabsContent } from './ui/tabs'
 import { QrCodeGenerator } from './QrCodeGenerator'
 import { ZplViewerTab } from './ZplViewerTab'
+import { WalmartLabelGenerator } from './WalmartLabelGenerator'
 import JSZip from 'jszip'
 import type { GenMode } from '@/lib/gen-modes'
 
@@ -620,6 +621,10 @@ export function BarcodeGenerator({
 
         <TabsContent value="zpl" className="flex-1 mt-0 min-h-0">
           <ZplViewerTab />
+        </TabsContent>
+
+        <TabsContent value="walmart" className="flex-1 mt-0 min-h-0">
+          <WalmartLabelGenerator />
         </TabsContent>
 
         <TabsContent value="batch" className="flex-1 mt-0">

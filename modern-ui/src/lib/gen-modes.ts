@@ -3,10 +3,11 @@ import {
   QrCode,
   FileText,
   Package,
+  Tag,
   type LucideIcon,
 } from 'lucide-react'
 
-export type GenMode = 'barcode' | 'qrcode' | 'zpl' | 'batch'
+export type GenMode = 'barcode' | 'qrcode' | 'zpl' | 'walmart' | 'batch'
 
 export const GEN_MODE_OPTIONS: {
   value: GenMode
@@ -31,6 +32,12 @@ export const GEN_MODE_OPTIONS: {
     label: 'ZPL',
     description: 'Label printer preview',
     icon: FileText,
+  },
+  {
+    value: 'walmart',
+    label: 'Walmart Label',
+    description: 'Carton label (Code128 + ITF)',
+    icon: Tag,
   },
   {
     value: 'batch',

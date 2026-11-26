@@ -22,6 +22,24 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.3.2',
+    date: '2026-11',
+    highlights: [
+      {
+        title: 'TCP: persistent Client & Hercules-style TCP Server',
+        detail: 'Connect to any IP and port with a persistent TCP socket, or open a local TCP server to accept clients, inspect live ASCII/HEX RX & TX traffic, toggle Echo mode, and send replies.',
+      },
+      {
+        title: 'Fixed: random UPC fill',
+        detail: 'Quickly populate valid random UPC entries directly from the Fixed tab.',
+      },
+      {
+        title: 'Christmas Special theme',
+        detail: 'Launches with the festive Christmas Special theme by default — switch anytime in Settings and your choice is saved.',
+      },
+    ],
+  },
+  {
     version: '10.3.1',
     date: '2026-10',
     highlights: [
