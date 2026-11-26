@@ -12,7 +12,7 @@ const SHORTCUTS = [
     { label: 'Go to Fixed', keys: 'Ctrl+1' },
     { label: 'Go to Handheld', keys: 'Ctrl+2' },
     { label: 'Go to OCR', keys: 'Ctrl+3' },
-    { label: 'Go to Custom', keys: 'Ctrl+4' },
+    { label: 'Go to TCP', keys: 'Ctrl+4' },
     { label: 'Go to API', keys: 'Ctrl+5' },
     { label: 'Go to Decoder', keys: 'Ctrl+6' },
     { label: 'Go to Auto', keys: 'Ctrl+7' },

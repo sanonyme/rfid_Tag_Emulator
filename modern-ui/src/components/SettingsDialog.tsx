@@ -67,7 +67,7 @@ const TAB_OPTIONS_ALL: { value: DefaultTab; label: string }[] = [
   { value: 'fixed', label: 'Fixed' },
   { value: 'handheld', label: 'Handheld' },
   { value: 'ocr', label: 'OCR' },
-  { value: 'custom', label: 'Custom' },
+  { value: 'custom', label: 'TCP' },
   { value: 'api', label: 'API' },
   { value: 'decoder', label: 'Decoder' },
   { value: 'automation', label: 'Auto' },

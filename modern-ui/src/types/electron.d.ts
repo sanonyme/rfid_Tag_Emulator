@@ -84,6 +84,117 @@ export interface ElectronAPI {
   onCustomSuccess: (callback: (message: string) => void) => void
   onCustomError: (callback: (message: string) => void) => void
 
+  // Custom TCP Server (Hercules-style)
+  tcpServerStart?: (
+    port: number,
+    host?: string,
+  ) => Promise<{
+    ok: boolean
+    status?: {
+      running: boolean
+      host: string
+      port: number | null
+      clients: { id: string; address: string; port: number; connectedAt: number }[]
+    }
+    error?: string
+  }>
+  tcpServerStop?: () => Promise<{
+    ok: boolean
+    status: {
+      running: boolean
+      host: string
+      port: number | null
+      clients: { id: string; address: string; port: number; connectedAt: number }[]
+    }
+  }>
+  tcpServerStatus?: () => Promise<{
+    running: boolean
+    host: string
+    port: number | null
+    clients: { id: string; address: string; port: number; connectedAt: number }[]
+  }>
+  tcpServerSend?: (
+    payload: string,
+    options?: { clientId?: string; hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
+  ) => Promise<{ ok: boolean; sentCount?: number; byteLength?: number; hex?: string; error?: string }>
+  tcpServerDisconnectClient?: (clientId: string) => Promise<{ ok: boolean; error?: string }>
+  onTcpServerStatus?: (
+    callback: (status: {
+      running: boolean
+      host: string
+      port: number | null
+      clients: { id: string; address: string; port: number; connectedAt: number }[]
+    }) => void,
+  ) => () => void
+  onTcpServerClientConnected?: (
+    callback: (client: { id: string; address: string; port: number; connectedAt: number }) => void,
+  ) => () => void
+  onTcpServerClientDisconnected?: (
+    callback: (client: { id: string; address: string; port: number; connectedAt: number }) => void,
+  ) => () => void
+  onTcpServerData?: (
+    callback: (event: {
+      clientId: string
+      address: string
+      port: number
+      text: string
+      hex: string
+      byteLength: number
+      timestamp: number
+    }) => void,
+  ) => () => void
+  onTcpServerError?: (
+    callback: (event: {
+      clientId?: string
+      address?: string
+      port?: number
+      message: string
+      timestamp: number
+    }) => void,
+  ) => () => void
+
+  // Custom Persistent TCP Client (Hercules-style)
+  tcpClientConnect?: (
+    host: string,
+    port: number,
+  ) => Promise<{
+    ok: boolean
+    status?: { connected: boolean; host: string | null; port: number | null }
+    error?: string
+  }>
+  tcpClientDisconnect?: () => Promise<{
+    ok: boolean
+    status: { connected: boolean; host: string | null; port: number | null }
+  }>
+  tcpClientStatus?: () => Promise<{
+    connected: boolean
+    host: string | null
+    port: number | null
+  }>
+  tcpClientSend?: (
+    payload: string,
+    options?: { hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
+  ) => Promise<{ ok: boolean; byteLength?: number; hex?: string; error?: string }>
+  onTcpClientStatus?: (
+    callback: (status: { connected: boolean; host: string | null; port: number | null }) => void,
+  ) => () => void
+  onTcpClientData?: (
+    callback: (event: {
+      host: string
+      port: number
+      text: string
+      hex: string
+      byteLength: number
+      timestamp: number
+    }) => void,
+  ) => () => void
+  onTcpClientDisconnected?: (
+    callback: (event: { host: string | null; port: number | null; timestamp: number }) => void,
+  ) => () => void
+  onTcpClientError?: (
+    callback: (event: { message: string; timestamp: number }) => void,
+  ) => () => void
+
   // TDT 2.3 bridge
   tdtTranslate?: (
     input: string,

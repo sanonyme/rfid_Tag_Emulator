@@ -887,12 +887,44 @@ export function applyTheme(themeName: string, isDark: boolean) {
   window.dispatchEvent(new CustomEvent(THEME_CHANGE_EVENT, { detail: { theme: themeName, isDark: useDark } }))
 }
 
+export const DEFAULT_THEME = 'christmas'
+
+/**
+ * Bump or change this key whenever a release ships a new default theme that
+ * should apply once for existing users who already have a prior theme in
+ * `localStorage`, while still letting them switch away afterward.
+ */
+const THEME_RELEASE_SEED_KEY = 'app-theme-seed-christmas-2026'
+
+function ensureReleaseThemeSeeded(): void {
+  try {
+    if (localStorage.getItem(THEME_RELEASE_SEED_KEY) === '1') return
+    localStorage.setItem(THEME_RELEASE_SEED_KEY, '1')
+    localStorage.setItem('app-theme', DEFAULT_THEME)
+    if (themeForcesDark(DEFAULT_THEME)) {
+      localStorage.setItem('theme', 'dark')
+    }
+  } catch {
+    /* ignore storage errors */
+  }
+}
+
 export function getSavedTheme(): string {
-  const saved = localStorage.getItem('app-theme') || 'john'
-  return themes.some((t) => t.name === saved) ? saved : 'john'
+  ensureReleaseThemeSeeded()
+  try {
+    const saved = localStorage.getItem('app-theme') || DEFAULT_THEME
+    return themes.some((t) => t.name === saved) ? saved : DEFAULT_THEME
+  } catch {
+    return DEFAULT_THEME
+  }
 }
 
 export function saveTheme(themeName: string) {
-  localStorage.setItem('app-theme', themeName)
+  try {
+    localStorage.setItem(THEME_RELEASE_SEED_KEY, '1')
+    localStorage.setItem('app-theme', themeName)
+  } catch {
+    /* ignore storage errors */
+  }
 }
 

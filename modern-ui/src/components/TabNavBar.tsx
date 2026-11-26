@@ -35,7 +35,7 @@ const TAB_ITEMS_BASE: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'fixed', label: 'Fixed', icon: Radio },
   { value: 'handheld', label: 'Handheld', icon: Smartphone },
   { value: 'ocr', label: 'OCR', icon: ScanLine },
-  { value: 'custom', label: 'Custom', icon: Terminal },
+  { value: 'custom', label: 'TCP', icon: Terminal },
   { value: 'edge', label: 'Edge', icon: Cloud },
   { value: 'api', label: 'API', icon: Globe },
   { value: 'decoder', label: 'Decoder', icon: Code2 },

@@ -44,6 +44,23 @@ const { autoUpdater } = electronUpdater
   }
 }
 import { TCPEmulatorHandler, HandheldServerHandler, sendOCRMessage, sendCustomMessage } from './tcp-handler.js'
+import {
+  startTcpServer,
+  stopTcpServer,
+  getTcpServerStatus,
+  sendToTcpServerClients,
+  disconnectTcpServerClient,
+  shutdownTcpServerSync,
+  type TcpServerSendOptions,
+} from './tcp-server-handler.js'
+import {
+  connectCustomTcpClient,
+  disconnectCustomTcpClient,
+  disconnectCustomTcpClientSync,
+  getCustomTcpClientStatus,
+  sendCustomTcpClientData,
+  type CustomTcpClientSendOptions,
+} from './tcp-client-handler.js'
 import type { HandheldSendRecipe } from '../src/lib/handheld-tag-iterate.js'
 import {
   grantAdminSession,
@@ -568,6 +585,37 @@ app.whenReady().then(() => {
     sendCustomMessage(host, port, message)
       .then(() => console.log('Custom: Send completed'))
       .catch((err) => console.error('Custom: Send error:', err))
+  })
+
+  // Custom TCP Server IPC handlers (Hercules-style)
+  ipcMain.handle('tcp-server-start', async (_event, port: number, host?: string) => {
+    return startTcpServer(port, host)
+  })
+  ipcMain.handle('tcp-server-stop', async () => {
+    return stopTcpServer()
+  })
+  ipcMain.handle('tcp-server-status', async () => {
+    return getTcpServerStatus()
+  })
+  ipcMain.handle('tcp-server-send', async (_event, payload: string, options?: TcpServerSendOptions) => {
+    return sendToTcpServerClients(payload, options)
+  })
+  ipcMain.handle('tcp-server-disconnect-client', async (_event, clientId: string) => {
+    return disconnectTcpServerClient(clientId)
+  })
+
+  // Custom Persistent TCP Client IPC handlers (Hercules-style)
+  ipcMain.handle('tcp-client-connect', async (_event, host: string, port: number) => {
+    return connectCustomTcpClient(host, port)
+  })
+  ipcMain.handle('tcp-client-disconnect', async () => {
+    return disconnectCustomTcpClient()
+  })
+  ipcMain.handle('tcp-client-status', async () => {
+    return getCustomTcpClientStatus()
+  })
+  ipcMain.handle('tcp-client-send', async (_event, payload: string, options?: CustomTcpClientSendOptions) => {
+    return sendCustomTcpClientData(payload, options)
   })
 
   ipcMain.handle('tdt-translate', async (_event, input: string, options?: Parameters<typeof tdtBridgeTranslate>[1]) => {
@@ -1887,6 +1935,8 @@ app.on('window-all-closed', () => {
   }
   // Clean up TCP handlers
   tcpHandler?.shutdown()
+  shutdownTcpServerSync()
+  disconnectCustomTcpClientSync()
   Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
   shellProcesses.forEach((proc) => proc.kill())
@@ -1923,6 +1973,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   // Clean up TCP handlers before quitting
   tcpHandler?.shutdown()
+  shutdownTcpServerSync()
+  disconnectCustomTcpClientSync()
   Array.from(handheldHandlers.values()).forEach(handler => handler.shutdown())
   handheldHandlers.clear()
   shellProcesses.forEach((proc) => proc.kill())

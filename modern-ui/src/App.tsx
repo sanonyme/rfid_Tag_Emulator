@@ -15,7 +15,7 @@ import {
   type SettingsHighlightTarget,
 } from './lib/settings-navigation'
 import { cn } from './lib/utils'
-import { IS_MOBILE } from './lib/platform'
+import { IS_MOBILE, WORKSHOP_ENABLED } from './lib/platform'
 import AppMobile from './AppMobile'
 import { SnowOverlay } from './components/SnowOverlay'
 import { ConnectionStatus } from './components/ConnectionStatus'
@@ -56,9 +56,11 @@ const SystemLogAnalyzerTab = React.lazy(() =>
   import('./components/SystemLogAnalyzerTab').then((m) => ({ default: m.SystemLogAnalyzerTab })),
 )
 const LogAggregatorTab = React.lazy(() => import('./components/LogAggregatorTab').then((m) => ({ default: m.LogAggregatorTab })))
-const WorkshopFloor = React.lazy(() =>
-  import('./components/workshop/WorkshopFloor').then((m) => ({ default: m.WorkshopFloor })),
-)
+const WorkshopFloor = WORKSHOP_ENABLED
+  ? React.lazy(() =>
+      import('./components/workshop/WorkshopFloor').then((m) => ({ default: m.WorkshopFloor })),
+    )
+  : null
 
 /** Warm tab JS chunks in the background so first click rarely hits Suspense. */
 const TAB_MODULE_LOADERS: Record<string, () => Promise<unknown>> = {
@@ -672,7 +674,7 @@ function App() {
   const effectiveActiveTab = isPopoutWindow && popoutTabId ? popoutTabId : activeTab
   const tabContentHidden = !isPopoutWindow && poppedOutTabs.has(activeTab)
   const workshopFloor = (anchor: 'titlebar' | 'row' = 'titlebar') =>
-    !isPopoutWindow ? (
+    WORKSHOP_ENABLED && WorkshopFloor && !isPopoutWindow ? (
       <Suspense fallback={<div className="h-10 w-40 shrink-0 rounded-xl border border-border/50 bg-card" />}>
         <WorkshopFloor anchor={anchor} />
       </Suspense>

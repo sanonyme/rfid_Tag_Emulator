@@ -48,7 +48,7 @@ const TAB_COMMANDS_ALL: { value: string; label: string; icon: React.ReactNode; n
   { value: 'fixed', label: 'Fixed', icon: <Radio className="w-4 h-4" />, num: 1 },
   { value: 'handheld', label: 'Handheld', icon: <Smartphone className="w-4 h-4" />, num: 2 },
   { value: 'ocr', label: 'OCR', icon: <ScanLine className="w-4 h-4" />, num: 3 },
-  { value: 'custom', label: 'Custom', icon: <Terminal className="w-4 h-4" />, num: 4 },
+  { value: 'custom', label: 'TCP', icon: <Terminal className="w-4 h-4" />, num: 4 },
   { value: 'edge', label: 'Edge', icon: <Cloud className="w-4 h-4" />, num: 5 },
   { value: 'api', label: 'API', icon: <Globe className="w-4 h-4" />, num: 6 },
   { value: 'decoder', label: 'Decoder', icon: <Code2 className="w-4 h-4" />, num: 7 },

@@ -35,6 +35,7 @@ import { InditexTempeGenerator } from './InditexTempeGenerator'
 import { TagListSummary } from './TagListSummary'
 import { DefinedItemsPicker } from './DefinedItemsPicker'
 import { CartonUpcFill } from './CartonUpcFill'
+import { RandomUpcFill } from './RandomUpcFill'
 import { EpcListPeek } from './EpcListPeek'
 import { useTagListShortcuts } from '@/lib/tag-list-shortcuts'
 import { InterTagDelayInput } from '@/components/InterTagDelayInput'
@@ -980,12 +981,15 @@ export const FixedTab = forwardRef<FixedTabHandle, FixedTabProps>(function Fixed
                 placeholder="00000000000000,5"
                 compactClassName="min-h-[136px] rounded-lg border-border/50 bg-muted/10 font-mono text-sm"
                 cornerActions={
-                  <DefinedItemsPicker
-                    host={host}
-                    connected={connected}
-                    trigger="icon"
-                    onApply={applyDefinedItems}
-                  />
+                  <div className="flex items-start gap-1">
+                    <RandomUpcFill host={host} trigger="icon" onApply={applyDefinedItems} />
+                    <DefinedItemsPicker
+                      host={host}
+                      connected={connected}
+                      trigger="icon"
+                      onApply={applyDefinedItems}
+                    />
+                  </div>
                 }
               />
               <div className="space-y-3">

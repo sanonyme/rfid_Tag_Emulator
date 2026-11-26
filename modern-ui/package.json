@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "10.3.1",
+  "version": "10.3.2",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Samy Chemaly",
@@ -98,10 +98,19 @@
     "zpl-renderer-js": "^3.4.0"
   },
   "overrides": {
-    "esbuild": "^0.28.1",
+    "esbuild": "^0.28.2",
     "serialize-javascript": "^7.0.3",
     "node-gyp": "^12.2.0",
-    "uuid": "^14.0.0"
+    "uuid": "^14.0.0",
+    "workbox-build": {
+      "glob": "^14.0.6"
+    },
+    "app-builder-lib": {
+      "minimatch": "^11.0.9"
+    },
+    "@electron/universal": {
+      "minimatch": "^11.0.9"
+    }
   },
   "devDependencies": {
     "@capacitor/android": "^8.2.0",
@@ -118,16 +127,16 @@
     "@types/react-dom": "^18.2.18",
     "@types/ssh2": "^1.15.5",
     "@types/ws": "^8.18.2",
-    "@typescript-eslint/eslint-plugin": "^7.18.0",
-    "@typescript-eslint/parser": "^7.18.0",
+    "@typescript-eslint/eslint-plugin": "^8.74.0",
+    "@typescript-eslint/parser": "^8.74.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
     "dotenv-cli": "^11.0.0",
-    "electron": "^41.0.0",
-    "electron-builder": "^26.15.7",
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
     "eslint": "^8.57.1",
     "eslint-plugin-react-hooks": "^4.6.2",
@@ -224,5 +233,11 @@
         "releaseType": "draft"
       }
     ]
+  },
+  "allowScripts": {
+    "cpu-features": true,
+    "esbuild": true,
+    "node-pty": true,
+    "ssh2": true
   }
 }

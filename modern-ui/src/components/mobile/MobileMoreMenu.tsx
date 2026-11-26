@@ -7,7 +7,7 @@ import {
 import { Terminal, Code2, QrCode, Braces, Settings, Sun, Moon, FolderOpen, Save } from 'lucide-react'
 
 const MORE_ITEMS = [
-  { id: 'custom', label: 'Custom', icon: Terminal },
+  { id: 'custom', label: 'TCP', icon: Terminal },
   { id: 'decoder', label: 'Decoder', icon: Code2 },
   { id: 'jsonlint', label: 'JSON Lint', icon: Braces },
   { id: 'generator', label: 'Generator', icon: QrCode },

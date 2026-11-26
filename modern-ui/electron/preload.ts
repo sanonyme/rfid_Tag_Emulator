@@ -67,6 +67,121 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onCustomError: (callback: (message: string) => void) => 
     ipcRenderer.on('custom-error', (_event, message) => callback(message)),
 
+  // Custom TCP Server (Hercules-style)
+  tcpServerStart: (port: number, host?: string) =>
+    ipcRenderer.invoke('tcp-server-start', port, host),
+  tcpServerStop: () =>
+    ipcRenderer.invoke('tcp-server-stop'),
+  tcpServerStatus: () =>
+    ipcRenderer.invoke('tcp-server-status'),
+  tcpServerSend: (
+    payload: string,
+    options?: { clientId?: string; hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
+  ) => ipcRenderer.invoke('tcp-server-send', payload, options),
+  tcpServerDisconnectClient: (clientId: string) =>
+    ipcRenderer.invoke('tcp-server-disconnect-client', clientId),
+  onTcpServerStatus: (
+    callback: (status: {
+      running: boolean
+      host: string
+      port: number | null
+      clients: { id: string; address: string; port: number; connectedAt: number }[]
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, status: Parameters<typeof callback>[0]) => callback(status)
+    ipcRenderer.on('tcp-server-status', handler)
+    return () => ipcRenderer.removeListener('tcp-server-status', handler)
+  },
+  onTcpServerClientConnected: (
+    callback: (client: { id: string; address: string; port: number; connectedAt: number }) => void,
+  ) => {
+    const handler = (_e: unknown, client: Parameters<typeof callback>[0]) => callback(client)
+    ipcRenderer.on('tcp-server-client-connected', handler)
+    return () => ipcRenderer.removeListener('tcp-server-client-connected', handler)
+  },
+  onTcpServerClientDisconnected: (
+    callback: (client: { id: string; address: string; port: number; connectedAt: number }) => void,
+  ) => {
+    const handler = (_e: unknown, client: Parameters<typeof callback>[0]) => callback(client)
+    ipcRenderer.on('tcp-server-client-disconnected', handler)
+    return () => ipcRenderer.removeListener('tcp-server-client-disconnected', handler)
+  },
+  onTcpServerData: (
+    callback: (event: {
+      clientId: string
+      address: string
+      port: number
+      text: string
+      hex: string
+      byteLength: number
+      timestamp: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, event: Parameters<typeof callback>[0]) => callback(event)
+    ipcRenderer.on('tcp-server-data', handler)
+    return () => ipcRenderer.removeListener('tcp-server-data', handler)
+  },
+  onTcpServerError: (
+    callback: (event: {
+      clientId?: string
+      address?: string
+      port?: number
+      message: string
+      timestamp: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, event: Parameters<typeof callback>[0]) => callback(event)
+    ipcRenderer.on('tcp-server-error', handler)
+    return () => ipcRenderer.removeListener('tcp-server-error', handler)
+  },
+
+  // Custom Persistent TCP Client (Hercules-style)
+  tcpClientConnect: (host: string, port: number) =>
+    ipcRenderer.invoke('tcp-client-connect', host, port),
+  tcpClientDisconnect: () =>
+    ipcRenderer.invoke('tcp-client-disconnect'),
+  tcpClientStatus: () =>
+    ipcRenderer.invoke('tcp-client-status'),
+  tcpClientSend: (
+    payload: string,
+    options?: { hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
+  ) => ipcRenderer.invoke('tcp-client-send', payload, options),
+  onTcpClientStatus: (
+    callback: (status: { connected: boolean; host: string | null; port: number | null }) => void,
+  ) => {
+    const handler = (_e: unknown, status: Parameters<typeof callback>[0]) => callback(status)
+    ipcRenderer.on('tcp-client-status', handler)
+    return () => ipcRenderer.removeListener('tcp-client-status', handler)
+  },
+  onTcpClientData: (
+    callback: (event: {
+      host: string
+      port: number
+      text: string
+      hex: string
+      byteLength: number
+      timestamp: number
+    }) => void,
+  ) => {
+    const handler = (_e: unknown, event: Parameters<typeof callback>[0]) => callback(event)
+    ipcRenderer.on('tcp-client-data', handler)
+    return () => ipcRenderer.removeListener('tcp-client-data', handler)
+  },
+  onTcpClientDisconnected: (
+    callback: (event: { host: string | null; port: number | null; timestamp: number }) => void,
+  ) => {
+    const handler = (_e: unknown, event: Parameters<typeof callback>[0]) => callback(event)
+    ipcRenderer.on('tcp-client-disconnected', handler)
+    return () => ipcRenderer.removeListener('tcp-client-disconnected', handler)
+  },
+  onTcpClientError: (
+    callback: (event: { message: string; timestamp: number }) => void,
+  ) => {
+    const handler = (_e: unknown, event: Parameters<typeof callback>[0]) => callback(event)
+    ipcRenderer.on('tcp-client-error', handler)
+    return () => ipcRenderer.removeListener('tcp-client-error', handler)
+  },
+
   // TDT 2.3 bridge
   tdtTranslate: (
     input: string,

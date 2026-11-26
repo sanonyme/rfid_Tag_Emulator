@@ -270,14 +270,14 @@ function buildSteps(isAdmin: boolean): Step[] {
     {
       target: '[data-tour="tour-custom-main"]',
       placement: 'bottom',
-      title: 'Custom TCP',
+      title: 'TCP Client & Server',
       content: 'Send arbitrary payloads to any host port—useful for one-off protocol tests.',
       data: { tab: 'custom' } satisfies TourStepData,
     },
     {
       target: '[data-tour="tour-custom-log"]',
       placement: 'top',
-      title: 'Custom — log',
+      title: 'TCP — log',
       content: 'Echoes send history and errors for the custom channel.',
       data: { tab: 'custom' } satisfies TourStepData,
     },

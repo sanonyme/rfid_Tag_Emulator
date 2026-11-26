@@ -278,6 +278,63 @@ class MockElectronAPI implements ElectronAPI {
   onCustomSuccess(callback: (message: string) => void) { this._customCallbacks.success.push(callback); }
   onCustomError(callback: (message: string) => void) { this._customCallbacks.error.push(callback); }
 
+  // Custom TCP Server (mock for browser dev)
+  private _tcpServerRunning = false
+  private _tcpServerPort: number | null = null
+  private _tcpServerHost = '0.0.0.0'
+  async tcpServerStart(port: number, host = '0.0.0.0') {
+    this._tcpServerRunning = true
+    this._tcpServerPort = port
+    this._tcpServerHost = host
+    return { ok: true, status: { running: true, host, port, clients: [] } }
+  }
+  async tcpServerStop() {
+    this._tcpServerRunning = false
+    this._tcpServerPort = null
+    return { ok: true, status: { running: false, host: this._tcpServerHost, port: null, clients: [] } }
+  }
+  async tcpServerStatus() {
+    return { running: this._tcpServerRunning, host: this._tcpServerHost, port: this._tcpServerPort, clients: [] }
+  }
+  async tcpServerSend() {
+    return { ok: false, error: 'No clients connected (browser mock)' }
+  }
+  async tcpServerDisconnectClient() {
+    return { ok: false, error: 'Client not found (browser mock)' }
+  }
+  onTcpServerStatus() { return () => {} }
+  onTcpServerClientConnected() { return () => {} }
+  onTcpServerClientDisconnected() { return () => {} }
+  onTcpServerData() { return () => {} }
+  onTcpServerError() { return () => {} }
+
+  // Custom Persistent TCP Client (mock for browser dev)
+  private _tcpClientConnected = false
+  private _tcpClientHost: string | null = null
+  private _tcpClientPort: number | null = null
+  async tcpClientConnect(host: string, port: number) {
+    this._tcpClientConnected = true
+    this._tcpClientHost = host
+    this._tcpClientPort = port
+    return { ok: true, status: { connected: true, host, port } }
+  }
+  async tcpClientDisconnect() {
+    this._tcpClientConnected = false
+    this._tcpClientHost = null
+    this._tcpClientPort = null
+    return { ok: true, status: { connected: false, host: null, port: null } }
+  }
+  async tcpClientStatus() {
+    return { connected: this._tcpClientConnected, host: this._tcpClientHost, port: this._tcpClientPort }
+  }
+  async tcpClientSend(payload: string) {
+    return { ok: true, byteLength: payload.length, hex: '' }
+  }
+  onTcpClientStatus() { return () => {} }
+  onTcpClientData() { return () => {} }
+  onTcpClientDisconnected() { return () => {} }
+  onTcpClientError() { return () => {} }
+
   // Auto Updater
   checkForUpdate() { console.log('Mock: checkForUpdate'); }
   startDownload() { console.log('Mock: startDownload'); }

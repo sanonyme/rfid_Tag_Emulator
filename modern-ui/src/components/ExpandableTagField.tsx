@@ -97,7 +97,7 @@ export function ExpandableTagField({
               {...textareaHandlers}
               className={cn(
                 compactClassName,
-                cornerActions ? 'pr-[4.75rem]' : 'pr-11',
+                cornerActions ? 'pr-[7rem]' : 'pr-11',
                 'rounded-none border-0 shadow-none',
                 'hover:border-transparent focus:border-transparent focus:ring-0 focus-visible:border-transparent focus-visible:ring-0',
                 'transition-[background-color] duration-200 group-hover/expand:bg-muted/15',

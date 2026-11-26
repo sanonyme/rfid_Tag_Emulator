@@ -25,7 +25,7 @@ export const POPOUT_TAB_LABELS: Record<string, string> = {
   fixed: 'Fixed Reader',
   handheld: 'Handheld',
   ocr: 'OCR',
-  custom: 'Custom',
+  custom: 'TCP',
   edge: 'Edge',
   api: 'API',
   decoder: 'Decoder',
