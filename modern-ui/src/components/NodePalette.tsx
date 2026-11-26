@@ -1,12 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import {
-  Search, Clock, ScanLine, Radio, Smartphone, Terminal, Box, Workflow, Variable,
-  Database, FileCode2, Globe, Server, Network, Code2, GitBranch, FileText, ShieldCheck,
-  Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, CornerDownLeft,
-  FolderOpen, Save, ListOrdered,
-} from 'lucide-react'
+import { Search, CornerDownLeft } from 'lucide-react'
 import type { ActionType } from '@/lib/automation-types'
 import {
   NODE_CATEGORY_META,
@@ -14,41 +9,8 @@ import {
   type NodeCategory,
   type NodeCatalogEntry,
 } from '@/lib/automation-node-catalog'
+import { NODE_VISUAL_STYLES } from '@/lib/automation-node-styles'
 import { cn } from '@/lib/utils'
-
-/** Icon + accent colour per node type (drives the palette rows). */
-const PALETTE_ICON: Record<ActionType, { Icon: typeof Clock; accent: string }> = {
-  DELAY: { Icon: Clock, accent: 'text-amber-400' },
-  OCR: { Icon: ScanLine, accent: 'text-pink-400' },
-  FIXED_TAG: { Icon: Radio, accent: 'text-blue-400' },
-  HANDHELD_TAG: { Icon: Smartphone, accent: 'text-emerald-400' },
-  CUSTOM_MESSAGE: { Icon: Terminal, accent: 'text-violet-400' },
-  EDGE_BLOCK: { Icon: Box, accent: 'text-cyan-400' },
-  EDGE_PROCESS: { Icon: Workflow, accent: 'text-teal-400' },
-  SET_VARIABLE: { Icon: Variable, accent: 'text-orange-400' },
-  DB_QUERY: { Icon: Database, accent: 'text-indigo-400' },
-  DB_EXEC: { Icon: Server, accent: 'text-indigo-400' },
-  RUN_SCRIPT: { Icon: FileCode2, accent: 'text-lime-400' },
-  HTTP_REQUEST: { Icon: Globe, accent: 'text-rose-400' },
-  CALL_SEQUENCE: { Icon: Network, accent: 'text-purple-400' },
-  CODE: { Icon: Code2, accent: 'text-yellow-400' },
-  CONDITION: { Icon: GitBranch, accent: 'text-fuchsia-400' },
-  ASSERT: { Icon: ShieldCheck, accent: 'text-red-400' },
-  WAIT_UNTIL: { Icon: Timer, accent: 'text-cyan-400' },
-  FOR_EACH: { Icon: Repeat, accent: 'text-purple-400' },
-  STOP: { Icon: Ban, accent: 'text-stone-400' },
-  GENERATE: { Icon: Sparkles, accent: 'text-amber-400' },
-  COMMENT: { Icon: StickyNote, accent: 'text-muted-foreground' },
-  LOG: { Icon: FileText, accent: 'text-sky-400' },
-  TRANSFORM: { Icon: Wand2, accent: 'text-teal-400' },
-  NOTIFY: { Icon: Bell, accent: 'text-sky-400' },
-  LOOP_N: { Icon: Repeat2, accent: 'text-purple-400' },
-  SWITCH: { Icon: Split, accent: 'text-blue-400' },
-  RANDOM: { Icon: Shuffle, accent: 'text-purple-400' },
-  FILE_READ: { Icon: FolderOpen, accent: 'text-emerald-400' },
-  FILE_WRITE: { Icon: Save, accent: 'text-blue-400' },
-  FILE_LIST: { Icon: ListOrdered, accent: 'text-cyan-400' },
-}
 
 interface NodePaletteProps {
   open: boolean
@@ -184,7 +146,8 @@ export function NodePalette({ open, onOpenChange, onSelect }: NodePaletteProps) 
                     {entries.map((entry) => {
                       const idx = flat.indexOf(entry)
                       const active = idx === activeIndex
-                      const { Icon, accent } = PALETTE_ICON[entry.type]
+                      const visual = NODE_VISUAL_STYLES[entry.type]
+                      const Icon = visual.Icon
                       return (
                         <button
                           key={entry.type}
@@ -197,11 +160,16 @@ export function NodePalette({ open, onOpenChange, onSelect }: NodePaletteProps) 
                             active ? 'bg-accent' : 'hover:bg-accent/50',
                           )}
                         >
-                          <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border/50 bg-background/60', accent)}>
-                            <Icon className="h-4 w-4" />
+                          <span className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1', visual.iconBg)}>
+                            <Icon className={cn('h-4 w-4', visual.iconText)} />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-foreground">{entry.label}</span>
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate text-sm font-medium text-foreground">{entry.label}</span>
+                              <span className="shrink-0 rounded bg-muted/70 px-1 py-px font-mono text-[9px] font-semibold text-muted-foreground">
+                                {visual.badge}
+                              </span>
+                            </span>
                             <span className="block truncate text-xs text-muted-foreground">{entry.description}</span>
                           </span>
                           {active && (

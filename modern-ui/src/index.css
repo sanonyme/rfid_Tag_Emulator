@@ -240,6 +240,72 @@
   app-region: no-drag !important;
 }
 
+/* Zeus Automation React Flow theme tokens & polish */
+.zeus-flow-canvas {
+  --xy-background-color: hsl(var(--muted) / 0.18);
+  --xy-edge-stroke: hsl(var(--muted-foreground) / 0.55);
+  --xy-edge-stroke-selected: hsl(var(--primary));
+  --xy-connectionline-stroke: hsl(var(--primary));
+  --xy-connectionline-stroke-width: 2;
+  --xy-minimap-background-color: hsl(var(--popover));
+  --xy-minimap-mask-background-color: hsl(var(--background) / 0.65);
+  --xy-controls-button-background-color: hsl(var(--popover));
+  --xy-controls-button-background-color-hover: hsl(var(--accent));
+  --xy-controls-button-color: hsl(var(--foreground));
+  --xy-controls-button-border-color: hsl(var(--border));
+}
+
+.zeus-flow-canvas .react-flow__selection {
+  background: hsl(var(--primary) / 0.08);
+  border: 1.5px solid hsl(var(--primary) / 0.7);
+  border-radius: 6px;
+}
+
+.zeus-flow-canvas .react-flow__connection-path {
+  stroke: hsl(var(--primary));
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+
+.zeus-flow-canvas .react-flow__handle-connecting {
+  background: hsl(var(--primary)) !important;
+  box-shadow: 0 0 0 4px hsl(var(--primary) / 0.28);
+}
+
+.zeus-flow-canvas .react-flow__handle-valid {
+  background: #10b981 !important;
+  box-shadow: 0 0 0 4px rgb(16 185 129 / 0.28);
+}
+
+.zeus-flow-canvas .react-flow__edge.animated path {
+  stroke-dasharray: 6 4;
+  animation: dashdraw 0.55s linear infinite;
+}
+
+/* Crisp React Flow zoom rendering in Electron/Chromium:
+   Avoid permanent will-change/3D backing layers that freeze raster scale during zoom,
+   and allow zero-visual-impact paint invalidation when zoom settles. */
+.zeus-crisp-flow .react-flow__viewport,
+.zeus-crisp-flow .react-flow__nodes,
+.zeus-crisp-flow .react-flow__node {
+  will-change: auto;
+}
+
+.zeus-crisp-flow .react-flow__node {
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+.zeus-crisp-flow[data-rf-raster="1"] .react-flow__viewport,
+.zeus-crisp-flow[data-rf-raster="1"] .react-flow__node {
+  background-color: rgba(0, 0, 0, 0.0001);
+}
+
+.zeus-crisp-flow[data-rf-raster="0"] .react-flow__viewport,
+.zeus-crisp-flow[data-rf-raster="0"] .react-flow__node {
+  background-color: transparent;
+}
+
 /* Enhanced Animations */
 @keyframes slideInUp {
   from {
@@ -651,21 +717,21 @@ html[data-theme="christmas"] button.bg-primary {
   contain-intrinsic-size: auto 2rem;
 }
 
-/* Page transition - hardware accelerated fade + subtle lift when a tab becomes active */
+/* Page transition - subtle 2D fade + lift when a tab becomes active.
+   Do NOT leave permanent will-change: transform / translateZ(0) / backface-visibility: hidden
+   on the active tab container — in Chromium/Electron that locks nested CSS-scaled canvases
+   (like React Flow) to a stale 1x GPU raster texture until clicked. */
 [data-state="active"].tab-content-animate {
   animation: tabSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  will-change: transform, opacity;
-  transform: translateZ(0);
-  backface-visibility: hidden;
 }
 @keyframes tabSlideIn {
   from {
     opacity: 0;
-    transform: translateY(4px) scale(0.998) translateZ(0);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1) translateZ(0);
+    transform: translateY(0);
   }
 }
 

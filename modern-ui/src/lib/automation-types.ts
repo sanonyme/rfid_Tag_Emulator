@@ -63,6 +63,30 @@ export interface AutomationTrigger {
   intervalSeconds?: number
 }
 
+/** TCP node action mode (mirrors the TCP Client & TCP Server tab). */
+export type TcpNodeMode =
+  | 'oneshot'
+  | 'client_connect'
+  | 'client_send'
+  | 'client_disconnect'
+  | 'server_start'
+  | 'server_send'
+  | 'server_wait'
+  | 'server_stop'
+
+export type TcpLineEnding = 'none' | 'lf' | 'crlf' | 'cr'
+
+export const TCP_NODE_MODES: { value: TcpNodeMode; label: string; group: 'Client' | 'Server'; hint: string }[] = [
+  { value: 'oneshot', label: 'One-Shot Send (Connect → Send → Close)', group: 'Client', hint: 'Open a temporary socket, send ASCII or HEX, optionally capture reply, then close' },
+  { value: 'client_connect', label: 'TCP Client: Connect (Persistent)', group: 'Client', hint: 'Open the persistent TCP Client socket (synced live with the TCP tab)' },
+  { value: 'client_send', label: 'TCP Client: Send Payload', group: 'Client', hint: 'Send ASCII or HEX over the active TCP Client and optionally await a reply' },
+  { value: 'client_disconnect', label: 'TCP Client: Disconnect', group: 'Client', hint: 'Close the persistent TCP Client socket' },
+  { value: 'server_start', label: 'TCP Server: Start Listening', group: 'Server', hint: 'Start the built-in TCP Server on the chosen bind host and port' },
+  { value: 'server_send', label: 'TCP Server: Send / Broadcast', group: 'Server', hint: 'Send ASCII or HEX to all connected clients or a specific client ID' },
+  { value: 'server_wait', label: 'TCP Server: Wait for Incoming Data', group: 'Server', hint: 'Pause until a connected TCP client sends data, then capture it into a variable' },
+  { value: 'server_stop', label: 'TCP Server: Stop Listening', group: 'Server', hint: 'Disconnect all clients and stop the built-in TCP Server' },
+]
+
 export type EdgeProcessAction = 'start' | 'stop'
 
 /** HTTP verbs supported by the HTTP Request node. */
@@ -114,7 +138,7 @@ export const CODE_STARTERS: Record<'javascript', string> = {
 }
 
 /** What a GENERATE node produces. */
-export type GenerateKind = 'uuid' | 'timestamp' | 'unixMs' | 'randomInt' | 'randomHex'
+export type GenerateKind = 'uuid' | 'timestamp' | 'unixMs' | 'randomInt' | 'randomHex' | 'randomUpc' | 'epcFromUpc'
 
 export const GENERATE_KINDS: { value: GenerateKind; label: string; hint: string }[] = [
   { value: 'uuid', label: 'UUID', hint: 'Random UUID v4' },
@@ -122,6 +146,8 @@ export const GENERATE_KINDS: { value: GenerateKind; label: string; hint: string 
   { value: 'unixMs', label: 'Unix ms', hint: 'Milliseconds since epoch' },
   { value: 'randomInt', label: 'Random integer', hint: 'Inclusive min…max' },
   { value: 'randomHex', label: 'Random hex', hint: 'Lowercase hex string of N chars' },
+  { value: 'randomUpc', label: 'Random GTIN-14 / UPC', hint: 'Valid Mod-10 check-digit 14-digit GTIN/UPC' },
+  { value: 'epcFromUpc', label: 'SGTIN-96 EPC from UPC', hint: 'Encode a UPC + serial into a 24-hex SGTIN-96 EPC' },
 ]
 
 /** How far a STOP node ends execution. */
@@ -140,6 +166,12 @@ export type TransformOp =
   | 'padStart'
   | 'default'
   | 'jsonExtract'
+  | 'regexExtract'
+  | 'base64Encode'
+  | 'base64Decode'
+  | 'urlEncode'
+  | 'urlDecode'
+  | 'decodeEpc'
   | 'round'
   | 'floor'
   | 'ceil'
@@ -152,7 +184,7 @@ export type TransformOp =
   | 'toFixed'
   | 'toProperties'
 
-export type TransformCategory = 'text' | 'number' | 'json' | 'array'
+export type TransformCategory = 'text' | 'number' | 'json' | 'array' | 'encoding'
 
 /**
  * UI metadata for the TRANSFORM op picker. `arg`/`arg2` name the extra inputs a
@@ -176,7 +208,13 @@ export const TRANSFORM_OPS: {
   { value: 'suffix', label: 'Add suffix', category: 'text', arg: 'Suffix', hint: 'Append text' },
   { value: 'padStart', label: 'Pad start', category: 'text', arg: 'Target length', arg2: 'Pad char (default 0)', hint: 'Left-pad to a length' },
   { value: 'default', label: 'Default if empty', category: 'text', arg: 'Fallback value', hint: 'Use fallback when the input is empty' },
+  { value: 'regexExtract', label: 'Regex extract', category: 'text', arg: 'Pattern (e.g. PO-(\\d+))', arg2: 'Capture group (default 1 or 0)', hint: 'Extract matching substring or capture group via regex' },
   { value: 'jsonExtract', label: 'Extract JSON path', category: 'json', arg: 'Path (e.g. data.items.0.epc)', hint: 'Parse input as JSON and read a dot/bracket path' },
+  { value: 'base64Encode', label: 'Base64 encode', category: 'encoding', hint: 'Encode UTF-8 text to Base64' },
+  { value: 'base64Decode', label: 'Base64 decode', category: 'encoding', hint: 'Decode Base64 back to UTF-8 text' },
+  { value: 'urlEncode', label: 'URL encode', category: 'encoding', hint: 'Percent-encode text for URLs / query params' },
+  { value: 'urlDecode', label: 'URL decode', category: 'encoding', hint: 'Decode percent-encoded URL text' },
+  { value: 'decodeEpc', label: 'Decode EPC (GTIN / Serial)', category: 'encoding', hint: 'Decode an SGTIN-96 / RFID hex EPC via TDT/Decoder into JSON (gtin, serial, pureIdentity)' },
   { value: 'round', label: 'Round', category: 'number', hint: 'Round to nearest integer' },
   { value: 'floor', label: 'Floor', category: 'number', hint: 'Round down' },
   { value: 'ceil', label: 'Ceil', category: 'number', hint: 'Round up' },
@@ -330,6 +368,39 @@ export interface AutomationStep {
     duration?: number
     message?: string
     port?: string
+    // --- TCP Client / Server (CUSTOM_MESSAGE) ---
+    /** Action mode matching the TCP tab (defaults to 'oneshot' for legacy nodes) */
+    tcpMode?: TcpNodeMode
+    /** Target host or bind address (supports {{vars}}; empty falls back to app host or 0.0.0.0) */
+    tcpHost?: string
+    /** Send payload parsed as space/colon-separated HEX bytes */
+    tcpHex?: boolean
+    /** Line ending appended in ASCII/UTF-8 mode */
+    tcpLineEnding?: TcpLineEnding
+    /** Wait for a response chunk after sending */
+    tcpWaitForResponse?: boolean
+    /** Timeout in ms for connect / response wait / server receive */
+    tcpTimeoutMs?: number
+    /** Save received payload text into this variable (plus `<name>_hex`) */
+    tcpSaveResponseAs?: string
+    /** TCP Server Send: target client id, or empty / 'all' to broadcast */
+    tcpClientId?: string
+
+    // --- OCR ---
+    /** Optional host override for OCR send (supports {{vars}}; empty uses app host) */
+    ocrHost?: string
+    /** Optional variable name to capture the OCR response (in addition to lastOcrResponse) */
+    ocrSaveAs?: string
+
+    // --- FIXED_TAG / HANDHELD_TAG ---
+    /** FIXED_TAG: auto-connect emulator before sending if not already connected */
+    fixedAutoConnect?: boolean
+    /** FIXED_TAG: optional host override when auto-connecting (supports {{vars}}) */
+    fixedHost?: string
+    /** FIXED_TAG: optional emulator port override when auto-connecting (default 12352) */
+    fixedPort?: string
+    /** HANDHELD_TAG: target handheld TCP server port (supports {{vars}}; default 10472) */
+    handheldPort?: string
     epc?: string
     upc?: string
     count?: number
@@ -384,6 +455,8 @@ export interface AutomationStep {
     dbDatabase?: string
     /** Save first cell / named column into this variable */
     dbSaveAs?: string
+    /** DB_QUERY: save all returned rows as a JSON array string */
+    dbSaveRowsAs?: string
     dbSaveColumn?: string
     dbSaveRowIndex?: number
     /** DB_EXEC: save affected-row count into this variable */
@@ -409,6 +482,8 @@ export interface AutomationStep {
     httpSaveJsonAs?: string
     /** Fail the step (throw) on a non-2xx response */
     httpFailOnError?: boolean
+    /** Attach saved ALE Basic Auth Authorization header automatically */
+    httpUseAleAuth?: boolean
 
     // --- CALL_SEQUENCE ---
     /** Id of the sequence to run as a sub-routine (shares run variables) */
@@ -478,6 +553,10 @@ export interface AutomationStep {
     generateMin?: number
     generateMax?: number
     generateHexLength?: number
+    /** GENERATE (epcFromUpc): UPC/GTIN input (supports {{vars}}) */
+    generateUpc?: string
+    /** GENERATE (epcFromUpc): serial number (supports {{vars}}, e.g. {{nextSerial}}) */
+    generateSerial?: string
 
     // --- COMMENT ---
     commentText?: string
@@ -529,8 +608,8 @@ export interface AutomationStep {
     randomSaveAs?: string
 
     // --- FILE_READ, FILE_WRITE, FILE_LIST ---
-    fileLocation?: 'local' | 'sftp' | 's3'
-    fileStorageProvider?: 'local' | 'sftp' | 's3'
+    fileLocation?: 'local' | 'sftp' | 'ftp' | 's3'
+    fileStorageProvider?: 'local' | 'sftp' | 'ftp' | 's3'
     fileConnectionId?: string
     filePath?: string
     fileContent?: string
@@ -556,8 +635,35 @@ export interface AutomationEdge {
   from: string
   /** Target step id */
   to: string
-  /** Output port on the source node: 'out' | 'true' | 'false' */
+  /** Output port on the source node: 'out' | 'top' | 'bottom' | 'in' | 'true' | 'false' | 'case-*' | 'branch-*' | 'error' */
   sourceHandle?: string
+  /** Optional target port on the destination node: 'in' | 'top' | 'bottom' | 'out' */
+  targetHandle?: string
+}
+
+/**
+ * True when a `sourceHandle` represents one of a standard node's 4 directional
+ * regular flow handles (as opposed to an explicit branch or error port).
+ */
+export function isRegularOutputHandle(handle?: string): boolean {
+  return !handle || handle === 'out' || handle === 'top' || handle === 'bottom' || handle === 'in'
+}
+
+/**
+ * Resolve the next outgoing edge for a node given the logical output handle
+ * returned by the runner (`'out'`, `'true'`, `'false'`, `'error'`, `'case-0'`, etc.).
+ */
+export function findNextEdge(
+  edges: AutomationEdge[],
+  fromId: string,
+  handle: string,
+): AutomationEdge | undefined {
+  const exact = edges.find((e) => e.from === fromId && (e.sourceHandle ?? 'out') === handle)
+  if (exact) return exact
+  if (handle === 'out') {
+    return edges.find((e) => e.from === fromId && isRegularOutputHandle(e.sourceHandle))
+  }
+  return undefined
 }
 
 export interface AutomationSequence {
@@ -701,6 +807,7 @@ export function parseWorkflowSequences(raw: unknown): AutomationSequence[] | nul
             from: idMap.get(e.from)!,
             to: idMap.get(e.to)!,
             sourceHandle: typeof e.sourceHandle === 'string' ? e.sourceHandle : 'out',
+            ...(typeof e.targetHandle === 'string' ? { targetHandle: e.targetHandle } : {}),
           }))
       : undefined
     const frames: AutomationFrame[] | undefined = Array.isArray(s.frames)
@@ -740,7 +847,7 @@ export const DEFAULT_STEP_NAMES: Record<ActionType, string> = {
   OCR: 'Send OCR',
   FIXED_TAG: 'Fixed Reader Scan',
   HANDHELD_TAG: 'Handheld Scan',
-  CUSTOM_MESSAGE: 'Custom Message',
+  CUSTOM_MESSAGE: 'TCP',
   EDGE_BLOCK: 'Invoke Edge Block',
   EDGE_PROCESS: 'Edge Process',
   SET_VARIABLE: 'Set Variable',
@@ -857,12 +964,28 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
       scriptFailOnNonZero: true,
     }
   }
+  if (type === 'CUSTOM_MESSAGE') {
+    return {
+      ...base,
+      tcpMode: 'oneshot',
+      tcpHost: '',
+      port: extras?.customPort || '12345',
+      message: '',
+      tcpHex: false,
+      tcpLineEnding: 'crlf',
+      tcpWaitForResponse: false,
+      tcpTimeoutMs: 3000,
+      tcpSaveResponseAs: '',
+      tcpClientId: 'all',
+    }
+  }
   if (type === 'FIXED_TAG' || type === 'HANDHELD_TAG') {
     return {
       ...base,
       tagDelay: '',
       startSerial: '{{nextSerial}}',
       serialContinuesAcrossUpcLines: true,
+      ...(type === 'HANDHELD_TAG' ? { handheldPort: '10472' } : { fixedAutoConnect: false, fixedHost: '', fixedPort: '12352' }),
     }
   }
   if (type === 'CONDITION') {
@@ -986,29 +1109,32 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
   if (type === 'FILE_READ') {
     return {
       ...base,
+      fileLocation: 'local',
       fileStorageProvider: 'local',
       filePath: './data/tags.csv',
-      fileEncoding: 'utf8',
+      fileEncoding: 'utf-8',
       fileSaveAs: 'fileContent',
     }
   }
   if (type === 'FILE_WRITE') {
     return {
       ...base,
+      fileLocation: 'local',
       fileStorageProvider: 'local',
       filePath: './data/output.csv',
-      fileContent: '{{epcList}}',
-      fileEncoding: 'utf8',
+      fileContent: '{{epcs}}',
+      fileEncoding: 'utf-8',
       fileAppend: false,
     }
   }
   if (type === 'FILE_LIST') {
     return {
       ...base,
+      fileLocation: 'local',
       fileStorageProvider: 'local',
       filePath: './data',
-      filePattern: '*.csv',
-      fileSaveListAs: 'fileList',
+      fileFilter: '*.csv',
+      fileSaveAs: 'fileList',
     }
   }
   return base

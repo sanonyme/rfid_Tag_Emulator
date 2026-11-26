@@ -146,6 +146,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     payload: string,
     options?: { hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
   ) => ipcRenderer.invoke('tcp-client-send', payload, options),
+  tcpClientSendOnce: (
+    host: string,
+    port: number,
+    payload: string,
+    options?: {
+      hex?: boolean
+      lineEnding?: 'none' | 'lf' | 'crlf' | 'cr'
+      waitForResponse?: boolean
+      timeoutMs?: number
+    },
+  ) => ipcRenderer.invoke('tcp-client-send-once', host, port, payload, options),
   onTcpClientStatus: (
     callback: (status: { connected: boolean; host: string | null; port: number | null }) => void,
   ) => {

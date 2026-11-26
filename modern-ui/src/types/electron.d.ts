@@ -175,6 +175,24 @@ export interface ElectronAPI {
     payload: string,
     options?: { hex?: boolean; lineEnding?: 'none' | 'lf' | 'crlf' | 'cr' },
   ) => Promise<{ ok: boolean; byteLength?: number; hex?: string; error?: string }>
+  tcpClientSendOnce?: (
+    host: string,
+    port: number,
+    payload: string,
+    options?: {
+      hex?: boolean
+      lineEnding?: 'none' | 'lf' | 'crlf' | 'cr'
+      waitForResponse?: boolean
+      timeoutMs?: number
+    },
+  ) => Promise<{
+    ok: boolean
+    byteLength?: number
+    hex?: string
+    responseText?: string
+    responseHex?: string
+    error?: string
+  }>
   onTcpClientStatus?: (
     callback: (status: { connected: boolean; host: string | null; port: number | null }) => void,
   ) => () => void

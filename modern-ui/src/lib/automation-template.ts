@@ -283,6 +283,14 @@ export const STANDARD_AUTOMATION_VARS: StandardAutomationVar[] = [
     envName: 'ZEUS_LASTOCRRESPONSE',
     setBy: 'After OCR step',
   },
+  {
+    name: 'lastTcpResponse',
+    label: 'Last TCP response',
+    description: 'Latest reply or incoming payload received by a TCP Client/Server step',
+    group: 'ocr',
+    envName: 'ZEUS_LASTTCPRESPONSE',
+    setBy: 'After TCP step (Wait for Response / Server Wait)',
+  },
 ]
 
 export const STANDARD_VAR_GROUP_LABELS: Record<StandardVarGroup, string> = {

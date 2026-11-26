@@ -57,6 +57,11 @@ export function hasS3Session(sessionId: string): boolean {
   return sessions.has(sessionId)
 }
 
+export function getActiveS3SessionId(): string | null {
+  const keys = Array.from(sessions.keys())
+  return keys.length > 0 ? keys[keys.length - 1]! : null
+}
+
 function getSession(sessionId: string): S3Session | null {
   return sessions.get(sessionId) ?? null
 }

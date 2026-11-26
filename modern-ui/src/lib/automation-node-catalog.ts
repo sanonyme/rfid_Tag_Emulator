@@ -29,10 +29,10 @@ export const NODE_CATEGORY_META: Record<NodeCategory, { label: string; order: nu
 
 export const NODE_CATALOG: NodeCatalogEntry[] = [
   // Devices & I/O
-  { type: 'FIXED_TAG', label: 'Fixed Reader Scan', category: 'devices', description: 'Emulate tags on a fixed reader (LLRP, etc.)', keywords: ['rfid', 'epc', 'upc', 'antenna', 'llrp', 'read'] },
-  { type: 'HANDHELD_TAG', label: 'Handheld Scan', category: 'devices', description: 'Broadcast tags from a handheld device', keywords: ['rfid', 'epc', 'mobile', 'scanner'] },
-  { type: 'OCR', label: 'Send OCR', category: 'devices', description: 'Send an OCR message payload', keywords: ['vision', 'camera', 'text'] },
-  { type: 'CUSTOM_MESSAGE', label: 'Custom Message', category: 'devices', description: 'Send a raw TCP message to any port', keywords: ['tcp', 'socket', 'raw', 'json'] },
+  { type: 'FIXED_TAG', label: 'Fixed Reader Scan', category: 'devices', description: 'Emulate tags on a fixed reader (LLRP, auto-connect, antennas, RSSI)', keywords: ['rfid', 'epc', 'upc', 'antenna', 'llrp', 'read', 'fixed'] },
+  { type: 'HANDHELD_TAG', label: 'Handheld Scan', category: 'devices', description: 'Broadcast tags from a handheld server (multi-port, RSSI, TID)', keywords: ['rfid', 'epc', 'mobile', 'scanner', 'handheld', 'port'] },
+  { type: 'OCR', label: 'Send OCR', category: 'devices', description: 'Send an OCR / barcode payload and capture the response', keywords: ['vision', 'camera', 'text', 'ocr', 'inditex'] },
+  { type: 'CUSTOM_MESSAGE', label: 'TCP (Client / Server)', category: 'devices', description: 'TCP Client (connect, send ASCII/HEX, capture reply) or TCP Server (listen, broadcast, wait)', keywords: ['tcp', 'socket', 'raw', 'json', 'hex', 'server', 'client', 'hercules', 'custom'] },
 
   // Data & Variables
   { type: 'SET_VARIABLE', label: 'Set Variable', category: 'data', description: 'Assign a typed value to a variable', keywords: ['assign', 'let', 'const', 'store'] },
@@ -43,9 +43,9 @@ export const NODE_CATALOG: NodeCatalogEntry[] = [
   { type: 'HTTP_REQUEST', label: 'HTTP Request', category: 'data', description: 'Call a REST endpoint; capture status/body/JSON', keywords: ['rest', 'api', 'get', 'post', 'fetch', 'webhook'] },
   { type: 'CODE', label: 'Code (JavaScript)', category: 'data', description: 'Run JavaScript in-process over the variables', keywords: ['js', 'script', 'function', 'compute'] },
   { type: 'RUN_SCRIPT', label: 'Run Script', category: 'data', description: 'Execute a shell / PowerShell script', keywords: ['shell', 'powershell', 'bash', 'exec', 'process'] },
-  { type: 'FILE_READ', label: 'Read File', category: 'data', description: 'Read local, SFTP, or S3 file into a variable', keywords: ['file', 'read', 'load', 'csv', 'json', 'sftp', 's3', 'storage'] },
-  { type: 'FILE_WRITE', label: 'Write File', category: 'data', description: 'Write or append text/data to local, SFTP, or S3', keywords: ['file', 'write', 'save', 'append', 'csv', 'export', 'sftp', 's3'] },
-  { type: 'FILE_LIST', label: 'List Files', category: 'data', description: 'List files in directory with filter and count', keywords: ['file', 'directory', 'list', 'folder', 'ls', 'glob', 'sftp', 's3'] },
+  { type: 'FILE_READ', label: 'Read File', category: 'data', description: 'Read local, SFTP, FTP, or S3 file into a variable', keywords: ['file', 'read', 'load', 'csv', 'json', 'sftp', 'ftp', 's3', 'storage'] },
+  { type: 'FILE_WRITE', label: 'Write File', category: 'data', description: 'Write or append text/data to local, SFTP, FTP, or S3', keywords: ['file', 'write', 'save', 'append', 'csv', 'export', 'sftp', 'ftp', 's3'] },
+  { type: 'FILE_LIST', label: 'List Files', category: 'data', description: 'List files in local, SFTP, FTP, or S3 directory with filter', keywords: ['file', 'directory', 'list', 'folder', 'ls', 'glob', 'sftp', 'ftp', 's3'] },
 
   // Flow Control
   { type: 'DELAY', label: 'Delay', category: 'flow', description: 'Wait a fixed number of milliseconds', keywords: ['wait', 'sleep', 'pause', 'timer'] },

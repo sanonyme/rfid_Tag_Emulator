@@ -18,6 +18,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { cn } from '@/lib/utils'
+import { useCrispFlowViewport } from '@/lib/use-crisp-flow-viewport'
 
 import type { DbSchemaColumn, DbSchemaForeignKey, DbSchemaTable } from '@/lib/db-schema-types'
 
@@ -122,6 +123,18 @@ function SchemaFlowInner({
   const fkCols = useMemo(() => buildFkColumnSet(foreignKeys), [foreignKeys])
   const fingerprint = useMemo(() => schemaFingerprint(tables, foreignKeys), [tables, foreignKeys])
   const rfRef = useRef<ReactFlowInstance | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const handleSetViewport = useCallback(
+    (vp: { x: number; y: number; zoom: number }, options?: { duration?: number }) => {
+      void rfRef.current?.setViewport(vp, options)
+    },
+    [],
+  )
+  const { handleMove, handleMoveEnd } = useCrispFlowViewport({
+    containerRef,
+    setViewport: handleSetViewport,
+  })
 
   const { initialNodes, initialEdges } = useMemo(() => {
     const pos = layoutGrid(tables)
@@ -178,50 +191,54 @@ function SchemaFlowInner({
 
   return (
     <SchemaSelectCtx.Provider value={handleSelectTable}>
-      <ReactFlow
-        className="electron-no-drag h-full w-full bg-muted/20 [&_.react-flow__pane]:cursor-grab [&_.react-flow__pane]:active:cursor-grabbing"
-        style={{ width: '100%', height: '100%' }}
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={nodeTypes}
-        colorMode={colorMode}
-        onInit={(rf) => {
-          rfRef.current = rf
-          requestAnimationFrame(() => rf.fitView({ padding: 0.15, duration: 0 }))
-        }}
-        minZoom={0.08}
-        maxZoom={2.5}
-        proOptions={{ hideAttribution: true }}
-        panOnDrag={[0, 1, 2]}
-        panOnScroll={false}
-        zoomOnScroll
-        zoomOnPinch
-        zoomOnDoubleClick={false}
-        preventScrolling
-        nodesDraggable
-        nodesConnectable={false}
-        elementsSelectable={false}
-        selectNodesOnDrag={false}
-        selectionOnDrag={false}
-        deleteKeyCode={null}
-        multiSelectionKeyCode={null}
-        nodeDragThreshold={4}
-      >
-        <Background gap={20} size={1} className="!bg-muted/30" />
-        <Controls
-          showInteractive={false}
-          className="!bg-popover !border-border !shadow-md [&_button]:!border-border [&_button:hover]:!bg-muted"
-        />
-        <MiniMap
-          className="!bg-popover !border-border rounded-md"
-          maskColor="hsl(var(--background) / 0.7)"
-          nodeStrokeWidth={2}
-          zoomable
-          pannable
-        />
-      </ReactFlow>
+      <div ref={containerRef} className="h-full w-full">
+        <ReactFlow
+          className="zeus-crisp-flow electron-no-drag h-full w-full bg-muted/20 [&_.react-flow__pane]:cursor-grab [&_.react-flow__pane]:active:cursor-grabbing"
+          style={{ width: '100%', height: '100%' }}
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onMove={handleMove}
+          onMoveEnd={handleMoveEnd}
+          nodeTypes={nodeTypes}
+          colorMode={colorMode}
+          onInit={(rf) => {
+            rfRef.current = rf
+            requestAnimationFrame(() => rf.fitView({ padding: 0.15, duration: 0 }))
+          }}
+          minZoom={0.08}
+          maxZoom={2.5}
+          proOptions={{ hideAttribution: true }}
+          panOnDrag={[0, 1, 2]}
+          panOnScroll={false}
+          zoomOnScroll
+          zoomOnPinch
+          zoomOnDoubleClick={false}
+          preventScrolling
+          nodesDraggable
+          nodesConnectable={false}
+          elementsSelectable={false}
+          selectNodesOnDrag={false}
+          selectionOnDrag={false}
+          deleteKeyCode={null}
+          multiSelectionKeyCode={null}
+          nodeDragThreshold={4}
+        >
+          <Background gap={20} size={1} className="!bg-muted/30" />
+          <Controls
+            showInteractive={false}
+            className="!bg-popover !border-border !shadow-md [&_button]:!border-border [&_button:hover]:!bg-muted"
+          />
+          <MiniMap
+            className="!bg-popover !border-border rounded-md"
+            maskColor="hsl(var(--background) / 0.7)"
+            nodeStrokeWidth={2}
+            zoomable
+            pannable
+          />
+        </ReactFlow>
+      </div>
     </SchemaSelectCtx.Provider>
   )
 }

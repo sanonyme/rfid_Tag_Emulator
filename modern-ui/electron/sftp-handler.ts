@@ -19,6 +19,11 @@ interface SftpSession {
 
 const sessions = new Map<string, SftpSession>()
 
+export function getActiveSftpSessionId(): string | null {
+  const keys = Array.from(sessions.keys())
+  return keys.length > 0 ? keys[keys.length - 1]! : null
+}
+
 function getSession(sessionId: string): SftpSession | null {
   return sessions.get(sessionId) ?? null
 }

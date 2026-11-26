@@ -22,6 +22,20 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.3.3',
+    date: '2026-11',
+    highlights: [
+      {
+        title: 'Gen: Walmart Label generator',
+        detail: 'Create exact Walmart carton shipping labels with a scannable Code128 PO# barcode, ITF carton barcode, TO/DEPT/PO/ITEM/SUPPLIER STK fields, and PNG/Copy/Print export.',
+      },
+      {
+        title: 'Updater: interactive notifications',
+        detail: 'Click update notifications to jump straight to Settings → Updates, and choose Yes, Restart or No, Later directly from the update-ready toast.',
+      },
+    ],
+  },
+  {
     version: '10.3.2',
     date: '2026-11',
     highlights: [

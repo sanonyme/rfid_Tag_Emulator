@@ -1,4 +1,4 @@
-import type { AutomationStep, GenerateKind, TransformOp } from './automation-types'
+import type { AutomationStep, GenerateKind, TcpLineEnding, TcpNodeMode, TransformOp } from './automation-types'
 import type { AutomationVars } from './automation-template'
 import {
   applyTemplate,
@@ -10,6 +10,8 @@ import {
   evaluateCondition,
   AutomationStopSignal,
 } from './automation-template'
+import { generateSgtin96 } from './epc-encoders'
+import { EPCDecoder } from './decoder'
 
 export type BlockLog = (msg: string) => void
 
@@ -67,6 +69,12 @@ export async function executeDbQuery(
     log(`Saved ${saveAs}=${cell || '(empty)'} (${result.rows.length} row(s))`)
   } else {
     log(result.message || `${result.rows.length} row(s)`)
+  }
+
+  const saveRowsAs = (step.params.dbSaveRowsAs || '').trim()
+  if (saveRowsAs && isValidVarName(saveRowsAs)) {
+    setVar(vars, saveRowsAs, JSON.stringify(result.rows))
+    log(`Saved ${result.rows.length} row(s) JSON → ${saveRowsAs}`)
   }
   return {}
 }
@@ -212,6 +220,17 @@ export async function executeHttpRequest(
   if (!url) throw new Error('URL is required')
 
   const headers = parseHeaderLines(applyTemplate(step.params.httpHeaders || '', vars))
+  if (step.params.httpUseAleAuth && api.aleGetBasicAuthHeader) {
+    const hasAuthHeader = Object.keys(headers).some((k) => k.toLowerCase() === 'authorization')
+    if (!hasAuthHeader) {
+      const authRes = await api.aleGetBasicAuthHeader()
+      if (authRes.ok && authRes.header) {
+        headers.Authorization = authRes.header
+      } else {
+        log('HTTP: ALE Basic Auth requested, but no saved ALE credentials found')
+      }
+    }
+  }
   const hasBody = method !== 'GET' && method !== 'HEAD'
   const body = hasBody ? applyTemplate(step.params.httpBody || '', vars) : undefined
 
@@ -476,6 +495,22 @@ export async function executeGenerate(
         .slice(0, len)
       break
     }
+    case 'randomUpc': {
+      const base13 = '00' + Array.from({ length: 11 }, () => Math.floor(Math.random() * 10)).join('')
+      let sum = 0
+      for (let i = 0; i < 13; i++) sum += Number(base13[i]) * (i % 2 === 0 ? 3 : 1)
+      const check = (10 - (sum % 10)) % 10
+      value = base13 + String(check)
+      break
+    }
+    case 'epcFromUpc': {
+      const upc = applyTemplate(step.params.generateUpc || '00000000000001', vars).trim()
+      const rawSerial = applyTemplate(step.params.generateSerial || '{{nextSerial}}', vars).trim()
+      const serial = Math.max(1, parseInt(rawSerial, 10) || 1)
+      const epcs = generateSgtin96(upc, 1, serial, 6, 0)
+      value = epcs[0] ?? ''
+      break
+    }
     default:
       throw new Error(`Unknown generate kind: ${kind}`)
   }
@@ -536,6 +571,49 @@ export function applyTransform(
         throw new Error('Input is not valid JSON')
       }
       return extractJsonPath(parsed, arg)
+    }
+    case 'regexExtract': {
+      if (!arg) throw new Error('Regex pattern is required')
+      let re: RegExp
+      try {
+        re = new RegExp(arg)
+      } catch (e: any) {
+        throw new Error(`Invalid regex: ${e?.message ?? e}`)
+      }
+      const m = re.exec(input)
+      if (!m) return ''
+      const groupIdx = arg2.trim() === '' ? (m.length > 1 ? 1 : 0) : Math.max(0, Math.trunc(num(arg2)))
+      return m[groupIdx] ?? ''
+    }
+    case 'base64Encode': {
+      const bytes = new TextEncoder().encode(input)
+      let bin = ''
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+      return btoa(bin)
+    }
+    case 'base64Decode': {
+      let bin: string
+      try {
+        bin = atob(input.trim())
+      } catch {
+        throw new Error('Input is not valid Base64')
+      }
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      return new TextDecoder().decode(bytes)
+    }
+    case 'urlEncode':
+      return encodeURIComponent(input)
+    case 'urlDecode':
+      try {
+        return decodeURIComponent(input)
+      } catch {
+        throw new Error('Input is not valid URL-encoded text')
+      }
+    case 'decodeEpc': {
+      const decoded = EPCDecoder.decodeSgtin96(input.trim())
+      if (decoded.error) throw new Error(decoded.error)
+      return JSON.stringify(decoded)
     }
     case 'round':
       return String(Math.round(num(input)))
@@ -602,7 +680,28 @@ export async function executeTransform(
   const arg = applyTemplate(step.params.transformArg || '', vars)
   const arg2 = applyTemplate(step.params.transformArg2 || '', vars)
 
-  const result = applyTransform(op, input, arg, arg2)
+  let result: string
+  if (op === 'decodeEpc' && typeof window !== 'undefined' && window.electronAPI?.tdtTranslate) {
+    try {
+      const tdt = await window.electronAPI.tdtTranslate(input.trim(), { outputLevel: 'PURE_IDENTITY' })
+      if (tdt?.ok && tdt.outputs) {
+        const local = EPCDecoder.decodeSgtin96(input.trim())
+        result = JSON.stringify({
+          ...(local.error ? {} : local),
+          pureIdentity: tdt.outputs.PURE_IDENTITY ?? tdt.outputs.TAG_ENCODING,
+          scheme: tdt.scheme,
+          fields: tdt.fields,
+        })
+      } else {
+        result = applyTransform(op, input, arg, arg2)
+      }
+    } catch {
+      result = applyTransform(op, input, arg, arg2)
+    }
+  } else {
+    result = applyTransform(op, input, arg, arg2)
+  }
+
   setVar(vars, saveAs, result)
   const shown = result.length > 120 ? result.slice(0, 120) + '…' : result
   log(`Transform (${op}) → ${saveAs}=${shown}`)
@@ -618,17 +717,30 @@ export async function executeComment(
   return {}
 }
 
+function matchesSimpleGlob(name: string, filter?: string): boolean {
+  if (!filter?.trim()) return true
+  const patterns = filter
+    .split(/[,;]+/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+  if (patterns.length === 0) return true
+  return patterns.some((pat) => {
+    const escaped = pat.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')
+    return new RegExp(`^${escaped}$`, 'i').test(name)
+  })
+}
+
 export async function executeFileRead(
   step: AutomationStep,
   vars: AutomationVars,
   log: BlockLog,
 ): Promise<BlockExecResult> {
   const api = requireElectron()
-  const location = step.params.fileLocation || 'local'
+  const location = step.params.fileLocation || step.params.fileStorageProvider || 'local'
   const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
   if (!rawPath) throw new Error('File Read: File path is required')
 
-  const encoding = (step.params.fileEncoding || 'utf-8') as 'utf-8' | 'base64' | 'json' | 'hex'
+  const encoding = (step.params.fileEncoding || 'utf-8') as 'utf-8' | 'utf8' | 'base64' | 'json' | 'hex'
   const saveAs = (step.params.fileSaveAs || 'fileContent').trim()
   if (!isValidVarName(saveAs)) throw new Error(`Invalid variable name: ${saveAs}`)
 
@@ -642,8 +754,8 @@ export async function executeFileRead(
 
     let content = result.content
     if (encoding === 'hex') {
-      const bytes = Buffer.from(result.content, 'utf-8')
-      content = bytes.toString('hex')
+      const bytes = new TextEncoder().encode(result.content)
+      content = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
     } else if (encoding === 'json') {
       try {
         const parsed = JSON.parse(result.content)
@@ -653,7 +765,7 @@ export async function executeFileRead(
       }
     }
 
-    const size = Buffer.byteLength(content, 'utf-8')
+    const size = new TextEncoder().encode(content).byteLength
     setVar(vars, saveAs, content)
     setVar(vars, `${saveAs}Size`, String(size))
     const preview = content.length > 80 ? content.slice(0, 80) + '…' : content
@@ -661,8 +773,8 @@ export async function executeFileRead(
     return {}
   }
 
-  if (location === 'sftp') {
-    const sessionId = step.params.fileConnectionId || 'default'
+  if (location === 'sftp' || location === 'ftp' || location === 's3') {
+    const sessionId = applyTemplate(step.params.fileConnectionId || '', vars).trim() || `default:${location}`
     const result = await api.sftpReadFile(sessionId, rawPath)
     if (!result.ok) throw new Error(result.error)
 
@@ -670,20 +782,37 @@ export async function executeFileRead(
     if ('previewBase64' in result && result.previewBase64) {
       if (encoding === 'base64') content = result.previewBase64
       else {
-        const buf = Buffer.from(result.previewBase64, 'base64')
-        if (encoding === 'hex') content = buf.toString('hex')
-        else content = buf.toString('utf-8')
+        const bin = atob(result.previewBase64)
+        const bytes = new Uint8Array(bin.length)
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+        if (encoding === 'hex') content = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+        else content = new TextDecoder().decode(bytes)
       }
-    } else if ('text' in result && result.text) {
-      if (encoding === 'base64') content = Buffer.from(result.text, 'utf-8').toString('base64')
-      else if (encoding === 'hex') content = Buffer.from(result.text, 'utf-8').toString('hex')
-      else content = result.text
+    } else if ('text' in result && result.text !== undefined) {
+      if (encoding === 'base64') {
+        const bytes = new TextEncoder().encode(result.text)
+        let bin = ''
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+        content = btoa(bin)
+      } else if (encoding === 'hex') {
+        const bytes = new TextEncoder().encode(result.text)
+        content = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+      } else {
+        content = result.text
+      }
+    }
+    if (encoding === 'json') {
+      try {
+        content = JSON.stringify(JSON.parse(content))
+      } catch (err: any) {
+        throw new Error(`File Read: Failed to parse JSON: ${err.message}`)
+      }
     }
 
     setVar(vars, saveAs, content)
-    setVar(vars, `${saveAs}Size`, String(result.size))
+    setVar(vars, `${saveAs}Size`, String(result.size ?? content.length))
     const preview = content.length > 80 ? content.slice(0, 80) + '…' : content
-    log(`SFTP Read OK: ${result.size} bytes → ${saveAs}="${preview}"`)
+    log(`${location.toUpperCase()} Read OK: ${result.size ?? content.length} bytes → ${saveAs}="${preview}"`)
     return {}
   }
 
@@ -696,7 +825,7 @@ export async function executeFileWrite(
   log: BlockLog,
 ): Promise<BlockExecResult> {
   const api = requireElectron()
-  const location = step.params.fileLocation || 'local'
+  const location = step.params.fileLocation || step.params.fileStorageProvider || 'local'
   const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
   if (!rawPath) throw new Error('File Write: Destination file path is required')
 
@@ -718,7 +847,7 @@ export async function executeFileWrite(
     const result = await api.localWriteFile(rawPath, textToWrite, 'utf-8')
     if (!result.ok) throw new Error(result.error)
 
-    const bytesWritten = Buffer.byteLength(textToWrite, 'utf-8')
+    const bytesWritten = new TextEncoder().encode(textToWrite).byteLength
     if (saveAs && isValidVarName(saveAs)) {
       setVar(vars, saveAs, String(bytesWritten))
     }
@@ -726,8 +855,8 @@ export async function executeFileWrite(
     return {}
   }
 
-  if (location === 'sftp') {
-    const sessionId = step.params.fileConnectionId || 'default'
+  if (location === 'sftp' || location === 'ftp' || location === 's3') {
+    const sessionId = applyTemplate(step.params.fileConnectionId || '', vars).trim() || `default:${location}`
     let textToWrite = content
     if (isAppend) {
       const existing = await api.sftpReadFile(sessionId, rawPath)
@@ -735,7 +864,10 @@ export async function executeFileWrite(
         let prevText = ''
         if ('text' in existing && existing.text) prevText = existing.text
         else if ('previewBase64' in existing && existing.previewBase64) {
-          prevText = Buffer.from(existing.previewBase64, 'base64').toString('utf-8')
+          const bin = atob(existing.previewBase64)
+          const bytes = new Uint8Array(bin.length)
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+          prevText = new TextDecoder().decode(bytes)
         }
         textToWrite = prevText + textToWrite
       }
@@ -746,7 +878,7 @@ export async function executeFileWrite(
     if (saveAs && isValidVarName(saveAs)) {
       setVar(vars, saveAs, 'OK')
     }
-    log(`SFTP Write OK: ${textToWrite.length} chars written to ${rawPath}`)
+    log(`${location.toUpperCase()} Write OK: ${textToWrite.length} chars written to ${rawPath}`)
     return {}
   }
 
@@ -759,12 +891,12 @@ export async function executeFileList(
   log: BlockLog,
 ): Promise<BlockExecResult> {
   const api = requireElectron()
-  const location = step.params.fileLocation || 'local'
+  const location = step.params.fileLocation || step.params.fileStorageProvider || 'local'
   const rawPath = applyTemplate(step.params.filePath || '', vars).trim()
   if (!rawPath) throw new Error('File List: Directory path is required')
 
-  const filter = applyTemplate(step.params.fileFilter || '', vars).trim() || undefined
-  const saveAs = (step.params.fileSaveAs || 'fileList').trim()
+  const filter = applyTemplate(step.params.fileFilter || step.params.filePattern || '', vars).trim() || undefined
+  const saveAs = (step.params.fileSaveAs || step.params.fileSaveListAs || 'fileList').trim()
   if (!isValidVarName(saveAs)) throw new Error(`Invalid variable name: ${saveAs}`)
 
   log(`File List [${location}]: ${rawPath}${filter ? ` (filter: ${filter})` : ''}`)
@@ -785,23 +917,280 @@ export async function executeFileList(
     return {}
   }
 
-  if (location === 'sftp') {
-    const sessionId = step.params.fileConnectionId || 'default'
+  if (location === 'sftp' || location === 'ftp' || location === 's3') {
+    const sessionId = applyTemplate(step.params.fileConnectionId || '', vars).trim() || `default:${location}`
     const result = await api.sftpReaddir(sessionId, rawPath)
     if (!result.ok) throw new Error(result.error)
 
-    const entries = result.entries.filter((e) => e.name !== '.' && e.name !== '..')
+    const entries = result.entries.filter(
+      (e) => e.name !== '.' && e.name !== '..' && matchesSimpleGlob(e.name, filter),
+    )
     const fileNames = entries.map((e) => e.name)
-    const filePaths = entries.map((e) => `${rawPath.replace(/\/+$/, '')}/${e.name}`)
+    const cleanBase = rawPath.replace(/\/+$/, '')
+    const filePaths = entries.map((e) => `${cleanBase}/${e.name}`)
 
     setVar(vars, saveAs, JSON.stringify(fileNames))
     setVar(vars, `${saveAs}Count`, String(entries.length))
     setVar(vars, `${saveAs}Paths`, JSON.stringify(filePaths))
 
-    log(`SFTP List OK: Found ${entries.length} entry/entries in ${rawPath} → ${saveAs}`)
+    log(`${location.toUpperCase()} List OK: Found ${entries.length} entry/entries in ${rawPath} → ${saveAs}`)
     return {}
   }
 
   throw new Error(`File List: Storage location "${location}" is not supported`)
+}
+
+/**
+ * Full TCP node execution matching the Hercules-style TCP Client & TCP Server tab:
+ * supports one-shot send (ASCII/HEX + EOL + optional reply capture), persistent TCP Client
+ * (connect / send + await reply / disconnect), and built-in TCP Server (start / broadcast / wait RX / stop).
+ */
+export async function executeTcpNode(
+  step: AutomationStep,
+  vars: AutomationVars,
+  log: BlockLog,
+  signal: AbortSignal | undefined,
+  fallbackHost: string,
+  fallbackPort: string,
+): Promise<BlockExecResult> {
+  const api = requireElectron()
+  const mode: TcpNodeMode = step.params.tcpMode ?? 'oneshot'
+  const hex = step.params.tcpHex === true
+  const lineEnding: TcpLineEnding = hex ? 'none' : (step.params.tcpLineEnding ?? 'crlf')
+  const timeoutMs = Math.max(200, Math.min(120000, step.params.tcpTimeoutMs ?? 3000))
+  const saveAs = (step.params.tcpSaveResponseAs || '').trim()
+
+  const resolveHost = (defaultHost: string) =>
+    applyTemplate(step.params.tcpHost || '', vars).trim() || defaultHost
+
+  const resolvePort = (defaultPort: string) => {
+    const raw = applyTemplate(step.params.port || defaultPort || '', vars).trim()
+    const num = parseInt(raw, 10)
+    if (!Number.isFinite(num) || num < 1 || num > 65535) {
+      throw new Error(`Invalid TCP port: "${raw}"`)
+    }
+    return num
+  }
+
+  const storeRx = (text: string, hexStr: string, extras?: Record<string, string>) => {
+    setVar(vars, 'lastTcpResponse', text)
+    if (saveAs && isValidVarName(saveAs)) {
+      setVar(vars, saveAs, text)
+      setVar(vars, `${saveAs}_hex`, hexStr)
+      if (extras) {
+        for (const [k, v] of Object.entries(extras)) setVar(vars, `${saveAs}_${k}`, v)
+      }
+    }
+  }
+
+  switch (mode) {
+    case 'client_connect': {
+      if (!api.tcpClientConnect) throw new Error('TCP Client requires the desktop app')
+      const targetHost = resolveHost(fallbackHost)
+      if (!targetHost) throw new Error('TCP Client Connect: host is empty')
+      const portNum = resolvePort(fallbackPort || '12345')
+      log(`TCP Client connecting → ${targetHost}:${portNum}…`)
+      const res = await api.tcpClientConnect(targetHost, portNum)
+      if (!res.ok) throw new Error(res.error || 'TCP Client connect failed')
+      log(`TCP Client connected to ${targetHost}:${portNum}`)
+      return {}
+    }
+
+    case 'client_disconnect': {
+      if (!api.tcpClientDisconnect) throw new Error('TCP Client requires the desktop app')
+      await api.tcpClientDisconnect()
+      log('TCP Client disconnected')
+      return {}
+    }
+
+    case 'client_send': {
+      if (!api.tcpClientSend) throw new Error('TCP Client requires the desktop app')
+      const payload = applyTemplate(step.params.message || '', vars)
+      if (!payload) throw new Error('TCP Client Send: payload is empty')
+      const waitReply = step.params.tcpWaitForResponse === true
+
+      let waitPromise: Promise<{ text: string; hex: string }> | null = null
+      const cleanupRef: { fn?: () => void } = {}
+
+      if (waitReply && api.onTcpClientData) {
+        waitPromise = new Promise((resolve, reject) => {
+          let settled = false
+          const unsub = api.onTcpClientData!((evt) => {
+            if (settled) return
+            settled = true
+            cleanup()
+            resolve({ text: evt.text, hex: evt.hex })
+          })
+          const timer = setTimeout(() => {
+            if (settled) return
+            settled = true
+            cleanup()
+            reject(new Error(`Timed out waiting for TCP Client reply (${timeoutMs}ms)`))
+          }, timeoutMs)
+          const onAbort = () => {
+            if (settled) return
+            settled = true
+            cleanup()
+            reject(new Error('Aborted'))
+          }
+          const cleanup = () => {
+            clearTimeout(timer)
+            unsub()
+            signal?.removeEventListener('abort', onAbort)
+          }
+          cleanupRef.fn = cleanup
+          signal?.addEventListener('abort', onAbort, { once: true })
+        })
+      }
+
+      const sendRes = await api.tcpClientSend(payload, { hex, lineEnding })
+      if (!sendRes.ok) {
+        cleanupRef.fn?.()
+        throw new Error(sendRes.error || 'TCP Client send failed')
+      }
+      log(`TCP Client TX (${sendRes.byteLength ?? 0}B${hex ? ' HEX' : ''}): ${payload.slice(0, 140)}`)
+
+      if (waitPromise) {
+        const reply = await waitPromise
+        storeRx(reply.text, reply.hex)
+        log(`TCP Client RX: ${reply.text.trim().slice(0, 160) || reply.hex}`)
+      }
+      return {}
+    }
+
+    case 'server_start': {
+      if (!api.tcpServerStart) throw new Error('TCP Server requires the desktop app')
+      const bindHost = resolveHost('0.0.0.0')
+      const portNum = resolvePort('9000')
+      const cur = await api.tcpServerStatus?.()
+      if (cur?.running && cur.port === portNum) {
+        log(`TCP Server already listening on ${cur.host}:${cur.port}`)
+        return {}
+      }
+      if (cur?.running) {
+        await api.tcpServerStop?.()
+      }
+      const res = await api.tcpServerStart(portNum, bindHost)
+      if (!res.ok) throw new Error(res.error || 'Failed to start TCP Server')
+      log(`TCP Server listening on ${bindHost}:${portNum}`)
+      return {}
+    }
+
+    case 'server_stop': {
+      if (!api.tcpServerStop) throw new Error('TCP Server requires the desktop app')
+      await api.tcpServerStop()
+      log('TCP Server stopped')
+      return {}
+    }
+
+    case 'server_send': {
+      if (!api.tcpServerSend) throw new Error('TCP Server requires the desktop app')
+      const payload = applyTemplate(step.params.message || '', vars)
+      if (!payload) throw new Error('TCP Server Send: payload is empty')
+      const clientId = applyTemplate(step.params.tcpClientId || 'all', vars).trim() || 'all'
+      const res = await api.tcpServerSend(payload, { clientId, hex, lineEnding })
+      if (!res.ok) throw new Error(res.error || 'TCP Server send failed')
+      if (saveAs && isValidVarName(saveAs)) {
+        setVar(vars, saveAs, String(res.sentCount ?? 0))
+      }
+      log(
+        `TCP Server TX → ${res.sentCount ?? 0} client(s) (${res.byteLength ?? 0}B${hex ? ' HEX' : ''}): ${payload.slice(0, 140)}`,
+      )
+      return {}
+    }
+
+    case 'server_wait': {
+      if (!api.onTcpServerData) throw new Error('TCP Server requires the desktop app')
+      const targetClientId = applyTemplate(step.params.tcpClientId || '', vars).trim()
+      const rxTargetVar = saveAs || 'tcpRx'
+      log(`TCP Server waiting for incoming data (timeout ${timeoutMs}ms)…`)
+
+      const evt = await new Promise<{
+        clientId: string
+        address: string
+        port: number
+        text: string
+        hex: string
+        byteLength: number
+      }>((resolve, reject) => {
+        if (signal?.aborted) {
+          reject(new Error('Aborted'))
+          return
+        }
+        let settled = false
+        const unsub = api.onTcpServerData!((data) => {
+          if (settled) return
+          if (targetClientId && targetClientId !== 'all' && data.clientId !== targetClientId) return
+          settled = true
+          cleanup()
+          resolve(data)
+        })
+        const timer = setTimeout(() => {
+          if (settled) return
+          settled = true
+          cleanup()
+          reject(new Error(`TCP Server timed out waiting for data (${timeoutMs}ms)`))
+        }, timeoutMs)
+        const onAbort = () => {
+          if (settled) return
+          settled = true
+          cleanup()
+          reject(new Error('Aborted'))
+        }
+        const cleanup = () => {
+          clearTimeout(timer)
+          unsub()
+          signal?.removeEventListener('abort', onAbort)
+        }
+        signal?.addEventListener('abort', onAbort, { once: true })
+      })
+
+      setVar(vars, 'lastTcpResponse', evt.text)
+      if (isValidVarName(rxTargetVar)) {
+        setVar(vars, rxTargetVar, evt.text)
+        setVar(vars, `${rxTargetVar}_hex`, evt.hex)
+        setVar(vars, `${rxTargetVar}_clientId`, evt.clientId)
+        setVar(vars, `${rxTargetVar}_address`, evt.address)
+      }
+      log(`TCP Server RX from ${evt.address}:${evt.port} (${evt.byteLength}B) → ${rxTargetVar}`)
+      return {}
+    }
+
+    case 'oneshot':
+    default: {
+      const targetHost = resolveHost(fallbackHost)
+      if (!targetHost) throw new Error('Host not configured')
+      const portNum = resolvePort(fallbackPort || '12345')
+      const payload = applyTemplate(step.params.message || '', vars)
+      if (!payload.trim()) throw new Error('TCP message is empty')
+
+      if (api.tcpClientSendOnce) {
+        const waitForResponse = step.params.tcpWaitForResponse === true
+        log(`TCP → ${targetHost}:${portNum} (${hex ? 'HEX' : lineEnding.toUpperCase()})${waitForResponse ? ' [await reply]' : ''}`)
+        const res = await api.tcpClientSendOnce(targetHost, portNum, payload, {
+          hex,
+          lineEnding,
+          waitForResponse,
+          timeoutMs,
+        })
+        if (!res.ok) throw new Error(res.error || 'TCP send failed')
+        if (waitForResponse && res.responseText !== undefined) {
+          storeRx(res.responseText, res.responseHex ?? '')
+          log(`TCP RX: ${res.responseText.trim().slice(0, 160) || res.responseHex}`)
+        } else {
+          log(`TCP sent ${res.byteLength ?? 0}B to ${targetHost}:${portNum}`)
+        }
+        return {}
+      }
+
+      // Legacy fallback when preload predates tcpClientSendOnce
+      await new Promise<void>((resolve, reject) => {
+        api.onCustomSuccess((msg) => { log(`TCP OK: ${msg}`); resolve() })
+        api.onCustomError((err) => { reject(new Error(err)) })
+        api.customSend(targetHost, portNum, payload)
+      })
+      return {}
+    }
+  }
 }
 

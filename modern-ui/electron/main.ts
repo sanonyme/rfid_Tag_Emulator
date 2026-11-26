@@ -59,7 +59,9 @@ import {
   disconnectCustomTcpClientSync,
   getCustomTcpClientStatus,
   sendCustomTcpClientData,
+  sendOneShotTcpMessage,
   type CustomTcpClientSendOptions,
+  type OneShotTcpOptions,
 } from './tcp-client-handler.js'
 import type { HandheldSendRecipe } from '../src/lib/handheld-tag-iterate.js'
 import {
@@ -102,6 +104,7 @@ import {
 } from './automation-blocks-handler.js'
 import {
   sftpConnect,
+  getActiveSftpSessionId,
   type SftpConnectAuth,
   sftpDisconnect,
   sftpDisconnectAll,
@@ -124,6 +127,7 @@ import {
 } from './sftp-handler.js'
 import {
   cancelS3Find,
+  getActiveS3SessionId,
   hasS3Session,
   s3CalculateSize,
   s3Connect,
@@ -147,6 +151,7 @@ import {
 } from './s3-handler.js'
 import {
   cancelFtpFind,
+  getActiveFtpSessionId,
   ftpCalculateSize,
   ftpConnect,
   ftpCopyRemoteFile,
@@ -617,6 +622,12 @@ app.whenReady().then(() => {
   ipcMain.handle('tcp-client-send', async (_event, payload: string, options?: CustomTcpClientSendOptions) => {
     return sendCustomTcpClientData(payload, options)
   })
+  ipcMain.handle(
+    'tcp-client-send-once',
+    async (_event, host: string, port: number, payload: string, options?: OneShotTcpOptions) => {
+      return sendOneShotTcpMessage(host, port, payload, options)
+    },
+  )
 
   ipcMain.handle('tdt-translate', async (_event, input: string, options?: Parameters<typeof tdtBridgeTranslate>[1]) => {
     return tdtBridgeTranslate(input, options)
@@ -810,28 +821,52 @@ app.whenReady().then(() => {
     return dbGetDatabaseSchema(database)
   })
 
-  const dispatchRemote = <T>(sessionId: string, handlers: { s3: () => T; ftp: () => T; sftp: () => T }): T => {
-    if (hasS3Session(sessionId)) return handlers.s3()
-    if (hasFtpSession(sessionId)) return handlers.ftp()
-    return handlers.sftp()
+  const resolveRemoteSession = (
+    rawSessionId: string,
+  ): { kind: 's3' | 'ftp' | 'sftp'; id: string } => {
+    const id = (rawSessionId || '').trim()
+    if (id === 'default:s3') return { kind: 's3', id: getActiveS3SessionId() ?? id }
+    if (id === 'default:ftp') return { kind: 'ftp', id: getActiveFtpSessionId() ?? id }
+    if (id === 'default:sftp') return { kind: 'sftp', id: getActiveSftpSessionId() ?? id }
+    if (!id || id === 'default') {
+      const sftpId = getActiveSftpSessionId()
+      if (sftpId) return { kind: 'sftp', id: sftpId }
+      const ftpId = getActiveFtpSessionId()
+      if (ftpId) return { kind: 'ftp', id: ftpId }
+      const s3Id = getActiveS3SessionId()
+      if (s3Id) return { kind: 's3', id: s3Id }
+      return { kind: 'sftp', id }
+    }
+    if (hasS3Session(id)) return { kind: 's3', id }
+    if (hasFtpSession(id)) return { kind: 'ftp', id }
+    return { kind: 'sftp', id }
+  }
+  const dispatchRemote = <T>(
+    sessionId: string,
+    handlers: { s3: (id: string) => T; ftp: (id: string) => T; sftp: (id: string) => T },
+  ): T => {
+    const resolved = resolveRemoteSession(sessionId)
+    if (resolved.kind === 's3') return handlers.s3(resolved.id)
+    if (resolved.kind === 'ftp') return handlers.ftp(resolved.id)
+    return handlers.sftp(resolved.id)
   }
   const remoteDownload = (sessionId: string, remotePath: string, localPath: string, onProgress?: (loaded: number, total: number) => void) =>
     dispatchRemote(sessionId, {
-      s3: () => s3DownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
-      ftp: () => ftpDownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
-      sftp: () => sftpDownloadToLocalFile(sessionId, remotePath, localPath, onProgress),
+      s3: (id) => s3DownloadToLocalFile(id, remotePath, localPath, onProgress),
+      ftp: (id) => ftpDownloadToLocalFile(id, remotePath, localPath, onProgress),
+      sftp: (id) => sftpDownloadToLocalFile(id, remotePath, localPath, onProgress),
     })
   const remoteUpload = (sessionId: string, localPath: string, remotePath: string, onProgress?: (loaded: number, total: number) => void) =>
     dispatchRemote(sessionId, {
-      s3: () => s3UploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
-      ftp: () => ftpUploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
-      sftp: () => sftpUploadFromLocalFile(sessionId, localPath, remotePath, onProgress),
+      s3: (id) => s3UploadFromLocalFile(id, localPath, remotePath, onProgress),
+      ftp: (id) => ftpUploadFromLocalFile(id, localPath, remotePath, onProgress),
+      sftp: (id) => sftpUploadFromLocalFile(id, localPath, remotePath, onProgress),
     })
   const remoteCopy = (sessionId: string, src: string, dest: string, onProgress?: (loaded: number, total: number) => void) =>
     dispatchRemote(sessionId, {
-      s3: () => s3CopyRemoteFile(sessionId, src, dest, onProgress),
-      ftp: () => ftpCopyRemoteFile(sessionId, src, dest, onProgress),
-      sftp: () => sftpCopyRemoteFile(sessionId, src, dest, onProgress),
+      s3: (id) => s3CopyRemoteFile(id, src, dest, onProgress),
+      ftp: (id) => ftpCopyRemoteFile(id, src, dest, onProgress),
+      sftp: (id) => sftpCopyRemoteFile(id, src, dest, onProgress),
     })
 
   // SFTP (ssh2) + FTP/FTPS + S3 (same explorer IPC after connect)
@@ -865,76 +900,76 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('sftp-readdir', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Readdir(sessionId, remotePath),
-      ftp: () => ftpReaddir(sessionId, remotePath),
-      sftp: () => sftpReaddir(sessionId, remotePath),
+      s3: (id) => s3Readdir(id, remotePath),
+      ftp: (id) => ftpReaddir(id, remotePath),
+      sftp: (id) => sftpReaddir(id, remotePath),
     }),
   )
   ipcMain.handle('sftp-read-file', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3ReadFile(sessionId, remotePath),
-      ftp: () => ftpReadFile(sessionId, remotePath),
-      sftp: () => sftpReadFile(sessionId, remotePath),
+      s3: (id) => s3ReadFile(id, remotePath),
+      ftp: (id) => ftpReadFile(id, remotePath),
+      sftp: (id) => sftpReadFile(id, remotePath),
     }),
   )
   ipcMain.handle(
     'sftp-write-file',
     async (_event, sessionId: string, remotePath: string, base64Data: string) =>
       dispatchRemote(sessionId, {
-        s3: () => s3WriteFile(sessionId, remotePath, base64Data),
-        ftp: () => ftpWriteFile(sessionId, remotePath, base64Data),
-        sftp: () => sftpWriteFile(sessionId, remotePath, base64Data),
+        s3: (id) => s3WriteFile(id, remotePath, base64Data),
+        ftp: (id) => ftpWriteFile(id, remotePath, base64Data),
+        sftp: (id) => sftpWriteFile(id, remotePath, base64Data),
       }),
   )
   ipcMain.handle(
     'sftp-write-text-file',
     async (_event, sessionId: string, remotePath: string, text: string) =>
       dispatchRemote(sessionId, {
-        s3: () => s3WriteTextFile(sessionId, remotePath, text),
-        ftp: () => ftpWriteTextFile(sessionId, remotePath, text),
-        sftp: () => sftpWriteTextFile(sessionId, remotePath, text),
+        s3: (id) => s3WriteTextFile(id, remotePath, text),
+        ftp: (id) => ftpWriteTextFile(id, remotePath, text),
+        sftp: (id) => sftpWriteTextFile(id, remotePath, text),
       }),
   )
   ipcMain.handle('sftp-mkdir', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Mkdir(sessionId, remotePath),
-      ftp: () => ftpMkdir(sessionId, remotePath),
-      sftp: () => sftpMkdir(sessionId, remotePath),
+      s3: (id) => s3Mkdir(id, remotePath),
+      ftp: (id) => ftpMkdir(id, remotePath),
+      sftp: (id) => sftpMkdir(id, remotePath),
     }),
   )
   ipcMain.handle('sftp-rename', async (_event, sessionId: string, oldPath: string, newPath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Rename(sessionId, oldPath, newPath),
-      ftp: () => ftpRename(sessionId, oldPath, newPath),
-      sftp: () => sftpRename(sessionId, oldPath, newPath),
+      s3: (id) => s3Rename(id, oldPath, newPath),
+      ftp: (id) => ftpRename(id, oldPath, newPath),
+      sftp: (id) => sftpRename(id, oldPath, newPath),
     }),
   )
   ipcMain.handle('sftp-unlink', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Unlink(sessionId, remotePath),
-      ftp: () => ftpUnlink(sessionId, remotePath),
-      sftp: () => sftpUnlink(sessionId, remotePath),
+      s3: (id) => s3Unlink(id, remotePath),
+      ftp: (id) => ftpUnlink(id, remotePath),
+      sftp: (id) => sftpUnlink(id, remotePath),
     }),
   )
   ipcMain.handle('sftp-rmrf', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Rmrf(sessionId, remotePath),
-      ftp: () => ftpRmrf(sessionId, remotePath),
-      sftp: () => sftpRmrf(sessionId, remotePath),
+      s3: (id) => s3Rmrf(id, remotePath),
+      ftp: (id) => ftpRmrf(id, remotePath),
+      sftp: (id) => sftpRmrf(id, remotePath),
     }),
   )
   ipcMain.handle('sftp-stat', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3Stat(sessionId, remotePath),
-      ftp: () => ftpStat(sessionId, remotePath),
-      sftp: () => sftpStat(sessionId, remotePath),
+      s3: (id) => s3Stat(id, remotePath),
+      ftp: (id) => ftpStat(id, remotePath),
+      sftp: (id) => sftpStat(id, remotePath),
     }),
   )
   ipcMain.handle('sftp-calculate-size', async (_event, sessionId: string, remotePath: string) =>
     dispatchRemote(sessionId, {
-      s3: () => s3CalculateSize(sessionId, remotePath),
-      ftp: () => ftpCalculateSize(sessionId, remotePath),
-      sftp: () => sftpCalculateSize(sessionId, remotePath),
+      s3: (id) => s3CalculateSize(id, remotePath),
+      ftp: (id) => ftpCalculateSize(id, remotePath),
+      sftp: (id) => sftpCalculateSize(id, remotePath),
     }),
   )
   ipcMain.handle(
@@ -949,7 +984,7 @@ app.whenReady().then(() => {
       dispatchRemote(sessionId, {
         s3: () => s3SetAttributes(),
         ftp: () => ftpSetAttributes(),
-        sftp: () => sftpSetAttributes(sessionId, remotePath, attrs, options),
+        sftp: (id) => sftpSetAttributes(id, remotePath, attrs, options),
       }),
   )
 
@@ -982,9 +1017,9 @@ app.whenReady().then(() => {
         },
       }
       return dispatchRemote(sessionId, {
-        s3: () => s3FindFiles(sessionId, options, callbacks),
-        ftp: () => ftpFindFiles(sessionId, options, callbacks),
-        sftp: () => sftpFindFiles(sessionId, options, callbacks),
+        s3: (id) => s3FindFiles(id, options, callbacks),
+        ftp: (id) => ftpFindFiles(id, options, callbacks),
+        sftp: (id) => sftpFindFiles(id, options, callbacks),
       })
     },
   )

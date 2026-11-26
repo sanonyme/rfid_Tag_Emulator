@@ -1,6 +1,6 @@
 {
   "name": "rfid-emulator-modern",
-  "version": "10.3.2",
+  "version": "10.3.3",
   "description": "Zeus RFID Tag Emulator UI",
   "author": {
     "name": "Samy Chemaly",
@@ -52,6 +52,7 @@
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/lint": "^6.9.7",
     "@codemirror/theme-one-dark": "^6.1.3",
+    "@dagrejs/dagre": "^3.1.4",
     "@emotion/is-prop-valid": "^1.3.1",
     "@mimasu/tdt": "^3.0.7",
     "@radix-ui/react-dialog": "^1.1.15",

@@ -28,8 +28,8 @@ import { Switch } from './ui/switch'
 import { UpcSerialModeToggle } from './UpcSerialModeToggle'
 import { StandardVariablesReference, VariablePresetPicker } from './VariablePresetPicker'
 import { VariableAutocompleteInput } from './automation/VariableAutocompleteInput'
-import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError } from '@/lib/automation-types'
-import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
+import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError, TcpNodeMode, TcpLineEnding } from '@/lib/automation-types'
+import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, TCP_NODE_MODES, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
 import { InterTagDelayInput } from '@/components/InterTagDelayInput'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
@@ -220,8 +220,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
         for (const s of seq.steps) {
           if (s.params?.varName) vars.add(s.params.varName)
           if (s.params?.dbSaveAs) vars.add(s.params.dbSaveAs)
+          if (s.params?.dbSaveRowsAs) vars.add(s.params.dbSaveRowsAs)
           if (s.params?.httpSaveBodyAs) vars.add(s.params.httpSaveBodyAs)
           if (s.params?.httpSaveStatusAs) vars.add(s.params.httpSaveStatusAs)
+          if (s.params?.httpSaveJsonAs) vars.add(s.params.httpSaveJsonAs)
+          if (s.params?.tcpSaveResponseAs) vars.add(s.params.tcpSaveResponseAs)
+          if (s.params?.ocrSaveAs) vars.add(s.params.ocrSaveAs)
           if (s.params?.fileSaveAs) vars.add(s.params.fileSaveAs)
           if (s.params?.fileSaveListAs) vars.add(s.params.fileSaveListAs)
           if (s.params?.generateSaveAs) vars.add(s.params.generateSaveAs)
@@ -293,7 +297,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               {step.type === 'FILE_READ' && <FolderOpen className="h-3 w-3" />}
               {step.type === 'FILE_WRITE' && <Save className="h-3 w-3" />}
               {step.type === 'FILE_LIST' && <ListOrdered className="h-3 w-3" />}
-              {step.type}
+              {step.type === 'CUSTOM_MESSAGE' ? 'TCP' : step.type}
             </span>
             {step.name}
           </DialogTitle>
@@ -325,65 +329,316 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
 
           {step.type === 'OCR' && (
             <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <Label className="text-xs">Target Host (optional)</Label>
+                  <VariableAutocompleteInput
+                    value={step.params.ocrHost || ''}
+                    onChange={(next) => patchParams({ ocrHost: next })}
+                    upstreamVariables={upstreamVariables}
+                    placeholder={host || '{{host}}'}
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Save response as (optional)</Label>
+                  <Input
+                    value={step.params.ocrSaveAs || ''}
+                    onChange={(e) => patchParams({ ocrSaveAs: e.target.value })}
+                    placeholder="lastOcrResponse"
+                    className="h-9 font-mono text-xs"
+                  />
+                </div>
+              </div>
               <Label>Message Payload</Label>
-              <Textarea
-                value={step.params.message}
-                onChange={(e) => patchParams( { message: e.target.value })}
-                rows={10}
-                className="font-mono text-sm min-h-[180px]"
+              <VariableAutocompleteInput
+                multiline
+                rows={8}
+                value={step.params.message || ''}
+                onChange={(next) => patchParams({ message: next })}
+                upstreamVariables={upstreamVariables}
+                className="font-mono text-sm min-h-[150px]"
+                placeholder="Enter OCR payload (text, barcode, JSON)…"
               />
               <VariablePresetPicker
                 value={step.params.message || ''}
                 preferred={['host', 'epc', 'epcs', 'tagCount']}
-                onInsert={(next) => patchParams( { message: next })}
+                onInsert={(next) => patchParams({ message: next })}
               />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full"
-                onClick={() => patchParams( { message: '{"test":1}' })}
-              >
-                Insert Example JSON
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => patchParams({ message: '{"test":1}' })}
+                >
+                  Insert Example JSON
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    patchParams({
+                      message:
+                        '{"00":1,"01":1,"02":"2/2","03":1,"04":1224,"05":490,"06":102,"07":36,"08":"S2024","09":3,"10":3,"11":1,"12":835906,"13":"28937-P/2","14":10079,"15":150,"16":0,"17":317,"18":282537599,"19":0,"20":39} $0A',
+                    })
+                  }
+                >
+                  Insert Inditex Preset
+                </Button>
+              </div>
             </div>
           )}
 
-          {step.type === 'CUSTOM_MESSAGE' && (
-            <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
-              <Label>Port</Label>
-              <Input
-                type="number"
-                min={1}
-                max={65535}
-                value={step.params.port ?? customPort}
-                onChange={(e) => patchParams( { port: e.target.value })}
-                placeholder="12345"
-                className="font-mono h-10"
-              />
-              <p className="text-xs text-muted-foreground">TCP port to send the message to</p>
-              <Label>Message</Label>
-              <Textarea
-                value={step.params.message}
-                onChange={(e) => patchParams( { message: e.target.value })}
-                rows={10}
-                className="font-mono text-sm min-h-[180px]"
-                placeholder="Enter message to send (JSON, plain text, etc.)"
-              />
-              <VariablePresetPicker
-                value={step.params.message || ''}
-                preferred={['host', 'epc', 'epcs', 'lastOcrResponse']}
-                onInsert={(next) => patchParams( { message: next })}
-              />
-              <Button
-                variant="secondary"
-                size="sm"
-                className="w-full"
-                onClick={() => patchParams( { message: '{"test":1}' })}
-              >
-                Insert Example JSON
-              </Button>
-            </div>
-          )}
+          {step.type === 'CUSTOM_MESSAGE' && (() => {
+            const tcpMode: TcpNodeMode = step.params.tcpMode ?? 'oneshot'
+            const modeMeta = TCP_NODE_MODES.find((m) => m.value === tcpMode)
+            const needsHostPort = tcpMode === 'oneshot' || tcpMode === 'client_connect' || tcpMode === 'server_start'
+            const needsPayload = tcpMode === 'oneshot' || tcpMode === 'client_send' || tcpMode === 'server_send'
+            const supportsReply = tcpMode === 'oneshot' || tcpMode === 'client_send'
+            const isServerMode = tcpMode.startsWith('server_')
+            const hexMode = step.params.tcpHex === true
+            const lineEnding: TcpLineEnding = step.params.tcpLineEnding ?? 'crlf'
+            return (
+              <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3.5">
+                <div className="space-y-1.5">
+                  <Label>TCP Action Mode</Label>
+                  <Select
+                    value={tcpMode}
+                    onValueChange={(v) => {
+                      const nextMode = v as TcpNodeMode
+                      const patch: Partial<AutomationStep['params']> = { tcpMode: nextMode }
+                      if (nextMode === 'server_start' && !step.params.port) patch.port = '9000'
+                      if (nextMode === 'server_wait' && !step.params.tcpSaveResponseAs) patch.tcpSaveResponseAs = 'tcpRx'
+                      patchParams(patch)
+                    }}
+                  >
+                    <SelectTrigger className="h-10">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(['Client', 'Server'] as const).map((grp) => (
+                        <div key={grp}>
+                          <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                            TCP {grp}
+                          </p>
+                          {TCP_NODE_MODES.filter((m) => m.group === grp).map((m) => (
+                            <SelectItem key={m.value} value={m.value}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </div>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">{modeMeta?.hint}</p>
+                </div>
+
+                {needsHostPort && (
+                  <div className="grid grid-cols-[1fr_120px] gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-xs">
+                        {tcpMode === 'server_start' ? 'Bind Address' : 'Target Host / IP'}
+                      </Label>
+                      <VariableAutocompleteInput
+                        value={step.params.tcpHost || ''}
+                        onChange={(next) => patchParams({ tcpHost: next })}
+                        upstreamVariables={upstreamVariables}
+                        placeholder={tcpMode === 'server_start' ? '0.0.0.0' : host || '{{host}}'}
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Port</Label>
+                      <VariableAutocompleteInput
+                        value={step.params.port ?? (tcpMode === 'server_start' ? '9000' : customPort)}
+                        onChange={(next) => patchParams({ port: next })}
+                        upstreamVariables={upstreamVariables}
+                        placeholder={tcpMode === 'server_start' ? '9000' : '12345'}
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {(tcpMode === 'server_send' || tcpMode === 'server_wait') && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">
+                      {tcpMode === 'server_send' ? 'Target Client ID (empty or "all" to broadcast)' : 'Filter Client ID (optional)'}
+                    </Label>
+                    <VariableAutocompleteInput
+                      value={step.params.tcpClientId || ''}
+                      onChange={(next) => patchParams({ tcpClientId: next })}
+                      upstreamVariables={upstreamVariables}
+                      placeholder={tcpMode === 'server_send' ? 'all (or {{tcpRx_clientId}})' : 'Any connected client'}
+                      className="h-9 font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {needsPayload && (
+                  <>
+                    <div className="grid grid-cols-2 gap-2.5 items-center pt-0.5">
+                      <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/50 px-3 py-2">
+                        <Label htmlFor="tcp-hex-mode" className="text-xs cursor-pointer">
+                          HEX bytes mode
+                        </Label>
+                        <Switch
+                          id="tcp-hex-mode"
+                          checked={hexMode}
+                          onCheckedChange={(v) => patchParams({ tcpHex: v })}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Select
+                          value={hexMode ? 'none' : lineEnding}
+                          disabled={hexMode}
+                          onValueChange={(v) => patchParams({ tcpLineEnding: v as TcpLineEnding })}
+                        >
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue placeholder="Line ending" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">EOL: None</SelectItem>
+                            <SelectItem value="crlf">EOL: CRLF (\r\n)</SelectItem>
+                            <SelectItem value="lf">EOL: LF (\n)</SelectItem>
+                            <SelectItem value="cr">EOL: CR (\r)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>{hexMode ? 'HEX Payload (e.g. 02 48 49 03)' : 'Message Payload'}</Label>
+                      <VariableAutocompleteInput
+                        multiline
+                        rows={6}
+                        value={step.params.message || ''}
+                        onChange={(next) => patchParams({ message: next })}
+                        upstreamVariables={upstreamVariables}
+                        className="font-mono text-sm min-h-[120px]"
+                        placeholder={hexMode ? '02 48 45 4C 4C 4F 03' : 'Enter message to send (JSON, plain text, {{epc}}, etc.)'}
+                      />
+                      <VariablePresetPicker
+                        value={step.params.message || ''}
+                        preferred={['host', 'epc', 'epcs', 'lastTcpResponse', 'lastOcrResponse']}
+                        onInsert={(next) => patchParams({ message: next })}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => patchParams({ tcpHex: false, message: '{"epc":"{{epc}}","count":{{tagCount}}}' })}
+                        >
+                          Insert Example JSON
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => patchParams({ tcpHex: true, message: '02 48 49 03' })}
+                        >
+                          Insert Example HEX
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {supportsReply && (
+                  <div className="space-y-2.5 rounded-lg border border-border/50 bg-background/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div>
+                        <Label htmlFor="tcp-wait-reply" className="text-xs cursor-pointer">
+                          Wait for response
+                        </Label>
+                        <p className="text-[11px] text-muted-foreground">
+                          Capture incoming reply into a variable (plus <code className="font-mono">_hex</code>).
+                        </p>
+                      </div>
+                      <Switch
+                        id="tcp-wait-reply"
+                        checked={step.params.tcpWaitForResponse === true}
+                        onCheckedChange={(v) => patchParams({ tcpWaitForResponse: v })}
+                      />
+                    </div>
+                    {step.params.tcpWaitForResponse && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Save response as</Label>
+                          <Input
+                            value={step.params.tcpSaveResponseAs || ''}
+                            onChange={(e) => patchParams({ tcpSaveResponseAs: e.target.value })}
+                            placeholder="tcpReply"
+                            className="h-9 font-mono text-xs"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Timeout (ms)</Label>
+                          <Input
+                            type="number"
+                            min={200}
+                            max={120000}
+                            value={step.params.tcpTimeoutMs ?? 3000}
+                            onChange={(e) => patchParams({ tcpTimeoutMs: parseInt(e.target.value, 10) || 3000 })}
+                            className="h-9 font-mono text-xs"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tcpMode === 'server_wait' && (
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Save received data as</Label>
+                      <Input
+                        value={step.params.tcpSaveResponseAs || 'tcpRx'}
+                        onChange={(e) => patchParams({ tcpSaveResponseAs: e.target.value })}
+                        placeholder="tcpRx"
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Timeout (ms)</Label>
+                      <Input
+                        type="number"
+                        min={200}
+                        max={120000}
+                        value={step.params.tcpTimeoutMs ?? 10000}
+                        onChange={(e) => patchParams({ tcpTimeoutMs: parseInt(e.target.value, 10) || 10000 })}
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                    <p className="col-span-2 text-[11px] text-muted-foreground">
+                      Captures text into <code className="font-mono">{'{{' + (step.params.tcpSaveResponseAs || 'tcpRx') + '}}'}</code>, hex into <code className="font-mono">_hex</code>, sender ID into <code className="font-mono">_clientId</code>, and IP into <code className="font-mono">_address</code>.
+                    </p>
+                  </div>
+                )}
+
+                {tcpMode === 'server_send' && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Save sent client count as (optional)</Label>
+                    <Input
+                      value={step.params.tcpSaveResponseAs || ''}
+                      onChange={(e) => patchParams({ tcpSaveResponseAs: e.target.value })}
+                      placeholder="sentClients"
+                      className="h-9 font-mono text-xs"
+                    />
+                  </div>
+                )}
+
+                {isServerMode && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Shares the live TCP Server instance shown in the <span className="font-medium text-foreground">TCP</span> tab.
+                  </p>
+                )}
+              </div>
+            )
+          })()}
 
           {step.type === 'FIXED_TAG' && (
             <div className="space-y-5">
@@ -512,6 +767,39 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
                 <Label>Advanced</Label>
+                <div className="space-y-2 rounded-lg border border-border/40 bg-background/40 p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <Label htmlFor="fixed-auto-connect" className="text-xs cursor-pointer">
+                        Auto-connect reader if disconnected
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        Connects the Fixed emulator automatically before sending tags.
+                      </p>
+                    </div>
+                    <Switch
+                      id="fixed-auto-connect"
+                      checked={step.params.fixedAutoConnect === true}
+                      onCheckedChange={(v) => patchParams({ fixedAutoConnect: v })}
+                    />
+                  </div>
+                  {step.params.fixedAutoConnect && (
+                    <div className="grid grid-cols-[1fr_110px] gap-2 pt-1">
+                      <Input
+                        value={step.params.fixedHost || ''}
+                        onChange={(e) => patchParams({ fixedHost: e.target.value })}
+                        placeholder={host || '{{host}}'}
+                        className="h-8 font-mono text-xs"
+                      />
+                      <Input
+                        value={step.params.fixedPort || '12352'}
+                        onChange={(e) => patchParams({ fixedPort: e.target.value })}
+                        placeholder="12352"
+                        className="h-8 font-mono text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Inter-tag delay</Label>
                   <div className="relative">
@@ -553,8 +841,8 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Antennas</Label>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4].map((ant) => {
+                  <div className="grid grid-cols-4 gap-2">
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((ant) => {
                       const current = (step.params.antenna || '1').toString().split(',').filter(Boolean)
                       const isSelected = current.includes(String(ant))
                       return (
@@ -566,9 +854,9 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                             if (set.has(String(ant))) set.delete(String(ant))
                             else set.add(String(ant))
                             const sorted = Array.from(set).sort((a, b) => Number(a) - Number(b))
-                            patchParams( { antenna: sorted.join(',') || '1' })
+                            patchParams({ antenna: sorted.join(',') || '1' })
                           }}
-                          className={`flex-1 h-12 rounded-lg border-2 flex flex-col items-center justify-center gap-0.5 transition-all focus:outline-none select-none ${
+                          className={`h-10 rounded-lg border-2 flex items-center justify-center gap-1 transition-all focus:outline-none select-none ${
                             isSelected ? 'border-green-500 bg-green-500/15' : 'border-border bg-muted/40'
                           }`}
                         >
@@ -691,21 +979,93 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 />
               </div>
               <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
-                <Label className="text-xs">Inter-tag delay</Label>
-                <div className="relative">
-                  <InterTagDelayInput
-                    value={step.params.tagDelay ?? ''}
-                    onValueChange={(tagDelay) => patchParams({ tagDelay })}
-                    placeholder={handheldTabDelay?.trim() ? `Default: ${handheldTabDelay}` : '20'}
-                    className="h-9 pe-12 text-sm"
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
-                    ms
-                  </span>
+                <Label>Server &amp; Signal</Label>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Handheld Server Port</Label>
+                    <VariableAutocompleteInput
+                      value={step.params.handheldPort ?? '10472'}
+                      onChange={(next) => patchParams({ handheldPort: next })}
+                      upstreamVariables={upstreamVariables}
+                      placeholder="10472"
+                      className="h-9 font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Custom TID (optional)</Label>
+                    <Input
+                      value={step.params.tid || ''}
+                      onChange={(e) => patchParams({ tid: e.target.value })}
+                      className="font-mono h-9 text-xs"
+                      placeholder="Default: EPC"
+                    />
+                  </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground">
-                  Leave empty to use the Handheld tab inter-tag delay. Use 0 for no pause between tags.
-                </p>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Inter-tag delay</Label>
+                  <div className="relative">
+                    <InterTagDelayInput
+                      value={step.params.tagDelay ?? ''}
+                      onValueChange={(tagDelay) => patchParams({ tagDelay })}
+                      placeholder={handheldTabDelay?.trim() ? `Default: ${handheldTabDelay}` : '20'}
+                      className="h-9 pe-12 text-sm"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted-foreground">
+                      ms
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Leave empty to use the Handheld tab inter-tag delay. Use 0 for no pause between tags.
+                  </p>
+                </div>
+
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">RSSI</Label>
+                    <span className="text-xs text-muted-foreground">{step.params.rssi || '-45.0'} dBm</span>
+                  </div>
+                  <Slider
+                    value={[parseFloat(step.params.rssi || '-45') || -45]}
+                    onValueChange={([val]) => patchParams({ rssi: val.toFixed(1) })}
+                    min={-80}
+                    max={0}
+                    step={0.5}
+                  />
+                  <Input
+                    value={step.params.rssi || ''}
+                    onChange={(e) => patchParams({ rssi: e.target.value })}
+                    className="h-9 text-xs font-mono"
+                    placeholder="-45.0"
+                  />
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <Label className="text-xs">Randomize RSSI per tag</Label>
+                    <Switch
+                      checked={step.params.rssiRandomize ?? false}
+                      onCheckedChange={(v) => patchParams({ rssiRandomize: v })}
+                    />
+                  </div>
+                  {step.params.rssiRandomize && (
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input
+                        type="number"
+                        step="0.5"
+                        value={step.params.rssiRandMin ?? ''}
+                        onChange={(e) => patchParams({ rssiRandMin: e.target.value })}
+                        placeholder="Min (-90)"
+                        className="h-9 text-xs font-mono"
+                      />
+                      <Input
+                        type="number"
+                        step="0.5"
+                        value={step.params.rssiRandMax ?? ''}
+                        onChange={(e) => patchParams({ rssiRandMax: e.target.value })}
+                        placeholder="Max (-20)"
+                        className="h-9 text-xs font-mono"
+                      />
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -871,7 +1231,16 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   />
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground">Requires an active MySQL connection in the Database tab.</p>
+              <div className="space-y-1">
+                <Label className="text-xs">Save all rows as JSON array (optional)</Label>
+                <Input
+                  value={step.params.dbSaveRowsAs || ''}
+                  onChange={(e) => patchParams({ dbSaveRowsAs: e.target.value })}
+                  className="h-9 font-mono text-xs"
+                  placeholder="dbRows"
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">Requires an active MySQL or PostgreSQL connection in the Database tab.</p>
             </div>
           )}
 
@@ -1224,10 +1593,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 placeholder="Leave empty for current connection default"
               />
               <Label>SQL statement</Label>
-              <Textarea
-                value={step.params.dbSql || ''}
-                onChange={(e) => patchParams( { dbSql: e.target.value })}
+              <VariableAutocompleteInput
+                multiline
                 rows={6}
+                value={step.params.dbSql || ''}
+                onChange={(next) => patchParams({ dbSql: next })}
+                upstreamVariables={upstreamVariables}
                 className="font-mono text-sm"
                 placeholder={"UPDATE inventory SET last_seen = NOW() WHERE epc = '{{epc}}'"}
               />
@@ -1285,7 +1656,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Requires an active MySQL connection in the Database tab. One statement per node;
+                Requires an active MySQL or PostgreSQL connection in the Database tab. One statement per node;
                 the step fails (stopping the branch) if the SQL errors.
               </p>
             </div>
@@ -1316,9 +1687,10 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
                 <div className="space-y-1">
                   <Label>URL</Label>
-                  <Input
+                  <VariableAutocompleteInput
                     value={step.params.httpUrl || ''}
-                    onChange={(e) => patchParams( { httpUrl: e.target.value })}
+                    onChange={(next) => patchParams({ httpUrl: next })}
+                    upstreamVariables={upstreamVariables}
                     className="h-10 font-mono text-sm"
                     placeholder="http://{{host}}:8081/…"
                   />
@@ -1330,6 +1702,17 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 compact
                 onInsert={(next) => patchParams( { httpUrl: next })}
               />
+              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/40 px-3 py-2">
+                <div>
+                  <Label htmlFor="http-ale-auth" className="text-xs cursor-pointer">Use saved ALE Basic Auth</Label>
+                  <p className="text-[10.5px] text-muted-foreground">Automatically attaches your saved ALE credentials header.</p>
+                </div>
+                <Switch
+                  id="http-ale-auth"
+                  checked={step.params.httpUseAleAuth === true}
+                  onCheckedChange={(v) => patchParams({ httpUseAleAuth: v })}
+                />
+              </div>
               <Label>Headers (one per line — <code className="text-[10px]">Key: Value</code>)</Label>
               <Textarea
                 value={step.params.httpHeaders || ''}
@@ -1679,6 +2062,30 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     />
                   </div>
                 )}
+                {kind === 'epcFromUpc' && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">UPC / GTIN</Label>
+                      <VariableAutocompleteInput
+                        value={step.params.generateUpc || ''}
+                        onChange={(next) => patchParams({ generateUpc: next })}
+                        upstreamVariables={upstreamVariables}
+                        placeholder="00000000000001"
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Serial</Label>
+                      <VariableAutocompleteInput
+                        value={step.params.generateSerial || '{{nextSerial}}'}
+                        onChange={(next) => patchParams({ generateSerial: next })}
+                        upstreamVariables={upstreamVariables}
+                        placeholder="{{nextSerial}}"
+                        className="h-9 font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()}
@@ -1726,7 +2133,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   <Select value={op} onValueChange={(v) => patchParams( { transformOp: v as TransformOp })}>
                     <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {(['text', 'number', 'json', 'array'] as const).map((cat) => (
+                      {(['text', 'encoding', 'number', 'json', 'array'] as const).map((cat) => (
                         <div key={cat}>
                           <p className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{cat}</p>
                           {TRANSFORM_OPS.filter((o) => o.category === cat).map((o) => (
@@ -2023,15 +2430,17 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
             )
           })()}
 
-          {step.type === 'FILE_READ' && (
+          {step.type === 'FILE_READ' && (() => {
+            const loc = step.params.fileLocation || step.params.fileStorageProvider || 'local'
+            return (
             <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Storage Location</Label>
-                <span className="text-[11px] text-muted-foreground">Local disk, remote SFTP, or S3 bucket</span>
+                <span className="text-[11px] text-muted-foreground">Local disk, SFTP, FTP/FTPS, or AWS S3</span>
               </div>
               <Select
-                value={step.params.fileLocation || 'local'}
-                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+                value={loc}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 'ftp' | 's3', fileStorageProvider: v as 'local' | 'sftp' | 'ftp' | 's3' })}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -2039,17 +2448,18 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <SelectContent>
                   <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
                   <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="ftp">FTP / FTPS Server</SelectItem>
                   <SelectItem value="s3">AWS S3 Bucket</SelectItem>
                 </SelectContent>
               </Select>
 
-              {step.params.fileLocation === 'sftp' && (
+              {loc !== 'local' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Label className="text-xs">{loc.toUpperCase()} Session ID (optional)</Label>
                   <Input
                     value={step.params.fileConnectionId || ''}
                     onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
-                    placeholder="Leave empty for active SFTP session"
+                    placeholder={`Leave empty to use active ${loc.toUpperCase()} session from Files tab`}
                     className="h-9 font-mono text-xs"
                   />
                 </div>
@@ -2061,7 +2471,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   value={step.params.filePath || ''}
                   onChange={(v) => patchParams({ filePath: v })}
                   upstreamVariables={upstreamVariables}
-                  placeholder={step.params.fileLocation === 'sftp' ? '/var/data/tags.csv or {{path}}' : 'C:\\data\\tags.csv or {{path}}'}
+                  placeholder={loc !== 'local' ? '/var/data/tags.csv or {{path}}' : 'C:\\data\\tags.csv or {{path}}'}
                   className="h-10 font-mono text-sm"
                 />
                 <p className="text-[11px] text-muted-foreground">Type <code className="font-mono">{'{{'}</code> to insert variables like <code className="font-mono">{'{{epc}}'}</code> or <code className="font-mono">{'{{timestamp}}'}</code></p>
@@ -2071,7 +2481,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-1.5">
                   <Label>Read Encoding</Label>
                   <Select
-                    value={step.params.fileEncoding || 'utf-8'}
+                    value={step.params.fileEncoding === 'utf8' ? 'utf-8' : (step.params.fileEncoding || 'utf-8')}
                     onValueChange={(v) => patchParams({ fileEncoding: v as 'utf-8' | 'base64' | 'json' | 'hex' })}
                   >
                     <SelectTrigger className="h-9">
@@ -2099,9 +2509,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 Content is saved to <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileContent') + '}}'}</code> and byte size to <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileContent') + 'Size}}'}</code>.
               </p>
             </div>
-          )}
+            )
+          })()}
 
-          {step.type === 'FILE_WRITE' && (
+          {step.type === 'FILE_WRITE' && (() => {
+            const loc = step.params.fileLocation || step.params.fileStorageProvider || 'local'
+            return (
             <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Storage Location</Label>
@@ -2117,8 +2530,8 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
               </div>
               <Select
-                value={step.params.fileLocation || 'local'}
-                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+                value={loc}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 'ftp' | 's3', fileStorageProvider: v as 'local' | 'sftp' | 'ftp' | 's3' })}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -2126,17 +2539,18 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <SelectContent>
                   <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
                   <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="ftp">FTP / FTPS Server</SelectItem>
                   <SelectItem value="s3">AWS S3 Bucket</SelectItem>
                 </SelectContent>
               </Select>
 
-              {step.params.fileLocation === 'sftp' && (
+              {loc !== 'local' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Label className="text-xs">{loc.toUpperCase()} Session ID (optional)</Label>
                   <Input
                     value={step.params.fileConnectionId || ''}
                     onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
-                    placeholder="Leave empty for active SFTP session"
+                    placeholder={`Leave empty to use active ${loc.toUpperCase()} session from Files tab`}
                     className="h-9 font-mono text-xs"
                   />
                 </div>
@@ -2148,7 +2562,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   value={step.params.filePath || ''}
                   onChange={(v) => patchParams({ filePath: v })}
                   upstreamVariables={upstreamVariables}
-                  placeholder={step.params.fileLocation === 'sftp' ? '/var/log/audit.csv' : 'C:\\export\\scanned_tags.csv'}
+                  placeholder={loc !== 'local' ? '/var/log/audit.csv' : 'C:\\export\\scanned_tags.csv'}
                   className="h-10 font-mono text-sm"
                 />
               </div>
@@ -2177,9 +2591,12 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 />
               </div>
             </div>
-          )}
+            )
+          })()}
 
-          {step.type === 'FILE_LIST' && (
+          {step.type === 'FILE_LIST' && (() => {
+            const loc = step.params.fileLocation || step.params.fileStorageProvider || 'local'
+            return (
             <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <Label>Storage Location</Label>
@@ -2193,8 +2610,8 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 </div>
               </div>
               <Select
-                value={step.params.fileLocation || 'local'}
-                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 's3' })}
+                value={loc}
+                onValueChange={(v) => patchParams({ fileLocation: v as 'local' | 'sftp' | 'ftp' | 's3', fileStorageProvider: v as 'local' | 'sftp' | 'ftp' | 's3' })}
               >
                 <SelectTrigger className="h-10">
                   <SelectValue />
@@ -2202,17 +2619,18 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <SelectContent>
                   <SelectItem value="local">Local Disk (Filesystem)</SelectItem>
                   <SelectItem value="sftp">SFTP Server (SSH)</SelectItem>
+                  <SelectItem value="ftp">FTP / FTPS Server</SelectItem>
                   <SelectItem value="s3">AWS S3 Bucket</SelectItem>
                 </SelectContent>
               </Select>
 
-              {step.params.fileLocation === 'sftp' && (
+              {loc !== 'local' && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs">SFTP Session / Connection (optional)</Label>
+                  <Label className="text-xs">{loc.toUpperCase()} Session ID (optional)</Label>
                   <Input
                     value={step.params.fileConnectionId || ''}
                     onChange={(e) => patchParams({ fileConnectionId: e.target.value })}
-                    placeholder="Leave empty for active SFTP session"
+                    placeholder={`Leave empty to use active ${loc.toUpperCase()} session from Files tab`}
                     className="h-9 font-mono text-xs"
                   />
                 </div>
@@ -2224,7 +2642,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                   value={step.params.filePath || ''}
                   onChange={(v) => patchParams({ filePath: v })}
                   upstreamVariables={upstreamVariables}
-                  placeholder={step.params.fileLocation === 'sftp' ? '/var/data' : 'C:\\data\\rfid_records'}
+                  placeholder={loc !== 'local' ? '/var/data' : 'C:\\data\\rfid_records'}
                   className="h-10 font-mono text-sm"
                 />
               </div>
@@ -2233,8 +2651,8 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-1.5">
                   <Label>Filter Pattern (optional)</Label>
                   <Input
-                    value={step.params.fileFilter || ''}
-                    onChange={(e) => patchParams({ fileFilter: e.target.value })}
+                    value={step.params.fileFilter ?? step.params.filePattern ?? ''}
+                    onChange={(e) => patchParams({ fileFilter: e.target.value, filePattern: e.target.value })}
                     placeholder="*.csv, *.json"
                     className="h-9 font-mono text-xs"
                   />
@@ -2242,18 +2660,19 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 <div className="space-y-1.5">
                   <Label>Save List As</Label>
                   <Input
-                    value={step.params.fileSaveAs || 'fileList'}
-                    onChange={(e) => patchParams({ fileSaveAs: e.target.value })}
+                    value={step.params.fileSaveAs ?? step.params.fileSaveListAs ?? 'fileList'}
+                    onChange={(e) => patchParams({ fileSaveAs: e.target.value, fileSaveListAs: e.target.value })}
                     placeholder="fileList"
                     className="h-9 font-mono text-xs"
                   />
                 </div>
               </div>
               <p className="text-[11px] text-muted-foreground">
-                Output variables: <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + '}}'}</code> (JSON array of names), <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + 'Count}}'}</code> (count), and <code className="font-mono">{'{{' + (step.params.fileSaveAs || 'fileList') + 'Paths}}'}</code> (full paths).
+                Output variables: <code className="font-mono">{'{{' + (step.params.fileSaveAs || step.params.fileSaveListAs || 'fileList') + '}}'}</code> (JSON array of names), <code className="font-mono">{'{{' + (step.params.fileSaveAs || step.params.fileSaveListAs || 'fileList') + 'Count}}'}</code> (count), and <code className="font-mono">{'{{' + (step.params.fileSaveAs || step.params.fileSaveListAs || 'fileList') + 'Paths}}'}</code> (full paths).
               </p>
             </div>
-          )}
+            )
+          })()}
 
           {/* Node settings — shared by every executing node (n8n "Settings" tab). */}
           {nodeSupportsErrorPolicy(step.type) && (() => {

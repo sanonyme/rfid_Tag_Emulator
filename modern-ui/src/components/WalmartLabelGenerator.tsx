@@ -7,7 +7,7 @@ import { Button } from './ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card'
 import { Badge } from './ui/badge'
 import { Switch } from './ui/switch'
-import { Download, Copy, Printer, RefreshCw, Tag, RotateCcw, AlertCircle } from 'lucide-react'
+import { Download, Copy, Printer, RefreshCw, Tag, RotateCcw, AlertCircle, Eraser } from 'lucide-react'
 import { toast } from 'sonner'
 
 interface WalmartLabelData {
@@ -60,10 +60,11 @@ export function WalmartLabelGenerator() {
   const poClean = data.poNumber.trim()
   const itfDigits = useMemo(() => data.itfNumber.replace(/\D/g, ''), [data.itfNumber])
 
-  const poValid = poClean.length > 0
-  // ITF requires an even number of digits (at least 2); Walmart carton GTIN is typically 14 digits
-  const itfValid = itfDigits.length >= 2 && itfDigits.length % 2 === 0
-  const canExport = poValid && itfValid
+  const poHasValue = poClean.length > 0
+  // ITF allows being empty; when provided, ITF requires an even number of digits (typically 14)
+  const itfHasValue = itfDigits.length > 0
+  const itfHasError = itfHasValue && itfDigits.length % 2 !== 0
+  const canExport = !itfHasError
 
   const handleRandomize = () => {
     const base13 = '00' + randomDigits(11)
@@ -76,6 +77,20 @@ export function WalmartLabelGenerator() {
       deptNumber: '000' + randomDigits(2),
       itemNumber: '0' + randomDigits(9),
       supplierStk: `AW${randomDigits(11)}B`,
+    }))
+  }
+
+  const handleClear = () => {
+    setData((prev) => ({
+      ...prev,
+      poNumber: '',
+      itfNumber: '',
+      toCountry: '',
+      toCode: '',
+      deptNumber: '',
+      deptCategory: '',
+      itemNumber: '',
+      supplierStk: '',
     }))
   }
 
@@ -101,7 +116,11 @@ export function WalmartLabelGenerator() {
     try {
       const dataUrl = await renderPngDataUrl()
       const a = document.createElement('a')
-      a.download = `walmart-label-PO-${poClean}.png`
+      a.download = poClean
+        ? `walmart-label-PO-${poClean}.png`
+        : itfDigits
+          ? `walmart-label-ITF-${itfDigits}.png`
+          : 'walmart-label.png'
       a.href = dataUrl
       a.click()
       toast.success('Walmart label PNG downloaded')
@@ -147,7 +166,7 @@ export function WalmartLabelGenerator() {
       win.document.write(`<!doctype html>
 <html>
   <head>
-    <title>Walmart Label — PO ${poClean}</title>
+    <title>${poClean ? `Walmart Label — PO ${poClean}` : itfDigits ? `Walmart Label — ITF ${itfDigits}` : 'Walmart Label'}</title>
     <style>
       html, body { margin: 0; padding: 0; background: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
       img { max-width: 92vw; max-height: 92vh; height: auto; }
@@ -201,13 +220,13 @@ export function WalmartLabelGenerator() {
                 <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Barcodes
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={handleRandomize}
-                    className="h-7 gap-1.5 px-2 text-xs"
+                    className="h-7 gap-1 px-2 text-xs"
                     title="Generate random valid values"
                   >
                     <RefreshCw className="h-3.5 w-3.5" />
@@ -218,11 +237,22 @@ export function WalmartLabelGenerator() {
                     variant="ghost"
                     size="sm"
                     onClick={handleReset}
-                    className="h-7 gap-1.5 px-2 text-xs"
+                    className="h-7 gap-1 px-2 text-xs"
                     title="Reset to sample label"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
                     Sample
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClear}
+                    className="h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    title="Clear all fields"
+                  >
+                    <Eraser className="h-3.5 w-3.5" />
+                    Clear
                   </Button>
                 </div>
               </div>
@@ -238,14 +268,9 @@ export function WalmartLabelGenerator() {
                   id="wm-po"
                   value={data.poNumber}
                   onChange={(e) => update('poNumber', e.target.value)}
-                  placeholder="0869795258"
+                  placeholder="Optional — e.g. 0869795258"
                   className="h-9 font-mono text-sm"
                 />
-                {!poValid && (
-                  <p className="flex items-center gap-1 text-[11px] text-destructive">
-                    <AlertCircle className="h-3 w-3" /> PO# is required for the Code128 barcode.
-                  </p>
-                )}
               </div>
 
               <div className="space-y-1.5">
@@ -261,12 +286,12 @@ export function WalmartLabelGenerator() {
                   id="wm-itf"
                   value={data.itfNumber}
                   onChange={(e) => update('itfNumber', e.target.value.replace(/\D/g, ''))}
-                  placeholder="00884968531383"
+                  placeholder="Optional — e.g. 00884968531383"
                   className="h-9 font-mono text-sm"
                 />
-                {!itfValid && (
+                {itfHasError && (
                   <p className="flex items-center gap-1 text-[11px] text-destructive">
-                    <AlertCircle className="h-3 w-3" /> ITF requires an even number of digits (e.g. 14 digits).
+                    <AlertCircle className="h-3 w-3" /> ITF requires an even number of digits (e.g. 14 digits), or leave empty.
                   </p>
                 )}
               </div>
@@ -457,7 +482,7 @@ export function WalmartLabelGenerator() {
                   }}
                 >
                   <div className="flex justify-center">
-                    {poValid ? (
+                    {poHasValue ? (
                       <Barcode
                         value={poClean}
                         format="CODE128"
@@ -469,9 +494,7 @@ export function WalmartLabelGenerator() {
                         margin={0}
                       />
                     ) : (
-                      <div className="flex h-[46px] items-center text-xs text-red-600">
-                        Enter PO# for Code128
-                      </div>
+                      <div className="h-[46px]" />
                     )}
                   </div>
                   <div
@@ -502,7 +525,7 @@ export function WalmartLabelGenerator() {
                         color: '#000000',
                       }}
                     >
-                      {poClean || '—'}
+                      {poClean || '\u00A0'}
                     </span>
                     <span />
                   </div>
@@ -516,7 +539,7 @@ export function WalmartLabelGenerator() {
                   }}
                 >
                   <div className="flex justify-center">
-                    {itfValid ? (
+                    {itfHasValue && !itfHasError ? (
                       <Barcode
                         value={itfDigits}
                         format="ITF"
@@ -527,10 +550,12 @@ export function WalmartLabelGenerator() {
                         lineColor="#000000"
                         margin={0}
                       />
-                    ) : (
+                    ) : itfHasError ? (
                       <div className="flex h-[74px] items-center text-xs text-red-600">
                         ITF requires an even number of digits
                       </div>
+                    ) : (
+                      <div className="h-[74px]" />
                     )}
                   </div>
                   <div
@@ -544,7 +569,7 @@ export function WalmartLabelGenerator() {
                       color: '#000000',
                     }}
                   >
-                    {itfDigits || '—'}
+                    {itfDigits || '\u00A0'}
                   </div>
                 </div>
 
@@ -577,7 +602,7 @@ export function WalmartLabelGenerator() {
                         letterSpacing: '-0.01em',
                       }}
                     >
-                      {data.toCountry}
+                      {data.toCountry || '\u00A0'}
                     </span>
                   </div>
                   <span
@@ -589,7 +614,7 @@ export function WalmartLabelGenerator() {
                       marginRight: '46px',
                     }}
                   >
-                    {data.toCode}
+                    {data.toCode || '\u00A0'}
                   </span>
                 </div>
 
@@ -638,7 +663,7 @@ export function WalmartLabelGenerator() {
                           marginLeft: '-4px',
                         }}
                       >
-                        {data.deptNumber}
+                        {data.deptNumber || '\u00A0'}
                       </span>
                     </div>
 
@@ -696,7 +721,7 @@ export function WalmartLabelGenerator() {
                         display: 'inline-block',
                       }}
                     >
-                      {poClean}
+                      {poClean || '\u00A0'}
                     </span>
                   </div>
 
@@ -734,7 +759,7 @@ export function WalmartLabelGenerator() {
                         marginLeft: '-12px',
                       }}
                     >
-                      {data.itemNumber}
+                      {data.itemNumber || '\u00A0'}
                     </span>
                   </div>
 
@@ -763,7 +788,7 @@ export function WalmartLabelGenerator() {
                         letterSpacing: '0.02em',
                       }}
                     >
-                      {data.supplierStk}
+                      {data.supplierStk || '\u00A0'}
                     </span>
                   </div>
                 </div>
