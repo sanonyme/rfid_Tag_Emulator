@@ -22,6 +22,28 @@ export type WhatsNewEntry = {
  */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '10.4.0',
+    date: '2026-11',
+    highlights: [
+      {
+        title: 'Auto: React Flow Workflow Studio',
+        detail: 'Completely revamped automation canvas with clean React Flow nodes, 4-side connection handles (top, right, bottom, left), Dagre LR/TB auto-layout, interactive minimap, workflow validation, in-canvas search (Ctrl+F), drop-to-connect, inline edge insert, workflow templates, live per-node run telemetry, and PNG export.',
+      },
+      {
+        title: 'Auto: full-power TCP, RFID, Files, DB & Transform nodes',
+        detail: 'Hercules-style TCP Client & TCP Server modes (HEX, line endings, reply capture), multi-port Handheld with TID & randomized RSSI, Fixed auto-connect with Antennas 1–8, OCR Inditex preset, SFTP/FTP/S3 file operations, DB JSON rows export, HTTP ALE auth, and new EPC/Base64/URL/Regex/Random UPC transforms.',
+      },
+      {
+        title: 'Canvas: consistently crisp zoom',
+        detail: 'Fixed blurry nodes and text during and after zooming on the Automation canvas and Database schema map — everything stays razor-sharp automatically without clicking.',
+      },
+      {
+        title: 'Gen: optional fields on Walmart Labels',
+        detail: 'Leave ITF, PO#, or any carton label fields empty without validation errors, and reset fields anytime with the new Clear button.',
+      },
+    ],
+  },
+  {
     version: '10.3.3',
     date: '2026-11',
     highlights: [
