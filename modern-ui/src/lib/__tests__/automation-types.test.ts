@@ -156,6 +156,11 @@ describe('bundled demo workflow', () => {
         return new Set(h)
       }
       if (n.type === 'RANDOM') return new Set((n.params.randomBranches ?? []).map((_, i) => `branch-${i}`))
+      if (n.type === 'PARALLEL_BRANCH') {
+        const h = (n.params.parallelBranches ?? []).map((_, i) => `branch-${i}`)
+        h.push('done')
+        return new Set(h)
+      }
       return new Set(['out'])
     }
     for (const s of parsed) {

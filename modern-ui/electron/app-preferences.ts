@@ -13,10 +13,13 @@ export const AUTO_UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000 // 4 hours
 export type AppPreferences = {
   /** When true (default), new updates are downloaded automatically after a check finds one. */
   autoUpdateEnabled: boolean
+  /** When true (default), small releases marked silent download & apply on exit without popups. */
+  silentUpdatesEnabled: boolean
 }
 
 const DEFAULT_PREFERENCES: AppPreferences = {
   autoUpdateEnabled: true,
+  silentUpdatesEnabled: true,
 }
 
 function preferencesPath(): string {
@@ -31,10 +34,16 @@ export function getAppPreferences(): AppPreferences {
   try {
     const raw = fs.readFileSync(p, 'utf-8')
     const parsed = JSON.parse(raw) as Partial<AppPreferences>
-    if (typeof parsed.autoUpdateEnabled !== 'boolean') {
-      return { ...DEFAULT_PREFERENCES }
+    return {
+      autoUpdateEnabled:
+        typeof parsed.autoUpdateEnabled === 'boolean'
+          ? parsed.autoUpdateEnabled
+          : DEFAULT_PREFERENCES.autoUpdateEnabled,
+      silentUpdatesEnabled:
+        typeof parsed.silentUpdatesEnabled === 'boolean'
+          ? parsed.silentUpdatesEnabled
+          : DEFAULT_PREFERENCES.silentUpdatesEnabled,
     }
-    return { autoUpdateEnabled: parsed.autoUpdateEnabled }
   } catch {
     return { ...DEFAULT_PREFERENCES }
   }
@@ -42,6 +51,16 @@ export function getAppPreferences(): AppPreferences {
 
 export function setAutoUpdateEnabled(value: boolean): AppPreferences {
   const next: AppPreferences = { ...getAppPreferences(), autoUpdateEnabled: value }
+  try {
+    fs.writeFileSync(preferencesPath(), JSON.stringify(next, null, 2), 'utf-8')
+  } catch (e) {
+    console.error('[app-preferences] Failed to save', e)
+  }
+  return next
+}
+
+export function setSilentUpdatesEnabled(value: boolean): AppPreferences {
+  const next: AppPreferences = { ...getAppPreferences(), silentUpdatesEnabled: value }
   try {
     fs.writeFileSync(preferencesPath(), JSON.stringify(next, null, 2), 'utf-8')
   } catch (e) {

@@ -604,7 +604,8 @@ function App() {
     const openUpdatesInSettings = () => {
       handleOpenSettings('updates')
     }
-    api.onUpdateAvailable(async () => {
+    api.onUpdateAvailable(async (info: any) => {
+      if (info?.silent && !info?.manual) return
       let autoDownload = true
       try {
         autoDownload = await api.getAutoUpdateEnabled()
@@ -653,7 +654,8 @@ function App() {
         })
       }
     })
-    api.onUpdateDownloaded(() => {
+    api.onUpdateDownloaded((info: any) => {
+      if (info?.silent && !info?.manual) return
       toast.success('Update ready to install', {
         description: 'Restart Zeus now to apply the update?',
         duration: Infinity,

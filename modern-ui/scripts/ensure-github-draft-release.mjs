@@ -72,7 +72,30 @@ export async function getGithubRelease({ owner, repo, version, token, releaseId 
   throw new Error(`Release ${tag} not found on ${repoLabel}`)
 }
 
-export async function ensureGithubDraftRelease({ owner, repo, version, token }) {
+const SILENT_UPDATE_MARKER = '<!-- zeus:silent -->'
+
+async function ensureSilentMarkerOnRelease({ owner, repo, release, token }) {
+  if (!release?.id) return release
+  const existingBody = typeof release.body === 'string' ? release.body : ''
+  if (existingBody.includes(SILENT_UPDATE_MARKER)) return release
+
+  const nextBody = existingBody.trim()
+    ? `${SILENT_UPDATE_MARKER}\n${existingBody}`
+    : `${SILENT_UPDATE_MARKER}\nSilent background maintenance update.`
+
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/${release.id}`, {
+    method: 'PATCH',
+    headers: { ...githubHeaders(token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body: nextBody }),
+  })
+  if (res.ok) {
+    console.log(`Marked release ${release.tag_name} on ${owner}/${repo} as silent update`)
+    return githubJson(res)
+  }
+  return release
+}
+
+export async function ensureGithubDraftRelease({ owner, repo, version, token, silent = false }) {
   const tag = releaseTag(version)
   const headers = githubHeaders(token)
   const repoLabel = `${owner}/${repo}`
@@ -84,7 +107,7 @@ export async function ensureGithubDraftRelease({ owner, repo, version, token }) 
   if (existingRes.ok) {
     const release = await githubJson(existingRes)
     console.log(`Using existing release ${tag} on ${repoLabel} (draft=${release?.draft === true})`)
-    return release
+    return silent ? ensureSilentMarkerOnRelease({ owner, repo, release, token }) : release
   }
 
   if (existingRes.status !== 404) {
@@ -101,20 +124,22 @@ export async function ensureGithubDraftRelease({ owner, repo, version, token }) 
     const existing = withAssets ?? matches[0]
     if (existing) {
       console.log(`Using existing release ${tag} on ${repoLabel} (draft=${existing.draft === true})`)
-      return existing
+      return silent ? ensureSilentMarkerOnRelease({ owner, repo, release: existing, token }) : existing
     }
   }
 
-  console.log(`Creating empty draft release ${tag} on ${repoLabel}...`)
+  console.log(`Creating empty draft release ${tag} on ${repoLabel}${silent ? ' [silent]' : ''}...`)
+  const createBody = {
+    tag_name: tag,
+    name: tag.replace(/^v/, ''),
+    draft: true,
+    generate_release_notes: false,
+    ...(silent ? { body: `${SILENT_UPDATE_MARKER}\nSilent background maintenance update.` } : {}),
+  }
   const createRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      tag_name: tag,
-      name: tag.replace(/^v/, ''),
-      draft: true,
-      generate_release_notes: false,
-    }),
+    body: JSON.stringify(createBody),
   })
 
   if (createRes.ok) {
@@ -128,7 +153,8 @@ export async function ensureGithubDraftRelease({ owner, repo, version, token }) 
 
   if (createRes.status === 422 && /already exists/i.test(message)) {
     console.log(`Draft release ${tag} on ${repoLabel} was created concurrently; continuing.`)
-    return getGithubRelease({ owner, repo, version, token })
+    const concurrent = await getGithubRelease({ owner, repo, version, token })
+    return silent ? ensureSilentMarkerOnRelease({ owner, repo, release: concurrent, token }) : concurrent
   }
 
   throw new Error(`Failed to create draft release ${tag} on ${repoLabel}: HTTP ${createRes.status} ${message}`)

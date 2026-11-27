@@ -264,10 +264,13 @@ export interface ElectronAPI {
   // Auto Updater
   checkForUpdate: () => void
   startDownload: () => void
-  quitAndInstall: () => void
+  quitAndInstall: (silent?: boolean) => void
   /** Default true. When true, updates download automatically after a check finds one. */
   getAutoUpdateEnabled: () => Promise<boolean>
   setAutoUpdateEnabled: (enabled: boolean) => Promise<boolean>
+  /** Default true. When true, silent updates apply quietly on exit without popups. */
+  getSilentUpdatesEnabled: () => Promise<boolean>
+  setSilentUpdatesEnabled: (enabled: boolean) => Promise<boolean>
   onCheckingForUpdate: (callback: () => void) => void
   onUpdateAvailable: (callback: (info: any) => void) => void
   onUpdateNotAvailable: (callback: (info: any) => void) => void
@@ -860,6 +863,64 @@ export interface ElectronAPI {
       timestamp: number
     }) => void,
   ) => () => void
+
+  // Automation Power Nodes
+  automationSshExec?: (payload: {
+    host: string
+    port?: number
+    username: string
+    password?: string
+    privateKeyPath?: string
+    passphrase?: string
+    command: string
+    timeoutMs?: number
+  }) => Promise<
+    | { ok: true; stdout: string; stderr: string; exitCode: number }
+    | { ok: false; error: string }
+  >
+  automationNetProbe?: (payload: {
+    mode: 'tcp' | 'http' | 'dns'
+    host: string
+    port?: number
+    url?: string
+    expectedStatus?: number
+    timeoutMs?: number
+  }) => Promise<
+    | {
+        ok: true
+        alive: boolean
+        latencyMs: number
+        status?: number
+        resolvedIp?: string
+        addresses?: string[]
+        detail: string
+      }
+    | { ok: false; error: string }
+  >
+  automationWsRequest?: (payload: {
+    url: string
+    headers?: Record<string, string>
+    sendMessage?: string
+    waitForMessage?: boolean
+    matchRegex?: string
+    timeoutMs?: number
+  }) => Promise<{ ok: true; received?: string; latencyMs: number } | { ok: false; error: string }>
+  automationCryptoHash?: (payload: {
+    op: 'sha256' | 'sha512' | 'sha1' | 'md5' | 'hmacSha256' | 'hmacSha512' | 'randomToken'
+    input?: string
+    secret?: string
+    byteLength?: number
+  }) => Promise<{ ok: true; output: string } | { ok: false; error: string }>
+  automationClipboardRead?: () => Promise<{ ok: boolean; text?: string; error?: string }>
+  automationClipboardWrite?: (text: string) => Promise<{ ok: boolean; error?: string }>
+  automationOpenTarget?: (payload: {
+    mode: 'url' | 'file' | 'reveal'
+    target: string
+  }) => Promise<{ ok: boolean; error?: string }>
+  automationDesktopNotify?: (payload: {
+    title: string
+    body: string
+  }) => Promise<{ ok: boolean; error?: string }>
 }
 
 

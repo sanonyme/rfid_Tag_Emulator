@@ -1,5 +1,5 @@
 declare const __ZEUS_EMBED_WORKSHOP_URL__: string
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Notification, safeStorage, shell } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'path'
@@ -103,6 +103,14 @@ import {
   runAutomationScript,
 } from './automation-blocks-handler.js'
 import {
+  openSystemTarget,
+  runCryptoHash,
+  runNetworkProbe,
+  runSshExec,
+  runWebSocketRequest,
+  showDesktopNotification,
+} from './automation-power-handlers.js'
+import {
   sftpConnect,
   getActiveSftpSessionId,
   type SftpConnectAuth,
@@ -202,8 +210,10 @@ import {
 import {
   getAppPreferences,
   setAutoUpdateEnabled,
+  setSilentUpdatesEnabled,
   AUTO_UPDATE_CHECK_INTERVAL_MS,
 } from './app-preferences.js'
+import { decorateUpdateInfo, isSilentUpdateInfo } from '../src/lib/silent-update.js'
 import { runLogAggregator } from './log-aggregator-handler.js'
 import {
   configurePopoutWindows,
@@ -1564,6 +1574,19 @@ app.whenReady().then(() => {
     }
   })
 
+  // Automation Power Handlers (SSH, Network Probe, WebSocket, Crypto, Clipboard, Open, Desktop Notify)
+  ipcMain.handle('automation-ssh-exec', (_event, payload) => runSshExec(payload))
+  ipcMain.handle('automation-net-probe', (_event, payload) => runNetworkProbe(payload))
+  ipcMain.handle('automation-ws-request', (_event, payload) => runWebSocketRequest(payload))
+  ipcMain.handle('automation-crypto-hash', (_event, payload) => runCryptoHash(payload))
+  ipcMain.handle('automation-clipboard-read', () => ({ ok: true as const, text: clipboard.readText() }))
+  ipcMain.handle('automation-clipboard-write', (_event, text: string) => {
+    clipboard.writeText(String(text ?? ''))
+    return { ok: true as const }
+  })
+  ipcMain.handle('automation-open-target', (_event, payload) => openSystemTarget(payload))
+  ipcMain.handle('automation-desktop-notify', (_event, payload) => showDesktopNotification(payload))
+
   // Admin Shell/Terminal IPC handlers (node-pty, multi-tab support)
   ipcMain.on('shell-start', (event, sessionId: string, cols: number = 80, rows: number = 24) => {
     if (!isAdminSender(event.sender)) {
@@ -1616,7 +1639,10 @@ app.whenReady().then(() => {
     }
   })
 
+  let lastUpdateCheckTrigger: 'manual' | 'startup' | 'periodic' = 'startup'
+
   function runUpdateCheck(trigger: 'manual' | 'startup' | 'periodic') {
+    lastUpdateCheckTrigger = trigger
     console.log(`Checking for updates (${trigger})...`)
     // When auto-update is off, downloads only start from Settings (start-download).
     // When on, update-available triggers downloadUpdate().
@@ -1663,6 +1689,11 @@ app.whenReady().then(() => {
     setAutoUpdateEnabled(Boolean(enabled))
     return getAppPreferences().autoUpdateEnabled
   })
+  ipcMain.handle('get-silent-updates-enabled', () => getAppPreferences().silentUpdatesEnabled)
+  ipcMain.handle('set-silent-updates-enabled', (_event, enabled: boolean) => {
+    setSilentUpdatesEnabled(Boolean(enabled))
+    return getAppPreferences().silentUpdatesEnabled
+  })
 
   // Auto Updater IPC handlers
   ipcMain.on('check-for-update', () => {
@@ -1674,9 +1705,9 @@ app.whenReady().then(() => {
     autoUpdater.downloadUpdate()
   })
 
-  ipcMain.on('quit-and-install', () => {
-    console.log('Quitting and installing update...')
-    autoUpdater.quitAndInstall()
+  ipcMain.on('quit-and-install', (_event, silent?: boolean) => {
+    console.log('Quitting and installing update...', { silent: Boolean(silent) })
+    autoUpdater.quitAndInstall(Boolean(silent), !silent)
   })
 
   // Auto Updater Events
@@ -1687,9 +1718,16 @@ app.whenReady().then(() => {
 
   autoUpdater.on('update-available', (info) => {
     updateCheckState.inProgress = false
-    console.log('Update available:', info)
-    mainWindow?.webContents.send('update-available', info)
     const prefs = getAppPreferences()
+    const isSilent = prefs.silentUpdatesEnabled && isSilentUpdateInfo(info as any)
+    console.log('Update available:', info, { isSilent, trigger: lastUpdateCheckTrigger })
+    mainWindow?.webContents.send(
+      'update-available',
+      decorateUpdateInfo(info as any, {
+        silent: isSilent,
+        manual: lastUpdateCheckTrigger === 'manual',
+      }),
+    )
     if (!isDev && app.isPackaged && prefs.autoUpdateEnabled) {
       console.log('[auto-update] Auto-download enabled — starting download')
       void autoUpdater.downloadUpdate().catch((e) => {
@@ -1950,8 +1988,18 @@ app.whenReady().then(() => {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    console.log('Update downloaded:', info)
-    mainWindow?.webContents.send('update-downloaded', info)
+    const prefs = getAppPreferences()
+    const isSilent = prefs.silentUpdatesEnabled && isSilentUpdateInfo(info as any)
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.autoRunAppAfterInstall = !isSilent
+    console.log('Update downloaded:', info, { isSilent, trigger: lastUpdateCheckTrigger })
+    mainWindow?.webContents.send(
+      'update-downloaded',
+      decorateUpdateInfo(info as any, {
+        silent: isSilent,
+        manual: lastUpdateCheckTrigger === 'manual',
+      }),
+    )
   })
 })
 

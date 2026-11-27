@@ -153,6 +153,81 @@ export function validateSequence(
         if (!p.filePath?.trim()) push(step, 'error', 'File or folder path is empty')
         break
       }
+      case 'SSH_EXEC': {
+        if (!p.sshHost?.trim()) push(step, 'error', 'SSH host is missing')
+        if (!p.sshUser?.trim()) push(step, 'error', 'SSH username is missing')
+        if (!p.sshCommand?.trim()) push(step, 'error', 'SSH command is empty')
+        break
+      }
+      case 'PING_PORT': {
+        const mode = p.probeMode ?? 'tcp'
+        if (mode === 'http') {
+          if (!p.probeUrl?.trim()) push(step, 'error', 'Probe URL is empty')
+        } else {
+          if (!p.probeHost?.trim()) push(step, 'error', 'Probe host is missing')
+          if (mode === 'tcp' && p.probePort && !p.probePort.includes('{{')) {
+            const portNum = Number(p.probePort)
+            if (!Number.isFinite(portNum) || portNum < 1 || portNum > 65535) {
+              push(step, 'error', `Invalid TCP port: ${p.probePort}`)
+            }
+          }
+        }
+        break
+      }
+      case 'WEBSOCKET': {
+        const url = (p.wsUrl ?? '').trim()
+        if (!url) push(step, 'error', 'WebSocket URL is empty')
+        else if (!url.includes('{{') && !/^wss?:\/\//i.test(url)) {
+          push(step, 'error', 'WebSocket URL must start with ws:// or wss://')
+        }
+        break
+      }
+      case 'WEBHOOK_SEND': {
+        if (!p.webhookUrl?.trim()) push(step, 'error', 'Webhook URL is missing')
+        if (!p.webhookMessage?.trim()) push(step, 'warning', 'Webhook message is empty')
+        break
+      }
+      case 'CSV_JSON': {
+        if (!p.csvJsonInput?.trim()) push(step, 'error', 'CSV/JSON input is empty')
+        if (!p.csvJsonSaveAs?.trim()) push(step, 'error', 'Save-as variable name is missing')
+        break
+      }
+      case 'CRYPTO_HASH': {
+        if (!p.cryptoSaveAs?.trim()) push(step, 'error', 'Save-as variable name is missing')
+        if (p.cryptoOp !== 'randomToken' && !p.cryptoInput?.trim()) {
+          push(step, 'warning', 'Hash/JWT input is empty')
+        }
+        break
+      }
+      case 'DATETIME': {
+        if (!p.dtSaveAs?.trim()) push(step, 'error', 'Save-as variable name is missing')
+        break
+      }
+      case 'CLIPBOARD': {
+        if (p.clipboardMode === 'read' && !p.clipboardSaveAs?.trim()) {
+          push(step, 'error', 'Save-as variable name is missing')
+        } else if ((p.clipboardMode ?? 'write') === 'write' && !p.clipboardText?.trim()) {
+          push(step, 'warning', 'Clipboard text is empty')
+        }
+        break
+      }
+      case 'OPEN_APP': {
+        if (!p.openTarget?.trim()) push(step, 'error', 'Target URL or file path is missing')
+        break
+      }
+      case 'PROMPT_INPUT': {
+        if (!p.promptMessage?.trim()) push(step, 'warning', 'Prompt message is empty')
+        if (!p.promptSaveAs?.trim()) push(step, 'error', 'Save-as variable name is missing')
+        break
+      }
+      case 'PARALLEL_BRANCH': {
+        const outs = outgoingByStep.get(step.id) ?? []
+        const branchCount = outs.filter((e) => (e.sourceHandle ?? '').startsWith('branch-')).length
+        if (branchCount === 0) {
+          push(step, 'warning', 'Parallel fork has no branch edges wired')
+        }
+        break
+      }
       default:
         break
     }

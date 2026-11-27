@@ -18,11 +18,12 @@ export const DND_NODE_MIME = 'application/zeus-automation-node'
 
 const CATEGORY_FILTER_OPTIONS: { value: NodeCategory | 'all'; label: string }[] = [
   { value: 'all', label: 'All' },
-  { value: 'devices', label: 'Devices' },
+  { value: 'integrations', label: 'Net/Int' },
   { value: 'data', label: 'Data' },
   { value: 'flow', label: 'Flow' },
+  { value: 'utility', label: 'Desktop' },
+  { value: 'devices', label: 'RFID' },
   { value: 'edge', label: 'Edge' },
-  { value: 'utility', label: 'Util' },
 ]
 
 export function NodeLibraryDrawer({
@@ -58,7 +59,7 @@ export function NodeLibraryDrawer({
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search 30+ nodes…"
+            placeholder="Search 40+ nodes…"
             className="h-8 pl-8 text-xs"
           />
         </div>
@@ -150,6 +151,16 @@ export function NodeLibraryDrawer({
   )
 }
 
+const TEMPLATE_CATEGORY_OPTIONS: { value: WorkflowTemplate['category'] | 'all'; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'DevOps & Infra', label: 'DevOps' },
+  { value: 'Desktop & Ops', label: 'Desktop' },
+  { value: 'API & Data', label: 'API/Data' },
+  { value: 'Files & Batch', label: 'Files' },
+  { value: 'Testing & QA', label: 'QA' },
+  { value: 'RFID & Edge', label: 'RFID' },
+]
+
 export function WorkflowTemplatesDrawer({
   onInsertSequences,
   onLoadFullDemo,
@@ -158,17 +169,20 @@ export function WorkflowTemplatesDrawer({
   onLoadFullDemo: () => void
 }) {
   const [filter, setFilter] = useState('')
+  const [category, setCategory] = useState<WorkflowTemplate['category'] | 'all'>('all')
 
   const items = useMemo(() => {
     const q = filter.trim().toLowerCase()
-    if (!q) return WORKFLOW_TEMPLATES
-    return WORKFLOW_TEMPLATES.filter(
-      (t) =>
+    return WORKFLOW_TEMPLATES.filter((t) => {
+      if (category !== 'all' && t.category !== category) return false
+      if (!q) return true
+      return (
         t.name.toLowerCase().includes(q) ||
         t.description.toLowerCase().includes(q) ||
-        t.category.toLowerCase().includes(q),
-    )
-  }, [filter])
+        t.category.toLowerCase().includes(q)
+      )
+    })
+  }, [filter, category])
 
   const handleUse = (tpl: WorkflowTemplate) => {
     onInsertSequences(tpl.build(), tpl.name)
@@ -182,9 +196,26 @@ export function WorkflowTemplatesDrawer({
           <Input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Search templates…"
+            placeholder={`Search ${WORKFLOW_TEMPLATES.length} templates…`}
             className="h-8 pl-8 text-xs"
           />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {TEMPLATE_CATEGORY_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setCategory(opt.value)}
+              className={cn(
+                'rounded-md px-2 py-0.5 text-[10.5px] font-medium transition-colors',
+                category === opt.value
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
         <Button
           variant="outline"
@@ -198,7 +229,10 @@ export function WorkflowTemplatesDrawer({
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-2.5 space-y-2">
-        {items.map((tpl) => (
+        {items.length === 0 ? (
+          <p className="py-8 text-center text-xs text-muted-foreground">No templates match your filter.</p>
+        ) : (
+          items.map((tpl) => (
           <div
             key={tpl.id}
             className="rounded-xl border border-border/50 bg-background/60 p-2.5 space-y-2 transition-colors hover:border-primary/40 hover:bg-accent/20"
@@ -228,7 +262,8 @@ export function WorkflowTemplatesDrawer({
               Insert Template
             </Button>
           </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   )

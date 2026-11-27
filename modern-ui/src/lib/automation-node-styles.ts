@@ -29,9 +29,25 @@ import {
   FolderOpen,
   Save,
   ListOrdered,
+  Activity,
+  Wifi,
+  Send,
+  Table,
+  Lock,
+  Calendar,
+  Clipboard,
+  ExternalLink,
+  MessageSquare,
+  Share2,
   type LucideIcon,
 } from 'lucide-react'
-import { CONDITION_OPS, type ActionType, type AutomationStep } from './automation-types'
+import {
+  CONDITION_OPS,
+  CODE_LANGUAGE_OPTIONS,
+  type ActionType,
+  type AutomationStep,
+  type CodeLanguage,
+} from './automation-types'
 import { catalogEntry, type NodeCategory } from './automation-node-catalog'
 
 export interface NodeVisualStyle {
@@ -149,7 +165,7 @@ export const NODE_VISUAL_STYLES: Record<ActionType, NodeVisualStyle> = {
     iconText: 'text-indigo-500 dark:text-indigo-400',
     borderTint: 'border-indigo-500/30 hover:border-indigo-500/60',
     hex: '#6366f1',
-    category: 'data',
+    category: 'integrations',
   },
   DB_EXEC: {
     Icon: Server,
@@ -159,7 +175,7 @@ export const NODE_VISUAL_STYLES: Record<ActionType, NodeVisualStyle> = {
     iconText: 'text-indigo-500 dark:text-indigo-400',
     borderTint: 'border-indigo-500/30 hover:border-indigo-500/60',
     hex: '#6366f1',
-    category: 'data',
+    category: 'integrations',
   },
   HTTP_REQUEST: {
     Icon: Globe,
@@ -169,7 +185,117 @@ export const NODE_VISUAL_STYLES: Record<ActionType, NodeVisualStyle> = {
     iconText: 'text-rose-500 dark:text-rose-400',
     borderTint: 'border-rose-500/30 hover:border-rose-500/60',
     hex: '#f43f5e',
+    category: 'integrations',
+  },
+  SSH_EXEC: {
+    Icon: Terminal,
+    badge: 'SSH',
+    accentBar: 'from-emerald-600 to-teal-600',
+    iconBg: 'bg-emerald-500/15 ring-emerald-500/30',
+    iconText: 'text-emerald-600 dark:text-emerald-400',
+    borderTint: 'border-emerald-500/30 hover:border-emerald-500/60',
+    hex: '#059669',
+    category: 'integrations',
+  },
+  PING_PORT: {
+    Icon: Activity,
+    badge: 'PROBE',
+    accentBar: 'from-cyan-500 to-blue-500',
+    iconBg: 'bg-cyan-500/15 ring-cyan-500/30',
+    iconText: 'text-cyan-500 dark:text-cyan-400',
+    borderTint: 'border-cyan-500/30 hover:border-cyan-500/60',
+    hex: '#06b6d4',
+    category: 'integrations',
+  },
+  WEBSOCKET: {
+    Icon: Wifi,
+    badge: 'WS',
+    accentBar: 'from-violet-500 to-indigo-500',
+    iconBg: 'bg-violet-500/15 ring-violet-500/30',
+    iconText: 'text-violet-500 dark:text-violet-400',
+    borderTint: 'border-violet-500/30 hover:border-violet-500/60',
+    hex: '#7c3aed',
+    category: 'integrations',
+  },
+  WEBHOOK_SEND: {
+    Icon: Send,
+    badge: 'ALERT',
+    accentBar: 'from-pink-500 to-fuchsia-600',
+    iconBg: 'bg-pink-500/15 ring-pink-500/30',
+    iconText: 'text-pink-500 dark:text-pink-400',
+    borderTint: 'border-pink-500/30 hover:border-pink-500/60',
+    hex: '#ec4899',
+    category: 'integrations',
+  },
+  CSV_JSON: {
+    Icon: Table,
+    badge: 'CSV/JSON',
+    accentBar: 'from-teal-500 to-emerald-600',
+    iconBg: 'bg-teal-500/15 ring-teal-500/30',
+    iconText: 'text-teal-500 dark:text-teal-400',
+    borderTint: 'border-teal-500/30 hover:border-teal-500/60',
+    hex: '#0d9488',
     category: 'data',
+  },
+  CRYPTO_HASH: {
+    Icon: Lock,
+    badge: 'CRYPTO',
+    accentBar: 'from-amber-500 to-red-500',
+    iconBg: 'bg-amber-500/15 ring-amber-500/30',
+    iconText: 'text-amber-600 dark:text-amber-400',
+    borderTint: 'border-amber-500/30 hover:border-amber-500/60',
+    hex: '#d97706',
+    category: 'data',
+  },
+  DATETIME: {
+    Icon: Calendar,
+    badge: 'DATE/TIME',
+    accentBar: 'from-sky-500 to-indigo-500',
+    iconBg: 'bg-sky-500/15 ring-sky-500/30',
+    iconText: 'text-sky-500 dark:text-sky-400',
+    borderTint: 'border-sky-500/30 hover:border-sky-500/60',
+    hex: '#0284c7',
+    category: 'data',
+  },
+  CLIPBOARD: {
+    Icon: Clipboard,
+    badge: 'CLIPBOARD',
+    accentBar: 'from-slate-500 to-zinc-500',
+    iconBg: 'bg-slate-500/15 ring-slate-500/30',
+    iconText: 'text-slate-600 dark:text-slate-300',
+    borderTint: 'border-slate-500/30 hover:border-slate-500/60',
+    hex: '#64748b',
+    category: 'utility',
+  },
+  OPEN_APP: {
+    Icon: ExternalLink,
+    badge: 'OPEN',
+    accentBar: 'from-blue-500 to-cyan-500',
+    iconBg: 'bg-blue-500/15 ring-blue-500/30',
+    iconText: 'text-blue-500 dark:text-blue-400',
+    borderTint: 'border-blue-500/30 hover:border-blue-500/60',
+    hex: '#2563eb',
+    category: 'utility',
+  },
+  PROMPT_INPUT: {
+    Icon: MessageSquare,
+    badge: 'PROMPT',
+    accentBar: 'from-amber-500 to-orange-500',
+    iconBg: 'bg-amber-500/15 ring-amber-500/30',
+    iconText: 'text-amber-600 dark:text-amber-400',
+    borderTint: 'border-amber-500/30 hover:border-amber-500/60',
+    hex: '#f59e0b',
+    category: 'utility',
+  },
+  PARALLEL_BRANCH: {
+    Icon: Share2,
+    badge: 'PARALLEL',
+    accentBar: 'from-cyan-500 to-indigo-500',
+    iconBg: 'bg-cyan-500/15 ring-cyan-500/30',
+    iconText: 'text-cyan-500 dark:text-cyan-400',
+    borderTint: 'border-cyan-500/30 hover:border-cyan-500/60',
+    hex: '#06b6d4',
+    category: 'flow',
   },
   CODE: {
     Icon: Code2,
@@ -503,23 +629,29 @@ export function getStepSummary(step: AutomationStep, sequenceNameById?: Map<stri
     }
     case 'RUN_SCRIPT':
       return {
-        chip: p.scriptInline ? 'INLINE' : 'FILE',
+        chip: p.scriptInline
+          ? (p.scriptLang && p.scriptLang !== 'auto' ? p.scriptLang.toUpperCase() : 'INLINE')
+          : 'FILE',
         chipTone: 'emerald',
         text: p.scriptInline
-          ? (p.scriptInlineText?.split('\n')[0] || 'Inline shell script')
+          ? (p.scriptInlineText?.split('\n')[0] || 'Inline script')
           : (p.scriptPath || 'Select script'),
         outputVar: p.scriptSaveStdoutAs || undefined,
       }
-    case 'CODE':
+    case 'CODE': {
+      const lang: CodeLanguage = p.codeLanguage ?? 'javascript'
+      const meta = CODE_LANGUAGE_OPTIONS.find((o) => o.value === lang)
+      const firstLine = p.codeSource
+        ?.split('\n')
+        .map((l) => l.trim())
+        .find((l) => l && !l.startsWith('//') && !l.startsWith('#') && !l.startsWith('REM ') && !l.startsWith('::'))
       return {
-        chip: 'JS',
-        chipTone: 'amber',
-        text:
-          p.codeSource
-            ?.split('\n')
-            .find((l) => l.trim() && !l.trim().startsWith('//'))
-            ?.trim() || 'JavaScript snippet',
+        chip: meta?.badge ?? 'CODE',
+        chipTone: meta?.builtIn ? 'amber' : 'violet',
+        text: firstLine || `${meta?.label ?? lang} snippet`,
+        outputVar: p.codeSaveStdoutAs?.trim() || undefined,
       }
+    }
     case 'CALL_SEQUENCE': {
       const name = p.callSequenceId ? sequenceNameById?.get(p.callSequenceId) : undefined
       return {
@@ -604,10 +736,92 @@ export function getStepSummary(step: AutomationStep, sequenceNameById?: Map<stri
       }
     case 'NOTIFY':
       return {
-        chip: (p.notifyLevel || 'info').toUpperCase(),
+        chip: p.notifyDesktop ? 'OS' : (p.notifyLevel || 'info').toUpperCase(),
         chipTone: p.notifyLevel === 'error' ? 'rose' : p.notifyLevel === 'success' ? 'emerald' : 'blue',
-        text: p.notifyMessage?.trim() || 'Toast message',
+        text: p.notifyMessage?.trim() || 'Notification message',
       }
+    case 'SSH_EXEC':
+      return {
+        chip: p.sshPort && p.sshPort !== '22' ? `:${p.sshPort}` : 'SSH',
+        chipTone: 'emerald',
+        text: p.sshCommand?.trim() || `${p.sshUser || 'user'}@${p.sshHost || 'host'}`,
+        outputVar: p.sshSaveStdoutAs || undefined,
+      }
+    case 'PING_PORT': {
+      const m = (p.probeMode || 'tcp').toUpperCase()
+      return {
+        chip: m,
+        chipTone: 'blue',
+        text:
+          m === 'HTTP'
+            ? p.probeUrl?.trim() || 'Configure URL'
+            : `${p.probeHost?.trim() || '{{host}}'}${m === 'TCP' && p.probePort ? `:${p.probePort}` : ''}`,
+        outputVar: p.probeSaveAliveAs || p.probeSaveLatencyAs || undefined,
+      }
+    }
+    case 'WEBSOCKET':
+      return {
+        chip: p.wsWaitForMessage ? 'WS RX' : 'WS TX',
+        chipTone: 'violet',
+        text: p.wsUrl?.trim() || 'Configure ws:// URL',
+        outputVar: p.wsSaveAs || undefined,
+      }
+    case 'WEBHOOK_SEND':
+      return {
+        chip: (p.webhookPreset || 'slack').toUpperCase(),
+        chipTone: 'rose',
+        text: p.webhookMessage?.trim() || p.webhookUrl?.trim() || 'Configure webhook',
+        outputVar: p.webhookSaveStatusAs || undefined,
+      }
+    case 'CSV_JSON':
+      return {
+        chip: (p.csvJsonOp || 'csvToJson').toUpperCase(),
+        chipTone: 'emerald',
+        text: p.csvJsonInput || 'Configure data input',
+        outputVar: p.csvJsonSaveAs || undefined,
+      }
+    case 'CRYPTO_HASH':
+      return {
+        chip: (p.cryptoOp || 'sha256').toUpperCase(),
+        chipTone: 'amber',
+        text: p.cryptoOp === 'randomToken' ? `${p.cryptoByteLength ?? 24} bytes` : p.cryptoInput || 'Configure input',
+        outputVar: p.cryptoSaveAs || undefined,
+      }
+    case 'DATETIME':
+      return {
+        chip: (p.dtOp || 'now').toUpperCase(),
+        chipTone: 'blue',
+        text: p.dtFormat || 'ISO',
+        outputVar: p.dtSaveAs || undefined,
+      }
+    case 'CLIPBOARD':
+      return {
+        chip: (p.clipboardMode || 'write').toUpperCase(),
+        chipTone: 'neutral',
+        text: p.clipboardMode === 'read' ? 'Read OS clipboard' : p.clipboardText || 'Copy text',
+        outputVar: p.clipboardMode === 'read' ? p.clipboardSaveAs || 'clipboardText' : undefined,
+      }
+    case 'OPEN_APP':
+      return {
+        chip: (p.openMode || 'url').toUpperCase(),
+        chipTone: 'blue',
+        text: p.openTarget?.trim() || 'Configure URL or path',
+      }
+    case 'PROMPT_INPUT':
+      return {
+        chip: (p.promptMode || 'text').toUpperCase(),
+        chipTone: 'amber',
+        text: p.promptMessage?.trim() || 'Ask user input',
+        outputVar: p.promptSaveAs || 'userInput',
+      }
+    case 'PARALLEL_BRANCH': {
+      const n = p.parallelBranches?.length ?? 2
+      return {
+        chip: `${n}× PAR`,
+        chipTone: 'blue',
+        text: `Wait: ${p.parallelWaitMode || 'all'} → After All`,
+      }
+    }
     case 'SWITCH': {
       const n = p.switchCases?.length ?? 0
       return {

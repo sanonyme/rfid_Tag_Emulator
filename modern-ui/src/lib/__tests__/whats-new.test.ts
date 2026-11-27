@@ -22,9 +22,13 @@ describe('whats-new', () => {
     expect(getSeenWhatsNewVersion()).toBe('10.0.0')
   })
 
-  it('auto-shows again after a version bump', () => {
+  it('auto-shows again after a version bump when release notes exist', () => {
     setSeenWhatsNewVersion('9.4.2')
     expect(shouldAutoShowWhatsNew('10.0.0')).toBe(true)
+  })
+
+  it('does not auto-show for silent releases or versions without user-facing notes', () => {
+    expect(shouldAutoShowWhatsNew('10.4.99-silent')).toBe(false)
   })
 
   it('puts the current version first in the dialog list', () => {

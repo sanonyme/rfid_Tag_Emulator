@@ -220,10 +220,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Auto Updater
   checkForUpdate: () => ipcRenderer.send('check-for-update'),
   startDownload: () => ipcRenderer.send('start-download'),
-  quitAndInstall: () => ipcRenderer.send('quit-and-install'),
+  quitAndInstall: (silent?: boolean) => ipcRenderer.send('quit-and-install', Boolean(silent)),
   getAutoUpdateEnabled: () => ipcRenderer.invoke('get-auto-update-enabled') as Promise<boolean>,
   setAutoUpdateEnabled: (enabled: boolean) =>
     ipcRenderer.invoke('set-auto-update-enabled', enabled) as Promise<boolean>,
+  getSilentUpdatesEnabled: () => ipcRenderer.invoke('get-silent-updates-enabled') as Promise<boolean>,
+  setSilentUpdatesEnabled: (enabled: boolean) =>
+    ipcRenderer.invoke('set-silent-updates-enabled', enabled) as Promise<boolean>,
   
   onCheckingForUpdate: (callback: () => void) => 
     ipcRenderer.on('checking-for-update', () => callback()),
@@ -757,6 +760,47 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('automation-file-watch-event', handler)
     return () => ipcRenderer.removeListener('automation-file-watch-event', handler)
   },
+
+  // Automation Power Nodes (SSH, Net Probe, WebSocket, Crypto, Clipboard, Open, Notify)
+  automationSshExec: (payload: {
+    host: string
+    port?: number
+    username: string
+    password?: string
+    privateKeyPath?: string
+    passphrase?: string
+    command: string
+    timeoutMs?: number
+  }) => ipcRenderer.invoke('automation-ssh-exec', payload),
+  automationNetProbe: (payload: {
+    mode: 'tcp' | 'http' | 'dns'
+    host: string
+    port?: number
+    url?: string
+    expectedStatus?: number
+    timeoutMs?: number
+  }) => ipcRenderer.invoke('automation-net-probe', payload),
+  automationWsRequest: (payload: {
+    url: string
+    headers?: Record<string, string>
+    sendMessage?: string
+    waitForMessage?: boolean
+    matchRegex?: string
+    timeoutMs?: number
+  }) => ipcRenderer.invoke('automation-ws-request', payload),
+  automationCryptoHash: (payload: {
+    op: 'sha256' | 'sha512' | 'sha1' | 'md5' | 'hmacSha256' | 'hmacSha512' | 'randomToken'
+    input?: string
+    secret?: string
+    byteLength?: number
+  }) => ipcRenderer.invoke('automation-crypto-hash', payload),
+  automationClipboardRead: () => ipcRenderer.invoke('automation-clipboard-read'),
+  automationClipboardWrite: (text: string) =>
+    ipcRenderer.invoke('automation-clipboard-write', text),
+  automationOpenTarget: (payload: { mode: 'url' | 'file' | 'reveal'; target: string }) =>
+    ipcRenderer.invoke('automation-open-target', payload),
+  automationDesktopNotify: (payload: { title: string; body: string }) =>
+    ipcRenderer.invoke('automation-desktop-notify', payload),
 })
 
 

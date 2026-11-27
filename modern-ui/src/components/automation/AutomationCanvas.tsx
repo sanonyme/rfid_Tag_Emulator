@@ -68,6 +68,7 @@ import {
   AlertCircle,
   Camera,
   Eraser,
+  Key,
 } from 'lucide-react'
 import { Button } from '../ui/button'
 import { Input } from '../ui/input'
@@ -238,6 +239,8 @@ export interface AutomationCanvasProps {
   onRedo: () => void
   activeTriggerCount: number
   onOpenTriggers: () => void
+  vaultCount: number
+  onOpenVault: () => void
   hasClipboard: boolean
   onPositionsCommit: (updates: Map<string, { x: number; y: number }>) => void
   onAddEdge: (from: string, to: string, sourceHandle: string, targetHandle?: string) => void
@@ -306,6 +309,8 @@ function AutomationCanvasInner(props: AutomationCanvasProps) {
     onRedo,
     activeTriggerCount,
     onOpenTriggers,
+    vaultCount,
+    onOpenVault,
     hasClipboard,
     onPositionsCommit,
     onAddEdge,
@@ -1367,7 +1372,29 @@ function AutomationCanvasInner(props: AutomationCanvasProps) {
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Event triggers (Webhook, File Watcher, Interval)</TooltipContent>
+              <TooltipContent side="bottom">Event triggers (Webhook, File Watcher, Interval, Cron)</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={vaultCount > 0 ? 'secondary' : 'ghost'}
+                  size="sm"
+                  className={cn(
+                    'h-7 gap-1 rounded-lg px-2 text-xs',
+                    vaultCount > 0 && 'text-primary font-semibold',
+                  )}
+                  onClick={onOpenVault}
+                >
+                  <Key className="h-3.5 w-3.5" />
+                  <span className="hidden xl:inline">Vault</span>
+                  {vaultCount > 0 && (
+                    <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary/15 px-1 text-[10px] font-bold text-primary">
+                      {vaultCount}
+                    </span>
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Environment variables &amp; encrypted secrets vault</TooltipContent>
             </Tooltip>
           </div>
 

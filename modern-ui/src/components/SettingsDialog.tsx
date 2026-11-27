@@ -100,6 +100,8 @@ export function SettingsDialog({
   const [errorMessage, setErrorMessage] = useState('')
   const [pendingBackup, setPendingBackup] = useState<BackupFile | null>(null)
   const [autoUpdateEnabled, setAutoUpdateEnabledState] = useState(true)
+  const [silentUpdatesEnabled, setSilentUpdatesEnabledState] = useState(true)
+  const [isSilentUpdateReady, setIsSilentUpdateReady] = useState(false)
 
   useEffect(() => {
     const syncDark = () => setIsDarkMode(document.documentElement.classList.contains('dark'))
@@ -113,7 +115,10 @@ export function SettingsDialog({
 
     if (window.electronAPI) {
       window.electronAPI.onCheckingForUpdate(() => setUpdateStatus('checking'))
-      window.electronAPI.onUpdateAvailable(() => setUpdateStatus('available'))
+      window.electronAPI.onUpdateAvailable((info: any) => {
+        setIsSilentUpdateReady(Boolean(info?.silent))
+        setUpdateStatus('available')
+      })
       window.electronAPI.onUpdateNotAvailable(() => setUpdateStatus('not-available'))
       window.electronAPI.onUpdateError((msg) => {
         setUpdateStatus('error')
@@ -123,13 +128,21 @@ export function SettingsDialog({
         setUpdateStatus('downloading')
         setDownloadProgress(Math.round(progress.percent))
       })
-      window.electronAPI.onUpdateDownloaded(() => setUpdateStatus('downloaded'))
+      window.electronAPI.onUpdateDownloaded((info: any) => {
+        setIsSilentUpdateReady(Boolean(info?.silent))
+        setUpdateStatus('downloaded')
+      })
     }
   }, [])
 
   useEffect(() => {
-    if (!open || !window.electronAPI?.getAutoUpdateEnabled) return
-    void window.electronAPI.getAutoUpdateEnabled().then(setAutoUpdateEnabledState)
+    if (!open || !window.electronAPI) return
+    if (window.electronAPI.getAutoUpdateEnabled) {
+      void window.electronAPI.getAutoUpdateEnabled().then(setAutoUpdateEnabledState)
+    }
+    if (window.electronAPI.getSilentUpdatesEnabled) {
+      void window.electronAPI.getSilentUpdatesEnabled().then(setSilentUpdatesEnabledState)
+    }
   }, [open])
 
   useEffect(() => {
@@ -210,6 +223,22 @@ export function SettingsDialog({
     }
   }
 
+  const handleSilentUpdatesChange = async (enabled: boolean) => {
+    setSilentUpdatesEnabledState(enabled)
+    if (window.electronAPI?.setSilentUpdatesEnabled) {
+      try {
+        await window.electronAPI.setSilentUpdatesEnabled(enabled)
+        toast.success(enabled ? 'Silent updates enabled' : 'Silent updates disabled', {
+          description: enabled
+            ? 'Small updates install quietly when you exit Zeus without popups.'
+            : 'All updates will show download and restart notifications.',
+        })
+      } catch {
+        toast.error('Could not save silent update preference')
+      }
+    }
+  }
+
   const handleExportBackup = () => {
     try {
       downloadBackup()
@@ -262,443 +291,467 @@ export function SettingsDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto pr-2 -mr-2">
-        <div className="space-y-6 py-2">
-          {/* Appearance */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Type className="w-4 h-4 text-primary" />
-              Appearance
-            </h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Font size</Label>
-                <Select value={settings.fontSize} onValueChange={(v) => setSettings({ fontSize: v as FontSize })}>
-                  <SelectTrigger className="rounded-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="compact">Compact</SelectItem>
-                    <SelectItem value="normal">Normal</SelectItem>
-                    <SelectItem value="large">Large</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Default tab</Label>
-                <Select value={settings.defaultTab} onValueChange={(v) => setSettings({ defaultTab: v as DefaultTab })}>
-                  <SelectTrigger className="rounded-lg">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {TAB_OPTIONS.map(({ value, label }) => (
-                      <SelectItem key={value} value={value}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <PanelLeft className="w-4 h-4 text-primary" />
-              Navigation
-            </h4>
-
-            <div className="space-y-2">
-              <Label>Menu layout</Label>
-              <p className="text-xs text-muted-foreground">
-                Choose where the main tab menu lives. Admin mode always uses the side menu.
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {NAV_LAYOUT_OPTIONS.map((opt) => {
-                  const selected = (settings.navLayout ?? 'auto') === opt.value
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      onClick={() => setSettings({ navLayout: opt.value as NavLayout })}
-                      className={cn(
-                        'rounded-lg border px-3 py-2.5 text-left transition-colors',
-                        selected
-                          ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/30'
-                          : 'border-border/50 bg-background/60 hover:bg-muted/40',
-                      )}
-                    >
-                      <div className="text-sm font-medium">{opt.label}</div>
-                      <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-                        {opt.description}
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Design & Effects */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-primary" />
-              Design & Effects
-            </h4>
-            <div className="space-y-4">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <Label>Sound effects</Label>
-                  <p className="text-xs text-muted-foreground">Play sounds for connection, success, and errors</p>
+          <div className="space-y-6 py-2">
+            {/* Appearance */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Type className="w-4 h-4 text-primary" />
+                Appearance
+              </h4>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Font size</Label>
+                  <Select value={settings.fontSize} onValueChange={(v) => setSettings({ fontSize: v as FontSize })}>
+                    <SelectTrigger className="rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="compact">Compact</SelectItem>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="large">Large</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Switch
-                  className="mt-0.5"
-                  checked={settings.soundEnabled}
-                  onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0 flex-1">
-                  <Label>3D card hover effect</Label>
-                  <p className="text-xs text-muted-foreground">Subtle 3D tilt on cards when hovering</p>
+                <div className="space-y-2">
+                  <Label>Default tab</Label>
+                  <Select value={settings.defaultTab} onValueChange={(v) => setSettings({ defaultTab: v as DefaultTab })}>
+                    <SelectTrigger className="rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TAB_OPTIONS.map(({ value, label }) => (
+                        <SelectItem key={value} value={value}>{label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <Switch
-                  className="mt-0.5"
-                  checked={settings.card3dEnabled}
-                  onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
-                />
               </div>
             </div>
-          </div>
 
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Hash className="w-4 h-4 text-primary" />
-              UPC
-            </h4>
-            <div className="space-y-4">
-              <div
-                id={SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints}
-                className={cn(
-                  'flex items-start justify-between gap-4 rounded-lg transition-all duration-300',
-                  highlight === 'upcCheckDigitHints' &&
+            {/* Navigation */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <PanelLeft className="w-4 h-4 text-primary" />
+                Navigation
+              </h4>
+
+              <div className="space-y-2">
+                <Label>Menu layout</Label>
+                <p className="text-xs text-muted-foreground">
+                  Choose where the main tab menu lives. Admin mode always uses the side menu.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {NAV_LAYOUT_OPTIONS.map((opt) => {
+                    const selected = (settings.navLayout ?? 'auto') === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setSettings({ navLayout: opt.value as NavLayout })}
+                        className={cn(
+                          'rounded-lg border px-3 py-2.5 text-left transition-colors',
+                          selected
+                            ? 'border-primary/50 bg-primary/10 ring-1 ring-primary/30'
+                            : 'border-border/50 bg-background/60 hover:bg-muted/40',
+                        )}
+                      >
+                        <div className="text-sm font-medium">{opt.label}</div>
+                        <div className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                          {opt.description}
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Design & Effects */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-primary" />
+                Design & Effects
+              </h4>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <Label>Sound effects</Label>
+                    <p className="text-xs text-muted-foreground">Play sounds for connection, success, and errors</p>
+                  </div>
+                  <Switch
+                    className="mt-0.5"
+                    checked={settings.soundEnabled}
+                    onCheckedChange={(v: boolean) => setSettings({ soundEnabled: v })}
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <Label>3D card hover effect</Label>
+                    <p className="text-xs text-muted-foreground">Subtle 3D tilt on cards when hovering</p>
+                  </div>
+                  <Switch
+                    className="mt-0.5"
+                    checked={settings.card3dEnabled}
+                    onCheckedChange={(v: boolean) => setSettings({ card3dEnabled: v })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Hash className="w-4 h-4 text-primary" />
+                UPC
+              </h4>
+              <div className="space-y-4">
+                <div
+                  id={SETTINGS_HIGHLIGHT_IDS.upcCheckDigitHints}
+                  className={cn(
+                    'flex items-start justify-between gap-4 rounded-lg transition-all duration-300',
+                    highlight === 'upcCheckDigitHints' &&
                     'bg-primary/5 px-2 py-1 -mx-2 ring-2 ring-primary/60 ring-offset-2 ring-offset-background',
-                )}
-              >
-                <div className="min-w-0">
-                  <Label>Live check-digit hints</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Show GTIN check-digit feedback while typing in Fixed and Handheld UPC lists. Sending is never blocked.
-                  </p>
+                  )}
+                >
+                  <div className="min-w-0">
+                    <Label>Live check-digit hints</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Show GTIN check-digit feedback while typing in Fixed and Handheld UPC lists. Sending is never blocked.
+                    </p>
+                  </div>
+                  <Switch
+                    className="mt-0.5 shrink-0"
+                    checked={settings.upcCheckDigitHintsEnabled ?? true}
+                    onCheckedChange={(v: boolean) => setSettings({ upcCheckDigitHintsEnabled: v })}
+                  />
                 </div>
-                <Switch
-                  className="mt-0.5 shrink-0"
-                  checked={settings.upcCheckDigitHintsEnabled ?? true}
-                  onCheckedChange={(v: boolean) => setSettings({ upcCheckDigitHintsEnabled: v })}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <Label>Fixed tab — continue across lines</Label>
-                  <p className="text-xs text-muted-foreground">
-                    When off, each UPC line starts from the starting serial. When on, serial increments across all lines.
-                  </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <Label>Fixed tab — continue across lines</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When off, each UPC line starts from the starting serial. When on, serial increments across all lines.
+                    </p>
+                  </div>
+                  <Switch
+                    className="mt-0.5 shrink-0"
+                    checked={settings.fixedSerialContinuesAcrossUpcLines}
+                    onCheckedChange={(v: boolean) => setSettings({ fixedSerialContinuesAcrossUpcLines: v })}
+                  />
                 </div>
-                <Switch
-                  className="mt-0.5 shrink-0"
-                  checked={settings.fixedSerialContinuesAcrossUpcLines}
-                  onCheckedChange={(v: boolean) => setSettings({ fixedSerialContinuesAcrossUpcLines: v })}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <Label>Handheld tab — continue across lines</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Same as Fixed, but only affects the Handheld tab.
-                  </p>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <Label>Handheld tab — continue across lines</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Same as Fixed, but only affects the Handheld tab.
+                    </p>
+                  </div>
+                  <Switch
+                    className="mt-0.5 shrink-0"
+                    checked={settings.handheldSerialContinuesAcrossUpcLines}
+                    onCheckedChange={(v: boolean) => setSettings({ handheldSerialContinuesAcrossUpcLines: v })}
+                  />
                 </div>
-                <Switch
-                  className="mt-0.5 shrink-0"
-                  checked={settings.handheldSerialContinuesAcrossUpcLines}
-                  onCheckedChange={(v: boolean) => setSettings({ handheldSerialContinuesAcrossUpcLines: v })}
-                />
               </div>
             </div>
-          </div>
 
-          {/* Help: Quick overview / slide deck removed (former "what's new" entry point). Interactive tour remains. */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-primary" />
-              Help
-            </h4>
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Interactive tour</strong> — spotlights real tabs and panels
-                (desktop main window). Press <kbd className="px-1 rounded border border-border bg-muted text-[11px]">?</kbd>{' '}
-                anytime.
+            {/* Help: Quick overview / slide deck removed (former "what's new" entry point). Interactive tour remains. */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <BookOpen className="w-4 h-4 text-primary" />
+                Help
+              </h4>
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  <strong className="text-foreground">Interactive tour</strong> — spotlights real tabs and panels
+                  (desktop main window). Press <kbd className="px-1 rounded border border-border bg-muted text-[11px]">?</kbd>{' '}
+                  anytime.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {onStartInteractiveTour && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={() => {
+                        onOpenChange?.(false)
+                        onStartInteractiveTour()
+                      }}
+                      className="gap-2"
+                    >
+                      <Map className="w-4 h-4" />
+                      Interactive tour
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Logs */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <FileText className="w-4 h-4 text-primary" />
+                Logs
+              </h4>
+              <div className="space-y-2">
+                <Label>Max log lines</Label>
+                <Select
+                  value={settings.maxLogLines === 0 ? 'unlimited' : String(settings.maxLogLines)}
+                  onValueChange={(v) => setSettings({ maxLogLines: v === 'unlimited' ? 0 : parseInt(v, 10) })}
+                >
+                  <SelectTrigger className="rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="500">500</SelectItem>
+                    <SelectItem value="1000">1,000</SelectItem>
+                    <SelectItem value="2000">2,000</SelectItem>
+                    <SelectItem value="5000">5,000</SelectItem>
+                    <SelectItem value="unlimited">Unlimited</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Older entries are trimmed when limit is reached.</p>
+              </div>
+            </div>
+
+            {/* Building blocks */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Package className="w-4 h-4 text-primary" />
+                Automation building blocks
+              </h4>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Automation includes Set Variable, Database Query, and Run Script (PowerShell/shell). Use template variables like host or custom names to pass values between steps. Run Script needs admin login and only executes files under the user scripts folder.
               </p>
               <div className="flex flex-wrap gap-2">
-                {onStartInteractiveTour && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={async () => {
+                    const r = await window.electronAPI?.automationOpenScriptsFolder?.()
+                    if (!r) {
+                      toast.error('Desktop app required')
+                      return
+                    }
+                    if (!r.ok) toast.error(r.error)
+                    else toast.success(r.path)
+                  }}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Open scripts folder
+                </Button>
+              </div>
+            </div>
+
+            {/* Backup & Restore */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Archive className="w-4 h-4 text-primary" />
+                Backup & Restore
+              </h4>
+              <div className="space-y-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Save or restore everything in one file — profiles, automation sequences, settings, themes, saved hosts and query history. Credentials (SFTP / DB passwords) are never included.
+                </p>
+                <div className="flex flex-wrap gap-2">
                   <Button
-                    variant="default"
+                    variant="outline"
                     size="sm"
-                    onClick={() => {
-                      onOpenChange?.(false)
-                      onStartInteractiveTour()
-                    }}
+                    onClick={handleExportBackup}
                     className="gap-2"
                   >
-                    <Map className="w-4 h-4" />
-                    Interactive tour
+                    <Download className="w-4 h-4" />
+                    Export everything
                   </Button>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Logs */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <FileText className="w-4 h-4 text-primary" />
-              Logs
-            </h4>
-            <div className="space-y-2">
-              <Label>Max log lines</Label>
-              <Select
-                value={settings.maxLogLines === 0 ? 'unlimited' : String(settings.maxLogLines)}
-                onValueChange={(v) => setSettings({ maxLogLines: v === 'unlimited' ? 0 : parseInt(v, 10) })}
-              >
-                <SelectTrigger className="rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="500">500</SelectItem>
-                  <SelectItem value="1000">1,000</SelectItem>
-                  <SelectItem value="2000">2,000</SelectItem>
-                  <SelectItem value="5000">5,000</SelectItem>
-                  <SelectItem value="unlimited">Unlimited</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Older entries are trimmed when limit is reached.</p>
-            </div>
-          </div>
-
-          {/* Building blocks */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Package className="w-4 h-4 text-primary" />
-              Automation building blocks
-            </h4>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              Automation includes Set Variable, Database Query, and Run Script (PowerShell/shell). Use template variables like host or custom names to pass values between steps. Run Script needs admin login and only executes files under the user scripts folder.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={async () => {
-                  const r = await window.electronAPI?.automationOpenScriptsFolder?.()
-                  if (!r) {
-                    toast.error('Desktop app required')
-                    return
-                  }
-                  if (!r.ok) toast.error(r.error)
-                  else toast.success(r.path)
-                }}
-              >
-                <FolderOpen className="w-4 h-4" />
-                Open scripts folder
-              </Button>
-            </div>
-          </div>
-
-          {/* Backup & Restore */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Archive className="w-4 h-4 text-primary" />
-              Backup & Restore
-            </h4>
-            <div className="space-y-3">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Save or restore everything in one file — profiles, automation sequences, settings, themes, saved hosts and query history. Credentials (SFTP / DB passwords) are never included.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleExportBackup}
-                  className="gap-2"
-                >
-                  <Download className="w-4 h-4" />
-                  Export everything
-                </Button>
-                <div className="relative">
-                  <input
-                    type="file"
-                    accept=".json,application/json"
-                    onChange={handleImportBackup}
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                    aria-label="Import backup file"
-                  />
-                  <Button variant="outline" size="sm" className="gap-2">
-                    <Upload className="w-4 h-4" />
-                    Import backup
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Connection */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Timer className="w-4 h-4 text-primary" />
-              Connection
-            </h4>
-            <div className="space-y-2">
-              <Label>Connection timeout (ms)</Label>
-              <Select
-                value={String(settings.connectionTimeoutMs)}
-                onValueChange={(v) => setSettings({ connectionTimeoutMs: parseInt(v, 10) })}
-              >
-                <SelectTrigger className="rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5000">5 seconds</SelectItem>
-                  <SelectItem value="10000">10 seconds</SelectItem>
-                  <SelectItem value="15000">15 seconds</SelectItem>
-                  <SelectItem value="30000">30 seconds</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">Timeout when connecting to emulator server.</p>
-            </div>
-          </div>
-
-          {/* Theme Selection */}
-          <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-3">
-            <h4 className="text-sm font-semibold flex items-center gap-2">
-              <Layout className="w-4 h-4 text-primary" />
-              Theme
-            </h4>
-            <Select value={currentTheme} onValueChange={handleThemeChange}>
-              <SelectTrigger className="h-11 rounded-lg [&>span]:flex [&>span]:flex-row [&>span]:items-center [&>span]:overflow-visible">
-                {selectedTheme
-                  ? <ThemeOption theme={selectedTheme} isDark={isDarkMode} />
-                  : <SelectValue placeholder="Select a theme" />}
-              </SelectTrigger>
-              <SelectContent className="z-[200] max-h-80">
-                {themes.map((theme) => (
-                  <SelectItem key={theme.name} value={theme.name} className="py-2 [&>span:last-child]:inline-flex [&>span:last-child]:flex-row [&>span:last-child]:items-center">
-                    <ThemeOption theme={theme} isDark={isDarkMode} />
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Updates — desktop Electron only (mock in dev browser) */}
-          {window.electronAPI?.checkForUpdate && (
-          <div
-            id={SETTINGS_HIGHLIGHT_IDS.updates}
-            className={cn(
-              'rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4 transition-all duration-300',
-              highlight === 'updates' && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
-            )}
-          >
-            <h4 className="text-sm font-semibold">Updates</h4>
-            <div className="flex items-start justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <Label htmlFor="auto-update-download" className="text-sm cursor-pointer">
-                    Automatically download updates
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    When on, new versions download in the background after a check finds them (on startup, every 4 hours,
-                    or when you click Check). Restart from here when ready. When off, you only get a notification—download
-                    manually below.
-                  </p>
-                </div>
-                <Switch
-                  id="auto-update-download"
-                  checked={autoUpdateEnabled}
-                  onCheckedChange={(v) => void handleAutoUpdateChange(v)}
-                  className="mt-0.5 shrink-0"
-                />
-              </div>
-            <div className="flex flex-col gap-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={checkForUpdates}
-                  disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
-                  className="flex-1 min-w-[140px]"
-                >
-                  {updateStatus === 'checking' ? (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                      Checking...
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="mr-2 h-4 w-4" />
-                      Check for Updates
-                    </>
-                  )}
-                </Button>
-
-                {updateStatus === 'available' && !autoUpdateEnabled && (
-                  <Button size="sm" onClick={startDownload} className="flex-1 min-w-[140px]">
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </Button>
-                )}
-
-                {updateStatus === 'downloaded' && (
-                  <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white flex-1 min-w-[140px]">
-                    <Download className="mr-2 h-4 w-4" />
-                    Restart
-                  </Button>
-                )}
-              </div>
-
-              {updateStatus === 'not-available' && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <CheckCircle className="h-3 w-3" /> App is up to date
-                </span>
-              )}
-
-              {updateStatus === 'available' && (
-                <span className="text-xs text-blue-500 flex items-center gap-1">
-                  <Download className="h-3 w-3" />{' '}
-                  {autoUpdateEnabled ? 'Update found — downloading…' : 'Update available'}
-                </span>
-              )}
-
-              {updateStatus === 'downloading' && (
-                <div className="w-full space-y-1">
-                  <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary transition-all duration-300"
-                      style={{ width: `${downloadProgress}%` }}
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleImportBackup}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                      aria-label="Import backup file"
                     />
+                    <Button variant="outline" size="sm" className="gap-2">
+                      <Upload className="w-4 h-4" />
+                      Import backup
+                    </Button>
                   </div>
-                  <span className="text-xs text-muted-foreground block text-right">
-                    {downloadProgress}%
-                  </span>
                 </div>
-              )}
-
-              {updateStatus === 'error' && (
-                <span className="text-xs text-destructive flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" /> {errorMessage || 'Update failed'}
-                </span>
-              )}
+              </div>
             </div>
-          </div>
-          )}
 
-        </div>
+            {/* Connection */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Timer className="w-4 h-4 text-primary" />
+                Connection
+              </h4>
+              <div className="space-y-2">
+                <Label>Connection timeout (ms)</Label>
+                <Select
+                  value={String(settings.connectionTimeoutMs)}
+                  onValueChange={(v) => setSettings({ connectionTimeoutMs: parseInt(v, 10) })}
+                >
+                  <SelectTrigger className="rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5000">5 seconds</SelectItem>
+                    <SelectItem value="10000">10 seconds</SelectItem>
+                    <SelectItem value="15000">15 seconds</SelectItem>
+                    <SelectItem value="30000">30 seconds</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Timeout when connecting to emulator server.</p>
+              </div>
+            </div>
+
+            {/* Theme Selection */}
+            <div className="rounded-xl border border-border/40 bg-muted/5 p-4 space-y-3">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Layout className="w-4 h-4 text-primary" />
+                Theme
+              </h4>
+              <Select value={currentTheme} onValueChange={handleThemeChange}>
+                <SelectTrigger className="h-11 rounded-lg [&>span]:flex [&>span]:flex-row [&>span]:items-center [&>span]:overflow-visible">
+                  {selectedTheme
+                    ? <ThemeOption theme={selectedTheme} isDark={isDarkMode} />
+                    : <SelectValue placeholder="Select a theme" />}
+                </SelectTrigger>
+                <SelectContent className="z-[200] max-h-80">
+                  {themes.map((theme) => (
+                    <SelectItem key={theme.name} value={theme.name} className="py-2 [&>span:last-child]:inline-flex [&>span:last-child]:flex-row [&>span:last-child]:items-center">
+                      <ThemeOption theme={theme} isDark={isDarkMode} />
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Updates — desktop Electron only (mock in dev browser) */}
+            {window.electronAPI?.checkForUpdate && (
+              <div
+                id={SETTINGS_HIGHLIGHT_IDS.updates}
+                className={cn(
+                  'rounded-xl border border-border/40 bg-muted/5 p-4 space-y-4 transition-all duration-300',
+                  highlight === 'updates' && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
+                )}
+              >
+                <h4 className="text-sm font-semibold">Updates</h4>
+                <div className="flex items-start justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor="auto-update-download" className="text-sm cursor-pointer">
+                      Automatically download updates
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      When on, new versions download in the background after a check finds them (on startup, every 4 hours,
+                      or when you click Check). Restart from here when ready. When off, you only get a notification—download
+                      manually below.
+                    </p>
+                  </div>
+                  <Switch
+                    id="auto-update-download"
+                    checked={autoUpdateEnabled}
+                    onCheckedChange={(v) => void handleAutoUpdateChange(v)}
+                    className="mt-0.5 shrink-0"
+                  />
+                </div>
+                <div className="flex items-start justify-between gap-3 rounded-lg border border-border/30 bg-background/40 px-3 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <Label htmlFor="silent-updates-toggle" className="text-sm cursor-pointer">
+                      Apply small silent updates quietly
+                    </Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      When on, minor releases flagged as silent download cleanly with no popups and finish installing
+                      automatically the next time you close Zeus.
+                    </p>
+                  </div>
+                  <Switch
+                    id="silent-updates-toggle"
+                    checked={silentUpdatesEnabled}
+                    onCheckedChange={(v) => void handleSilentUpdatesChange(v)}
+                    className="mt-0.5 shrink-0"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={checkForUpdates}
+                      disabled={updateStatus === 'checking' || updateStatus === 'downloading'}
+                      className="flex-1 min-w-[140px]"
+                    >
+                      {updateStatus === 'checking' ? (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                          Checking...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="mr-2 h-4 w-4" />
+                          Check for Updates
+                        </>
+                      )}
+                    </Button>
+
+                    {updateStatus === 'available' && !autoUpdateEnabled && (
+                      <Button size="sm" onClick={startDownload} className="flex-1 min-w-[140px]">
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </Button>
+                    )}
+
+                    {updateStatus === 'downloaded' && (
+                      <div className="flex w-full flex-col gap-1.5">
+                        {isSilentUpdateReady && (
+                          <span className="text-xs text-muted-foreground">
+                            Silent update ready — installs automatically when you close Zeus
+                          </span>
+                        )}
+                        <Button size="sm" onClick={quitAndInstall} className="bg-green-600 hover:bg-green-700 text-white w-full">
+                          <Download className="mr-2 h-4 w-4" />
+                          Restart
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+
+                  {updateStatus === 'not-available' && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <CheckCircle className="h-3 w-3" /> App is up to date
+                    </span>
+                  )}
+
+                  {updateStatus === 'available' && (
+                    <span className="text-xs text-blue-500 flex items-center gap-1">
+                      <Download className="h-3 w-3" />{' '}
+                      {autoUpdateEnabled ? 'Update found — downloading…' : 'Update available'}
+                    </span>
+                  )}
+
+                  {updateStatus === 'downloading' && (
+                    <div className="w-full space-y-1">
+                      <div className="h-2 w-full bg-secondary rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary transition-all duration-300"
+                          style={{ width: `${downloadProgress}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground block text-right">
+                        {downloadProgress}%
+                      </span>
+                    </div>
+                  )}
+
+                  {updateStatus === 'error' && (
+                    <span className="text-xs text-destructive flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" /> {errorMessage || 'Update failed'}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+          </div>
         </div>
       </DialogContent>
       <BackupRestoreDialog

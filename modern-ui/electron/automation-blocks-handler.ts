@@ -24,11 +24,22 @@ export type RunScriptPayload = {
 }
 
 /** Extensions allowed for inline scripts (each maps to an interpreter below). */
-const ALLOWED_INLINE_EXTS = ['.ps1', '.psm1', '.sh', '.bash', '.bat', '.cmd', '.js', '.mjs', '.cjs', '.py', '.java']
+const ALLOWED_INLINE_EXTS = [
+  '.ps1', '.psm1', '.sh', '.bash', '.bat', '.cmd',
+  '.js', '.mjs', '.cjs', '.ts',
+  '.py', '.java', '.go', '.rb', '.php',
+]
 
 export type RunScriptResult =
   | { ok: true; stdout: string; stderr: string; exitCode: number }
   | { ok: false; error: string }
+
+function supportsUnflaggedTypeStripping(): boolean {
+  const parts = String(process.versions?.node || '0.0').split('.').map(Number)
+  const major = parts[0] || 0
+  const minor = parts[1] || 0
+  return major > 22 || (major === 22 && minor >= 18)
+}
 
 function getScriptsRoot(): string {
   return path.join(app.getPath('userData'), 'scripts')
@@ -53,7 +64,7 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
     MAX_SCRIPT_TIMEOUT,
     Math.max(1000, Number(payload.timeoutMs) || DEFAULT_SCRIPT_TIMEOUT),
   )
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...(payload.env && typeof payload.env === 'object' ? payload.env : {}),
   }
@@ -62,7 +73,8 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
     : []
 
   let fileToRun: string
-  let cleanup: string | null = null
+  let cleanupFile: string | null = null
+  let cleanupDir: string | null = null
 
   if (payload.inline) {
     const text = String(payload.inlineScript || '')
@@ -73,9 +85,18 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
     const ext = ALLOWED_INLINE_EXTS.includes(reqExt)
       ? reqExt
       : process.platform === 'win32' ? '.ps1' : '.sh'
-    cleanup = path.join(root, `_inline_${Date.now()}${ext}`)
-    fs.writeFileSync(cleanup, text, 'utf-8')
-    fileToRun = cleanup
+    const uniq = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    if (ext === '.java') {
+      // Single-file JDK 11+ works cleanest when Main.java sits in its own isolated temp directory
+      cleanupDir = path.join(root, `_java_${uniq}`)
+      fs.mkdirSync(cleanupDir, { recursive: true })
+      fileToRun = path.join(cleanupDir, 'Main.java')
+      fs.writeFileSync(fileToRun, text, 'utf-8')
+    } else {
+      cleanupFile = path.join(root, `_inline_${uniq}${ext}`)
+      fs.writeFileSync(cleanupFile, text, 'utf-8')
+      fileToRun = cleanupFile
+    }
   } else {
     const p = String(payload.scriptPath || '').trim()
     if (!p) return { ok: false, error: 'Script path is required' }
@@ -98,39 +119,55 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
     }
   }
 
+  const isWin = process.platform === 'win32'
+  const ext = path.extname(fileToRun).toLowerCase()
+  let cmd: string
+  let cmdArgs: string[]
+
+  if (ext === '.ps1' || ext === '.psm1') {
+    cmd = isWin ? 'powershell.exe' : 'pwsh'
+    cmdArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileToRun, ...args]
+  } else if (isWin && (ext === '.bat' || ext === '.cmd')) {
+    cmd = process.env.COMSPEC || 'cmd.exe'
+    cmdArgs = ['/c', fileToRun, ...args]
+  } else if (ext === '.sh' || ext === '.bash') {
+    cmd = isWin ? 'bash' : (process.env.SHELL || '/bin/bash')
+    cmdArgs = [fileToRun, ...args]
+  } else if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
+    env.ELECTRON_RUN_AS_NODE = '1'
+    cmd = process.execPath
+    cmdArgs = [fileToRun, ...args]
+  } else if (ext === '.ts') {
+    env.ELECTRON_RUN_AS_NODE = '1'
+    cmd = process.execPath
+    cmdArgs = supportsUnflaggedTypeStripping()
+      ? [fileToRun, ...args]
+      : ['--experimental-strip-types', fileToRun, ...args]
+  } else if (ext === '.java') {
+    // JDK 11+ single-file source-code mode: compiles & runs in one step.
+    cmd = 'java'
+    cmdArgs = [fileToRun, ...args]
+  } else if (ext === '.py') {
+    cmd = isWin ? 'python' : 'python3'
+    cmdArgs = [fileToRun, ...args]
+  } else if (ext === '.go') {
+    cmd = 'go'
+    cmdArgs = ['run', fileToRun, ...args]
+  } else if (ext === '.rb') {
+    cmd = 'ruby'
+    cmdArgs = [fileToRun, ...args]
+  } else if (ext === '.php') {
+    cmd = 'php'
+    cmdArgs = [fileToRun, ...args]
+  } else if (isWin) {
+    cmd = process.env.COMSPEC || 'cmd.exe'
+    cmdArgs = ['/c', fileToRun, ...args]
+  } else {
+    cmd = fileToRun
+    cmdArgs = args
+  }
+
   try {
-    const isWin = process.platform === 'win32'
-    const ext = path.extname(fileToRun).toLowerCase()
-    let cmd: string
-    let cmdArgs: string[]
-
-    if (isWin && (ext === '.ps1' || ext === '.psm1')) {
-      cmd = 'powershell.exe'
-      cmdArgs = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fileToRun, ...args]
-    } else if (isWin && (ext === '.bat' || ext === '.cmd')) {
-      cmd = process.env.COMSPEC || 'cmd.exe'
-      cmdArgs = ['/c', fileToRun, ...args]
-    } else if (ext === '.sh' || ext === '.bash') {
-      cmd = process.env.SHELL || '/bin/bash'
-      cmdArgs = [fileToRun, ...args]
-    } else if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
-      cmd = process.execPath
-      cmdArgs = [fileToRun, ...args]
-    } else if (ext === '.java') {
-      // JDK 11+ single-file source-code mode: compiles & runs in one step.
-      cmd = 'java'
-      cmdArgs = [fileToRun, ...args]
-    } else if (ext === '.py') {
-      cmd = isWin ? 'python' : 'python3'
-      cmdArgs = [fileToRun, ...args]
-    } else if (isWin) {
-      cmd = process.env.COMSPEC || 'cmd.exe'
-      cmdArgs = ['/c', fileToRun, ...args]
-    } else {
-      cmd = fileToRun
-      cmdArgs = args
-    }
-
     const { stdout, stderr } = await execFileAsync(cmd, cmdArgs, {
       cwd,
       env,
@@ -145,6 +182,12 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
       exitCode: 0,
     }
   } catch (err: any) {
+    if (err?.code === 'ENOENT') {
+      return {
+        ok: false,
+        error: `Runtime "${cmd}" was not found on PATH. Install it or switch the Code node to JavaScript / Node.js / TypeScript (built-in).`,
+      }
+    }
     const stdout = String(err?.stdout || '').slice(0, MAX_STDOUT)
     const stderr = String(err?.stderr || err?.message || String(err)).slice(0, MAX_STDOUT)
     const code = typeof err?.code === 'number' ? err.code : 1
@@ -158,9 +201,16 @@ export async function runAutomationScript(payload: RunScriptPayload): Promise<Ru
       exitCode: code,
     }
   } finally {
-    if (cleanup) {
+    if (cleanupFile) {
       try {
-        fs.unlinkSync(cleanup)
+        fs.unlinkSync(cleanupFile)
+      } catch {
+        /* ignore */
+      }
+    }
+    if (cleanupDir) {
+      try {
+        fs.rmSync(cleanupDir, { recursive: true, force: true })
       } catch {
         /* ignore */
       }

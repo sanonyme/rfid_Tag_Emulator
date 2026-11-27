@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { parseHeaderLines, extractJsonPath, parseCodeStdout, executeAssert, executeGenerate, executeCode, applyTransform, executeTransform } from '../automation-blocks'
 import type { AutomationStep } from '../automation-types'
 
@@ -47,14 +47,104 @@ describe('executeGenerate', () => {
     )
   })
 
-  it('rejects legacy java code nodes', async () => {
-    await expect(
-      executeCode(
-        step({ type: 'CODE', params: { codeLanguage: 'java', codeSource: 'public class Main {}' } }),
-        {},
+  it('runs in-process JavaScript updating and returning variables', async () => {
+    const vars: Record<string, string> = { count: '4' }
+    const logs: string[] = []
+    await executeCode(
+      step({
+        type: 'CODE',
+        params: {
+          codeLanguage: 'javascript',
+          codeSource: 'vars.doubled = Number(vars.count) * 2; log("hi"); return { status: "done" }',
+        },
+      }),
+      vars,
+      (m) => logs.push(m),
+    )
+    expect(vars.doubled).toBe('8')
+    expect(vars.status).toBe('done')
+    expect(logs.some((l) => l.includes('js: hi'))).toBe(true)
+  })
+
+  it('runs multi-language subprocess code with ZEUS_VARS_JSON, captures outputs, and parses stdout vars', async () => {
+    const orig = (window as any).electronAPI
+    const runMock = vi.fn().mockResolvedValue({
+      ok: true,
+      stdout: 'hello from python\n{"computed":"42","badge":"py-ok"}\n',
+      stderr: 'minor warning\n',
+      exitCode: 0,
+    })
+    ;(window as any).electronAPI = { automationRunScript: runMock }
+    try {
+      const vars: Record<string, string> = { host: '10.0.0.1', count: '21' }
+      await executeCode(
+        step({
+          type: 'CODE',
+          params: {
+            codeLanguage: 'python',
+            codeSource: 'print("{{host}}")',
+            codeInterpolateVars: true,
+            codeSaveStdoutAs: 'pyOut',
+            codeSaveStderrAs: 'pyErr',
+            codeSaveExitCodeAs: 'pyCode',
+          },
+        }),
+        vars,
         () => {},
-      ),
-    ).rejects.toThrow(/Java Code nodes were removed/)
+      )
+      expect(runMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          inline: true,
+          ext: '.py',
+          inlineScript: 'print("10.0.0.1")',
+          env: expect.objectContaining({
+            ZEUS_HOST: '10.0.0.1',
+            ZEUS_VARS_JSON: JSON.stringify({ host: '10.0.0.1', count: '21' }),
+          }),
+        }),
+      )
+      expect(vars.computed).toBe('42')
+      expect(vars.badge).toBe('py-ok')
+      expect(vars.pyOut).toContain('hello from python')
+      expect(vars.pyErr).toBe('minor warning')
+      expect(vars.pyCode).toBe('0')
+    } finally {
+      ;(window as any).electronAPI = orig
+    }
+  })
+
+  it('throws on non-zero exit for subprocess languages unless disabled', async () => {
+    const orig = (window as any).electronAPI
+    ;(window as any).electronAPI = {
+      automationRunScript: vi.fn().mockResolvedValue({ ok: true, stdout: '', stderr: 'compile err', exitCode: 1 }),
+    }
+    try {
+      await expect(
+        executeCode(
+          step({ type: 'CODE', params: { codeLanguage: 'java', codeSource: 'public class Main {}' } }),
+          {},
+          () => {},
+        ),
+      ).rejects.toThrow(/exited with code 1/)
+
+      const vars: Record<string, string> = {}
+      await executeCode(
+        step({
+          type: 'CODE',
+          params: {
+            codeLanguage: 'typescript',
+            codeSource: 'console.log(1)',
+            codeFailOnNonZero: false,
+            codeSaveExitCodeAs: 'tsExit',
+          },
+        }),
+        vars,
+        () => {},
+      )
+      expect(vars.tsExit).toBe('1')
+    } finally {
+      ;(window as any).electronAPI = orig
+    }
   })
 })
 

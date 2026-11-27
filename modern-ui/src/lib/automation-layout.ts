@@ -84,6 +84,24 @@ function getBranchOutputs(step: AutomationStep): NodeOutputPort[] {
         ? outs
         : [{ handle: 'branch-0', label: '1', color: '!bg-purple-500', strokeColor: '#a855f7' }]
     }
+    case 'PARALLEL_BRANCH': {
+      const branches = step.params.parallelBranches ?? [{ label: 'Branch A' }, { label: 'Branch B' }]
+      const outs: NodeOutputPort[] = (branches.length > 0 ? branches : [{ label: 'Branch A' }]).map(
+        (b, i) => ({
+          handle: `branch-${i}`,
+          label: (b.label?.trim() || `Branch ${i + 1}`).slice(0, 10),
+          color: '!bg-cyan-500',
+          strokeColor: '#06b6d4',
+        }),
+      )
+      outs.push({
+        handle: 'done',
+        label: 'AFTER ALL',
+        color: '!bg-emerald-500',
+        strokeColor: '#10b981',
+      })
+      return outs
+    }
     case 'COMMENT':
       return []
     default:

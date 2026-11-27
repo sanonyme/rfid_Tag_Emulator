@@ -15,8 +15,10 @@ import { Textarea } from './ui/textarea'
 import { Slider } from './ui/slider'
 import { ScrollArea } from './ui/scroll-area'
 import { toast } from 'sonner'
-import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2, Settings2, FolderOpen, Save, ListOrdered } from 'lucide-react'
+import { Clock, ScanLine, Radio, Smartphone, Terminal, ChevronsUpDown, Check, RefreshCw, Box, Workflow, Variable, Database, FileCode2, GitBranch, FileText, Globe, Server, Network, Code2, ShieldCheck, Timer, Repeat, Ban, Sparkles, StickyNote, Wand2, Bell, Repeat2, Split, Shuffle, Plus, Trash2, Settings2, FolderOpen, Save, ListOrdered, Activity, Wifi, Send, Table, Lock, Calendar, Clipboard, ExternalLink, MessageSquare, Share2 } from 'lucide-react'
 import { EdgeBlockNodeConfig, EdgeProcessNodeConfig } from './EdgeAutomationNodeConfig'
+import { PowerNodeConfigFields } from './automation/PowerNodeConfigFields'
+import { CustomCodeConfigFields } from './automation/CustomCodeConfigFields'
 import {
   Select,
   SelectContent,
@@ -28,8 +30,8 @@ import { Switch } from './ui/switch'
 import { UpcSerialModeToggle } from './UpcSerialModeToggle'
 import { StandardVariablesReference, VariablePresetPicker } from './VariablePresetPicker'
 import { VariableAutocompleteInput } from './automation/VariableAutocompleteInput'
-import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError, TcpNodeMode, TcpLineEnding } from '@/lib/automation-types'
-import { CONDITION_OPS, VAR_TYPES, CODE_STARTER, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, TCP_NODE_MODES, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
+import type { AutomationStep, ActionType, ConditionOp, LogLevel, HttpMethod, HttpAuthType, ScriptLang, VarType, AutomationSequence, GenerateKind, StopScope, TransformOp, NotifyLevel, SwitchCase, RandomBranch, NodeOnError, TcpNodeMode, TcpLineEnding } from '@/lib/automation-types'
+import { CONDITION_OPS, VAR_TYPES, GENERATE_KINDS, TRANSFORM_OPS, NOTIFY_LEVELS, NODE_ON_ERROR_OPTIONS, TCP_NODE_MODES, HTTP_AUTH_TYPES, SCRIPT_LANG_OPTIONS, nodeSupportsErrorPolicy, resolveNodePolicy } from '@/lib/automation-types'
 import { InterTagDelayInput } from '@/components/InterTagDelayInput'
 import { AleApiClient, type LogicalDevice } from '@/lib/ale-api'
 import { Skeleton } from './ui/skeleton'
@@ -53,6 +55,8 @@ interface NodeConfigDialogProps {
   sequences?: AutomationSequence[]
   /** Id of the sequence the current node belongs to (excluded from Call targets) */
   currentSequenceId?: string | null
+  /** Env var & secret keys (e.g. env.FOO, secret.BAR) for {{ autocomplete */
+  vaultVarNames?: string[]
 }
 
 const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: string }> = {
@@ -86,9 +90,20 @@ const STEP_TYPE_STYLES: Record<ActionType, { border: string; bg: string; icon: s
   FILE_READ: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400' },
   FILE_WRITE: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
   FILE_LIST: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400' },
+  SSH_EXEC: { border: 'border-emerald-400/40', bg: 'bg-emerald-400/10', icon: 'text-emerald-400' },
+  PING_PORT: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400' },
+  WEBSOCKET: { border: 'border-violet-400/40', bg: 'bg-violet-400/10', icon: 'text-violet-400' },
+  WEBHOOK_SEND: { border: 'border-pink-400/40', bg: 'bg-pink-400/10', icon: 'text-pink-400' },
+  CSV_JSON: { border: 'border-teal-400/40', bg: 'bg-teal-400/10', icon: 'text-teal-400' },
+  CRYPTO_HASH: { border: 'border-amber-400/40', bg: 'bg-amber-400/10', icon: 'text-amber-400' },
+  DATETIME: { border: 'border-sky-400/40', bg: 'bg-sky-400/10', icon: 'text-sky-400' },
+  CLIPBOARD: { border: 'border-slate-400/40', bg: 'bg-slate-400/10', icon: 'text-slate-400' },
+  OPEN_APP: { border: 'border-blue-400/40', bg: 'bg-blue-400/10', icon: 'text-blue-400' },
+  PROMPT_INPUT: { border: 'border-amber-400/40', bg: 'bg-amber-400/10', icon: 'text-amber-400' },
+  PARALLEL_BRANCH: { border: 'border-cyan-400/40', bg: 'bg-cyan-400/10', icon: 'text-cyan-400' },
 }
 
-export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenChange, step: savedStep, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId }: NodeConfigDialogProps) {
+export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenChange, step: savedStep, onSave, onSaveParams, host, alePort, customPort, fixedTabDelay, handheldTabDelay, sequences, currentSequenceId, vaultVarNames }: NodeConfigDialogProps) {
   const [logicalDevices, setLogicalDevices] = useState<LogicalDevice[]>([])
   const [isLoadingDevices, setIsLoadingDevices] = useState(false)
   // Settings section stays open once the user expands it (or when the node
@@ -235,11 +250,32 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
           if (s.params?.forEachIndexAs) vars.add(s.params.forEachIndexAs)
           if (s.params?.loopIndexAs) vars.add(s.params.loopIndexAs)
           if (s.params?.randomSaveAs) vars.add(s.params.randomSaveAs)
+          if (s.params?.sshSaveStdoutAs) vars.add(s.params.sshSaveStdoutAs)
+          if (s.params?.sshSaveStderrAs) vars.add(s.params.sshSaveStderrAs)
+          if (s.params?.sshSaveExitCodeAs) vars.add(s.params.sshSaveExitCodeAs)
+          if (s.params?.probeSaveAliveAs) vars.add(s.params.probeSaveAliveAs)
+          if (s.params?.probeSaveLatencyAs) vars.add(s.params.probeSaveLatencyAs)
+          if (s.params?.wsSaveAs) vars.add(s.params.wsSaveAs)
+          if (s.params?.webhookSaveStatusAs) vars.add(s.params.webhookSaveStatusAs)
+          if (s.params?.csvJsonSaveAs) vars.add(s.params.csvJsonSaveAs)
+          if (s.params?.cryptoSaveAs) vars.add(s.params.cryptoSaveAs)
+          if (s.params?.dtSaveAs) vars.add(s.params.dtSaveAs)
+          if (s.params?.clipboardSaveAs) vars.add(s.params.clipboardSaveAs)
+          if (s.params?.promptSaveAs) vars.add(s.params.promptSaveAs)
+          if (s.params?.httpSaveHeadersAs) vars.add(s.params.httpSaveHeadersAs)
+          if (s.params?.scriptSaveStderrAs) vars.add(s.params.scriptSaveStderrAs)
+          if (s.params?.scriptSaveExitCodeAs) vars.add(s.params.scriptSaveExitCodeAs)
+          if (s.params?.codeSaveStdoutAs) vars.add(s.params.codeSaveStdoutAs)
+          if (s.params?.codeSaveStderrAs) vars.add(s.params.codeSaveStderrAs)
+          if (s.params?.codeSaveExitCodeAs) vars.add(s.params.codeSaveExitCodeAs)
         }
       }
     }
+    if (vaultVarNames) {
+      for (const v of vaultVarNames) vars.add(v)
+    }
     return Array.from(vars)
-  }, [sequences])
+  }, [sequences, vaultVarNames])
 
   if (!savedStep) return null
 
@@ -297,6 +333,17 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               {step.type === 'FILE_READ' && <FolderOpen className="h-3 w-3" />}
               {step.type === 'FILE_WRITE' && <Save className="h-3 w-3" />}
               {step.type === 'FILE_LIST' && <ListOrdered className="h-3 w-3" />}
+              {step.type === 'SSH_EXEC' && <Terminal className="h-3 w-3" />}
+              {step.type === 'PING_PORT' && <Activity className="h-3 w-3" />}
+              {step.type === 'WEBSOCKET' && <Wifi className="h-3 w-3" />}
+              {step.type === 'WEBHOOK_SEND' && <Send className="h-3 w-3" />}
+              {step.type === 'CSV_JSON' && <Table className="h-3 w-3" />}
+              {step.type === 'CRYPTO_HASH' && <Lock className="h-3 w-3" />}
+              {step.type === 'DATETIME' && <Calendar className="h-3 w-3" />}
+              {step.type === 'CLIPBOARD' && <Clipboard className="h-3 w-3" />}
+              {step.type === 'OPEN_APP' && <ExternalLink className="h-3 w-3" />}
+              {step.type === 'PROMPT_INPUT' && <MessageSquare className="h-3 w-3" />}
+              {step.type === 'PARALLEL_BRANCH' && <Share2 className="h-3 w-3" />}
               {step.type === 'CUSTOM_MESSAGE' ? 'TCP' : step.type}
             </span>
             {step.name}
@@ -1255,7 +1302,22 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
               </div>
               {step.params.scriptInline !== false ? (
                 <>
-                  <Label>Script</Label>
+                  <div className="flex items-center justify-between gap-2">
+                    <Label>Script</Label>
+                    <Select
+                      value={step.params.scriptLang ?? 'auto'}
+                      onValueChange={(v) => patchParams({ scriptLang: v as ScriptLang })}
+                    >
+                      <SelectTrigger className="h-7 w-44 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SCRIPT_LANG_OPTIONS.map((l) => (
+                          <SelectItem key={l.value} value={l.value}>{l.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <Textarea
                     value={step.params.scriptInlineText || ''}
                     onChange={(e) => patchParams( { scriptInlineText: e.target.value })}
@@ -1323,6 +1385,26 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     value={step.params.scriptSaveStdoutAs || ''}
                     onChange={(e) => patchParams( { scriptSaveStdoutAs: e.target.value })}
                     className="h-9 font-mono text-xs"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-xs">Save stderr as (optional)</Label>
+                  <Input
+                    value={step.params.scriptSaveStderrAs || ''}
+                    onChange={(e) => patchParams({ scriptSaveStderrAs: e.target.value })}
+                    placeholder="scriptErr"
+                    className="h-8 font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Save exit code as (optional)</Label>
+                  <Input
+                    value={step.params.scriptSaveExitCodeAs || ''}
+                    onChange={(e) => patchParams({ scriptSaveExitCodeAs: e.target.value })}
+                    placeholder="scriptCode"
+                    className="h-8 font-mono text-xs"
                   />
                 </div>
               </div>
@@ -1702,17 +1784,79 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                 compact
                 onInsert={(next) => patchParams( { httpUrl: next })}
               />
-              <div className="flex items-center justify-between rounded-lg border border-border/50 bg-background/40 px-3 py-2">
-                <div>
-                  <Label htmlFor="http-ale-auth" className="text-xs cursor-pointer">Use saved ALE Basic Auth</Label>
-                  <p className="text-[10.5px] text-muted-foreground">Automatically attaches your saved ALE credentials header.</p>
-                </div>
-                <Switch
-                  id="http-ale-auth"
-                  checked={step.params.httpUseAleAuth === true}
-                  onCheckedChange={(v) => patchParams({ httpUseAleAuth: v })}
-                />
-              </div>
+              {(() => {
+                const authType: HttpAuthType =
+                  step.params.httpAuthType ?? (step.params.httpUseAleAuth ? 'ale' : 'none')
+                return (
+                  <div className="space-y-2 rounded-lg border border-border/50 bg-background/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <Label className="text-xs">Authentication Preset</Label>
+                      <Select
+                        value={authType}
+                        onValueChange={(v) =>
+                          patchParams({
+                            httpAuthType: v as HttpAuthType,
+                            httpUseAleAuth: v === 'ale',
+                          })
+                        }
+                      >
+                        <SelectTrigger className="h-8 w-48 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {HTTP_AUTH_TYPES.map((a) => (
+                            <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {authType === 'bearer' && (
+                      <VariableAutocompleteInput
+                        value={step.params.httpAuthToken || ''}
+                        onChange={(next) => patchParams({ httpAuthToken: next })}
+                        upstreamVariables={upstreamVariables}
+                        placeholder="Bearer token or {{secret.API_TOKEN}}"
+                        className="h-8 font-mono text-xs"
+                      />
+                    )}
+                    {authType === 'basic' && (
+                      <div className="grid grid-cols-2 gap-2">
+                        <VariableAutocompleteInput
+                          value={step.params.httpAuthUser || ''}
+                          onChange={(next) => patchParams({ httpAuthUser: next })}
+                          upstreamVariables={upstreamVariables}
+                          placeholder="Username"
+                          className="h-8 font-mono text-xs"
+                        />
+                        <VariableAutocompleteInput
+                          value={step.params.httpAuthPass || ''}
+                          onChange={(next) => patchParams({ httpAuthPass: next })}
+                          upstreamVariables={upstreamVariables}
+                          placeholder="Password / {{secret.PASS}}"
+                          className="h-8 font-mono text-xs"
+                        />
+                      </div>
+                    )}
+                    {authType === 'apiKey' && (
+                      <div className="grid grid-cols-[140px_1fr] gap-2">
+                        <Input
+                          value={step.params.httpAuthHeaderName || 'X-API-Key'}
+                          onChange={(e) => patchParams({ httpAuthHeaderName: e.target.value })}
+                          placeholder="X-API-Key"
+                          className="h-8 font-mono text-xs"
+                        />
+                        <VariableAutocompleteInput
+                          value={step.params.httpAuthToken || ''}
+                          onChange={(next) => patchParams({ httpAuthToken: next })}
+                          upstreamVariables={upstreamVariables}
+                          placeholder="{{secret.API_KEY}}"
+                          className="h-8 font-mono text-xs"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               <Label>Headers (one per line — <code className="text-[10px]">Key: Value</code>)</Label>
               <Textarea
                 value={step.params.httpHeaders || ''}
@@ -1777,6 +1921,15 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     placeholder="firstEpc"
                   />
                 </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Save response headers JSON as (optional)</Label>
+                <Input
+                  value={step.params.httpSaveHeadersAs || ''}
+                  onChange={(e) => patchParams({ httpSaveHeadersAs: e.target.value })}
+                  className="h-8 font-mono text-xs"
+                  placeholder="httpHeaders"
+                />
               </div>
               <div className="grid grid-cols-2 gap-2 items-end">
                 <div className="space-y-1">
@@ -1847,44 +2000,7 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
           })()}
 
           {step.type === 'CODE' && (
-              <div className="rounded-xl border border-border/50 bg-muted/10 p-4 space-y-3">
-                <div className="rounded-lg border border-border/40 bg-muted/20 p-2.5 text-[11px] text-muted-foreground space-y-1">
-                  <p>
-                    Runs <span className="font-semibold text-foreground">instantly, in-process</span> — no install.
-                    The code gets a mutable <code className="font-mono">vars</code> object (all values are strings)
-                    and a <code className="font-mono">log()</code> helper. Mutate <code className="font-mono">vars</code>
-                    {' '}and/or <code className="font-mono">return</code> an object; changes are merged back.
-                  </p>
-                  <p className="text-amber-500">
-                    Runs with the app&apos;s privileges and can&apos;t be interrupted mid-run — avoid infinite loops.
-                    For shell/PowerShell, use <span className="font-semibold">Run Script</span> instead.
-                  </p>
-                  {step.params.codeLanguage === 'java' && (
-                    <p className="text-destructive">
-                      This node still has legacy Java source. Paste JavaScript below (or Reset to starter) — Java is no longer supported.
-                    </p>
-                  )}
-                </div>
-
-                <Label>JavaScript source</Label>
-                <Textarea
-                  value={step.params.codeSource || ''}
-                  onChange={(e) => patchParams( { codeSource: e.target.value, codeLanguage: 'javascript' })}
-                  rows={14}
-                  spellCheck={false}
-                  className="font-mono text-xs leading-relaxed"
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-[11px]"
-                  onClick={() => patchParams( { codeSource: CODE_STARTER, codeLanguage: 'javascript' })}
-                >
-                  Reset to starter
-                </Button>
-                <StandardVariablesReference />
-              </div>
+            <CustomCodeConfigFields step={step} patchParams={patchParams} host={host} />
           )}
 
           {step.type === 'FOR_EACH' && (() => {
@@ -2224,6 +2340,17 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="flex items-center justify-between gap-3 pt-1">
+                <div>
+                  <Label htmlFor="notify-desktop" className="text-xs cursor-pointer">Also send native OS Desktop Notification</Label>
+                  <p className="text-[10.5px] text-muted-foreground">Alerts you via Windows/macOS notification even if Zeus is minimized.</p>
+                </div>
+                <Switch
+                  id="notify-desktop"
+                  checked={step.params.notifyDesktop === true}
+                  onCheckedChange={(v) => patchParams({ notifyDesktop: v })}
+                />
               </div>
             </div>
           )}
@@ -2673,6 +2800,13 @@ export const NodeConfigDialog = memo(function NodeConfigDialog({ open, onOpenCha
             </div>
             )
           })()}
+
+          <PowerNodeConfigFields
+            step={step}
+            patchParams={patchParams}
+            upstreamVariables={upstreamVariables}
+            host={host}
+          />
 
           {/* Node settings — shared by every executing node (n8n "Settings" tab). */}
           {nodeSupportsErrorPolicy(step.type) && (() => {

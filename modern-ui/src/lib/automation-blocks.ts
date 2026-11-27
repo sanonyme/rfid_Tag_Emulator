@@ -1,4 +1,4 @@
-import type { AutomationStep, GenerateKind, TcpLineEnding, TcpNodeMode, TransformOp } from './automation-types'
+import { CODE_LANGUAGE_OPTIONS, SCRIPT_LANG_OPTIONS, type AutomationStep, type CodeLanguage, type GenerateKind, type HttpAuthType, type TcpLineEnding, type TcpNodeMode, type TransformOp } from './automation-types'
 import type { AutomationVars } from './automation-template'
 import {
   applyTemplate,
@@ -137,17 +137,20 @@ export async function executeRunScript(
   if (vars.upc) env.ZEUS_UPC = vars.upc
 
   const inline = step.params.scriptInline === true
+  const langMeta = SCRIPT_LANG_OPTIONS.find((l) => l.value === step.params.scriptLang)
+  const ext = inline ? langMeta?.ext : undefined
   const argsRaw = applyTemplate(step.params.scriptArgs || '', vars)
   const args = argsRaw
     .split(/\s+/)
     .map((a) => a.trim())
     .filter(Boolean)
 
-  log(inline ? 'Running inline script…' : `Running script: ${step.params.scriptPath}`)
+  log(inline ? `Running inline script${ext ? ` (${ext})` : ''}…` : `Running script: ${step.params.scriptPath}`)
   const result = await api.automationRunScript({
     inline,
     inlineScript: inline ? applyTemplate(step.params.scriptInlineText || '', vars) : undefined,
     scriptPath: inline ? undefined : applyTemplate(step.params.scriptPath || '', vars),
+    ext,
     args,
     env,
     timeoutMs: step.params.scriptTimeoutMs,
@@ -156,6 +159,10 @@ export async function executeRunScript(
 
   const saveAs = (step.params.scriptSaveStdoutAs || '').trim()
   if (saveAs) setVar(vars, saveAs, result.stdout.trim())
+  const stderrAs = (step.params.scriptSaveStderrAs || '').trim()
+  if (stderrAs) setVar(vars, stderrAs, result.stderr.trim())
+  const exitAs = (step.params.scriptSaveExitCodeAs || '').trim()
+  if (exitAs) setVar(vars, exitAs, String(result.exitCode))
 
   if (result.stdout.trim()) log(`stdout: ${result.stdout.trim().slice(0, 300)}`)
   if (result.stderr.trim()) log(`stderr: ${result.stderr.trim().slice(0, 300)}`)
@@ -220,15 +227,31 @@ export async function executeHttpRequest(
   if (!url) throw new Error('URL is required')
 
   const headers = parseHeaderLines(applyTemplate(step.params.httpHeaders || '', vars))
-  if (step.params.httpUseAleAuth && api.aleGetBasicAuthHeader) {
-    const hasAuthHeader = Object.keys(headers).some((k) => k.toLowerCase() === 'authorization')
-    if (!hasAuthHeader) {
-      const authRes = await api.aleGetBasicAuthHeader()
-      if (authRes.ok && authRes.header) {
-        headers.Authorization = authRes.header
-      } else {
-        log('HTTP: ALE Basic Auth requested, but no saved ALE credentials found')
-      }
+  const authType: HttpAuthType =
+    step.params.httpAuthType ?? (step.params.httpUseAleAuth ? 'ale' : 'none')
+  const hasAuthHeader = Object.keys(headers).some((k) => k.toLowerCase() === 'authorization')
+
+  if (authType === 'bearer' && !hasAuthHeader) {
+    const tok = applyTemplate(step.params.httpAuthToken || '', vars).trim()
+    if (tok) headers.Authorization = `Bearer ${tok}`
+  } else if (authType === 'basic' && !hasAuthHeader) {
+    const user = applyTemplate(step.params.httpAuthUser || '', vars)
+    const pass = applyTemplate(step.params.httpAuthPass || '', vars)
+    const bytes = new TextEncoder().encode(`${user}:${pass}`)
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!)
+    headers.Authorization = `Basic ${btoa(bin)}`
+  } else if (authType === 'apiKey') {
+    const headerName = applyTemplate(step.params.httpAuthHeaderName || 'X-API-Key', vars).trim()
+    const token = applyTemplate(step.params.httpAuthToken || '', vars)
+    const already = Object.keys(headers).some((k) => k.toLowerCase() === headerName.toLowerCase())
+    if (headerName && token && !already) headers[headerName] = token
+  } else if (authType === 'ale' && api.aleGetBasicAuthHeader && !hasAuthHeader) {
+    const authRes = await api.aleGetBasicAuthHeader()
+    if (authRes.ok && authRes.header) {
+      headers.Authorization = authRes.header
+    } else {
+      log('HTTP: ALE Basic Auth requested, but no saved ALE credentials found')
     }
   }
   const hasBody = method !== 'GET' && method !== 'HEAD'
@@ -243,6 +266,11 @@ export async function executeHttpRequest(
 
   const statusAs = (step.params.httpSaveStatusAs || '').trim()
   if (statusAs) setVar(vars, statusAs, String(res.status))
+
+  const headersAs = (step.params.httpSaveHeadersAs || '').trim()
+  if (headersAs && isValidVarName(headersAs)) {
+    setVar(vars, headersAs, JSON.stringify(res.headers ?? {}))
+  }
 
   const bodyText = res.data ?? ''
   const bodyAs = (step.params.httpSaveBodyAs || '').trim()
@@ -318,25 +346,76 @@ export function parseCodeStdout(stdout: string): Record<string, string> {
   return out
 }
 
-/** Run a Code node — JavaScript only (in-process). Legacy `java` steps get a clear error. */
+/** Run a Custom Code node — supports in-process JavaScript and 10 subprocess/built-in languages. */
 export async function executeCode(
   step: AutomationStep,
   vars: AutomationVars,
   log: BlockLog,
 ): Promise<BlockExecResult> {
-  const language = step.params.codeLanguage ?? 'javascript'
-  const source = step.params.codeSource ?? ''
-  if (!source.trim()) throw new Error('Code is empty')
+  const language: CodeLanguage = step.params.codeLanguage ?? 'javascript'
+  const rawSource = step.params.codeSource ?? ''
+  if (!rawSource.trim()) throw new Error('Code is empty')
 
-  if (language === 'java') {
-    throw new Error(
-      'Java Code nodes were removed. Switch this node to JavaScript, or use Run Script for external tools.',
-    )
+  if (language === 'javascript') {
+    return runJavaScriptCode(rawSource, vars, log)
   }
-  if (language !== 'javascript') {
+
+  const meta = CODE_LANGUAGE_OPTIONS.find((o) => o.value === language)
+  if (!meta) {
     throw new Error(`Unsupported code language: ${language}`)
   }
-  return runJavaScriptCode(source, vars, log)
+
+  const api = requireElectron()
+  if (!api.automationRunScript) {
+    throw new Error(`${meta.label} execution requires the Electron desktop app`)
+  }
+
+  const inlineScript =
+    step.params.codeInterpolateVars === true ? applyTemplate(rawSource, vars) : rawSource
+
+  const env: Record<string, string> = {
+    ZEUS_VARS_JSON: JSON.stringify(vars),
+  }
+  for (const [k, v] of Object.entries(vars)) {
+    env[`ZEUS_${k.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`] = v
+  }
+  if (vars.host) env.ZEUS_HOST = vars.host
+  if (vars.epc) env.ZEUS_EPC = vars.epc
+  if (vars.upc) env.ZEUS_UPC = vars.upc
+
+  log(`Custom Code [${meta.badge}] running…`)
+  const result = await api.automationRunScript({
+    inline: true,
+    inlineScript,
+    ext: meta.ext,
+    env,
+    timeoutMs: step.params.codeTimeoutMs ?? 15000,
+  })
+  if (!result.ok) throw new Error(result.error)
+
+  const outText = result.stdout.trim()
+  const errText = result.stderr.trim()
+  if (step.params.codeSaveStdoutAs?.trim()) {
+    setVar(vars, step.params.codeSaveStdoutAs.trim(), outText)
+  }
+  if (step.params.codeSaveStderrAs?.trim()) {
+    setVar(vars, step.params.codeSaveStderrAs.trim(), errText)
+  }
+  if (step.params.codeSaveExitCodeAs?.trim()) {
+    setVar(vars, step.params.codeSaveExitCodeAs.trim(), String(result.exitCode))
+  }
+
+  if (outText) log(`${meta.badge} stdout: ${outText.slice(0, 300)}`)
+  if (errText) log(`${meta.badge} stderr: ${errText.slice(0, 300)}`)
+
+  const parsed = parseCodeStdout(result.stdout)
+  const changed = mergeVarsFromObject(vars, parsed, log)
+  log(`${meta.badge} exit ${result.exitCode} — ${changed} variable(s) updated`)
+
+  if (step.params.codeFailOnNonZero !== false && result.exitCode !== 0) {
+    throw new Error(`${meta.label} exited with code ${result.exitCode}`)
+  }
+  return {}
 }
 
 /**

@@ -142,6 +142,27 @@ import {
   executeTcpNode,
 } from '@/lib/automation-blocks'
 import {
+  executeSshExec,
+  executePingPort,
+  executeWebSocket,
+  executeWebhookSend,
+  executeCsvJson,
+  executeCryptoHash,
+  executeDateTime,
+  executeClipboard,
+  executeOpenApp,
+} from '@/lib/automation-power-blocks'
+import { cronMinuteKey, matchesCron } from '@/lib/automation-cron'
+import {
+  buildVaultRunVars,
+  loadEnvVars,
+  loadSecrets,
+  redactSecrets,
+  saveEnvVars,
+  saveSecrets,
+  type VaultEntry,
+} from '@/lib/automation-vault'
+import {
   computeAutoLayout,
   NODE_HEIGHT,
   NODE_WIDTH,
@@ -150,6 +171,8 @@ import {
 } from '@/lib/automation-layout'
 import { validateSequence } from '@/lib/automation-validation'
 import { AutomationTriggersDialog, loadSavedTriggers, TRIGGERS_STORAGE_KEY } from './automation/AutomationTriggersDialog'
+import { AutomationVaultDialog } from './automation/AutomationVaultDialog'
+import { AutomationPromptModal, type PromptRequestState } from './automation/AutomationPromptModal'
 import { AutomationCanvas, type EditorTool } from './automation/AutomationCanvas'
 import { NodeLibraryDrawer, WorkflowTemplatesDrawer } from './automation/NodeLibrarySidebar'
 import type { EdgeStyle } from './automation/WorkflowEdge'
@@ -238,22 +261,26 @@ function VariableListBody({
   const textSize = size === 'sm' ? 'text-[11px]' : 'text-sm'
   const nameWidth = size === 'sm' ? 'max-w-[42%]' : 'max-w-[36%]'
 
-  const Row = ([name, value]: [string, string]) => (
-    <div key={name} className="flex items-start gap-2 rounded px-2 py-1 hover:bg-accent/40">
-      <code
-        className={cn('shrink-0 truncate font-mono font-semibold text-primary', nameWidth, textSize)}
-        title={STANDARD_VAR_DESCRIPTIONS[name] ? `${name} — ${STANDARD_VAR_DESCRIPTIONS[name]}` : name}
-      >
-        {name}
-      </code>
-      <span
-        className={cn('min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-foreground/80', textSize)}
-        title={value}
-      >
-        {value === '' ? <span className="italic text-muted-foreground/60">empty</span> : value}
-      </span>
-    </div>
-  )
+  const Row = ([name, value]: [string, string]) => {
+    const isSecret = name.startsWith('secret.')
+    const shown = isSecret ? (value ? '••••••••' : '') : value
+    return (
+      <div key={name} className="flex items-start gap-2 rounded px-2 py-1 hover:bg-accent/40">
+        <code
+          className={cn('shrink-0 truncate font-mono font-semibold text-primary', nameWidth, textSize)}
+          title={STANDARD_VAR_DESCRIPTIONS[name] ? `${name} — ${STANDARD_VAR_DESCRIPTIONS[name]}` : name}
+        >
+          {name}
+        </code>
+        <span
+          className={cn('min-w-0 flex-1 whitespace-pre-wrap break-words font-mono text-foreground/80', textSize)}
+          title={isSecret ? 'Hidden secret value' : value}
+        >
+          {shown === '' ? <span className="italic text-muted-foreground/60">empty</span> : shown}
+        </span>
+      </div>
+    )
+  }
 
   if (entries.length === 0) {
     return (
@@ -493,6 +520,45 @@ export function AutomationTab({
   const triggersRef = useRef(triggers)
   triggersRef.current = triggers
 
+  const [envVars, setEnvVars] = useState<VaultEntry[]>(() => loadEnvVars())
+  const [secrets, setSecrets] = useState<VaultEntry[]>([])
+  const [vaultDialogOpen, setVaultDialogOpen] = useState(false)
+  const [promptState, setPromptState] = useState<PromptRequestState | null>(null)
+  const vaultVars = useMemo(() => buildVaultRunVars(envVars, secrets), [envVars, secrets])
+  const vaultVarsRef = useRef(vaultVars)
+  vaultVarsRef.current = vaultVars
+  const secretValuesRef = useRef<string[]>([])
+  secretValuesRef.current = useMemo(() => secrets.map((s) => s.value).filter((v) => v.length >= 4), [secrets])
+  const vaultVarNames = useMemo(() => Object.keys(vaultVars), [vaultVars])
+
+  useEffect(() => {
+    void loadSecrets().then(setSecrets)
+  }, [])
+
+  const handleSaveEnvVars = useCallback((entries: VaultEntry[]) => {
+    setEnvVars(entries)
+    saveEnvVars(entries)
+  }, [])
+
+  const handleSaveSecrets = useCallback(async (entries: VaultEntry[]) => {
+    setSecrets(entries)
+    await saveSecrets(entries)
+  }, [])
+
+  const requestPromptInput = useCallback(
+    (opts: Omit<PromptRequestState, 'resolve'>) =>
+      new Promise<string | null>((resolve) => {
+        setPromptState({
+          ...opts,
+          resolve: (val) => {
+            setPromptState(null)
+            resolve(val)
+          },
+        })
+      }),
+    [],
+  )
+
   useEffect(() => {
     localStorage.setItem(TRIGGERS_STORAGE_KEY, JSON.stringify(triggers))
   }, [triggers])
@@ -689,6 +755,7 @@ export function AutomationTab({
       const conn = createRunContext({ host, alePort, customPort, port: '' })
       return {
         ...prev,
+        ...vaultVars,
         host: conn.host,
         alePort: conn.alePort,
         customPort: conn.customPort,
@@ -696,11 +763,11 @@ export function AutomationTab({
         nextSerial: prev.nextSerial?.trim() ? prev.nextSerial : conn.nextSerial,
       }
     })
-  }, [host, alePort, customPort, isRunning])
+  }, [host, alePort, customPort, vaultVars, isRunning])
 
   const handleResetVars = useCallback(() => {
     if (isRunning) return
-    const fresh = createRunContext({ host, alePort, customPort, port: '' })
+    const fresh = { ...vaultVarsRef.current, ...createRunContext({ host, alePort, customPort, port: '' }) }
     runVarsRef.current = { ...fresh }
     setRunVars({ ...fresh })
   }, [host, alePort, customPort, isRunning])
@@ -754,7 +821,8 @@ export function AutomationTab({
 
   const addLog = useCallback(
     (msg: string) => {
-      const line = `[${formatTime()}] ${msg}`
+      const safe = redactSecrets(msg, secretValuesRef.current)
+      const line = `[${formatTime()}] ${safe}`
       const hist = runLogRef.current
       hist.push(line)
       if (hist.length > 2000) hist.splice(0, hist.length - 1500)
@@ -797,7 +865,7 @@ export function AutomationTab({
   const handleCopyVars = useCallback(async () => {
     const text = Object.entries(runVars)
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([k, v]) => `${k}: ${v}`)
+      .map(([k, v]) => `${k}: ${k.startsWith('secret.') ? '***' : v}`)
       .join('\n')
     if (!text) return
     try {
@@ -1067,7 +1135,9 @@ export function AutomationTab({
                     ? 'case-0'
                     : type === 'RANDOM'
                       ? 'branch-0'
-                      : isRegularOutputHandle(targetEdge.sourceHandle)
+                      : type === 'PARALLEL_BRANCH'
+                        ? 'branch-0'
+                        : isRegularOutputHandle(targetEdge.sourceHandle)
                         ? (targetEdge.sourceHandle ?? 'out')
                         : 'out'
               nextEdges.push({
@@ -1537,8 +1607,9 @@ export function AutomationTab({
   }, [])
 
   // --- Execution Engine ---
-  const executeStep = async (step: AutomationStep, signal: AbortSignal) => {
+  const executeStep = async (step: AutomationStep, signal: AbortSignal, varsOverride?: AutomationVars) => {
     if (signal.aborted) throw new Error('Aborted')
+    const activeVars = varsOverride ?? runVarsRef.current
 
     switch (step.type) {
       case 'DELAY':
@@ -1550,9 +1621,9 @@ export function AutomationTab({
         break
 
       case 'OCR': {
-        const targetHost = applyTemplate(step.params.ocrHost || '', runVarsRef.current).trim() || host
+        const targetHost = applyTemplate(step.params.ocrHost || '', activeVars).trim() || host
         if (!targetHost) throw new Error('Host not configured')
-        const ocrMsg = applyTemplate(step.params.message || '', runVarsRef.current)
+        const ocrMsg = applyTemplate(step.params.message || '', activeVars)
         const ocrSaveAs = (step.params.ocrSaveAs || '').trim()
         addLog(`Sending OCR message → ${targetHost}...`)
         await new Promise<void>((resolve, reject) => {
@@ -1560,8 +1631,8 @@ export function AutomationTab({
             targetHost,
             ocrMsg,
             (msg) => {
-              runVarsRef.current.lastOcrResponse = msg
-              if (ocrSaveAs) runVarsRef.current[ocrSaveAs] = msg
+              activeVars.lastOcrResponse = msg
+              if (ocrSaveAs) activeVars[ocrSaveAs] = msg
               addLog(`OCR Success: ${msg}`)
               resolve()
             },
@@ -1575,7 +1646,7 @@ export function AutomationTab({
       }
 
       case 'CUSTOM_MESSAGE': {
-        await executeTcpNode(step, runVarsRef.current, addLog, signal, host, customPort)
+        await executeTcpNode(step, activeVars, addLog, signal, host, customPort)
         break
       }
 
@@ -1584,8 +1655,8 @@ export function AutomationTab({
         if (step.params.fixedAutoConnect) {
           const alreadyConnected = await emulator.isConnected()
           if (!alreadyConnected) {
-            const targetHost = applyTemplate(step.params.fixedHost || '', runVarsRef.current).trim() || host
-            const portNum = parseInt(applyTemplate(step.params.fixedPort || '12352', runVarsRef.current).trim(), 10) || 12352
+            const targetHost = applyTemplate(step.params.fixedHost || '', activeVars).trim() || host
+            const portNum = parseInt(applyTemplate(step.params.fixedPort || '12352', activeVars).trim(), 10) || 12352
             if (!targetHost) throw new Error('Fixed auto-connect: host is empty')
             addLog(`Auto-connecting Fixed reader → ${targetHost}:${portNum}…`)
             await new Promise<void>((resolve, reject) => {
@@ -1603,7 +1674,7 @@ export function AutomationTab({
         if (stepAntennas.length === 0) stepAntennas.push(1)
         const selectedUids = (step.params.uid || '').split(',').filter(Boolean)
         const targetUids = selectedUids.length > 0 ? selectedUids : ['']
-        const vars = runVarsRef.current
+        const vars = activeVars
         const upcList = applyTemplate(step.params.upcList || '', vars)
         const epcList = applyTemplate(step.params.epcList || '', vars)
         const singleUpc = applyTemplate(step.params.upc || '', vars)
@@ -1670,8 +1741,8 @@ export function AutomationTab({
         }
         if (fixedTags.length === 0) throw new Error('No valid EPCs or UPCs specified')
         if (upcEpcCount > 0) advanceNextSerial(vars, startSerial, upcEpcCount, addLog)
-        captureEpcsToVars(runVarsRef.current, fixedTags.map((t) => t.epc))
-        addLog(`Captured ${runVarsRef.current.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
+        captureEpcsToVars(vars, fixedTags.map((t) => t.epc))
+        addLog(`Captured ${vars.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
         const tagDelayMs = parseInterTagDelayMs(step.params.tagDelay, delay)
         addLog(`Inter-tag delay ${tagDelayMs} ms`)
         await emulator.sendTags(
@@ -1688,7 +1759,7 @@ export function AutomationTab({
         addLog(`Emulating Handheld Tags...`)
         const getHhTagRssi = makeRssiPicker(step.params)
         const allHhTags: { epc: string; tid?: string; rssi?: string; userdata?: string }[] = []
-        const vars = runVarsRef.current
+        const vars = activeVars
         const upcList = applyTemplate(step.params.upcList || '', vars)
         const epcList = applyTemplate(step.params.epcList || '', vars)
         const startSerial = resolveStartSerial(step.params.startSerial, vars)
@@ -1721,8 +1792,8 @@ export function AutomationTab({
         }
         if (allHhTags.length === 0) throw new Error('No EPCs specified')
         if (upcEpcCount > 0) advanceNextSerial(vars, startSerial, upcEpcCount, addLog)
-        captureEpcsToVars(runVarsRef.current, allHhTags.map((t) => t.epc))
-        addLog(`Captured ${runVarsRef.current.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
+        captureEpcsToVars(vars, allHhTags.map((t) => t.epc))
+        addLog(`Captured ${vars.tagCount} unique EPC(s) → {{epcs}} (start serial ${startSerial})`)
 
         const hhPortStr = applyTemplate(step.params.handheldPort || '', vars).trim()
         const hhPort = hhPortStr ? parseInt(hhPortStr, 10) : handheldServer.getPort()
@@ -1751,18 +1822,18 @@ export function AutomationTab({
 
       case 'EDGE_BLOCK': {
         if (!edgeSession.edgeReady) throw new Error('Edge API not ready — connect to Edge IP first')
-        const blockName = applyTemplate(step.params.edgeBlockName || '', runVarsRef.current).trim()
+        const blockName = applyTemplate(step.params.edgeBlockName || '', activeVars).trim()
         if (!blockName) throw new Error('Edge block not configured')
         const raw = step.params.edgeParams ?? {}
         const order = step.params.edgeParamOrder?.filter((k) => k in raw) ?? Object.keys(raw)
         const invokeParams: Record<string, unknown> = {}
         for (const k of order) {
           const v = raw[k] ?? ''
-          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, runVarsRef.current) : v
+          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, activeVars) : v
         }
         for (const [k, v] of Object.entries(raw)) {
           if (k in invokeParams) continue
-          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, runVarsRef.current) : v
+          invokeParams[k] = typeof v === 'string' ? applyTemplate(v, activeVars) : v
         }
         const paramOrder = order.length > 0 ? order : Object.keys(invokeParams)
         const paramPreview = Object.entries(invokeParams).map(([k, v]) => `${k}=${String(v ?? '')}`).join(', ')
@@ -1785,39 +1856,78 @@ export function AutomationTab({
         break
       }
 
-      case 'SET_VARIABLE': await executeSetVariable(step, runVarsRef.current, addLog); break
-      case 'DB_QUERY': await executeDbQuery(step, runVarsRef.current, addLog); break
-      case 'DB_EXEC': await executeDbExec(step, runVarsRef.current, addLog); break
-      case 'RUN_SCRIPT': await executeRunScript(step, runVarsRef.current, addLog); break
-      case 'HTTP_REQUEST': await executeHttpRequest(step, runVarsRef.current, addLog); break
-      case 'CODE': await executeCode(step, runVarsRef.current, addLog); break
-      case 'ASSERT': await executeAssert(step, runVarsRef.current, addLog); break
-      case 'WAIT_UNTIL': await executeWaitUntil(step, runVarsRef.current, addLog, signal); break
-      case 'STOP': await executeStop(step, runVarsRef.current, addLog); break
-      case 'GENERATE': await executeGenerate(step, runVarsRef.current, addLog); break
-      case 'TRANSFORM': await executeTransform(step, runVarsRef.current, addLog); break
-      case 'COMMENT': await executeComment(step, runVarsRef.current, addLog); break
-      case 'FILE_READ': await executeFileRead(step, runVarsRef.current, addLog); break
-      case 'FILE_WRITE': await executeFileWrite(step, runVarsRef.current, addLog); break
-      case 'FILE_LIST': await executeFileList(step, runVarsRef.current, addLog); break
+      case 'SET_VARIABLE': await executeSetVariable(step, activeVars, addLog); break
+      case 'DB_QUERY': await executeDbQuery(step, activeVars, addLog); break
+      case 'DB_EXEC': await executeDbExec(step, activeVars, addLog); break
+      case 'RUN_SCRIPT': await executeRunScript(step, activeVars, addLog); break
+      case 'HTTP_REQUEST': await executeHttpRequest(step, activeVars, addLog); break
+      case 'CODE': await executeCode(step, activeVars, addLog); break
+      case 'ASSERT': await executeAssert(step, activeVars, addLog); break
+      case 'WAIT_UNTIL': await executeWaitUntil(step, activeVars, addLog, signal); break
+      case 'STOP': await executeStop(step, activeVars, addLog); break
+      case 'GENERATE': await executeGenerate(step, activeVars, addLog); break
+      case 'TRANSFORM': await executeTransform(step, activeVars, addLog); break
+      case 'COMMENT': await executeComment(step, activeVars, addLog); break
+      case 'FILE_READ': await executeFileRead(step, activeVars, addLog); break
+      case 'FILE_WRITE': await executeFileWrite(step, activeVars, addLog); break
+      case 'FILE_LIST': await executeFileList(step, activeVars, addLog); break
+      case 'SSH_EXEC': await executeSshExec(step, activeVars, addLog); break
+      case 'PING_PORT': await executePingPort(step, activeVars, addLog); break
+      case 'WEBSOCKET': await executeWebSocket(step, activeVars, addLog); break
+      case 'WEBHOOK_SEND': await executeWebhookSend(step, activeVars, addLog); break
+      case 'CSV_JSON': await executeCsvJson(step, activeVars, addLog); break
+      case 'CRYPTO_HASH': await executeCryptoHash(step, activeVars, addLog); break
+      case 'DATETIME': await executeDateTime(step, activeVars, addLog); break
+      case 'CLIPBOARD': await executeClipboard(step, activeVars, addLog); break
+      case 'OPEN_APP': await executeOpenApp(step, activeVars, addLog); break
+
+      case 'PROMPT_INPUT': {
+        const mode = step.params.promptMode ?? 'text'
+        const title = applyTemplate(step.params.promptTitle || 'Input Required', activeVars).trim()
+        const message = applyTemplate(step.params.promptMessage || '', activeVars)
+        const defaultValue = applyTemplate(step.params.promptDefault || '', activeVars)
+        const options = parseListItems(applyTemplate(step.params.promptOptions || '', activeVars))
+        const saveAs = (step.params.promptSaveAs || 'userInput').trim()
+
+        addLog(`💬 Prompting user (${mode}): ${title}`)
+        const response = await requestPromptInput({ mode, title, message, defaultValue, options })
+        if (response === null) {
+          if ((step.params.promptCancelBehavior ?? 'abort') === 'empty') {
+            if (saveAs) activeVars[saveAs] = mode === 'confirm' ? 'false' : ''
+            addLog(`Prompt cancelled — continuing with empty value`)
+          } else {
+            throw new Error('User cancelled prompt')
+          }
+        } else {
+          if (saveAs) activeVars[saveAs] = response
+          addLog(`💬 Prompt response → ${saveAs}=${response}`)
+        }
+        break
+      }
 
       case 'NOTIFY': {
         const level = step.params.notifyLevel ?? 'info'
-        const title = applyTemplate(step.params.notifyTitle || '', runVarsRef.current).trim()
-        const message = applyTemplate(step.params.notifyMessage || '', runVarsRef.current)
+        const title = applyTemplate(step.params.notifyTitle || '', activeVars).trim()
+        const message = applyTemplate(step.params.notifyMessage || '', activeVars)
         const opts = title ? { description: message } : undefined
         const text = title || message
         if (level === 'success') toast.success(text, opts)
         else if (level === 'warning') toast.warning(text, opts)
         else if (level === 'error') toast.error(text, opts)
         else toast(text, opts)
+        if (step.params.notifyDesktop && window.electronAPI?.automationDesktopNotify) {
+          void window.electronAPI.automationDesktopNotify({
+            title: title || 'Zeus Automation',
+            body: message || text,
+          })
+        }
         addLog(`🔔 ${title ? `${title}: ` : ''}${message}`)
         break
       }
 
       case 'LOG': {
         const level = step.params.logLevel ?? 'info'
-        const msg = applyTemplate(step.params.logMessage || '', runVarsRef.current)
+        const msg = applyTemplate(step.params.logMessage || '', activeVars)
         const prefix = level === 'error' ? '✖' : level === 'warn' ? '⚠' : 'ℹ'
         addLog(`${prefix} ${msg}`)
         if (level === 'error' && step.params.logAbort) {
@@ -1829,6 +1939,7 @@ export function AutomationTab({
       case 'CONDITION':
       case 'SWITCH':
       case 'RANDOM':
+      case 'PARALLEL_BRANCH':
       case 'CALL_SEQUENCE':
       case 'FOR_EACH':
       case 'LOOP_N':
@@ -1840,7 +1951,9 @@ export function AutomationTab({
     step: AutomationStep,
     signal: AbortSignal,
     action: () => Promise<void>,
+    varsOverride?: AutomationVars,
   ): Promise<string> => {
+    const activeVars = varsOverride ?? runVarsRef.current
     const policy = resolveNodePolicy(step.params)
     let lastError: any = null
     for (let attempt = 1; attempt <= policy.maxTries; attempt++) {
@@ -1862,8 +1975,8 @@ export function AutomationTab({
       }
     }
     const msg = String(lastError?.message ?? lastError ?? 'Unknown error')
-    runVarsRef.current.lastError = msg
-    runVarsRef.current.lastErrorNode = step.name
+    activeVars.lastError = msg
+    activeVars.lastErrorNode = step.name
     if (policy.onError === 'stop') {
       addLog(`Error at "${step.name}": ${msg}`)
       throw lastError
@@ -1903,16 +2016,15 @@ export function AutomationTab({
     const partialStart = partial ? byId.get(partial.startStepId) : undefined
     const startNodes = partialStart ? [partialStart] : roots.length > 0 ? roots : [seqSteps[0]]
 
-    for (const root of startNodes) {
-      if (signal.aborted) break
-      let current: AutomationStep | null = root
+    const runChain = async (startNode: AutomationStep, maxSingle = false): Promise<void> => {
+      let current: AutomationStep | null = startNode
       let guard = 0
       while (current && !signal.aborted) {
         if (++guard > MAX_GRAPH_STEPS) {
           addLog(`Stopped: exceeded ${MAX_GRAPH_STEPS} steps (possible infinite loop)`)
           break
         }
-        if (partial?.singleNode && guard > 1) break
+        if (maxSingle && guard > 1) break
         runStepCountRef.current++
         setLiveStepsRun(runStepCountRef.current)
         setCurrentRunningStepId(current.id)
@@ -1957,6 +2069,23 @@ export function AutomationTab({
             const saveAs = (current.params.randomSaveAs || '').trim()
             if (saveAs) runVarsRef.current[saveAs] = String(idx)
             addLog(`🎲 ${current.name}: → ${label}`)
+            setNodeRunState(current.id, { state: 'success', durationMs: performance.now() - t0 })
+          } else if (current.type === 'PARALLEL_BRANCH') {
+            const branchEdges = seqEdges.filter(
+              (e) => e.from === current!.id && (e.sourceHandle ?? '').startsWith('branch-'),
+            )
+            const waitMode = current.params.parallelWaitMode ?? 'all'
+            addLog(`⑂ Parallel Fork "${current.name}" (${branchEdges.length} branch(es), mode=${waitMode})`)
+            const tasks = branchEdges.map((edge) => {
+              const target = byId.get(edge.to)
+              return target ? runChain(target, false) : Promise.resolve()
+            })
+            if (tasks.length > 0) {
+              if (waitMode === 'allSettled') await Promise.allSettled(tasks)
+              else if (waitMode === 'race') await Promise.race(tasks)
+              else await Promise.all(tasks)
+            }
+            handle = 'done'
             setNodeRunState(current.id, { state: 'success', durationMs: performance.now() - t0 })
           } else {
             const node: AutomationStep = current
@@ -2055,6 +2184,11 @@ export function AutomationTab({
         current = nextEdge ? byId.get(nextEdge.to) ?? null : null
       }
     }
+
+    for (const root of startNodes) {
+      if (signal.aborted) break
+      await runChain(root, partial?.singleNode === true)
+    }
   }
 
   const resolveTopLevelSequences = useCallback((all: AutomationSequence[]): AutomationSequence[] => {
@@ -2136,7 +2270,7 @@ export function AutomationTab({
             ? Math.max(1, parseInt(customLoopCount) || 1)
             : parseInt(loopCount) || 1
 
-    const seqVarsRef = { current: { ...createRunContext({ host, alePort, customPort, port: '' }) } as AutomationVars }
+    const seqVarsRef = { current: { ...vaultVarsRef.current, ...createRunContext({ host, alePort, customPort, port: '' }) } as AutomationVars }
     const prefixedLog = (msg: string) => {
       const prefix = parallelRunnersRef.current.size > 1 ? `[${seq.name}] ` : ''
       addLog(`${prefix}${msg}`)
@@ -2171,9 +2305,8 @@ export function AutomationTab({
       const roots = sSteps.filter((st) => st.type !== 'COMMENT' && !hasIncoming.has(st.id)).sort((a, b) => (a.position?.x ?? 0) - (b.position?.x ?? 0))
       const startNodes = roots.length > 0 ? roots : [sSteps[0]]
 
-      for (const root of startNodes) {
-        if (sig.aborted) break
-        let current: AutomationStep | null = root
+      const runIsoChain = async (startNode: AutomationStep): Promise<void> => {
+        let current: AutomationStep | null = startNode
         let guard = 0
         while (current && !sig.aborted) {
           if (++guard > MAX_GRAPH_STEPS) { prefixedLog(`Stopped: exceeded ${MAX_GRAPH_STEPS} steps`); break }
@@ -2203,9 +2336,23 @@ export function AutomationTab({
             const idx = branches.length > 0 ? pickWeightedIndex(branches.map((b) => b.weight ?? 1), Math.random()) : 0
             handle = `branch-${idx}`
             setNodeRunState(node.id, { state: 'success', durationMs: performance.now() - t0 })
+          } else if (node.type === 'PARALLEL_BRANCH') {
+            const branchEdges = seqEdges.filter(
+              (e) => e.from === node.id && (e.sourceHandle ?? '').startsWith('branch-'),
+            )
+            const waitMode = node.params.parallelWaitMode ?? 'all'
+            const tasks = branchEdges.map((edge) => {
+              const target = byId.get(edge.to)
+              return target ? runIsoChain(target) : Promise.resolve()
+            })
+            if (tasks.length > 0) {
+              if (waitMode === 'allSettled') await Promise.allSettled(tasks)
+              else if (waitMode === 'race') await Promise.race(tasks)
+              else await Promise.all(tasks)
+            }
+            handle = 'done'
+            setNodeRunState(node.id, { state: 'success', durationMs: performance.now() - t0 })
           } else {
-            const savedVarsRef = runVarsRef.current
-            runVarsRef.current = seqVarsRef.current
             let action: () => Promise<void>
             if (node.type === 'CALL_SEQUENCE') {
               action = async () => {
@@ -2244,17 +2391,16 @@ export function AutomationTab({
                 }
               }
             } else {
-              action = () => executeStep(node, sig)
+              action = () => executeStep(node, sig, seqVarsRef.current)
             }
             try {
-              handle = await runNodeWithPolicy(node, sig, action)
+              handle = await runNodeWithPolicy(node, sig, action, seqVarsRef.current)
               setNodeRunState(node.id, { state: handle === ERROR_HANDLE ? 'error' : 'success', durationMs: performance.now() - t0 })
             } catch (err: any) {
-              runVarsRef.current = savedVarsRef
               if (err instanceof AutomationStopSignal) {
                 setNodeRunState(node.id, { state: 'success', durationMs: performance.now() - t0 })
                 if (err.scope === 'run') throw err
-                break
+                return
               }
               if (err.message === 'Aborted') {
                 setNodeRunState(node.id, { state: 'skipped', durationMs: performance.now() - t0 })
@@ -2263,12 +2409,15 @@ export function AutomationTab({
               setNodeRunState(node.id, { state: 'error', durationMs: performance.now() - t0, lastError: String(err?.message ?? err) })
               throw err
             }
-            seqVarsRef.current = runVarsRef.current
-            runVarsRef.current = savedVarsRef
           }
           const nextEdge = findNextEdge(seqEdges, current!.id, handle)
           current = nextEdge ? byId.get(nextEdge.to) ?? null : null
         }
+      }
+
+      for (const root of startNodes) {
+        if (sig.aborted) break
+        await runIsoChain(root)
       }
     }
 
@@ -2362,11 +2511,13 @@ export function AutomationTab({
 
     if (!partial) {
       runVarsRef.current = {
+        ...vaultVarsRef.current,
         ...createRunContext({ host, alePort, customPort, port: '' }),
         ...(initialVars ?? {}),
       }
     } else {
       runVarsRef.current = {
+        ...vaultVarsRef.current,
         ...runVarsRef.current,
         ...createRunContext({ host, alePort, customPort, port: '' }),
         ...(initialVars ?? {}),
@@ -2600,6 +2751,61 @@ export function AutomationTab({
     return () => timers.forEach(clearInterval)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [triggers, addLog, sortedSeqs])
+
+  // Cron trigger scheduler (checks every 15s, deduplicates within the same HH:mm minute)
+  const lastCronFireRef = useRef<Map<string, string>>(new Map())
+  useEffect(() => {
+    const activeCrons = triggers.filter((t) => t.type === 'cron' && t.enabled && t.cronExpression?.trim())
+    if (activeCrons.length === 0) return
+
+    const tick = () => {
+      const now = new Date()
+      const minuteKey = cronMinuteKey(now)
+      for (const t of activeCrons) {
+        if (lastCronFireRef.current.get(t.id) === minuteKey) continue
+        if (matchesCron(t.cronExpression!, now)) {
+          lastCronFireRef.current.set(t.id, minuteKey)
+          const initialVars: Record<string, string> = {
+            trigger_type: 'cron',
+            trigger_name: t.name,
+            trigger_cron: t.cronExpression!,
+          }
+          addLog(`⏰ Cron trigger "${t.name}" fired (${t.cronExpression})`)
+          void handleRun([t.targetSequenceId], { initialVars })
+        }
+      }
+    }
+
+    tick()
+    const timer = window.setInterval(tick, 15_000)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [triggers, addLog, sortedSeqs])
+
+  const handleTestFireTrigger = useCallback(
+    (trig: AutomationTrigger) => {
+      if (!trig.targetSequenceId) {
+        toast.error('Select a target sequence first')
+        return
+      }
+      const initialVars: Record<string, string> = {
+        trigger_type: trig.type,
+        trigger_name: trig.name,
+        ...(trig.type === 'webhook'
+          ? { webhook_method: 'POST', webhook_path: trig.webhookPath || '/webhook/test', trigger_test: 'true' }
+          : trig.type === 'file_watcher'
+            ? { watch_event: 'change', watch_file: 'sample.csv', trigger_test: 'true' }
+            : trig.type === 'cron'
+              ? { trigger_cron: trig.cronExpression || '*/5 * * * *', trigger_test: 'true' }
+              : { trigger_interval: String(trig.intervalSeconds || 60), trigger_test: 'true' }),
+      }
+      setTriggersDialogOpen(false)
+      addLog(`⚡ Test-fired ${trig.type} trigger "${trig.name}"`)
+      void handleRun([trig.targetSequenceId], { initialVars })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [addLog],
+  )
 
   // --- Import / Export / Demo / Templates ---
   const handleExportWorkflow = () => {
@@ -3226,6 +3432,8 @@ export function AutomationTab({
           onRedo={handleRedo}
           activeTriggerCount={activeTriggerCount}
           onOpenTriggers={() => setTriggersDialogOpen(true)}
+          vaultCount={envVars.length + secrets.length}
+          onOpenVault={() => setVaultDialogOpen(true)}
           hasClipboard={hasClipboard}
           onPositionsCommit={handlePositionsCommit}
           onAddEdge={handleAddEdge}
@@ -3853,6 +4061,7 @@ export function AutomationTab({
         handheldTabDelay={handheldDelay}
         sequences={sortedSeqs}
         currentSequenceId={selectedSequenceId}
+        vaultVarNames={vaultVarNames}
       />
 
       {/* Triggers Manager Dialog */}
@@ -3862,7 +4071,21 @@ export function AutomationTab({
         sequences={sequences}
         triggers={triggers}
         onSaveTriggers={setTriggers}
+        onTestFire={handleTestFireTrigger}
       />
+
+      {/* Env Vars & Encrypted Secrets Vault Dialog */}
+      <AutomationVaultDialog
+        open={vaultDialogOpen}
+        onOpenChange={setVaultDialogOpen}
+        envVars={envVars}
+        secrets={secrets}
+        onSaveEnvVars={handleSaveEnvVars}
+        onSaveSecrets={handleSaveSecrets}
+      />
+
+      {/* Mid-Run Interactive Prompt Modal (PROMPT_INPUT) */}
+      <AutomationPromptModal prompt={promptState} />
     </div>
   )
 }

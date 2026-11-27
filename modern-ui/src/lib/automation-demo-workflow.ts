@@ -963,6 +963,153 @@ export const DEMO_WORKFLOW = {
           "sourceHandle": "out"
         }
       ]
+    },
+    {
+      "id": "seq-10-power-platform",
+      "name": "10 · DevOps, Parallel & Desktop",
+      "order": 9,
+      "steps": [
+        {
+          "id": "p-dt",
+          "type": "DATETIME",
+          "name": "Stamp ISO",
+          "position": { "x": 40, "y": 140 },
+          "params": {
+            "dtOp": "now",
+            "dtFormat": "ISO",
+            "dtSaveAs": "runTs"
+          }
+        },
+        {
+          "id": "p-crypto",
+          "type": "CRYPTO_HASH",
+          "name": "Sign Payload",
+          "position": { "x": 330, "y": 140 },
+          "params": {
+            "cryptoOp": "sha256",
+            "cryptoInput": "zeus:{{runTs}}",
+            "cryptoSaveAs": "runHash"
+          }
+        },
+        {
+          "id": "p-csv",
+          "type": "CSV_JSON",
+          "name": "Parse CSV Rows",
+          "position": { "x": 620, "y": 140 },
+          "params": {
+            "csvJsonOp": "csvToJson",
+            "csvJsonInput": "svc,status\napi,ok",
+            "csvDelimiter": ",",
+            "csvHasHeader": true,
+            "csvJsonSaveAs": "svcRows"
+          }
+        },
+        {
+          "id": "p-fork",
+          "type": "PARALLEL_BRANCH",
+          "name": "Parallel Checks",
+          "position": { "x": 910, "y": 140 },
+          "params": {
+            "parallelBranches": [{ "label": "Net Probe" }, { "label": "SSH + WS" }],
+            "parallelWaitMode": "all"
+          }
+        },
+        {
+          "id": "p-probe",
+          "type": "PING_PORT",
+          "name": "Probe API Port",
+          "position": { "x": 1220, "y": 60 },
+          "params": {
+            "probeMode": "tcp",
+            "probeHost": "{{host}}",
+            "probePort": "80",
+            "probeSaveAliveAs": "portAlive",
+            "probeFailIfDown": false
+          }
+        },
+        {
+          "id": "p-ssh",
+          "type": "SSH_EXEC",
+          "name": "Check Remote Uptime",
+          "position": { "x": 1220, "y": 220 },
+          "params": {
+            "sshHost": "{{host}}",
+            "sshPort": "22",
+            "sshUser": "ops",
+            "sshCommand": "uptime",
+            "sshSaveStdoutAs": "sshOut"
+          }
+        },
+        {
+          "id": "p-ws",
+          "type": "WEBSOCKET",
+          "name": "Ping WebSocket",
+          "position": { "x": 1520, "y": 220 },
+          "params": {
+            "wsUrl": "wss://echo.websocket.events",
+            "wsSendMessage": "{{runHash}}",
+            "wsWaitForMessage": true,
+            "wsSaveAs": "wsReply"
+          }
+        },
+        {
+          "id": "p-prompt",
+          "type": "PROMPT_INPUT",
+          "name": "Approve Notify",
+          "position": { "x": 1220, "y": 380 },
+          "params": {
+            "promptMode": "confirm",
+            "promptTitle": "Send Status Alert?",
+            "promptMessage": "Health check finished at {{runTs}}",
+            "promptSaveAs": "approved"
+          }
+        },
+        {
+          "id": "p-webhook",
+          "type": "WEBHOOK_SEND",
+          "name": "Post Slack Summary",
+          "position": { "x": 1520, "y": 380 },
+          "params": {
+            "webhookPreset": "slack",
+            "webhookUrl": "https://hooks.slack.com/services/T00/B00/XXX",
+            "webhookTitle": "Zeus Check",
+            "webhookMessage": "Hash {{runHash}}",
+            "webhookFailOnError": false
+          }
+        },
+        {
+          "id": "p-clip",
+          "type": "CLIPBOARD",
+          "name": "Copy Digest",
+          "position": { "x": 1820, "y": 380 },
+          "params": {
+            "clipboardMode": "write",
+            "clipboardText": "{{runHash}}"
+          }
+        },
+        {
+          "id": "p-open",
+          "type": "OPEN_APP",
+          "name": "Open Status Page",
+          "position": { "x": 2110, "y": 380 },
+          "params": {
+            "openMode": "url",
+            "openTarget": "https://example.com/status"
+          }
+        }
+      ],
+      "edges": [
+        { "id": "pe1", "from": "p-dt", "to": "p-crypto", "sourceHandle": "out" },
+        { "id": "pe2", "from": "p-crypto", "to": "p-csv", "sourceHandle": "out" },
+        { "id": "pe3", "from": "p-csv", "to": "p-fork", "sourceHandle": "out" },
+        { "id": "pe4", "from": "p-fork", "to": "p-probe", "sourceHandle": "branch-0" },
+        { "id": "pe5", "from": "p-fork", "to": "p-ssh", "sourceHandle": "branch-1" },
+        { "id": "pe6", "from": "p-ssh", "to": "p-ws", "sourceHandle": "out" },
+        { "id": "pe7", "from": "p-fork", "to": "p-prompt", "sourceHandle": "done" },
+        { "id": "pe8", "from": "p-prompt", "to": "p-webhook", "sourceHandle": "out" },
+        { "id": "pe9", "from": "p-webhook", "to": "p-clip", "sourceHandle": "out" },
+        { "id": "pe10", "from": "p-clip", "to": "p-open", "sourceHandle": "out" }
+      ]
     }
   ]
 } as const

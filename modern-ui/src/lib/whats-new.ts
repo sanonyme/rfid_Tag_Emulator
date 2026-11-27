@@ -12,6 +12,7 @@ export type WhatsNewItem = {
 export type WhatsNewEntry = {
   version: string
   date?: string
+  silent?: boolean
   highlights: WhatsNewItem[]
 }
 
@@ -523,14 +524,21 @@ export function setSeenWhatsNewVersion(version: string = APP_VERSION): void {
   }
 }
 
-/** True when this install has never acknowledged the current app version's notes. */
+/**
+ * True when this install has never acknowledged the current app version's notes
+ * and the current version is a user-facing (non-silent) release.
+ */
 export function shouldAutoShowWhatsNew(currentVersion: string = APP_VERSION): boolean {
+  const entry = WHATS_NEW.find((e) => e.version === currentVersion)
+  if (!entry || entry.silent === true) return false
   const seen = getSeenWhatsNewVersion()
   return seen !== currentVersion
 }
 
 export function getWhatsNewForDialog(currentVersion: string = APP_VERSION): WhatsNewEntry[] {
-  const current = WHATS_NEW.find((e) => e.version === currentVersion)
-  const rest = WHATS_NEW.filter((e) => e.version !== currentVersion)
-  return current ? [current, ...rest] : [...WHATS_NEW]
+  const visible = WHATS_NEW.filter((e) => e.silent !== true)
+  const list = visible.length > 0 ? visible : [...WHATS_NEW]
+  const current = list.find((e) => e.version === currentVersion)
+  const rest = list.filter((e) => e.version !== currentVersion)
+  return current ? [current, ...rest] : list
 }

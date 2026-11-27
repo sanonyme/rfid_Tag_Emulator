@@ -40,6 +40,10 @@ const secondOwner = process.env.ZEUS_SECOND_RELEASE_OWNER.trim()
 const secondRepo = process.env.ZEUS_SECOND_RELEASE_REPO.trim()
 const token = process.env.GH_TOKEN.trim()
 const version = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')).version
+const silent = process.argv.includes('--silent') || process.env.ZEUS_SILENT_RELEASE === 'true'
+if (silent) {
+  console.log('Silent update mode active: clients will apply this release quietly on exit.')
+}
 
 const targets = [
   { owner: primaryOwner, repo: primaryRepo },
@@ -52,7 +56,7 @@ runCommand('vite', ['build'], process.env, cwd)
 const outputDir = resolveBuildOutput(cwd)
 
 for (const { owner, repo } of targets) {
-  await ensureGithubDraftRelease({ owner, repo, version, token })
+  await ensureGithubDraftRelease({ owner, repo, version, token, silent })
 }
 
 console.log('Packaging Windows installer...')
@@ -64,7 +68,7 @@ runCommand(
 )
 
 for (const { owner, repo } of targets) {
-  const release = await ensureGithubDraftRelease({ owner, repo, version, token })
+  const release = await ensureGithubDraftRelease({ owner, repo, version, token, silent })
   console.log(`Uploading release assets to ${owner}/${repo}...`)
   await uploadGithubReleaseAssets({ owner, repo, version, token, distDir: outputDir, releaseId: release?.id })
 }

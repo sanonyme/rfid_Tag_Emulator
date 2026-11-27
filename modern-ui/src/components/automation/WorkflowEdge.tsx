@@ -161,13 +161,15 @@ export const WorkflowEdge = memo(function WorkflowEdge({
             <span
               className={cn(
                 'rounded-full border px-1.5 py-px font-mono text-[9px] font-bold uppercase tracking-wider shadow-sm',
-                data.sourceHandle === 'true'
+                data.sourceHandle === 'true' || data.sourceHandle === 'done'
                   ? 'border-emerald-500/45 bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
                   : data.sourceHandle === 'false'
                     ? 'border-rose-500/45 bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300'
                     : data.sourceHandle === 'error'
                       ? 'border-orange-500/45 bg-orange-50 text-orange-700 dark:bg-orange-950 dark:text-orange-300'
-                      : 'border-border bg-popover text-muted-foreground',
+                      : data.sourceHandle?.startsWith('branch-')
+                        ? 'border-cyan-500/45 bg-cyan-50 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300'
+                        : 'border-border bg-popover text-muted-foreground',
               )}
             >
               {data.branchLabel}

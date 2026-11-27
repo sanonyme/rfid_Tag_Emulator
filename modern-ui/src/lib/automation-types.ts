@@ -29,6 +29,17 @@ export type ActionType =
   | 'FILE_READ'
   | 'FILE_WRITE'
   | 'FILE_LIST'
+  | 'SSH_EXEC'
+  | 'PING_PORT'
+  | 'WEBSOCKET'
+  | 'WEBHOOK_SEND'
+  | 'CSV_JSON'
+  | 'CRYPTO_HASH'
+  | 'DATETIME'
+  | 'CLIPBOARD'
+  | 'OPEN_APP'
+  | 'PROMPT_INPUT'
+  | 'PARALLEL_BRANCH'
 
 export type FrameColor = 'blue' | 'emerald' | 'amber' | 'purple' | 'cyan' | 'rose' | 'slate'
 
@@ -43,7 +54,7 @@ export interface AutomationFrame {
   notes?: string
 }
 
-export type TriggerType = 'webhook' | 'file_watcher' | 'interval'
+export type TriggerType = 'webhook' | 'file_watcher' | 'interval' | 'cron'
 
 export interface AutomationTrigger {
   id: string
@@ -61,6 +72,8 @@ export interface AutomationTrigger {
   watchEvents?: 'all' | 'change' | 'add' | 'unlink'
   // Interval settings
   intervalSeconds?: number
+  // Cron settings (5-field standard: min hour dom month dow)
+  cronExpression?: string
 }
 
 /** TCP node action mode (mirrors the TCP Client & TCP Server tab). */
@@ -88,6 +101,88 @@ export const TCP_NODE_MODES: { value: TcpNodeMode; label: string; group: 'Client
 ]
 
 export type EdgeProcessAction = 'start' | 'stop'
+
+export type ProbeMode = 'tcp' | 'http' | 'dns'
+export type WebhookPreset = 'slack' | 'discord' | 'teams' | 'generic'
+export type CsvJsonOp =
+  | 'csvToJson'
+  | 'jsonToCsv'
+  | 'filterArray'
+  | 'mapField'
+  | 'sortArray'
+  | 'aggregate'
+  | 'mergeJson'
+export type AggregateOp = 'count' | 'sum' | 'avg' | 'min' | 'max' | 'unique' | 'join'
+export type CryptoOp =
+  | 'sha256'
+  | 'sha512'
+  | 'sha1'
+  | 'md5'
+  | 'hmacSha256'
+  | 'hmacSha512'
+  | 'jwtDecode'
+  | 'randomToken'
+export type DateTimeOp = 'now' | 'add' | 'diff' | 'format'
+export type DateTimeUnit = 'seconds' | 'minutes' | 'hours' | 'days'
+export type ScriptLang = 'auto' | 'ps1' | 'sh' | 'py' | 'js' | 'cmd'
+export type HttpAuthType = 'none' | 'bearer' | 'basic' | 'apiKey' | 'ale'
+export type PromptInputMode = 'text' | 'select' | 'confirm'
+export type ParallelWaitMode = 'all' | 'allSettled' | 'race'
+export interface ParallelBranchItem {
+  label?: string
+}
+
+export const CSV_JSON_OPS: { value: CsvJsonOp; label: string; hint: string }[] = [
+  { value: 'csvToJson', label: 'CSV → JSON Array', hint: 'Parse CSV text into a JSON array of objects' },
+  { value: 'jsonToCsv', label: 'JSON Array → CSV', hint: 'Serialize a JSON array of objects into CSV text' },
+  { value: 'filterArray', label: 'Filter JSON Array', hint: 'Keep items matching a field condition' },
+  { value: 'mapField', label: 'Map / Extract Field', hint: 'Pluck a single property from every array item' },
+  { value: 'sortArray', label: 'Sort JSON Array', hint: 'Sort array items by a field ascending or descending' },
+  { value: 'aggregate', label: 'Aggregate (Sum/Avg/Min/Max)', hint: 'Compute count, sum, avg, min, max, unique, or join' },
+  { value: 'mergeJson', label: 'Merge Two JSON Values', hint: 'Shallow-merge two objects or concatenate two arrays' },
+]
+
+export const CRYPTO_OPS: { value: CryptoOp; label: string; hint: string }[] = [
+  { value: 'sha256', label: 'SHA-256 Hash', hint: 'Hex digest of UTF-8 input' },
+  { value: 'sha512', label: 'SHA-512 Hash', hint: 'Hex digest of UTF-8 input' },
+  { value: 'sha1', label: 'SHA-1 Hash', hint: 'Hex digest of UTF-8 input' },
+  { value: 'md5', label: 'MD5 Hash', hint: 'Hex MD5 checksum of UTF-8 input' },
+  { value: 'hmacSha256', label: 'HMAC-SHA256', hint: 'Sign payload with a shared secret key' },
+  { value: 'hmacSha512', label: 'HMAC-SHA512', hint: 'Sign payload with a shared secret key (512-bit)' },
+  { value: 'jwtDecode', label: 'Decode JWT Payload', hint: 'Decode JWT header & payload claims as JSON (without verifying sig)' },
+  { value: 'randomToken', label: 'Random Secure Token', hint: 'Generate a URL-safe cryptographic token' },
+]
+
+export const DATETIME_OPS: { value: DateTimeOp; label: string; hint: string }[] = [
+  { value: 'now', label: 'Current Time', hint: 'Format the current date/time' },
+  { value: 'add', label: 'Add / Subtract Time', hint: 'Offset a timestamp by ± seconds, minutes, hours, or days' },
+  { value: 'diff', label: 'Difference Between Dates', hint: 'Compute difference between two timestamps' },
+  { value: 'format', label: 'Parse & Reformat Date', hint: 'Parse a date/epoch string and format it' },
+]
+
+export const WEBHOOK_PRESETS: { value: WebhookPreset; label: string; hint: string }[] = [
+  { value: 'slack', label: 'Slack Incoming Webhook', hint: 'Formats { text } or Rich Block attachment' },
+  { value: 'discord', label: 'Discord Webhook', hint: 'Formats { username, content, embeds }' },
+  { value: 'teams', label: 'Microsoft Teams', hint: 'Formats MessageCard { title, text, themeColor }' },
+  { value: 'generic', label: 'Generic JSON POST', hint: 'Posts your JSON payload or { title, message, level, timestamp }' },
+]
+
+export const SCRIPT_LANG_OPTIONS: { value: ScriptLang; label: string; ext?: string }[] = [
+  { value: 'auto', label: 'Auto (OS default)' },
+  { value: 'ps1', label: 'PowerShell (.ps1)', ext: '.ps1' },
+  { value: 'sh', label: 'Bash / Shell (.sh)', ext: '.sh' },
+  { value: 'py', label: 'Python (.py)', ext: '.py' },
+  { value: 'js', label: 'Node.js (.js)', ext: '.js' },
+  { value: 'cmd', label: 'Windows Batch (.cmd)', ext: '.cmd' },
+]
+
+export const HTTP_AUTH_TYPES: { value: HttpAuthType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'bearer', label: 'Bearer Token' },
+  { value: 'basic', label: 'Basic Auth (User / Password)' },
+  { value: 'apiKey', label: 'API Key Header' },
+  { value: 'ale', label: 'Saved ALE Basic Auth' },
+]
 
 /** HTTP verbs supported by the HTTP Request node. */
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD'
@@ -118,24 +213,214 @@ export const VAR_TYPES: { value: VarType; label: string; hint: string; java: str
 ]
 
 /**
- * Code node language. Only JavaScript is supported (in-process).
- * Legacy workflows may still store `java` — the runner rejects those with a clear message.
+ * Supported languages for the Custom Code node.
+ * - `javascript`: instant in-process execution with mutable `vars` and `log()`
+ * - `nodejs` / `typescript`: built-in Electron Node runtime (no external install required)
+ * - `python` / `powershell` / `bash` / `batch` / `java` / `go` / `ruby` / `php`: subprocess execution
  */
-export type CodeLanguage = 'javascript' | 'java'
+export type CodeLanguage =
+  | 'javascript'
+  | 'nodejs'
+  | 'typescript'
+  | 'python'
+  | 'powershell'
+  | 'bash'
+  | 'batch'
+  | 'java'
+  | 'go'
+  | 'ruby'
+  | 'php'
 
-/** Starter snippet for new Code nodes (JavaScript only). */
-export const CODE_STARTER = `// Manipulate variables in-process (runs instantly, no install).
+export interface CodeLanguageOption {
+  value: CodeLanguage
+  label: string
+  badge: string
+  ext: string
+  runtimeHint: string
+  builtIn?: boolean
+  commentPrefix: string
+}
+
+export const CODE_LANGUAGE_OPTIONS: CodeLanguageOption[] = [
+  {
+    value: 'javascript',
+    label: 'JavaScript (In-Process · Instant)',
+    badge: 'JS',
+    ext: '.js',
+    runtimeHint: 'Runs instantly in-process — mutate `vars` or `return { key: value }`.',
+    builtIn: true,
+    commentPrefix: '//',
+  },
+  {
+    value: 'nodejs',
+    label: 'Node.js (Built-in Runtime)',
+    badge: 'NODE',
+    ext: '.mjs',
+    runtimeHint: 'Runs on Zeus built-in Node runtime (supports fs, fetch, crypto). Print JSON on last line to set vars.',
+    builtIn: true,
+    commentPrefix: '//',
+  },
+  {
+    value: 'typescript',
+    label: 'TypeScript (Built-in Node TS)',
+    badge: 'TS',
+    ext: '.ts',
+    runtimeHint: 'Runs TypeScript directly via built-in Node type stripping — no tsc needed.',
+    builtIn: true,
+    commentPrefix: '//',
+  },
+  {
+    value: 'python',
+    label: 'Python 3',
+    badge: 'PY',
+    ext: '.py',
+    runtimeHint: 'Requires `python` (Windows) or `python3` on PATH. Read os.environ["ZEUS_VARS_JSON"].',
+    commentPrefix: '#',
+  },
+  {
+    value: 'powershell',
+    label: 'PowerShell',
+    badge: 'PS1',
+    ext: '.ps1',
+    runtimeHint: 'Built-in on Windows (`powershell.exe`); `pwsh` on macOS/Linux.',
+    commentPrefix: '#',
+  },
+  {
+    value: 'bash',
+    label: 'Bash / Shell',
+    badge: 'SH',
+    ext: '.sh',
+    runtimeHint: 'Uses `/bin/bash` (macOS/Linux) or `bash` (Git Bash/WSL on Windows).',
+    commentPrefix: '#',
+  },
+  {
+    value: 'batch',
+    label: 'Windows Batch (CMD)',
+    badge: 'CMD',
+    ext: '.cmd',
+    runtimeHint: 'Runs via Windows `cmd.exe`. Emit KEY=VALUE lines to set variables.',
+    commentPrefix: 'REM',
+  },
+  {
+    value: 'java',
+    label: 'Java (JDK 11+ Single-File)',
+    badge: 'JAVA',
+    ext: '.java',
+    runtimeHint: 'Requires JDK 11+ `java` on PATH (use `public class Main`).',
+    commentPrefix: '//',
+  },
+  {
+    value: 'go',
+    label: 'Go',
+    badge: 'GO',
+    ext: '.go',
+    runtimeHint: 'Requires `go` on PATH (`go run`).',
+    commentPrefix: '//',
+  },
+  {
+    value: 'ruby',
+    label: 'Ruby',
+    badge: 'RB',
+    ext: '.rb',
+    runtimeHint: 'Requires `ruby` on PATH.',
+    commentPrefix: '#',
+  },
+  {
+    value: 'php',
+    label: 'PHP',
+    badge: 'PHP',
+    ext: '.php',
+    runtimeHint: 'Requires `php` on PATH.',
+    commentPrefix: '//',
+  },
+]
+
+export const CODE_STARTERS: Record<CodeLanguage, string> = {
+  javascript: `// Manipulate variables in-process (runs instantly, no install).
 // \`vars\` is a map of the current variables (all strings) — mutate it,
 // and/or return an object. Returned/mutated values are merged back.
 const tagCount = Number(vars.tagCount || 0)
 vars.doubled = tagCount * 2
-return { note: \`Saw \${tagCount} tag(s) on \${vars.host}\` }
-`
+return { note: \`Saw \${tagCount} tag(s) on \${vars.host || 'localhost'}\` }
+`,
+  nodejs: `// Node.js (runs on Zeus built-in Node runtime — print JSON on the last line to update vars)
+const vars = JSON.parse(process.env.ZEUS_VARS_JSON || '{}')
+const count = Number(vars.tagCount || 0)
+console.log('Node runtime active, host =', vars.host || 'none')
+console.log(JSON.stringify({ doubled: count * 2, nodeStatus: 'ok' }))
+`,
+  typescript: `// TypeScript (runs directly via built-in Node type stripping)
+const vars: Record<string, string> = JSON.parse(process.env.ZEUS_VARS_JSON || '{}')
+const count: number = Number(vars.tagCount || 0)
+const result: { doubled: number; tsReady: string } = { doubled: count * 2, tsReady: 'true' }
+console.log(JSON.stringify(result))
+`,
+  python: `# Python 3 — read workflow vars from ZEUS_VARS_JSON; print a JSON object to update vars
+import json, os
 
-/** @deprecated Prefer CODE_STARTER — kept for older imports. */
-export const CODE_STARTERS: Record<'javascript', string> = {
-  javascript: CODE_STARTER,
+vars_map = json.loads(os.environ.get("ZEUS_VARS_JSON", "{}"))
+tag_count = int(float(vars_map.get("tagCount") or 0))
+host = vars_map.get("host", "localhost")
+
+print(f"Python processing host={host}, tagCount={tag_count}")
+print(json.dumps({"doubled": tag_count * 2, "pySummary": f"Processed {tag_count} on {host}"}))
+`,
+  powershell: `# PowerShell — read $env:ZEUS_VARS_JSON; output JSON on the last line to update vars
+$vars = $env:ZEUS_VARS_JSON | ConvertFrom-Json
+$count = [int]($vars.tagCount ?? 0)
+@{ doubled = $count * 2; psHost = ($vars.host ?? 'localhost') } | ConvertTo-Json -Compress
+`,
+  bash: `# Bash / Shell — output KEY=VALUE lines or a final JSON line to update vars
+echo "Running on host=\${ZEUS_HOST:-localhost}"
+echo "shellNote=Executed custom bash block"
+`,
+  batch: `@echo off
+REM Windows CMD — output KEY=VALUE lines to set workflow variables
+echo cmdStatus=ok
+echo cmdHost=%ZEUS_HOST%
+`,
+  java: `// Java 11+ single-file source (keep class name Main)
+public class Main {
+  public static void main(String[] args) {
+    String host = System.getenv().getOrDefault("ZEUS_HOST", "localhost");
+    System.out.println("Java executing for host=" + host);
+    System.out.println("{\"javaStatus\":\"ok\",\"javaHost\":\"" + host.replace("\"", "") + "\"}");
+  }
 }
+`,
+  go: `// Go — runs with \`go run\`
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+)
+
+func main() {
+	vars := map[string]string{}
+	_ = json.Unmarshal([]byte(os.Getenv("ZEUS_VARS_JSON")), &vars)
+	out, _ := json.Marshal(map[string]string{
+		"goStatus": "ok",
+		"goHost":   vars["host"],
+	})
+	fmt.Println(string(out))
+}
+`,
+  ruby: `# Ruby — read ZEUS_VARS_JSON and print JSON to update workflow variables
+require 'json'
+vars = JSON.parse(ENV['ZEUS_VARS_JSON'] || '{}')
+puts({ rubyStatus: 'ok', host: vars['host'].to_s }.to_json)
+`,
+  php: `<?php
+// PHP — read ZEUS_VARS_JSON and echo JSON to update workflow variables
+$vars = json_decode(getenv('ZEUS_VARS_JSON') ?: '{}', true);
+echo json_encode(['phpStatus' => 'ok', 'host' => $vars['host'] ?? '']) . "\n";
+`,
+}
+
+/** Starter snippet for new Code nodes (JavaScript). */
+export const CODE_STARTER = CODE_STARTERS.javascript
 
 /** What a GENERATE node produces. */
 export type GenerateKind = 'uuid' | 'timestamp' | 'unixMs' | 'randomInt' | 'randomHex' | 'randomUpc' | 'epcFromUpc'
@@ -320,6 +605,7 @@ export const NON_EXECUTING_TYPES: ReadonlySet<ActionType> = new Set<ActionType>(
   'CONDITION',
   'SWITCH',
   'RANDOM',
+  'PARALLEL_BRANCH',
   'STOP',
 ])
 
@@ -443,12 +729,22 @@ export interface AutomationStep {
     varType?: VarType
 
     // --- CODE ---
-    /** CODE: language ('javascript' runs in-process; 'java' via subprocess/JDK) */
+    /** CODE: programming language ('javascript' in-process, or external/built-in runtime) */
     codeLanguage?: CodeLanguage
     /** CODE: the source to run */
     codeSource?: string
     /** CODE: timeout for subprocess languages (ms) */
     codeTimeoutMs?: number
+    /** CODE (subprocess): optional variable name to save full stdout */
+    codeSaveStdoutAs?: string
+    /** CODE (subprocess): optional variable name to save stderr */
+    codeSaveStderrAs?: string
+    /** CODE (subprocess): optional variable name to save process exit code */
+    codeSaveExitCodeAs?: string
+    /** CODE (subprocess): fail step when exit code !== 0 (default true) */
+    codeFailOnNonZero?: boolean
+    /** CODE (subprocess): substitute {{var}} placeholders before writing script file (default false) */
+    codeInterpolateVars?: boolean
 
     /** DB_QUERY / DB_EXEC */
     dbSql?: string
@@ -484,6 +780,14 @@ export interface AutomationStep {
     httpFailOnError?: boolean
     /** Attach saved ALE Basic Auth Authorization header automatically */
     httpUseAleAuth?: boolean
+    /** Structured auth preset ('none' | 'bearer' | 'basic' | 'apiKey' | 'ale') */
+    httpAuthType?: HttpAuthType
+    httpAuthToken?: string
+    httpAuthUser?: string
+    httpAuthPass?: string
+    httpAuthHeaderName?: string
+    /** Save response headers JSON object string into this variable */
+    httpSaveHeadersAs?: string
 
     // --- CALL_SEQUENCE ---
     /** Id of the sequence to run as a sub-routine (shares run variables) */
@@ -493,9 +797,12 @@ export interface AutomationStep {
     scriptPath?: string
     scriptInline?: boolean
     scriptInlineText?: string
+    scriptLang?: ScriptLang
     scriptArgs?: string
     scriptTimeoutMs?: number
     scriptSaveStdoutAs?: string
+    scriptSaveStderrAs?: string
+    scriptSaveExitCodeAs?: string
     /** Fail when exit code !== 0 */
     scriptFailOnNonZero?: boolean
 
@@ -580,6 +887,8 @@ export interface AutomationStep {
     notifyMessage?: string
     /** Toast severity */
     notifyLevel?: NotifyLevel
+    /** Also fire a native OS desktop notification */
+    notifyDesktop?: boolean
 
     // --- LOOP_N (count-based loop) ---
     /** How many times to run the target sequence (template → number) */
@@ -620,6 +929,103 @@ export interface AutomationStep {
     fileRecursive?: boolean
     fileSaveListAs?: string
     fileAppend?: boolean
+
+    // --- SSH_EXEC ---
+    sshHost?: string
+    sshPort?: string
+    sshUser?: string
+    sshPassword?: string
+    sshPrivateKeyPath?: string
+    sshPassphrase?: string
+    sshCommand?: string
+    sshTimeoutMs?: number
+    sshSaveStdoutAs?: string
+    sshSaveStderrAs?: string
+    sshSaveExitCodeAs?: string
+    sshFailOnNonZero?: boolean
+
+    // --- PING_PORT ---
+    probeMode?: ProbeMode
+    probeHost?: string
+    probePort?: string
+    probeUrl?: string
+    probeExpectedStatus?: number
+    probeTimeoutMs?: number
+    probeSaveAliveAs?: string
+    probeSaveLatencyAs?: string
+    probeFailIfDown?: boolean
+
+    // --- WEBSOCKET ---
+    wsUrl?: string
+    wsHeaders?: string
+    wsSendMessage?: string
+    wsWaitForMessage?: boolean
+    wsMatchRegex?: string
+    wsTimeoutMs?: number
+    wsSaveAs?: string
+
+    // --- WEBHOOK_SEND ---
+    webhookPreset?: WebhookPreset
+    webhookUrl?: string
+    webhookTitle?: string
+    webhookMessage?: string
+    webhookColor?: string
+    webhookSaveStatusAs?: string
+    webhookFailOnError?: boolean
+
+    // --- CSV_JSON ---
+    csvJsonOp?: CsvJsonOp
+    csvJsonInput?: string
+    csvJsonInput2?: string
+    csvDelimiter?: string
+    csvHasHeader?: boolean
+    csvFilterField?: string
+    csvFilterOp?: ConditionOp
+    csvFilterValue?: string
+    csvMapField?: string
+    csvSortField?: string
+    csvSortDir?: 'asc' | 'desc'
+    csvAggOp?: AggregateOp
+    csvJoinSeparator?: string
+    csvJsonSaveAs?: string
+
+    // --- CRYPTO_HASH ---
+    cryptoOp?: CryptoOp
+    cryptoInput?: string
+    cryptoSecret?: string
+    cryptoByteLength?: number
+    cryptoSaveAs?: string
+
+    // --- DATETIME ---
+    dtOp?: DateTimeOp
+    dtInput?: string
+    dtInput2?: string
+    dtAmount?: number
+    dtUnit?: DateTimeUnit
+    dtFormat?: string
+    dtSaveAs?: string
+
+    // --- CLIPBOARD ---
+    clipboardMode?: 'read' | 'write'
+    clipboardText?: string
+    clipboardSaveAs?: string
+
+    // --- OPEN_APP ---
+    openMode?: 'url' | 'file' | 'reveal'
+    openTarget?: string
+
+    // --- PROMPT_INPUT ---
+    promptMode?: PromptInputMode
+    promptTitle?: string
+    promptMessage?: string
+    promptDefault?: string
+    promptOptions?: string
+    promptSaveAs?: string
+    promptCancelBehavior?: 'abort' | 'empty'
+
+    // --- PARALLEL_BRANCH ---
+    parallelBranches?: ParallelBranchItem[]
+    parallelWaitMode?: ParallelWaitMode
   }
 }
 
@@ -713,6 +1119,17 @@ export const ALL_ACTION_TYPES: ActionType[] = [
   'FILE_READ',
   'FILE_WRITE',
   'FILE_LIST',
+  'SSH_EXEC',
+  'PING_PORT',
+  'WEBSOCKET',
+  'WEBHOOK_SEND',
+  'CSV_JSON',
+  'CRYPTO_HASH',
+  'DATETIME',
+  'CLIPBOARD',
+  'OPEN_APP',
+  'PROMPT_INPUT',
+  'PARALLEL_BRANCH',
 ]
 
 /**
@@ -856,7 +1273,7 @@ export const DEFAULT_STEP_NAMES: Record<ActionType, string> = {
   RUN_SCRIPT: 'Run Script',
   HTTP_REQUEST: 'HTTP Request',
   CALL_SEQUENCE: 'Call Sequence',
-  CODE: 'Code',
+  CODE: 'Custom Code',
   CONDITION: 'Condition',
   ASSERT: 'Assert',
   WAIT_UNTIL: 'Wait Until',
@@ -873,6 +1290,17 @@ export const DEFAULT_STEP_NAMES: Record<ActionType, string> = {
   FILE_READ: 'Read File',
   FILE_WRITE: 'Write File',
   FILE_LIST: 'List Files',
+  SSH_EXEC: 'SSH Command',
+  PING_PORT: 'Health / Port Probe',
+  WEBSOCKET: 'WebSocket',
+  WEBHOOK_SEND: 'Slack / Teams / Discord',
+  CSV_JSON: 'CSV & JSON Pipeline',
+  CRYPTO_HASH: 'Hash / HMAC / JWT',
+  DATETIME: 'Date & Time',
+  CLIPBOARD: 'Clipboard',
+  OPEN_APP: 'Open URL / File',
+  PROMPT_INPUT: 'User Prompt',
+  PARALLEL_BRANCH: 'Parallel Fork & Join',
 }
 
 export function defaultParamsForType(type: ActionType, extras?: { customPort?: string }): AutomationStep['params'] {
@@ -907,6 +1335,8 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
       codeLanguage: 'javascript',
       codeSource: CODE_STARTER,
       codeTimeoutMs: 15000,
+      codeFailOnNonZero: true,
+      codeInterpolateVars: false,
     }
   }
   if (type === 'DB_QUERY') {
@@ -1135,6 +1565,129 @@ export function defaultParamsForType(type: ActionType, extras?: { customPort?: s
       filePath: './data',
       fileFilter: '*.csv',
       fileSaveAs: 'fileList',
+    }
+  }
+  if (type === 'SSH_EXEC') {
+    return {
+      ...base,
+      sshHost: '{{host}}',
+      sshPort: '22',
+      sshUser: 'root',
+      sshPassword: '',
+      sshPrivateKeyPath: '',
+      sshCommand: 'uptime',
+      sshTimeoutMs: 15000,
+      sshSaveStdoutAs: 'sshOut',
+      sshSaveStderrAs: 'sshErr',
+      sshSaveExitCodeAs: 'sshCode',
+      sshFailOnNonZero: true,
+    }
+  }
+  if (type === 'PING_PORT') {
+    return {
+      ...base,
+      probeMode: 'tcp',
+      probeHost: '{{host}}',
+      probePort: '80',
+      probeUrl: 'https://httpbin.org/status/200',
+      probeExpectedStatus: 200,
+      probeTimeoutMs: 4000,
+      probeSaveAliveAs: 'isAlive',
+      probeSaveLatencyAs: 'latencyMs',
+      probeFailIfDown: false,
+    }
+  }
+  if (type === 'WEBSOCKET') {
+    return {
+      ...base,
+      wsUrl: 'wss://echo.websocket.events',
+      wsHeaders: '',
+      wsSendMessage: 'hello',
+      wsWaitForMessage: true,
+      wsMatchRegex: '',
+      wsTimeoutMs: 8000,
+      wsSaveAs: 'wsMessage',
+    }
+  }
+  if (type === 'WEBHOOK_SEND') {
+    return {
+      ...base,
+      webhookPreset: 'slack',
+      webhookUrl: '',
+      webhookTitle: 'Workflow Alert',
+      webhookMessage: 'Sequence completed on {{host}}',
+      webhookColor: '#10b981',
+      webhookSaveStatusAs: 'webhookStatus',
+      webhookFailOnError: true,
+    }
+  }
+  if (type === 'CSV_JSON') {
+    return {
+      ...base,
+      csvJsonOp: 'csvToJson',
+      csvJsonInput: '{{fileContent}}',
+      csvDelimiter: ',',
+      csvHasHeader: true,
+      csvFilterOp: 'eq',
+      csvSortDir: 'asc',
+      csvAggOp: 'sum',
+      csvJoinSeparator: ', ',
+      csvJsonSaveAs: 'rows',
+    }
+  }
+  if (type === 'CRYPTO_HASH') {
+    return {
+      ...base,
+      cryptoOp: 'sha256',
+      cryptoInput: '{{httpBody}}',
+      cryptoSecret: '',
+      cryptoByteLength: 24,
+      cryptoSaveAs: 'hash',
+    }
+  }
+  if (type === 'DATETIME') {
+    return {
+      ...base,
+      dtOp: 'now',
+      dtInput: '{{timestamp}}',
+      dtAmount: 1,
+      dtUnit: 'hours',
+      dtFormat: 'YYYY-MM-DD HH:mm:ss',
+      dtSaveAs: 'now',
+    }
+  }
+  if (type === 'CLIPBOARD') {
+    return {
+      ...base,
+      clipboardMode: 'write',
+      clipboardText: '{{epc}}',
+      clipboardSaveAs: 'clipboardText',
+    }
+  }
+  if (type === 'OPEN_APP') {
+    return {
+      ...base,
+      openMode: 'url',
+      openTarget: 'https://example.com',
+    }
+  }
+  if (type === 'PROMPT_INPUT') {
+    return {
+      ...base,
+      promptMode: 'text',
+      promptTitle: 'Input Required',
+      promptMessage: 'Enter value to continue:',
+      promptDefault: '',
+      promptOptions: 'Option A, Option B',
+      promptSaveAs: 'userInput',
+      promptCancelBehavior: 'abort',
+    }
+  }
+  if (type === 'PARALLEL_BRANCH') {
+    return {
+      ...base,
+      parallelBranches: [{ label: 'Branch A' }, { label: 'Branch B' }],
+      parallelWaitMode: 'all',
     }
   }
   return base

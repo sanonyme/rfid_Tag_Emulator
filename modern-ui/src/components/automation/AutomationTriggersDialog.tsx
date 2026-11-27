@@ -23,12 +23,15 @@ import {
   Globe,
   FolderSearch,
   Timer,
+  Clock,
+  Play,
   Trash2,
   Copy,
   Check,
   FolderOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { CRON_PRESETS, getNextCronDate, validateCronExpression } from '@/lib/automation-cron'
 import type { AutomationSequence, AutomationTrigger, TriggerType } from '@/lib/automation-types'
 import { cn } from '@/lib/utils'
 
@@ -38,6 +41,7 @@ interface AutomationTriggersDialogProps {
   sequences: AutomationSequence[]
   triggers: AutomationTrigger[]
   onSaveTriggers: (triggers: AutomationTrigger[]) => void
+  onTestFire?: (trigger: AutomationTrigger) => void
 }
 
 export const TRIGGERS_STORAGE_KEY = 'rfid-automation-triggers'
@@ -67,6 +71,7 @@ export function AutomationTriggersDialog({
   sequences,
   triggers,
   onSaveTriggers,
+  onTestFire,
 }: AutomationTriggersDialogProps) {
   const [items, setItems] = useState<AutomationTrigger[]>(triggers)
   const [activeTab, setActiveTab] = useState<string | null>(null)
@@ -90,8 +95,10 @@ export function AutomationTriggersDialog({
         type === 'webhook'
           ? 'Inbound Webhook'
           : type === 'file_watcher'
-            ? 'CSV Folder Watcher'
-            : 'Scheduled Interval',
+            ? 'Folder Watcher'
+            : type === 'cron'
+              ? 'Cron Schedule'
+              : 'Scheduled Interval',
       type,
       enabled: false,
       targetSequenceId: firstSeqId,
@@ -100,6 +107,7 @@ export function AutomationTriggersDialog({
       watcherPath: '',
       watcherPattern: '*.csv',
       intervalSeconds: 60,
+      cronExpression: '*/5 * * * *',
     }
     const updated = [...items, newTrigger]
     setItems(updated)
@@ -159,7 +167,7 @@ export function AutomationTriggersDialog({
               <div className="min-w-0">
                 <DialogTitle className="text-base font-semibold">Event Triggers</DialogTitle>
                 <DialogDescription className="text-xs mt-0.5">
-                  Automatically start workflows via Inbound Webhooks, File Watchers, or Timer Intervals
+                  Automatically start workflows via Webhooks, File Watchers, Intervals, or Cron Schedules
                 </DialogDescription>
               </div>
             </div>
@@ -191,6 +199,15 @@ export function AutomationTriggersDialog({
                 <Timer className="w-3.5 h-3.5 text-purple-500" />
                 + Interval
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={() => handleAddTrigger('cron')}
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-500" />
+                + Cron
+              </Button>
             </div>
           </div>
         </DialogHeader>
@@ -221,6 +238,8 @@ export function AutomationTriggersDialog({
                         <Globe className="w-4 h-4 text-blue-500 shrink-0" />
                       ) : trig.type === 'file_watcher' ? (
                         <FolderSearch className="w-4 h-4 text-emerald-500 shrink-0" />
+                      ) : trig.type === 'cron' ? (
+                        <Clock className="w-4 h-4 text-amber-500 shrink-0" />
                       ) : (
                         <Timer className="w-4 h-4 text-purple-500 shrink-0" />
                       )}
@@ -270,6 +289,20 @@ export function AutomationTriggersDialog({
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {onTestFire && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1 px-2 text-xs"
+                        disabled={!selectedTrigger.targetSequenceId}
+                        onClick={() => onTestFire(selectedTrigger)}
+                        title="Fire this trigger right now with sample payload variables"
+                      >
+                        <Play className="h-3 w-3 text-emerald-500 fill-current" />
+                        Test Fire
+                      </Button>
+                    )}
                     <Label htmlFor="trigger-enable" className="text-xs">
                       {selectedTrigger.enabled ? 'Enabled' : 'Disabled'}
                     </Label>
@@ -429,11 +462,56 @@ export function AutomationTriggersDialog({
                         className="h-8 text-xs font-mono"
                       />
                       <p className="text-[10px] text-muted-foreground">
-                        Will execute the sequence every {selectedTrigger.intervalSeconds || 60} seconds while Antigravity is running.
+                        Will execute the sequence every {selectedTrigger.intervalSeconds || 60} seconds while Zeus is running.
                       </p>
                     </div>
                   </div>
                 )}
+
+                {/* Cron Configuration */}
+                {selectedTrigger.type === 'cron' && (() => {
+                  const expr = selectedTrigger.cronExpression || '*/5 * * * *'
+                  const check = validateCronExpression(expr)
+                  const nextRun = check.valid ? getNextCronDate(expr) : null
+                  return (
+                    <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 space-y-3">
+                      <div className="flex items-center gap-2 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                        <Clock className="w-4 h-4" />
+                        <span>Cron Schedule (5-field: min hour day month weekday)</span>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Cron Expression</Label>
+                        <Input
+                          value={expr}
+                          onChange={(e) => handleUpdateCurrent({ cronExpression: e.target.value })}
+                          placeholder="*/5 * * * *"
+                          className="h-8 text-xs font-mono"
+                        />
+                        {check.valid ? (
+                          <p className="text-[10.5px] text-emerald-600 dark:text-emerald-400">
+                            Next run: {nextRun ? nextRun.toLocaleString() : 'Scheduled'}
+                          </p>
+                        ) : (
+                          <p className="text-[10.5px] text-destructive">{check.error}</p>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {CRON_PRESETS.map((p) => (
+                          <Button
+                            key={p.expr}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-6 px-2 text-[10px]"
+                            onClick={() => handleUpdateCurrent({ cronExpression: p.expr })}
+                          >
+                            {p.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             )}
           </div>
